@@ -26,13 +26,46 @@ logger = get_logger(__name__)
 
 
 # ====== 配置 ======
+def _load_config() -> Dict[str, Any]:
+    """
+    加载 LLM 全局配置。
+
+    优先级：core.config.config（pydantic-settings 从 .env 读取）
+            > os.getenv（进程环境变量）
+
+    说明：pydantic-settings 会把 .env 读进 Settings 对象，但不会注入
+    os.environ，因此直接 os.getenv 会读不到 .env 里的值（历史断链）。
+    """
+    cfg: Dict[str, Any] = {}
+    try:
+        from core.config import config as app_config
+        cfg["api_key"] = app_config.dashscope_api_key or os.getenv("DASHSCOPE_API_KEY", "")
+        cfg["default_model"] = app_config.llm_default_model or os.getenv("LLM_MODEL", "qwen-max")
+        cfg["timeout"] = app_config.llm_timeout_seconds or int(os.getenv("LLM_TIMEOUT", "60"))
+        # MAX_RETRIES 仅在 .env 中定义（config 无对应字段）
+        cfg["max_retries"] = int(os.getenv("LLM_MAX_RETRIES", "3"))
+    except Exception:
+        cfg["api_key"] = os.getenv("DASHSCOPE_API_KEY", "")
+        cfg["default_model"] = os.getenv("LLM_MODEL", "qwen-max")
+        cfg["timeout"] = int(os.getenv("LLM_TIMEOUT", "60"))
+        cfg["max_retries"] = int(os.getenv("LLM_MAX_RETRIES", "3"))
+
+    cfg["base_url"] = os.getenv(
+        "LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
+    return cfg
+
+
+_CONFIG = _load_config()
+
+
 class LLMConfig:
     """LLM 全局配置"""
-    API_KEY: str = os.getenv("DASHSCOPE_API_KEY", "")
-    BASE_URL: str = os.getenv("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-    DEFAULT_MODEL: str = os.getenv("LLM_MODEL", "qwen-max")
-    TIMEOUT: int = int(os.getenv("LLM_TIMEOUT", "60"))
-    MAX_RETRIES: int = int(os.getenv("LLM_MAX_RETRIES", "3"))
+    API_KEY: str = _CONFIG["api_key"]
+    BASE_URL: str = _CONFIG["base_url"]
+    DEFAULT_MODEL: str = _CONFIG["default_model"]
+    TIMEOUT: int = int(_CONFIG["timeout"])
+    MAX_RETRIES: int = int(_CONFIG["max_retries"])
 
     # Token 价格 (每千 token, 单位：元)
     PRICING: Dict[str, Dict[str, float]] = {

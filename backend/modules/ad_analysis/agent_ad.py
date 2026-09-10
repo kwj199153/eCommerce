@@ -24,6 +24,10 @@ import random
 
 from pydantic import BaseModel, Field
 
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 # ====== 数据模型 ======
 
@@ -255,6 +259,29 @@ Amazon PPC 关键指标基准（参考值）：
             super().__init__()
 
         self.system_prompt = self.SYSTEM_PROMPT
+        self.agent_name = "ad_analysis"
+
+    async def _llm_summarize(self, context: str) -> Optional[str]:
+        """
+        LLM 增强：基于诊断数据生成专业的分析总结。
+
+        LLM 不可用或失败时返回 None，由调用方降级到规则生成的文字。
+        """
+        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+            return None
+        try:
+            result = await self.llm_chat(
+                user_message=context,
+                system_prompt=self.system_prompt,
+                model=self.DEFAULT_MODEL,
+                temperature=0.6,
+                max_tokens=1024,
+            )
+            if result.success and not result.fallback and result.content:
+                return result.content.strip()
+        except Exception as e:
+            logger.warning(f"[ad_analysis] LLM summary failed: {e}")
+        return None
 
     async def invoke(self, query: str, context: Optional[Dict[str, Any]] = None) -> AgentResponse:
         """
@@ -364,10 +391,24 @@ Amazon PPC 关键指标基准（参考值）：
         overall_score = self._calculate_overall_score(metrics, campaigns)
         grade = self._score_to_grade(overall_score)
 
+        # 规则生成的摘要（作为 LLM 降级兜底）
+        summary = self._generate_diagnosis_summary(grade, metrics)
+
+        # ====== LLM 增强：智能诊断总结 ======
+        llm_context = f"""请基于以下广告账户诊断数据，生成一段专业、可执行的诊断总结（150字以内，中文）：
+- 综合评分: {overall_score}/100（等级 {grade}）
+- 核心指标: {', '.join(f'{m.name}={m.value}{m.unit}(基准{m.benchmark})' for m in metrics)}
+- 主要问题: {', '.join(i['title'] for i in issues[:3]) or '无'}
+- 优化方向: {', '.join(recommendations[:3])}
+请聚焦最关键的 1-2 个问题给出具体建议，不要罗列数据。"""
+        llm_summary = await self._llm_summarize(llm_context)
+        if llm_summary:
+            summary = llm_summary
+
         report = DiagnosisReport(
             overall_score=overall_score,
             grade=grade,
-            summary=self._generate_diagnosis_summary(grade, metrics),
+            summary=summary,
             metrics=metrics,
             campaigns=campaigns,
             top_issues=issues[:5],
@@ -417,6 +458,15 @@ Amazon PPC 关键指标基准（参考值）：
         opportunities = [t for t in all_terms if t.orders >= 1 and t.acos < 20][:8]
 
         suggestions = self._generate_search_term_suggestions(high_perf, low_perf, waste)
+
+        # ====== LLM 增强：搜索词洞察总结 ======
+        llm_context = f"""请基于以下搜索词报告数据，生成一段专业洞察总结（120字以内，中文），指出最值得执行的 1-2 个动作：
+- 高效词 {len(high_perf)} 个、低效词 {len(low_perf)} 个、浪费词 {len(waste)} 个（浪费花费约 ${sum(t.spend for t in waste):.2f}）
+- 新机会词 {len(opportunities)} 个
+请聚焦「浪费词否定」和「高效词加投」两个维度给建议。"""
+        llm_suggestions = await self._llm_summarize(llm_context)
+        if llm_suggestions:
+            suggestions = [llm_suggestions] + suggestions[:2]
 
         report = SearchTermReport(
             period="近30天",
@@ -477,6 +527,16 @@ Amazon PPC 关键指标基准（参考值）：
             rationale="基于近30天转化数据、竞争强度、季节性因素综合计算"
         )
 
+        # ====== LLM 增强：出价策略理由 ======
+        llm_context = f"""请基于以下出价优化数据，生成一段专业、简明的策略理由（100字以内，中文）：
+- 涉及 {len(keywords_data)} 个关键词，预算影响 {'+' if budget_impact > 0 else ''}{budget_impact:.2f}/天
+- 预期 ACoS 变化 {avg_acos_change:+.1f}%
+- 建议提价 {increase_count} 个、降价 {decrease_count} 个
+请说明为什么这样调整，以及优先处理什么。"""
+        llm_rationale = await self._llm_summarize(llm_context)
+        if llm_rationale:
+            report.rationale = llm_rationale
+
         increase_count = len([k for k in keywords_data if k.bid_change_pct > 0])
         decrease_count = len([k for k in keywords_data if k.bid_change_pct < 0])
 
@@ -517,6 +577,15 @@ Amazon PPC 关键指标基准（参考值）：
             position = "nicher"
 
         insights = self._generate_competitor_insights(competitors, your_sov)
+
+        # ====== LLM 增强：竞品洞察 ======
+        llm_context = f"""请基于以下竞品广告监控数据，生成 2-3 条可执行洞察（中文）：
+- 我的展示份额 {your_sov}%，市场位置 {position}
+- 竞品: {', '.join(f'{c.competitor_name}(份额{c.share_of_voice}%)' for c in competitors[:3])}
+请聚焦「如何抢占竞品份额」给出具体策略。"""
+        llm_insights = await self._llm_summarize(llm_context)
+        if llm_insights:
+            insights = [llm_insights] + insights[:2]
 
         report = CompetitorAdReport(
             competitors=competitors,
@@ -577,6 +646,15 @@ Amazon PPC 关键指标基准（参考值）：
             risk_assessment="中等风险 — 建议分两周逐步调整，每周监测效果"
         )
 
+        # ====== LLM 增强：风险评估 ======
+        llm_context = f"""请基于以下预算优化方案，生成一段专业风险提示（80字以内，中文）：
+- 预算从 ${total_current:.2f} 调整为 ${total_suggested:.2f}（变化 {((total_suggested - total_current) / total_current * 100):+.1f}%）
+- 涉及 {len(allocations)} 个 Campaign
+请说明主要风险和规避方式。"""
+        llm_risk = await self._llm_summarize(llm_context)
+        if llm_risk:
+            report.risk_assessment = llm_risk
+
         content = f"""## 💰 预算分配优化方案
 
 **当前日预算**: ${total_current:.2f} | **建议日预算**: ${total_suggested:.2f}
@@ -618,10 +696,21 @@ Amazon PPC 关键指标基准（参考值）：
         if medium_count > 0:
             summary_parts.append(f"📋 还有 **{medium_count} 个中等风险项")
 
+        summary = " ".join(summary_parts) or "✅ 未发现明显异常，账户运行正常"
+
+        # ====== LLM 增强：异常检测总结 ======
+        llm_context = f"""请基于以下广告异常检测结果，生成一段简明总结（100字以内，中文）：
+- {alert_count} 个高风险异常、{medium_count} 个中等风险
+- 异常类型: {', '.join(a.type for a in anomalies[:5]) or '无'}
+请说明最需优先处理的问题和建议。"""
+        llm_summary = await self._llm_summarize(llm_context)
+        if llm_summary:
+            summary = llm_summary
+
         report = AnomalyReport(
             check_period="近7天 vs 前7天",
             anomalies=anomalies,
-            summary=" ".join(summary_parts) or "✅ 未发现明显异常，账户运行正常",
+            summary=summary,
             alert_count=alert_count
         )
 

@@ -26,6 +26,10 @@ from pydantic import BaseModel, Field
 from platforms import get_platform_adapter, PlatformType
 from platforms.base import ProductData, ReviewData
 
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 # ====== 数据模型 ======
 
@@ -250,6 +254,28 @@ class ListingGeneratorAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         self.agent_name = "ListingGenerator"
         self.system_prompt = LISTING_GENERATOR_SYSTEM_PROMPT
 
+    async def _llm_generate(self, prompt: str, max_tokens: int = 1200) -> Optional[str]:
+        """
+        LLM 增强：生成真实 Listing 内容。
+
+        LLM 不可用或失败时返回 None，由调用方降级到模板/规则生成。
+        """
+        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+            return None
+        try:
+            result = await self.llm_chat(
+                user_message=prompt,
+                system_prompt=self.system_prompt,
+                model=self.DEFAULT_MODEL,
+                temperature=0.7,
+                max_tokens=max_tokens,
+            )
+            if result.success and not result.fallback and result.content:
+                return result.content.strip()
+        except Exception as e:
+            logger.warning(f"[listing_generator] LLM generate failed: {e}")
+        return None
+
     async def invoke(self, query: str, context: Dict[str, Any] = None) -> AgentResponse:
         """
         调用 Agent 处理请求
@@ -459,6 +485,22 @@ class ListingGeneratorAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         # 选择最优候选（综合长度和关键词覆盖）
         best_title = self._select_best_title(title_candidates, main_keyword)
 
+        # ====== LLM 增强：SEO 标题 ======
+        llm_title = await self._llm_generate(
+            prompt=f"""请为以下产品生成一个 Amazon Listing 标题（英文，150-180字符，不超过200）：
+- 产品名: {product_name}
+- 品牌: {brand or '未指定'}
+- 类目: {category or '通用'}
+- 核心卖点: {', '.join(features[:4]) or '无'}
+要求：主关键词前置、包含品牌+核心词+卖点+规格，自然流畅不堆砌。只输出标题文本本身。""",
+            max_tokens=200,
+        )
+        if llm_title:
+            # 清理可能的引号/说明文字
+            llm_title = llm_title.strip().strip('"').strip("'")
+            if 10 <= len(llm_title) <= 250:
+                best_title = llm_title
+
         # 计算评分
         seo_score = self._score_title(best_title, main_keyword, secondary_keywords)
 
@@ -534,6 +576,41 @@ class ListingGeneratorAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             )
             bullets.append(bullet)
             total_chars += bullet.character_count
+
+        # ====== LLM 增强：五点描述 ======
+        llm_bullets = await self._llm_generate(
+            prompt=f"""请为以下产品生成 Amazon 五点描述（Bullet Points，英文）。
+- 产品名: {product_name}
+- 核心卖点: {', '.join(features[:5]) or '高品质、耐用、易用'}
+要求：
+1. 共 5 条，每条以「全大写短语标题: 」开头（如 "PREMIUM QUALITY: ..."）
+2. 每条内容 50-150 字符，突出差异化卖点
+3. 用 JSON 数组格式返回：["条1", "条2", "条3", "条4", "条5"]""",
+            max_tokens=1000,
+        )
+        if llm_bullets:
+            try:
+                import json as _json
+                raw = llm_bullets.strip()
+                if raw.startswith("```"):
+                    raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+                parsed = _json.loads(raw)
+                if isinstance(parsed, list) and len(parsed) == 5:
+                    bullets = []
+                    for i, text in enumerate(parsed, 1):
+                        text = str(text).strip()
+                        if ":" in text:
+                            header, content = text.split(":", 1)
+                        else:
+                            header, content = f"FEATURE {i}", text
+                        bullets.append(BulletPoint(
+                            bullet_id=i,
+                            title=header.strip().upper()[:30],
+                            content=content.strip(),
+                            character_count=len(text),
+                        ))
+            except Exception:
+                pass  # 解析失败，保留模板结果
 
         # 计算覆盖度评分
         coverage_score = self._calculate_bullet_coverage(bullets, features)

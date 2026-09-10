@@ -20,6 +20,10 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from enum import Enum
 
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 # ============================================================
 # 数据模型
@@ -237,6 +241,28 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
         self.agent_name = "AIGC 媒体生成器"
         self.version = "2.0.0"  # 升级版本号
+
+    async def _llm_generate_text(self, prompt: str, system_prompt: str = None, max_tokens: int = 1500) -> Optional[str]:
+        """
+        LLM 增强：生成真实文案内容。
+
+        LLM 不可用或失败时返回 None，由调用方降级到模板/规则生成。
+        """
+        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+            return None
+        try:
+            result = await self.llm_chat(
+                user_message=prompt,
+                system_prompt=system_prompt or self.get_prompt_template("aigc_media"),
+                model=self.DEFAULT_MODEL,
+                temperature=0.8,
+                max_tokens=max_tokens,
+            )
+            if result.success and not result.fallback and result.content:
+                return result.content.strip()
+        except Exception as e:
+            logger.warning(f"[aigc_media] LLM generate failed: {e}")
+        return None
 
         # 图片风格库
         self.image_styles = {
@@ -828,6 +854,18 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
 展望未来，{brand_name} 将继续秉承\"{'、'.join(default_values[:3])}\"的品牌理念，为全球用户创造更多价值。"""
 
+        # ====== LLM 增强：品牌描述 ======
+        llm_about = await self._llm_generate_text(
+            prompt=f"""请为品牌「{brand_name}」撰写一段用于 Amazon 品牌旗舰店 About 板块的品牌介绍（200字左右，中文）。
+行业：{industry}
+产品线：{', '.join(products[:3])}
+品牌价值观：{'、'.join(default_values[:3])}
+要求：专业、有感染力、突出差异化卖点，符合电商品牌调性。""",
+            max_tokens=800,
+        )
+        if llm_about:
+            about_text = llm_about
+
         # 故事叙述角度
         storytelling_angles = [
             {"angle": "创始人视角", "narrative": f"从一个想法到{industry}知名品牌，{brand_name}的创业之旅"},
@@ -878,8 +916,22 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
         target_name = lang_names.get(target_lang, target_lang)
 
-        # 基础翻译标记
+        # 基础翻译标记（作为 LLM 降级兜底）
         translated = f"[{target_name}翻译] {content}"
+
+        # ====== LLM 增强：真实翻译 ======
+        kw_hint = f"\n需保留的关键词（自然融入）：{', '.join(keywords[:5])}" if keywords else ""
+        llm_translated = await self._llm_generate_text(
+            prompt=f"""请将以下电商内容从{source_lang}翻译成{target_name}（{target_lang}）。
+上下文：{context}
+要求：翻译自然地道、符合{target_name}电商表达习惯，保留原意不增删信息。{kw_hint}
+
+待翻译内容：
+{content}""",
+            max_tokens=1200,
+        )
+        if llm_translated:
+            translated = llm_translated
 
         # 关键词 inclusion
         keyword_inclusion = []
@@ -1109,12 +1161,40 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         scene_templates = self._get_scene_templates(video_type)
 
         # 开场钩子（黄金3秒）
+        hook_text = self._generate_hook(product_name, key_features)
+        hook_voiceover = self._generate_hook_voiceover(product_name)
+
+        # ====== LLM 增强：开场钩子 ======
+        llm_hook = await self._llm_generate_text(
+            prompt=f"""请为「{product_name}」({product_category}) 生成一条 TikTok 短视频开场钩子文案和配音文案。
+核心卖点：{'、'.join(key_features[:3])}
+要求：
+1. 钩子文字（text_overlay）：短促有力，10字以内，抓眼球
+2. 配音文案（voiceover）：一句话，口语化，制造好奇
+请用 JSON 格式返回：{{"text_overlay": "...", "voiceover": "..."}}""",
+            max_tokens=400,
+        )
+        if llm_hook:
+            try:
+                import json as _json
+                # 尝试解析 JSON（可能有 markdown 包裹）
+                hook_text_raw = llm_hook.strip()
+                if hook_text_raw.startswith("```"):
+                    hook_text_raw = hook_text_raw.split("\n", 1)[1].rsplit("```", 1)[0]
+                hook_data = _json.loads(hook_text_raw)
+                if isinstance(hook_data, dict):
+                    hook_text = hook_data.get("text_overlay", hook_text)
+                    hook_voiceover = hook_data.get("voiceover", hook_voiceover)
+            except Exception:
+                # 解析失败，保留规则生成
+                pass
+
         scenes.append(VideoScene(
             scene_number=1,
             duration=3,
             visual_description="产品特写镜头，配合动态效果",
-            text_overlay=self._generate_hook(product_name, key_features),
-            voiceover=self._generate_hook_voiceover(product_name),
+            text_overlay=hook_text,
+            voiceover=hook_voiceover,
             background_music="轻快节奏音乐起",
             transition="快速切入"
         ))

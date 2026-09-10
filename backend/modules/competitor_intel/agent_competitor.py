@@ -17,6 +17,10 @@ import random
 import re
 from dataclasses import dataclass, asdict
 
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class CompetitorProduct:
@@ -138,7 +142,30 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         if LLM_AVAILABLE:
             super().__init__()
 
+        self.agent_name = "competitor_intel"
         self._initialize_mock_data()
+
+    async def _llm_insights(self, context: str, max_tokens: int = 800) -> Optional[str]:
+        """
+        LLM 增强：基于竞品数据生成专业洞察结论。
+
+        LLM 不可用或失败时返回 None，由调用方降级到规则生成。
+        """
+        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+            return None
+        try:
+            result = await self.llm_chat(
+                user_message=context,
+                system_prompt=self.get_prompt_template("competitor_intel"),
+                model=self.DEFAULT_MODEL,
+                temperature=0.6,
+                max_tokens=max_tokens,
+            )
+            if result.success and not result.fallback and result.content:
+                return result.content.strip()
+        except Exception as e:
+            logger.warning(f"[competitor_intel] LLM insights failed: {e}")
+        return None
 
     def _initialize_mock_data(self):
         """初始化模拟数据"""
@@ -315,11 +342,23 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
                     "alerts": self._generate_alerts(comp),
                 })
 
+            summary = self._generate_monitor_summary(monitored)
+
+            # ====== LLM 增强：监控总结 ======
+            llm_context = f"""请基于以下竞品监控数据，生成一段专业的市场监控总结（150字以内，中文）：
+- 共监控 {len(monitored)} 个竞品
+- 价格变动: {', '.join(f'{m["brand"]}({m["price_change_7d"]:+.1f}%)' for m in monitored[:4])}
+- 需要关注: {', '.join(m['brand'] for m in monitored if m['alerts'])[:50] or '无'}
+请聚焦最值得关注的竞品动态和应对建议。"""
+            llm_summary = await self._llm_insights(llm_context)
+            if llm_summary:
+                summary = llm_summary
+
             return {
                 "type": "monitor_dashboard",
                 "total_competitors": len(monitored),
                 "competitors": monitored,
-                "summary": self._generate_monitor_summary(monitored),
+                "summary": summary,
             }
 
         # 单个ASIN深度监控
@@ -664,6 +703,17 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         if len(competitors) < 2:
             return {"error": "至少需要2个竞品进行对比"}
 
+        recommendations = self._generate_comparison_recommendations(competitors)
+
+        # ====== LLM 增强：对比结论 ======
+        llm_context = f"""请基于以下竞品对比数据，生成 2-3 条关键竞争结论与建议（中文）：
+- 对比竞品: {', '.join(f'{c.brand}(价格${c.price},评分{c.rating})' for c in competitors)}
+- 差异化: {self._analyze_differentiation(competitors).get('key_differentiators', '无') if isinstance(self._analyze_differentiation(competitors), dict) else '待分析'}
+请聚焦「哪个竞品最有威胁」和「如何差异化竞争」。"""
+        llm_recs = await self._llm_insights(llm_context)
+        if llm_recs:
+            recommendations = [llm_recs] + recommendations[:2]
+
         # 多维度对比
         comparison = {
             "price_comparison": self._compare_dimension(competitors, "price", "lower_better"),
@@ -673,7 +723,7 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             "value_score": self._calculate_value_scores(competitors),
             "overall_ranking": self._generate_overall_ranking(competitors),
             "differentiation_analysis": self._analyze_differentiation(competitors),
-            "recommendations": self._generate_comparison_recommendations(competitors),
+            "recommendations": recommendations,
         }
 
         return {
