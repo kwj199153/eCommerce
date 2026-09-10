@@ -67,13 +67,13 @@ export const useUserStore = defineStore('user', () => {
     isLoading.value = true
 
     try {
-      // 使用 FormData 格式（OAuth2 Password 模式）
-      const formData = new FormData()
+      // 使用 URL-encoded 格式（后端 OAuth2PasswordRequestForm 期望 x-www-form-urlencoded）
+      const formData = new URLSearchParams()
       formData.append('username', credentials.email)
       formData.append('password', credentials.password)
 
       const response = await post<AuthResponse>('/auth/login', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       })
 
       // 保存 Token 和用户信息
@@ -137,10 +137,11 @@ export const useUserStore = defineStore('user', () => {
    */
   async function fetchUserInfo(): Promise<UserInfo | null> {
     try {
-      const response = await get<{ user: UserInfo }>('/auth/me')
-      user.value = response.user
-      localStorage.setItem('user_info', JSON.stringify(response.user))
-      return response.user
+      // /auth/me 返回平铺字段（与 login/register 的 user 字段一致）
+      const response = await get<UserInfo>('/auth/me')
+      user.value = response
+      localStorage.setItem('user_info', JSON.stringify(response))
+      return response
     } catch (error) {
       console.error('获取用户信息失败:', error)
       return null

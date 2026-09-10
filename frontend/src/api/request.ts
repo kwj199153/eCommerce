@@ -139,8 +139,12 @@ export function get<T = any>(url: string, params?: Record<string, any>): Promise
 /**
  * POST 请求
  */
-export function post<T = any>(url: string, data?: Record<string, any>): Promise<T> {
-  return request.post(url, data)
+export function post<T = any>(
+  url: string,
+  data?: Record<string, any> | FormData | URLSearchParams,
+  config?: AxiosRequestConfig
+): Promise<T> {
+  return request.post(url, data, config)
 }
 
 /**

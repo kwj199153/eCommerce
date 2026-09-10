@@ -7,6 +7,7 @@
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -26,12 +27,11 @@ router = APIRouter(prefix="/auth", tags=["认证"])
 
 # ====== 请求/响应 Schema ======
 
-class UserRegisterRequest:
-    """注册请求"""
-    def __init__(self, email: str, password: str, name: str = None):
-        self.email = email
-        self.password = password
-        self.name = name
+class UserRegisterRequest(BaseModel):
+    """注册请求（JSON body）"""
+    email: str = Field(..., description="邮箱地址（唯一）")
+    password: str = Field(..., min_length=6, description="密码（至少 6 位）")
+    name: str | None = Field(None, description="用户名（可选）")
 
 
 class UserLoginResponse:
@@ -131,9 +131,7 @@ def user_to_dict(user: User) -> dict:
 
 @router.post("/register", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def register(
-    email: str,
-    password: str,
-    name: str = None,
+    payload: UserRegisterRequest,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -143,6 +141,10 @@ async def register(
     - **password**: 密码（至少 6 位）
     - **name**: 用户名（可选）
     """
+    email = payload.email
+    password = payload.password
+    name = payload.name
+
     # 1. 检查邮箱是否已存在
     existing_user = await get_user_by_email(db, email)
     if existing_user:
@@ -306,15 +308,10 @@ async def get_current_user_info(
     """
     获取当前登录用户信息
 
-    需要 Bearer Token 认证
+    需要 Bearer Token 认证。
+    返回结构复用 user_to_dict（与 login/register 的 user 字段一致）。
     """
-    return {
-        "id": current_user.id,
-        "email": current_user.email,
-        "role": current_user.role.value,
-        "is_active": current_user.is_active,
-        "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
-    }
+    return user_to_dict(current_user)
 
 
 @router.post("/logout")
