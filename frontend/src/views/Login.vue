@@ -152,15 +152,17 @@
         </a-tab-pane>
       </a-tabs>
 
-      <!-- 演示模式 -->
-      <a-divider>演示模式</a-divider>
-      <a-button
-        type="dashed"
-        block
-        @click="handleDemoLogin"
-      >
-        🚀 一键体验（跳过登录）
-      </a-button>
+      <!-- 演示模式（仅 DEMO_MODE 开启时显示） -->
+      <template v-if="DEMO_MODE">
+        <a-divider>演示模式</a-divider>
+        <a-button
+          type="dashed"
+          block
+          @click="handleDemoLogin"
+        >
+          🚀 一键体验（跳过登录）
+        </a-button>
+      </template>
     </div>
   </div>
 </template>
@@ -171,6 +173,7 @@ import { useRouter } from 'vue-router'
 import { UserOutlined, LockOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useUserStore } from '@/stores/user'
+import { DEMO_MODE, DEMO_TOKEN, DEMO_REFRESH_TOKEN, DEMO_USER } from '@/config/demoMode'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -223,33 +226,23 @@ const handleRegister = async () => {
 // 测试模式：一键体验
 const handleDemoLogin = async () => {
   // 自动填充测试账号
-  loginForm.email = 'demo@ecommerce.ai'
+  loginForm.email = DEMO_USER.email
   loginForm.password = 'demo123456'
 
   // 模拟登录（Phase 0 演示用）
-  localStorage.setItem('access_token', 'demo-token')
-  localStorage.setItem('refresh_token', 'demo-refresh-token')
+  localStorage.setItem('access_token', DEMO_TOKEN)
+  localStorage.setItem('refresh_token', DEMO_REFRESH_TOKEN)
   localStorage.setItem('user_info', JSON.stringify({
-    id: 'demo-user-001',
-    email: 'demo@ecommerce.ai',
-    name: '演示用户',
-    role: 'admin',
-    is_active: true,
-    is_verified: false,
+    ...DEMO_USER,
     created_at: new Date().toISOString(),
     last_login_at: new Date().toISOString(),
   }))
 
   // 更新 store 状态
   userStore.$patch({
-    token: 'demo-token',
+    token: DEMO_TOKEN,
     user: {
-      id: 'demo-user-001',
-      email: 'demo@ecommerce.ai',
-      name: '演示用户',
-      role: 'admin',
-      is_active: true,
-      is_verified: false,
+      ...DEMO_USER,
       created_at: new Date().toISOString(),
       last_login_at: new Date().toISOString(),
     },

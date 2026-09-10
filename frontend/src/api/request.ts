@@ -12,6 +12,7 @@ import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse 
 import { message } from 'ant-design-vue'
 import { useUserStore } from '@/stores/user'
 import router from '@/router'
+import { isDemoToken } from '@/config/demoMode'
 
 // 创建 Axios 实例
 const request: AxiosInstance = axios.create({
@@ -75,7 +76,7 @@ request.interceptors.response.use(
         const userStore = useUserStore()
 
         // 演示模式：demo-token 被拒时不强制登出，静默处理
-        if (userStore.token === 'demo-token' || userStore.token?.startsWith('demo-')) {
+        if (isDemoToken(userStore.token)) {
           // 静默失败，由各页面自行使用 Mock 数据兜底
           console.warn('[Demo Mode] API 返回 401，使用 Mock 数据')
           return Promise.reject(error)
@@ -102,7 +103,7 @@ request.interceptors.response.use(
 
       case 404:
         // 演示模式：404 静默处理（后端接口不存在时页面用 Mock 数据）
-        if (userStore.token === 'demo-token' || userStore.token?.startsWith('demo-')) {
+        if (isDemoToken(userStore.token)) {
           console.warn('[Demo Mode] API 返回 404，使用 Mock 数据')
           return Promise.reject(error)
         }
