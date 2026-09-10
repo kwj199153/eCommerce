@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>店管家 AI — 服务器无本地数据库演示部署指南</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: #f5f7fa; color: #1f2d3d; line-height: 1.7; padding: 24px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 24px; margin-bottom: 6px; color: #0a2540; }
+  .sub { color: #5a6b7c; font-size: 14px; margin-bottom: 20px; }
+  .banner {
+    background: #fff7e6; border: 1px solid #ffd591; border-radius: 10px;
+    padding: 14px 18px; margin-bottom: 20px; font-size: 14px; color: #ad4e00;
+  }
+  .banner strong { color: #873800; }
+  .card {
+    background: #fff; border-radius: 12px; padding: 20px 22px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 17px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .step-num {
+    width: 26px; height: 26px; border-radius: 50%; background: #1890ff; color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 600; flex-shrink: 0;
+  }
+  pre {
+    background: #0b1f33; color: #e6edf3; border-radius: 8px; padding: 14px 16px;
+    font-family: "SFMono-Regular", Consolas, "Courier New", monospace;
+    font-size: 13px; overflow-x: auto; margin: 10px 0; white-space: pre;
+  }
+  code.inline {
+    background: #eef2f7; color: #c0341d; padding: 1px 6px; border-radius: 4px;
+    font-family: Consolas, monospace; font-size: 13px;
+  }
+  .note {
+    background: #e6f7ff; border-left: 4px solid #1890ff; border-radius: 4px;
+    padding: 10px 14px; margin: 12px 0; font-size: 13.5px; color: #0050b3;
+  }
+  .warn {
+    background: #fff2e8; border-left: 4px solid #ff4d4f; border-radius: 4px;
+    padding: 10px 14px; margin: 12px 0; font-size: 13.5px; color: #a8071a;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13.5px; }
+  th, td { border: 1px solid #e4e9f0; padding: 8px 12px; text-align: left; }
+  th { background: #f0f4f9; font-weight: 600; }
+  .tag {
+    display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 12px;
+    background: #e6f7ff; color: #1890ff; font-weight: 600;
+  }
+  .tag.green { background: #f6ffed; color: #389e0d; }
+  ul { padding-left: 20px; }
+  li { margin: 3px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🛒 店管家 AI · 服务器演示部署指南</h1>
+  <div class="sub">目标：在一台没有本地安装 PostgreSQL 的全新 Linux 服务器上，快速把前后端跑起来做演示</div>
+
+  <div class="banner">
+    <strong>结论先说：</strong>本项目后端 <b>必须连一个 PostgreSQL</b> 才能启动（<code class="inline">init_db()</code> 无降级保护，PG 不在会直接崩溃）。
+    但只要这台服务器<b>能装 Docker</b>，一条命令起个 PG 容器即可，<b>代码零改动</b>。下面是最省事的做法。
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">1</span> 确认服务器有 Docker</h2>
+    <pre>docker --version
+docker compose version</pre>
+    <div class="note">若没装 Docker，先装：<br>
+    CentOS/RHEL：<code class="inline">sudo yum install -y docker docker-compose-plugin &amp;&amp; sudo systemctl enable --now docker</code><br>
+    Ubuntu/Debian：<code class="inline">sudo apt install -y docker.io docker-compose-plugin</code></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">2</span> 上传项目 &amp; 一键起 PostgreSQL</h2>
+    <p>把整个 <code class="inline">eCommerce</code> 项目传到服务器，然后进入目录：</p>
+    <pre>cd eCommerce
+docker compose up -d</pre>
+    <p>这会用项目自带的 <code class="inline">docker-compose.yml</code> 起一个 <b>my-postgres</b> 容器：</p>
+    <table>
+      <tr><th>项</th><th>值</th></tr>
+      <tr><td>镜像</td><td>postgres:15-alpine</td></tr>
+      <tr><td>账号</td><td>kevin</td></tr>
+      <tr><td>密码</td><td>123456</td></tr>
+      <tr><td>数据库</td><td>postgres</td></tr>
+      <tr><td>端口</td><td>5432</td></tr>
+    </table>
+    <div class="note">数据存 <b>Docker 卷 pgdata</b>，容器停止/重启不丢数据（<code class="inline">docker compose down</code> 不删卷）。</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">3</span> 改后端连串（只需这一步！）</h2>
+    <p>关键：后端在<b>服务器本机</b>跑、PG 也是<b>本机容器</b>，所以 <code class="inline">.env</code> 里的 <code class="inline">localhost</code> <b>不用改</b>，可直接用：</p>
+    <pre># backend/.env（已就绪，无需改）
+DATABASE_URL=postgresql+asyncpg://kevin:123456@localhost:5432/postgres</pre>
+    <div class="warn">
+      <b>唯一要注意：</b>如果后端是<b>跑在 Docker 容器里</b>（容器化后端），容器内 <code class="inline">localhost</code> 指容器自己，连不到 PG 容器，必须改成服务名：
+      <pre style="margin:8px 0 0">DATABASE_URL=postgresql+asyncpg://kevin:123456@postgres:5432/postgres</pre>
+      即后端也是 <code class="inline">docker compose</code> 服务（用 <code class="inline">depends_on: postgres</code>）时，主机名写 <code class="inline">postgres</code>。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">4</span> 装 Python 依赖 &amp; 启动后端</h2>
+    <p>服务器装 Python 3.11+ 后：</p>
+    <pre>cd backend
+pip install -r requirements.txt
+# 启动（前台演示用，Ctrl+C 停止）
+python -m uvicorn main:app --host 0.0.0.0 --port 8000</pre>
+    <div class="note">首次启动会自动建表（<code class="inline">✅ 数据库表创建完成</code>）、从 PG 加载店铺到内存。</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">5</span> 启动前端</h2>
+    <pre>cd ../frontend
+npm install
+# 开发预览：
+npm run dev
+# 或构建后交给 Nginx 静态托管：
+npm run build   # 产物在 dist/</pre>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">6</span> 打通前端 → 后端地址</h2>
+    <p>前端（5173/Vite 或 Nginx）要能访问后端 8000。开发模式 Vite 代理见 <code class="inline">vite.config.ts</code> 的 proxy，已指向 8000。</p>
+    <p>若前后端部署在不同域名/端口，需确认 CORS 白名单已含前端地址：</p>
+    <pre># backend/core/config.py
+cors_origins = ["http://localhost:5173", "http://你的前端域名:端口", ...]</pre>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">7</span> 验证演示可用</h2>
+    <ul>
+      <li>后端：<code class="inline">curl http://localhost:8000/api/v1/stores</code> → 返回 <code class="inline">{"stores":[],"total":0}</code></li>
+      <li>前端：浏览器打开，添加一个店铺 → 刷新/重启 → <b>店铺仍在</b>（已持久化到 PG）</li>
+      <li>两处店铺入口（左侧 / 账户设置【我的店铺】）现在<b>共用同一数据源</b>，互通</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>⚠️ 常见坑速查</h2>
+    <table>
+      <tr><th>现象</th><th>原因 / 解决</th></tr>
+      <tr><td>后端启动即报 <b>ConnectionRefused / 无法连接 localhost:5432</b></td><td>PG 容器没起。先 <code class="inline">docker compose up -d</code> 并 <code class="inline">docker ps</code> 确认 my-postgres 是 Up</td></tr>
+      <tr><td>后端在容器里连不上 PG</td><td>主机名用 <code class="inline">localhost</code> 错了，改成服务名 <code class="inline">postgres</code></td></tr>
+      <tr><td>密码/账号错</td><td>默认 kevin / 123456 / postgres，与 <code class="inline">docker-compose.yml</code> 一致</td></tr>
+      <tr><td>想彻底删数据重来</td><td><code class="inline">docker compose down -v</code>（删除 pgdata 卷，慎用）</td></tr>
+    </table>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,49 @@
+# ============================================================
+#  店管家 AI（跨境电商 AI SaaS）— 服务器一键部署
+# ------------------------------------------------------------
+#  用法（在项目根目录执行）：
+#    docker compose up -d           # 后台启动 PG（+可选后端/前端）
+#    docker compose ps              # 查看状态
+#    docker compose down            # 停止（保留数据卷）
+#    docker compose down -v         # 停止并删除数据（慎用）
+#
+#  默认只起 PostgreSQL；后端/前端服务按需取消注释启用。
+# ============================================================
+
+services:
+  # ========== 1. PostgreSQL（店铺/账号持久化，必需） ==========
+  postgres:
+    image: postgres:15-alpine
+    container_name: my-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kevin
+      POSTGRES_PASSWORD: "123456"
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kevin -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ========== 2. 后端 API（可选，按需启用） ==========
+  # backend:
+  #   build:
+  #     context: ./backend
+  #   container_name: ecommerce-backend
+  #   restart: unless-stopped
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   environment:
+  #     DATABASE_URL: postgresql+asyncpg://kevin:123456@postgres:5432/postgres
+  #     # 注意：容器内连 PG 用服务名 postgres，不是 localhost
+  #   ports:
+  #     - "8000:8000"
+
+volumes:
+  pgdata:
