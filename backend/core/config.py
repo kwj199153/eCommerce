@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = Field(default=60, description="Access Token 过期时间(分钟)")
     jwt_refresh_token_expire_days: int = Field(default=7, description="Refresh Token 过期时间(天)")
 
+    # 业务接口强制鉴权开关
+    # False（默认）= 演示模式，业务接口不校验 Token，方便本地演示与联调
+    # True          = 生产模式，全部业务接口要求 Bearer Token，未登录返回 401
+    auth_required: bool = Field(
+        default=False,
+        description="是否强制业务接口鉴权（演示模式默认关闭，生产环境必须开启）",
+    )
+
     # ====== LLM (DashScope/Qwen) ======
     dashscope_api_key: str = Field(default="", description="阿里 DashScope API Key")
     llm_default_model: str = Field(default="qwen-max", description="默认 LLM 模型")

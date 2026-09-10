@@ -74,18 +74,42 @@ async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
     return result.scalar_one_or_none()
 
 
+def _password_bytes(password: str) -> bytes:
+    """
+    把密码编码为 bcrypt 可接受的字节串
+
+    bcrypt 算法本身只取前 72 字节，且 bcrypt>=4.1 遇到超长输入会直接抛
+    ValueError（不再静默截断）。这里显式截断，保证 hash 与 verify 行为一致。
+    """
+    return password.encode("utf-8")[:72]
+
+
 def hash_password(password: str) -> str:
-    """密码哈希（使用 bcrypt）"""
-    from passlib.context import CryptContext
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    return pwd_context.hash(password)
+    """
+    密码哈希（直接使用 bcrypt）
+
+    说明：原先走 passlib.CryptContext，但 passlib 1.7.4（2020 年后未更新）
+    读取已被 bcrypt>=4.1 移除的 `bcrypt.__about__.__version__`，导致
+    注册/登录直接 500。此处改为直接调用 bcrypt，去掉对 passlib 的依赖。
+    生成的哈希仍是标准 bcrypt 格式（$2b$...），与历史数据兼容。
+    """
+    import bcrypt
+
+    return bcrypt.hashpw(_password_bytes(password), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """验证密码"""
-    from passlib.context import CryptContext
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    return pwd_context.verify(plain_password, hashed_password)
+    """验证密码（直接使用 bcrypt，兼容历史 passlib 生成的哈希）"""
+    import bcrypt
+
+    try:
+        return bcrypt.checkpw(
+            _password_bytes(plain_password),
+            hashed_password.encode("utf-8"),
+        )
+    except (ValueError, TypeError):
+        # 哈希格式非法（脏数据）时按验证失败处理，不抛 500
+        return False
 
 
 def user_to_dict(user: User) -> dict:

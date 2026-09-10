@@ -65,6 +65,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️ 候选选品库种子数据跳过: {e}")
 
+    # 启动时：订阅套餐基础数据（free/pro/enterprise）
+    # 缺失会导致注册接口 500：创建默认订阅时 plan_id=1 触发外键约束失败
+    try:
+        from core.billing.usage_tracker import init_default_plans
+        from core.database import get_async_session
+        async with get_async_session() as session:
+            await init_default_plans(session)
+        print("✅ 订阅套餐基础数据已就绪")
+    except Exception as e:
+        print(f"⚠️ 订阅套餐初始化跳过: {e}")
+
     yield  # 应用运行中...
 
     # 关闭时：清理资源
@@ -134,57 +145,67 @@ async def health_check():
 
 # ====== API 路由注册 ======
 
-# 认证模块
+# 业务接口统一鉴权依赖
+# 条件挂载：只有 config.auth_required=True 时才真正挂到路由上，
+#   这样「路由上有依赖」== 「请求真的会被拦」，鉴权覆盖报告不会失真。
+#   False（默认，演示模式）-> BUSINESS_AUTH 为空列表，接口行为与改造前完全一致
+#   True （生产模式）      -> 全部挂载了该依赖的接口要求 Bearer Token，未登录返回 401
+from fastapi import Depends
+from core.auth.dependencies import require_auth_if_enabled
+
+BUSINESS_AUTH = [Depends(require_auth_if_enabled)] if config.auth_required else []
+
+# 认证模块（登录/注册，必须保持开放，否则拿不到 Token）
 from modules.user_subscription.router import router as auth_router
 app.include_router(auth_router, prefix="/api/v1")
 
-# 店铺管理模块
+# 店铺管理模块（自带 get_current_user 鉴权）
 from modules.user_subscription.shop_router import router as shop_router
 app.include_router(shop_router, prefix="/api/v1")
 
-# 计费模块
+# 计费模块（自带鉴权）
 from modules.user_subscription.billing_router import router as billing_router
 app.include_router(billing_router, prefix="/api/v1")
 
-# 选品分析模块 (Phase 2)
+# 选品分析模块 (Phase 2)（自带 get_current_user 鉴权）
 from modules.product_research.router import router as product_research_router
 app.include_router(product_research_router, prefix="/api/v1")
 
 # Listing 生成优化模块 (Phase 3)
 from modules.listing_generator.router import router as listing_generator_router
-app.include_router(listing_generator_router)  # 路由已包含 /api/v1 前缀
+app.include_router(listing_generator_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
 
 # 广告分析模块 (Phase 4)
 from modules.ad_analysis.router import router as ad_analysis_router
-app.include_router(ad_analysis_router, prefix="/api/v1")
+app.include_router(ad_analysis_router, prefix="/api/v1", dependencies=BUSINESS_AUTH)
 
 # 智能客服模块 (Phase 5)
 from modules.customer_service.router import router as customer_service_router
-app.include_router(customer_service_router, prefix="/api/v1")
+app.include_router(customer_service_router, prefix="/api/v1", dependencies=BUSINESS_AUTH)
 
 # 竞品情报监控模块 (Phase 6)
 from modules.competitor_intel.router import router as competitor_intel_router
-app.include_router(competitor_intel_router, prefix="/api/v1")
+app.include_router(competitor_intel_router, prefix="/api/v1", dependencies=BUSINESS_AUTH)
 
 # AIGC 媒体生成模块 (Phase 7)
 from modules.aigc_media.router import router as aigc_media_router
-app.include_router(aigc_media_router, prefix="/api/v1")
+app.include_router(aigc_media_router, prefix="/api/v1", dependencies=BUSINESS_AUTH)
 
 # 店铺群管理 + 动态利润测算模块 (Phase 10)
 from modules.stores.router import router as stores_router
-app.include_router(stores_router)  # 路由已包含 /api/v1 前缀
+app.include_router(stores_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
 
 # 产品库模块（资料库 PG 持久化）
 from modules.products.router import router as products_router
-app.include_router(products_router)  # 路由已包含 /api/v1 前缀
+app.include_router(products_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
 
 # 素材库模块（资料库 PG 持久化）
 from modules.assets.router import router as assets_router
-app.include_router(assets_router)  # 路由已包含 /api/v1 前缀
+app.include_router(assets_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
 
 # 候选选品库模块（资料库 PG 持久化，选品→产品流转）
 from modules.candidates.router import router as candidates_router
-app.include_router(candidates_router)  # 路由已包含 /api/v1 前缀
+app.include_router(candidates_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
 
 
 # ====== 开发模式启动 ======

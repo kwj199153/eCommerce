@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from core.database import get_db
+from core.auth.dependencies import require_auth_if_enabled
 from modules.user_subscription.models import Shop
 
 
@@ -84,6 +85,9 @@ async def get_tenant_from_header(
         async def list_products(shop: Shop = Depends(get_tenant_from_header)):
             # shop 就是当前选中的店铺
             return {"shop_name": shop.name}
+
+    归属校验：当 config.auth_required 为 True 时，会强制校验当前登录用户
+    是目标店铺的所有者（admin 角色可跨租户访问），否则 401/403。
     """
     # 1. 从请求头提取 shop_id
     shop_id = request.headers.get(TENANT_HEADER)
@@ -109,6 +113,16 @@ async def get_tenant_from_header(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="该店铺已被禁用",
         )
+
+    # 2.5 归属校验（仅在启用鉴权时强制；演示模式放行）
+    #     修复前：只要知道 shop_id 即可读写任意店铺数据
+    current_user = await require_auth_if_enabled(request, db)
+    if current_user is not None:
+        if current_user.role.value != "admin" and shop.owner_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="无权访问该店铺",
+            )
 
     # 3. 设置到上下文
     tenant_context.set_shop(shop)
@@ -176,14 +190,23 @@ def require_shop_owner():
             ...
     """
     async def checker(
-        current_user = None,  # TODO: 从 get_current_user 注入
+        request: Request,
+        db: AsyncSession = Depends(get_db),
         shop: Shop = Depends(get_tenant_from_header),
     ) -> Shop:
-        if current_user and shop.owner_id != current_user.id:
+        # 归属校验逻辑复用统一鉴权依赖（admin 越权放行、演示模式返回 None）
+        current_user = await require_auth_if_enabled(request, db)
+
+        if current_user is None:
+            # 演示模式：不强制归属校验，避免影响本地演示
+            return shop
+
+        if current_user.role.value != "admin" and shop.owner_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="无权操作此店铺",
             )
+
         return shop
     return checker
 

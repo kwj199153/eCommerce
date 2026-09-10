@@ -6,10 +6,11 @@
 """
 
 from typing import Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import config
 from core.database import get_db
 from core.auth.jwt_handler import verify_token, TokenData
 from modules.user_subscription.models import User
@@ -130,3 +131,41 @@ async def get_current_active_user(
     用于需要确保用户账号正常的场景。
     """
     return current_user
+
+
+async def require_auth_if_enabled(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Optional[User]:
+    """
+    受开关控制的鉴权依赖（用于路由级批量挂载）
+
+    行为：
+      - config.auth_required = False（演示模式，默认）：直接放行，返回 None
+      - config.auth_required = True（生产模式）：
+          * 缺少 / 格式错误的 Authorization 头 -> 401
+          * Token 无效、过期或用户不存在  -> 401
+          * 用户被禁用                    -> 403
+          * 校验通过                      -> 返回 User 对象
+
+    用途：在 main.py 里以 router 级别挂载，一处覆盖整个模块的所有端点，
+         例如 app.include_router(xxx_router, dependencies=[Depends(require_auth_if_enabled)])
+
+    注意：此依赖只做「认证」（你是谁），不做「授权」（你能不能动这条数据）。
+         数据级归属校验需配合 require_shop_owner / 业务层 tenant 过滤。
+    """
+    if not config.auth_required:
+        return None
+
+    auth_header = request.headers.get("Authorization") or ""
+    scheme, _, raw_token = auth_header.partition(" ")
+    token = raw_token.strip()
+
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="缺少认证凭据，请在 Authorization 头中提供 Bearer Token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return await get_current_user(token=token, db=db)
