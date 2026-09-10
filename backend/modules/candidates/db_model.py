@@ -73,7 +73,7 @@ class CandidateRecord(Base):
     last_monitored_at: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     # 元数据
-    shop_id: Mapped[str] = mapped_column(String(64), default="")
+    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     groups: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # 所属分组 id 列表
@@ -89,5 +89,7 @@ class CandidateGroupRecord(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # cgroup-xxx
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     color: Mapped[str] = mapped_column(String(16), default="#1890ff")
+    # 归属店铺（多租户隔离）
+    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     createdAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
     updatedAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())

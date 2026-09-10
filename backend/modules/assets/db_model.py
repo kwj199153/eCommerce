@@ -37,6 +37,8 @@ class AssetRecord(Base):
     tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     groups: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
+    # 归属店铺（多租户隔离）：store_xxx，绑定 stores_store.id
+    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     createdAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
     updatedAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
 
@@ -48,5 +50,7 @@ class AssetGroupRecord(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # asset-group-xxx
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     color: Mapped[str] = mapped_column(String(16), default="#1890ff")
+    # 归属店铺（多租户隔离）
+    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     createdAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
     updatedAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())

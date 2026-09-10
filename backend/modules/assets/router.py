@@ -18,11 +18,13 @@ DELETE /api/v1/asset-groups/{id}   - 删除分组
 POST   /api/v1/asset-groups/{id}/move - 分组上移/下移
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from typing import Optional
 from datetime import datetime
 
 from sqlalchemy import select
 from core.database import async_session_factory
+from core.tenant.middleware import get_current_shop_id
 from modules.assets.db_model import AssetRecord, AssetGroupRecord
 
 router = APIRouter(prefix="/api/v1", tags=["素材库"])
@@ -67,26 +69,31 @@ def _group_to_dict(g: AssetGroupRecord) -> dict:
 # ====== 素材 CRUD ======
 
 @router.get("/assets")
-async def list_assets():
+async def list_assets(shop_id: Optional[str] = Depends(get_current_shop_id)):
+    if not shop_id:
+        return {"items": [], "total": 0}
     async with async_session_factory() as session:
-        rows = (await session.execute(select(AssetRecord))).scalars().all()
+        rows = (await session.execute(
+            select(AssetRecord).where(AssetRecord.shop_id == shop_id)
+        )).scalars().all()
     items = [_record_to_dict(r) for r in rows]
     return {"items": items, "total": len(items)}
 
 
 @router.get("/assets/{asset_id}")
-async def get_asset(asset_id: str):
+async def get_asset(asset_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(AssetRecord).where(AssetRecord.id == asset_id)
-        )).scalar_one_or_none()
+        q = select(AssetRecord).where(AssetRecord.id == asset_id)
+        if shop_id:
+            q = q.where(AssetRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="素材不存在")
     return _record_to_dict(r)
 
 
 @router.post("/assets", status_code=201)
-async def create_asset(payload: dict):
+async def create_asset(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     now = datetime.utcnow().isoformat()
     aid = payload.get("id") or f"asset-{int(datetime.utcnow().timestamp() * 1000)}"
     record = AssetRecord(
@@ -107,6 +114,7 @@ async def create_asset(payload: dict):
         tags=payload.get("tags") or [],
         groups=payload.get("groups") or [],
         notes=payload.get("notes") or "",
+        shop_id=shop_id or payload.get("shop_id") or "",
         createdAt=payload.get("createdAt") or now,
         updatedAt=now,
     )
@@ -118,11 +126,12 @@ async def create_asset(payload: dict):
 
 
 @router.put("/assets/{asset_id}")
-async def update_asset(asset_id: str, payload: dict):
+async def update_asset(asset_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(AssetRecord).where(AssetRecord.id == asset_id)
-        )).scalar_one_or_none()
+        q = select(AssetRecord).where(AssetRecord.id == asset_id)
+        if shop_id:
+            q = q.where(AssetRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="素材不存在")
         for field in [
@@ -139,11 +148,12 @@ async def update_asset(asset_id: str, payload: dict):
 
 
 @router.delete("/assets/{asset_id}")
-async def delete_asset(asset_id: str):
+async def delete_asset(asset_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(AssetRecord).where(AssetRecord.id == asset_id)
-        )).scalar_one_or_none()
+        q = select(AssetRecord).where(AssetRecord.id == asset_id)
+        if shop_id:
+            q = q.where(AssetRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="素材不存在")
         await session.delete(r)
@@ -152,13 +162,14 @@ async def delete_asset(asset_id: str):
 
 
 @router.post("/assets/batch-delete")
-async def batch_delete_assets(payload: dict):
+async def batch_delete_assets(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     ids = payload.get("ids") or []
     async with async_session_factory() as session:
         for aid in ids:
-            r = (await session.execute(
-                select(AssetRecord).where(AssetRecord.id == aid)
-            )).scalar_one_or_none()
+            q = select(AssetRecord).where(AssetRecord.id == aid)
+            if shop_id:
+                q = q.where(AssetRecord.shop_id == shop_id)
+            r = (await session.execute(q)).scalar_one_or_none()
             if r:
                 await session.delete(r)
         await session.commit()
@@ -168,20 +179,25 @@ async def batch_delete_assets(payload: dict):
 # ====== 分组 CRUD ======
 
 @router.get("/asset-groups")
-async def list_groups():
+async def list_groups(shop_id: Optional[str] = Depends(get_current_shop_id)):
+    if not shop_id:
+        return {"groups": []}
     async with async_session_factory() as session:
-        rows = (await session.execute(select(AssetGroupRecord))).scalars().all()
+        rows = (await session.execute(
+            select(AssetGroupRecord).where(AssetGroupRecord.shop_id == shop_id)
+        )).scalars().all()
     return {"groups": [_group_to_dict(g) for g in rows]}
 
 
 @router.post("/asset-groups", status_code=201)
-async def create_group(payload: dict):
+async def create_group(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     now = datetime.utcnow().isoformat()
     gid = payload.get("id") or f"asset-group-{int(datetime.utcnow().timestamp() * 1000)}"
     record = AssetGroupRecord(
         id=gid,
         name=payload.get("name") or "新分组",
         color=payload.get("color") or "#1890ff",
+        shop_id=shop_id or payload.get("shop_id") or "",
         createdAt=now,
         updatedAt=now,
     )
@@ -193,11 +209,12 @@ async def create_group(payload: dict):
 
 
 @router.put("/asset-groups/{group_id}")
-async def update_group(group_id: str, payload: dict):
+async def update_group(group_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        g = (await session.execute(
-            select(AssetGroupRecord).where(AssetGroupRecord.id == group_id)
-        )).scalar_one_or_none()
+        q = select(AssetGroupRecord).where(AssetGroupRecord.id == group_id)
+        if shop_id:
+            q = q.where(AssetGroupRecord.shop_id == shop_id)
+        g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
         if "name" in payload:
@@ -211,15 +228,19 @@ async def update_group(group_id: str, payload: dict):
 
 
 @router.delete("/asset-groups/{group_id}")
-async def delete_group(group_id: str):
+async def delete_group(group_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        g = (await session.execute(
-            select(AssetGroupRecord).where(AssetGroupRecord.id == group_id)
-        )).scalar_one_or_none()
+        q = select(AssetGroupRecord).where(AssetGroupRecord.id == group_id)
+        if shop_id:
+            q = q.where(AssetGroupRecord.shop_id == shop_id)
+        g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
         await session.delete(g)
-        assets = (await session.execute(select(AssetRecord))).scalars().all()
+        aq = select(AssetRecord)
+        if shop_id:
+            aq = aq.where(AssetRecord.shop_id == shop_id)
+        assets = (await session.execute(aq)).scalars().all()
         for a in assets:
             if a.groups and group_id in a.groups:
                 a.groups = [x for x in a.groups if x != group_id]
@@ -228,11 +249,14 @@ async def delete_group(group_id: str):
 
 
 @router.post("/asset-groups/{group_id}/move")
-async def move_group(group_id: str, payload: dict):
+async def move_group(group_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     direction = payload.get("direction") or "down"
     async with async_session_factory() as session:
+        q = select(AssetGroupRecord)
+        if shop_id:
+            q = q.where(AssetGroupRecord.shop_id == shop_id)
         rows = (await session.execute(
-            select(AssetGroupRecord).order_by(AssetGroupRecord.createdAt)
+            q.order_by(AssetGroupRecord.createdAt)
         )).scalars().all()
         idx = next((i for i, g in enumerate(rows) if g.id == group_id), -1)
         if idx == -1:

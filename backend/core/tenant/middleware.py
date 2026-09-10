@@ -176,6 +176,29 @@ async def get_tenant_from_query(
     return None
 
 
+# ====== 轻量店铺 ID 依赖（数据层隔离用） ======
+
+async def get_current_shop_id(request: Request) -> Optional[str]:
+    """
+    从请求头提取当前选中店铺 ID（stores_store.id，格式 store_xxx）。
+
+    与 get_tenant_from_header 的区别：
+    - 前者查 shops 表（user_subscription，UUID），用于订阅/归属校验；
+    - 本依赖直接返回 header 里的 store_xxx 字符串，用于业务数据（spus/
+      candidates/assets）的 shop_id 过滤，不做表校验（stores_store 目前
+      无 owner 概念，归属由后续 tenant_id 补全）。
+
+    用法：
+        @router.get("/products")
+        async def list_products(shop_id: Optional[str] = Depends(get_current_shop_id)):
+            if shop_id:
+                q = q.where(Record.shop_id == shop_id)
+            else:
+                return {"items": [], "total": 0}  # 未选店铺返回空
+    """
+    return request.headers.get(TENANT_HEADER)
+
+
 # ====== 权限检查 ======
 
 def require_shop_owner():

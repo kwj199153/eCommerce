@@ -9,6 +9,7 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { get, post, put, del } from '@/api/request'
 
 // ====== 类型定义 ======
 
@@ -79,6 +80,12 @@ export const useShopStore = defineStore('shop', () => {
         if (shops.value.length > 0) {
           setCurrentShop(shops.value[0].id)
         }
+      }
+
+      // 数据层隔离：未选店铺时后端返回空，这里兜底自动选中第一个店铺，
+      // 避免「一打开全空」影响演示体验
+      if (!currentShopId.value && shops.value.length > 0) {
+        setCurrentShop(shops.value[0].id)
       }
     } catch (error) {
       console.error('加载店铺列表失败:', error)

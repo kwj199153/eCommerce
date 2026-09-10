@@ -26,12 +26,13 @@ POST   /api/v1/products/batch-delete - 批量删除（兼容）
 分组端点（product-groups）保持不变。
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional, List
 from datetime import datetime
 
 from sqlalchemy import select
 from core.database import async_session_factory
+from core.tenant.middleware import get_current_shop_id
 from modules.products.db_model import SpuRecord, SkuRecord, ProductGroupRecord
 
 router = APIRouter(prefix="/api/v1", tags=["产品库"])
@@ -115,26 +116,31 @@ def _group_to_dict(g: ProductGroupRecord) -> dict:
 # ====== SPU CRUD ======
 
 @router.get("/spus")
-async def list_spus():
+async def list_spus(shop_id: Optional[str] = Depends(get_current_shop_id)):
+    if not shop_id:
+        return {"items": [], "total": 0}
     async with async_session_factory() as session:
-        rows = (await session.execute(select(SpuRecord))).scalars().all()
+        rows = (await session.execute(
+            select(SpuRecord).where(SpuRecord.shop_id == shop_id)
+        )).scalars().all()
     items = [_spu_to_dict(r) for r in rows]
     return {"items": items, "total": len(items)}
 
 
 @router.get("/spus/{spu_id}")
-async def get_spu(spu_id: str):
+async def get_spu(spu_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(SpuRecord).where(SpuRecord.id == spu_id)
-        )).scalar_one_or_none()
+        q = select(SpuRecord).where(SpuRecord.id == spu_id)
+        if shop_id:
+            q = q.where(SpuRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="SPU 不存在")
     return _spu_to_dict(r)
 
 
 @router.post("/spus", status_code=201)
-async def create_spu(payload: dict):
+async def create_spu(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     now = datetime.utcnow().isoformat()
     spu_id = payload.get("id") or f"spu-{int(datetime.utcnow().timestamp() * 1000)}"
     record = SpuRecord(
@@ -150,7 +156,7 @@ async def create_spu(payload: dict):
         main_image=payload.get("main_image") or "",
         images=payload.get("images") or [],
         spu_common=payload.get("spu_common"),
-        shop_id=payload.get("shop_id") or "",
+        shop_id=shop_id or payload.get("shop_id") or "",
         tags=payload.get("tags") or [],
         notes=payload.get("notes") or "",
         status=payload.get("status") or "active",
@@ -166,11 +172,12 @@ async def create_spu(payload: dict):
 
 
 @router.put("/spus/{spu_id}")
-async def update_spu(spu_id: str, payload: dict):
+async def update_spu(spu_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(SpuRecord).where(SpuRecord.id == spu_id)
-        )).scalar_one_or_none()
+        q = select(SpuRecord).where(SpuRecord.id == spu_id)
+        if shop_id:
+            q = q.where(SpuRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="SPU 不存在")
 
@@ -178,7 +185,7 @@ async def update_spu(spu_id: str, payload: dict):
             "title", "brand", "category", "sub_category", "spu_theme",
             "keywords", "selling_points", "description",
             "main_image", "images", "spu_common",
-            "shop_id", "tags", "notes", "status", "groups",
+            "tags", "notes", "status", "groups",
         ]:
             if field in payload:
                 setattr(r, field, payload[field])
@@ -189,11 +196,12 @@ async def update_spu(spu_id: str, payload: dict):
 
 
 @router.delete("/spus/{spu_id}")
-async def delete_spu(spu_id: str):
+async def delete_spu(spu_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(SpuRecord).where(SpuRecord.id == spu_id)
-        )).scalar_one_or_none()
+        q = select(SpuRecord).where(SpuRecord.id == spu_id)
+        if shop_id:
+            q = q.where(SpuRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="SPU 不存在")
         # 级联删除其下 SKU
@@ -210,9 +218,14 @@ async def delete_spu(spu_id: str):
 # ====== SKU CRUD ======
 
 @router.get("/skus")
-async def list_skus(spu_id: Optional[str] = Query(None)):
+async def list_skus(spu_id: Optional[str] = Query(None), shop_id: Optional[str] = Depends(get_current_shop_id)):
+    if not shop_id:
+        return {"items": [], "total": 0}
     async with async_session_factory() as session:
-        q = select(SkuRecord)
+        # SKU 通过 spu_id 归属 SPU，join 过滤 shop_id
+        q = select(SkuRecord).join(SpuRecord, SkuRecord.spu_id == SpuRecord.id).where(
+            SpuRecord.shop_id == shop_id
+        )
         if spu_id:
             q = q.where(SkuRecord.spu_id == spu_id)
         rows = (await session.execute(q)).scalars().all()
@@ -221,23 +234,33 @@ async def list_skus(spu_id: Optional[str] = Query(None)):
 
 
 @router.get("/skus/{sku_id}")
-async def get_sku(sku_id: str):
+async def get_sku(sku_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(SkuRecord).where(SkuRecord.id == sku_id)
-        )).scalar_one_or_none()
+        q = select(SkuRecord).where(SkuRecord.id == sku_id)
+        if shop_id:
+            q = q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id).where(SpuRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="SKU 不存在")
     return _sku_to_dict(r)
 
 
 @router.post("/skus", status_code=201)
-async def create_sku(payload: dict):
+async def create_sku(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     now = datetime.utcnow().isoformat()
     sku_id = payload.get("id") or f"sku-{int(datetime.utcnow().timestamp() * 1000)}"
+    # 校验 SPU 归属（防止跨店铺写入 SKU）
+    spu_id = payload.get("spu_id") or ""
+    if shop_id and spu_id:
+        async with async_session_factory() as session:
+            spu = (await session.execute(
+                select(SpuRecord).where(SpuRecord.id == spu_id, SpuRecord.shop_id == shop_id)
+            )).scalar_one_or_none()
+            if not spu:
+                raise HTTPException(status_code=404, detail="所属 SPU 不存在或不属于当前店铺")
     record = SkuRecord(
         id=sku_id,
-        spu_id=payload.get("spu_id") or "",
+        spu_id=spu_id,
         spec_value=payload.get("spec_value"),
         asin=payload.get("asin") or "",
         sku_code=payload.get("sku_code") or f"SKU-{sku_id}",
@@ -279,11 +302,12 @@ async def create_sku(payload: dict):
 
 
 @router.put("/skus/{sku_id}")
-async def update_sku(sku_id: str, payload: dict):
+async def update_sku(sku_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(SkuRecord).where(SkuRecord.id == sku_id)
-        )).scalar_one_or_none()
+        q = select(SkuRecord).where(SkuRecord.id == sku_id)
+        if shop_id:
+            q = q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id).where(SpuRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="SKU 不存在")
 
@@ -307,11 +331,12 @@ async def update_sku(sku_id: str, payload: dict):
 
 
 @router.delete("/skus/{sku_id}")
-async def delete_sku(sku_id: str):
+async def delete_sku(sku_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(SkuRecord).where(SkuRecord.id == sku_id)
-        )).scalar_one_or_none()
+        q = select(SkuRecord).where(SkuRecord.id == sku_id)
+        if shop_id:
+            q = q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id).where(SpuRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="SKU 不存在")
         await session.delete(r)
@@ -320,12 +345,13 @@ async def delete_sku(sku_id: str):
 
 
 @router.patch("/skus/{sku_id}/listing")
-async def update_sku_listing(sku_id: str, payload: dict):
+async def update_sku_listing(sku_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     """Listing 优化工具写回：增量更新 SKU 标题/五点/A+/SEO，维护历史版本"""
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(SkuRecord).where(SkuRecord.id == sku_id)
-        )).scalar_one_or_none()
+        q = select(SkuRecord).where(SkuRecord.id == sku_id)
+        if shop_id:
+            q = q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id).where(SpuRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="SKU 不存在")
 
@@ -366,11 +392,17 @@ async def update_sku_listing(sku_id: str, payload: dict):
 # ====== 聚合端点（兼容旧 /products 消费方） ======
 
 @router.get("/products")
-async def list_products_aggregated():
+async def list_products_aggregated(shop_id: Optional[str] = Depends(get_current_shop_id)):
     """返回 SPU 树（带 skus children）+ 独立 SKU 平铺，兼容前端旧消费方。"""
+    if not shop_id:
+        return {"items": [], "total": 0}
     async with async_session_factory() as session:
-        spus = (await session.execute(select(SpuRecord))).scalars().all()
-        skus = (await session.execute(select(SkuRecord))).scalars().all()
+        spus = (await session.execute(
+            select(SpuRecord).where(SpuRecord.shop_id == shop_id)
+        )).scalars().all()
+        skus = (await session.execute(
+            select(SkuRecord).join(SpuRecord, SkuRecord.spu_id == SpuRecord.id).where(SpuRecord.shop_id == shop_id)
+        )).scalars().all()
     sku_map = {}
     for s in skus:
         sku_map.setdefault(s.spu_id, []).append(s)
@@ -385,12 +417,13 @@ async def list_products_aggregated():
 
 
 @router.get("/products/{product_id}")
-async def get_product_aggregated(product_id: str):
+async def get_product_aggregated(product_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     """按 id 查 SPU 或 SKU，返回带类型标记的聚合详情。"""
     async with async_session_factory() as session:
-        spu = (await session.execute(
-            select(SpuRecord).where(SpuRecord.id == product_id)
-        )).scalar_one_or_none()
+        spu_q = select(SpuRecord).where(SpuRecord.id == product_id)
+        if shop_id:
+            spu_q = spu_q.where(SpuRecord.shop_id == shop_id)
+        spu = (await session.execute(spu_q)).scalar_one_or_none()
         if spu:
             d = _spu_to_dict(spu)
             d["is_spu"] = True
@@ -399,9 +432,10 @@ async def get_product_aggregated(product_id: str):
             )).scalars().all()
             d["skus"] = [_sku_to_dict(s) for s in skus]
             return d
-        sku = (await session.execute(
-            select(SkuRecord).where(SkuRecord.id == product_id)
-        )).scalar_one_or_none()
+        sku_q = select(SkuRecord).where(SkuRecord.id == product_id)
+        if shop_id:
+            sku_q = sku_q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id).where(SpuRecord.shop_id == shop_id)
+        sku = (await session.execute(sku_q)).scalar_one_or_none()
         if sku:
             d = _sku_to_dict(sku)
             d["is_spu"] = False
@@ -410,13 +444,14 @@ async def get_product_aggregated(product_id: str):
 
 
 @router.post("/products/batch-delete")
-async def batch_delete_products(payload: dict):
+async def batch_delete_products(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     ids = payload.get("ids") or []
     async with async_session_factory() as session:
         for pid in ids:
-            spu = (await session.execute(
-                select(SpuRecord).where(SpuRecord.id == pid)
-            )).scalar_one_or_none()
+            spu_q = select(SpuRecord).where(SpuRecord.id == pid)
+            if shop_id:
+                spu_q = spu_q.where(SpuRecord.shop_id == shop_id)
+            spu = (await session.execute(spu_q)).scalar_one_or_none()
             if spu:
                 skus = (await session.execute(
                     select(SkuRecord).where(SkuRecord.spu_id == pid)
@@ -425,9 +460,10 @@ async def batch_delete_products(payload: dict):
                     await session.delete(s)
                 await session.delete(spu)
                 continue
-            sku = (await session.execute(
-                select(SkuRecord).where(SkuRecord.id == pid)
-            )).scalar_one_or_none()
+            sku_q = select(SkuRecord).where(SkuRecord.id == pid)
+            if shop_id:
+                sku_q = sku_q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id).where(SpuRecord.shop_id == shop_id)
+            sku = (await session.execute(sku_q)).scalar_one_or_none()
             if sku:
                 await session.delete(sku)
         await session.commit()
@@ -437,20 +473,25 @@ async def batch_delete_products(payload: dict):
 # ====== 分组 CRUD ======
 
 @router.get("/product-groups")
-async def list_groups():
+async def list_groups(shop_id: Optional[str] = Depends(get_current_shop_id)):
+    if not shop_id:
+        return {"groups": []}
     async with async_session_factory() as session:
-        rows = (await session.execute(select(ProductGroupRecord))).scalars().all()
+        rows = (await session.execute(
+            select(ProductGroupRecord).where(ProductGroupRecord.shop_id == shop_id)
+        )).scalars().all()
     return {"groups": [_group_to_dict(g) for g in rows]}
 
 
 @router.post("/product-groups", status_code=201)
-async def create_group(payload: dict):
+async def create_group(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     now = datetime.utcnow().isoformat()
     gid = payload.get("id") or f"group-{int(datetime.utcnow().timestamp() * 1000)}"
     record = ProductGroupRecord(
         id=gid,
         name=payload.get("name") or "新分组",
         color=payload.get("color") or "#1890ff",
+        shop_id=shop_id or payload.get("shop_id") or "",
         createdAt=now,
         updatedAt=now,
     )
@@ -462,11 +503,12 @@ async def create_group(payload: dict):
 
 
 @router.put("/product-groups/{group_id}")
-async def update_group(group_id: str, payload: dict):
+async def update_group(group_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        g = (await session.execute(
-            select(ProductGroupRecord).where(ProductGroupRecord.id == group_id)
-        )).scalar_one_or_none()
+        q = select(ProductGroupRecord).where(ProductGroupRecord.id == group_id)
+        if shop_id:
+            q = q.where(ProductGroupRecord.shop_id == shop_id)
+        g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
         if "name" in payload:
@@ -480,16 +522,20 @@ async def update_group(group_id: str, payload: dict):
 
 
 @router.delete("/product-groups/{group_id}")
-async def delete_group(group_id: str):
+async def delete_group(group_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        g = (await session.execute(
-            select(ProductGroupRecord).where(ProductGroupRecord.id == group_id)
-        )).scalar_one_or_none()
+        q = select(ProductGroupRecord).where(ProductGroupRecord.id == group_id)
+        if shop_id:
+            q = q.where(ProductGroupRecord.shop_id == shop_id)
+        g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
         await session.delete(g)
-        # 从所有 SPU 的 groups 里移除该分组 id
-        spus = (await session.execute(select(SpuRecord))).scalars().all()
+        # 从当前店铺的 SPU 的 groups 里移除该分组 id
+        spu_q = select(SpuRecord)
+        if shop_id:
+            spu_q = spu_q.where(SpuRecord.shop_id == shop_id)
+        spus = (await session.execute(spu_q)).scalars().all()
         for p in spus:
             if p.groups and group_id in p.groups:
                 p.groups = [x for x in p.groups if x != group_id]
@@ -498,12 +544,15 @@ async def delete_group(group_id: str):
 
 
 @router.post("/product-groups/{group_id}/move")
-async def move_group(group_id: str, payload: dict):
+async def move_group(group_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     """分组上移/下移。direction: 'up' | 'down'"""
     direction = payload.get("direction") or "down"
     async with async_session_factory() as session:
+        q = select(ProductGroupRecord)
+        if shop_id:
+            q = q.where(ProductGroupRecord.shop_id == shop_id)
         rows = (await session.execute(
-            select(ProductGroupRecord).order_by(ProductGroupRecord.createdAt)
+            q.order_by(ProductGroupRecord.createdAt)
         )).scalars().all()
         idx = next((i for i, g in enumerate(rows) if g.id == group_id), -1)
         if idx == -1:

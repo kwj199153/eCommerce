@@ -20,11 +20,13 @@ PUT    /api/v1/candidate-groups/{id}         - 更新分组
 DELETE /api/v1/candidate-groups/{id}         - 删除分组
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from typing import Optional
 from datetime import datetime
 
 from sqlalchemy import select
 from core.database import async_session_factory
+from core.tenant.middleware import get_current_shop_id
 from modules.candidates.db_model import CandidateRecord, CandidateGroupRecord
 from modules.products.db_model import SpuRecord
 
@@ -90,28 +92,33 @@ def _group_to_dict(g: CandidateGroupRecord) -> dict:
 # ====== 候选 CRUD ======
 
 @router.get("/candidates")
-async def list_candidates():
+async def list_candidates(shop_id: Optional[str] = Depends(get_current_shop_id)):
+    if not shop_id:
+        return {"items": [], "total": 0}
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(CandidateRecord).order_by(CandidateRecord.updated_at.desc())
+            select(CandidateRecord)
+            .where(CandidateRecord.shop_id == shop_id)
+            .order_by(CandidateRecord.updated_at.desc())
         )).scalars().all()
     items = [_record_to_dict(r) for r in rows]
     return {"items": items, "total": len(items)}
 
 
 @router.get("/candidates/{candidate_id}")
-async def get_candidate(candidate_id: str):
+async def get_candidate(candidate_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(CandidateRecord).where(CandidateRecord.id == candidate_id)
-        )).scalar_one_or_none()
+        q = select(CandidateRecord).where(CandidateRecord.id == candidate_id)
+        if shop_id:
+            q = q.where(CandidateRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="候选不存在")
     return _record_to_dict(r)
 
 
 @router.post("/candidates", status_code=201)
-async def create_candidate(payload: dict):
+async def create_candidate(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     now = datetime.utcnow().isoformat()
     cid = payload.get("id") or f"cand-{int(datetime.utcnow().timestamp() * 1000)}"
     record = CandidateRecord(
@@ -147,7 +154,7 @@ async def create_candidate(payload: dict):
         reviewed_by=payload.get("reviewed_by"),
         monitor_data=payload.get("monitor_data"),
         last_monitored_at=payload.get("last_monitored_at"),
-        shop_id=payload.get("shop_id") or "",
+        shop_id=shop_id or payload.get("shop_id") or "",
         tags=payload.get("tags") or [],
         notes=payload.get("notes") or "",
         groups=payload.get("groups") or [],
@@ -162,11 +169,12 @@ async def create_candidate(payload: dict):
 
 
 @router.put("/candidates/{candidate_id}")
-async def update_candidate(candidate_id: str, payload: dict):
+async def update_candidate(candidate_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(CandidateRecord).where(CandidateRecord.id == candidate_id)
-        )).scalar_one_or_none()
+        q = select(CandidateRecord).where(CandidateRecord.id == candidate_id)
+        if shop_id:
+            q = q.where(CandidateRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="候选不存在")
 
@@ -180,7 +188,7 @@ async def update_candidate(candidate_id: str, payload: dict):
             "main_image", "images", "source",
             "review_status", "review_notes", "reviewed_at", "reviewed_by",
             "monitor_data", "last_monitored_at",
-            "shop_id", "tags", "notes", "groups",
+            "tags", "notes", "groups",
         ]:
             if field in payload:
                 setattr(r, field, payload[field])
@@ -191,12 +199,13 @@ async def update_candidate(candidate_id: str, payload: dict):
 
 
 @router.patch("/candidates/{candidate_id}/review")
-async def review_candidate(candidate_id: str, payload: dict):
+async def review_candidate(candidate_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     """评审状态流转：payload = { review_status, review_notes?, reviewed_by? }"""
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(CandidateRecord).where(CandidateRecord.id == candidate_id)
-        )).scalar_one_or_none()
+        q = select(CandidateRecord).where(CandidateRecord.id == candidate_id)
+        if shop_id:
+            q = q.where(CandidateRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="候选不存在")
 
@@ -215,12 +224,13 @@ async def review_candidate(candidate_id: str, payload: dict):
 
 
 @router.post("/candidates/{candidate_id}/monitor")
-async def monitor_candidate(candidate_id: str, payload: dict):
+async def monitor_candidate(candidate_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     """竞品监控员回填数据快照：payload = { monitor_data, last_monitored_at? }"""
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(CandidateRecord).where(CandidateRecord.id == candidate_id)
-        )).scalar_one_or_none()
+        q = select(CandidateRecord).where(CandidateRecord.id == candidate_id)
+        if shop_id:
+            q = q.where(CandidateRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="候选不存在")
         r.monitor_data = payload.get("monitor_data", r.monitor_data)
@@ -232,16 +242,17 @@ async def monitor_candidate(candidate_id: str, payload: dict):
 
 
 @router.post("/candidates/{candidate_id}/approve")
-async def approve_candidate(candidate_id: str, payload: dict = None):
+async def approve_candidate(candidate_id: str, payload: dict = None, shop_id: Optional[str] = Depends(get_current_shop_id)):
     """
     评审通过：复制到自有产品库（status='draft' 待完善 Listing）作为上架物料档案，
     候选本身保留并标记 approved，作为不可覆盖的原始评估基线。原子事务。
     """
     payload = payload or {}
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(CandidateRecord).where(CandidateRecord.id == candidate_id)
-        )).scalar_one_or_none()
+        q = select(CandidateRecord).where(CandidateRecord.id == candidate_id)
+        if shop_id:
+            q = q.where(CandidateRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="候选不存在")
 
@@ -297,11 +308,12 @@ async def approve_candidate(candidate_id: str, payload: dict = None):
 
 
 @router.delete("/candidates/{candidate_id}")
-async def delete_candidate(candidate_id: str):
+async def delete_candidate(candidate_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        r = (await session.execute(
-            select(CandidateRecord).where(CandidateRecord.id == candidate_id)
-        )).scalar_one_or_none()
+        q = select(CandidateRecord).where(CandidateRecord.id == candidate_id)
+        if shop_id:
+            q = q.where(CandidateRecord.shop_id == shop_id)
+        r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="候选不存在")
         await session.delete(r)
@@ -310,13 +322,14 @@ async def delete_candidate(candidate_id: str):
 
 
 @router.post("/candidates/batch-delete")
-async def batch_delete_candidates(payload: dict):
+async def batch_delete_candidates(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     ids = payload.get("ids") or []
     async with async_session_factory() as session:
         for cid in ids:
-            r = (await session.execute(
-                select(CandidateRecord).where(CandidateRecord.id == cid)
-            )).scalar_one_or_none()
+            q = select(CandidateRecord).where(CandidateRecord.id == cid)
+            if shop_id:
+                q = q.where(CandidateRecord.shop_id == shop_id)
+            r = (await session.execute(q)).scalar_one_or_none()
             if r:
                 await session.delete(r)
         await session.commit()
@@ -326,20 +339,25 @@ async def batch_delete_candidates(payload: dict):
 # ====== 分组 CRUD ======
 
 @router.get("/candidate-groups")
-async def list_groups():
+async def list_groups(shop_id: Optional[str] = Depends(get_current_shop_id)):
+    if not shop_id:
+        return {"groups": []}
     async with async_session_factory() as session:
-        rows = (await session.execute(select(CandidateGroupRecord))).scalars().all()
+        rows = (await session.execute(
+            select(CandidateGroupRecord).where(CandidateGroupRecord.shop_id == shop_id)
+        )).scalars().all()
     return {"groups": [_group_to_dict(g) for g in rows]}
 
 
 @router.post("/candidate-groups", status_code=201)
-async def create_group(payload: dict):
+async def create_group(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     now = datetime.utcnow().isoformat()
     gid = payload.get("id") or f"cgroup-{int(datetime.utcnow().timestamp() * 1000)}"
     record = CandidateGroupRecord(
         id=gid,
         name=payload.get("name") or "新分组",
         color=payload.get("color") or "#1890ff",
+        shop_id=shop_id or payload.get("shop_id") or "",
         createdAt=now,
         updatedAt=now,
     )
@@ -351,11 +369,12 @@ async def create_group(payload: dict):
 
 
 @router.put("/candidate-groups/{group_id}")
-async def update_group(group_id: str, payload: dict):
+async def update_group(group_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        g = (await session.execute(
-            select(CandidateGroupRecord).where(CandidateGroupRecord.id == group_id)
-        )).scalar_one_or_none()
+        q = select(CandidateGroupRecord).where(CandidateGroupRecord.id == group_id)
+        if shop_id:
+            q = q.where(CandidateGroupRecord.shop_id == shop_id)
+        g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
         if "name" in payload:
@@ -369,16 +388,20 @@ async def update_group(group_id: str, payload: dict):
 
 
 @router.delete("/candidate-groups/{group_id}")
-async def delete_group(group_id: str):
+async def delete_group(group_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
-        g = (await session.execute(
-            select(CandidateGroupRecord).where(CandidateGroupRecord.id == group_id)
-        )).scalar_one_or_none()
+        q = select(CandidateGroupRecord).where(CandidateGroupRecord.id == group_id)
+        if shop_id:
+            q = q.where(CandidateGroupRecord.shop_id == shop_id)
+        g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
         await session.delete(g)
-        # 从所有候选的 groups 里移除该分组 id
-        candidates = (await session.execute(select(CandidateRecord))).scalars().all()
+        # 从当前店铺候选的 groups 里移除该分组 id
+        cq = select(CandidateRecord)
+        if shop_id:
+            cq = cq.where(CandidateRecord.shop_id == shop_id)
+        candidates = (await session.execute(cq)).scalars().all()
         for c in candidates:
             if c.groups and group_id in c.groups:
                 c.groups = [x for x in c.groups if x != group_id]

@@ -55,7 +55,7 @@ class SpuRecord(Base):
     spu_common: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # 元数据
-    shop_id: Mapped[str] = mapped_column(String(64), default="")
+    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(16), default="active")
@@ -129,5 +129,7 @@ class ProductGroupRecord(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # group-xxx
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     color: Mapped[str] = mapped_column(String(16), default="#1890ff")
+    # 归属店铺（多租户隔离）
+    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     createdAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
     updatedAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
