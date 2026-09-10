@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from core.database import get_db
+from core.auth.dependencies import get_current_user
 from core.auth.jwt_handler import (
     create_token_pair,
     verify_token,
@@ -300,15 +301,20 @@ async def refresh_token(
 
 @router.get("/me", response_model=dict)
 async def get_current_user_info(
-    current_user: User = Depends(get_db),  # TODO: 替换为真实的依赖注入
+    current_user: User = Depends(get_current_user),
 ):
     """
     获取当前登录用户信息
 
     需要 Bearer Token 认证
     """
-    # TODO: 实现真实的当前用户依赖注入
-    return {"detail": "TODO: 实现 /auth/me 接口"}
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "role": current_user.role.value,
+        "is_active": current_user.is_active,
+        "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+    }
 
 
 @router.post("/logout")

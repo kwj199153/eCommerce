@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
-from core.auth.dependencies import get_current_user
+from core.auth.dependencies import get_current_user, get_admin_user
 from core.billing.usage_tracker import UsageTracker, init_default_plans
 from modules.user_subscription.models import User
 
@@ -38,6 +38,9 @@ async def list_plans(
     获取所有可用的订阅套餐列表
 
     用于前端展示套餐选择页面。
+
+    说明：套餐列表属于公开信息（用户在登录/注册前即可查看定价），
+    故不挂鉴权依赖。若后续套餐含敏感信息（如渠道折扣），再收紧。
     """
     from sqlalchemy import select
     from modules.user_subscription.models import SubscriptionPlan
@@ -115,13 +118,13 @@ async def get_current_subscription(
 
 @router.post("/init-plans")
 async def initialize_plans(
-    # admin_user: User = Depends(require_permissions("admin")),  # TODO: 启用权限检查
+    admin_user: User = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     初始化默认套餐数据（仅首次部署时调用）
 
-    ⚠️ 管理员接口，生产环境应移除或加强权限控制。
+    ⚠️ 管理员接口：仅 admin 角色可调用，防止任意用户重置套餐数据。
     """
     await init_default_plans(db)
     return {"message": "套餐数据初始化完成"}
