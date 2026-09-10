@@ -123,8 +123,8 @@
         <a-steps :current="analysisProgress" size="small" direction="vertical">
           <a-step title="采集竞品数据" description="获取各竞品 Listing 信息" />
           <a-step title="多维度解析" :description="`分析 ${compareForm.dimensions.length} 个对比维度`" />
-          <a-step title="SWOT 建模" :description="识别各竞品优劣势" />
-          <a-step title="生成对比报告" :description="输出市场定位建议" />
+          <a-step title="SWOT 建模" description="识别各竞品优劣势" />
+          <a-step title="生成对比报告" description="输出市场定位建议" />
         </a-steps>
       </div>
     </div>
@@ -135,15 +135,15 @@
       <div class="overview-bar">
         <div class="overview-stat">
           <span class="stat-label">对比竞品</span>
-          <span class="stat-value">{{ compareResult.competitors.length }} 个</span>
+          <span class="stat-value">{{ compareResult!.competitors.length }} 个</span>
         </div>
         <div class="overview-stat">
           <span class="stat-label">价格区间</span>
-          <span class="stat-value">${{ compareResult.price_range.min }} - ${{ compareResult.price_range.max }}</span>
+          <span class="stat-value">${{ compareResult!.price_range.min }} - ${{ compareResult!.price_range.max }}</span>
         </div>
         <div class="overview-stat">
           <span class="stat-label">平均评分</span>
-          <span class="stat-value">{{ compareResult.avg_rating.toFixed(1) }} ⭐</span>
+          <span class="stat-value">{{ compareResult!.avg_rating.toFixed(1) }} ⭐</span>
         </div>
         <div class="overview-stat highlight">
           <span class="stat-label">市场领导者</span>
@@ -166,12 +166,12 @@
         <!-- 表格视图 -->
         <a-table
           v-if="viewMode === 'table'"
-          :dataSource="compareResult.competitors"
+          :dataSource="compareResult!.competitors"
           :columns="compareColumns"
           :pagination="false"
           size="small"
           row-key="asin"
-          :row-class-name="(record: MockCompetitor) => record.asin === compareResult.market_leader ? 'row-leader' : ''"
+          :row-class-name="(record: MockCompetitor) => record.asin === compareResult!.market_leader ? 'row-leader' : ''"
         >
           <template #bodyCell="{ column, record }">
             <!-- 商品信息 -->
@@ -179,7 +179,7 @@
               <div class="product-cell">
                 <div class="product-brand">{{ record.brand }}</div>
                 <div class="product-title-text">{{ record.title.slice(0, 45) }}...</div>
-                <a-tag v-if="record.asin === compareResult.market_leader" color="gold" size="small">👑 领导者</a-tag>
+                <a-tag v-if="record.asin === compareResult!.market_leader" color="gold" size="small">👑 领导者</a-tag>
               </div>
             </template>
 
@@ -240,11 +240,11 @@
         <!-- 卡片视图 -->
         <div v-else class="card-view">
           <a-row :gutter="[12, 12]">
-            <a-col v-for="comp in compareResult.competitors" :key="comp.asin" :span="12">
-              <div class="competitor-card" :class="{ 'is-leader': comp.asin === compareResult.market_leader }">
+            <a-col v-for="comp in compareResult!.competitors" :key="comp.asin" :span="12">
+              <div class="competitor-card" :class="{ 'is-leader': comp.asin === compareResult!.market_leader }">
                 <div class="card-header">
                   <span class="card-brand">{{ comp.brand }}</span>
-                  <a-tag v-if="comp.asin === compareResult.market_leader" color="gold" size="small">👑 领导者</a-tag>
+                  <a-tag v-if="comp.asin === compareResult!.market_leader" color="gold" size="small">👑 领导者</a-tag>
                 </div>
                 <div class="card-title">{{ comp.title.slice(0, 50) }}...</div>
                 <div class="card-stats">
@@ -328,12 +328,12 @@
             <text x="372" y="177" text-anchor="middle" font-size="10" fill="#cf1322" font-weight="600">⚠️ 低质低价区</text>
 
             <!-- 数据点 -->
-            <g v-for="(comp, idx) in compareResult.competitors" :key="comp.asin">
+            <g v-for="(comp, idx) in compareResult!.competitors" :key="comp.asin">
               <circle
                 :cx="getXPosition(comp.price)"
                 :cy="getYPosition(comp.rating)"
                 :r="getBubbleRadius(comp.review_count)"
-                :fill="comp.asin === compareResult.market_leader ? '#faad14' : '#1890ff'"
+                :fill="comp.asin === compareResult!.market_leader ? '#faad14' : '#1890ff'"
                 fill-opacity="0.65"
                 stroke="#fff"
                 stroke-width="2"
@@ -345,7 +345,7 @@
                 text-anchor="middle"
                 font-size="9"
                 font-weight="500"
-                :fill="comp.asin === compareResult.market_leader ? '#d48806' : '#262626'"
+                :fill="comp.asin === compareResult!.market_leader ? '#d48806' : '#262626'"
               >{{ comp.brand.slice(0, 6) }}</text>
             </g>
           </svg>
@@ -373,7 +373,7 @@
               <div class="swot-box opportunity">
                 <div class="swot-box-title">O 机会 (进入窗口)</div>
                 <ul>
-                  <li v-for="item in compareResult.opportunity_areas" :key="item">{{ item }}</li>
+                  <li v-for="item in compareResult!.opportunity_areas" :key="item">{{ item }}</li>
                 </ul>
               </div>
               <div class="swot-box threat">
@@ -389,11 +389,11 @@
           <a-col :span="12">
             <div class="conclusion-card">
               <div class="conclusion-header"><TrophyOutlined /> 分析结论</div>
-              <div class="conclusion-summary">{{ compareResult.comparison_summary }}</div>
+              <div class="conclusion-summary">{{ compareResult!.comparison_summary }}</div>
 
               <div class="conclusion-section">
                 <div class="conclusion-subtitle"><AimOutlined /> 进入策略建议</div>
-                <p class="recommendation-text">{{ compareResult.recommendation }}</p>
+                <p class="recommendation-text">{{ compareResult!.recommendation }}</p>
               </div>
 
               <div class="conclusion-section">

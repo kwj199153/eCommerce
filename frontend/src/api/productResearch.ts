@@ -59,7 +59,7 @@ export function chatWithProductResearcher(data: {
   message: string
   contextId?: string
   stream?: boolean
-}) {
+}): Promise<any> {
   return request.post('/product-research/chat', data)
 }
 

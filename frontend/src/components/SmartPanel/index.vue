@@ -345,8 +345,8 @@
 
           <div class="ticket-header">
             <span class="ticket-id">{{ ticketData.ticket_id }}</span>
-            <a-tag :color="getPriorityColor(ticketData.priority)">{{ ticketData.priority }}</a-tag>
-            <a-tag :color="getStatusColor(ticketData.status)">{{ ticketData.status }}</a-tag>
+            <a-tag :color="getPriorityColor(ticketData.priority || '')">{{ ticketData.priority }}</a-tag>
+            <a-tag :color="getStatusColor(ticketData.status || '')">{{ ticketData.status }}</a-tag>
           </div>
 
           <a-descriptions :column="1" size="small" bordered>
@@ -843,7 +843,7 @@
               type="circle"
               :percent="Math.round(complianceReportData.score || 0)"
               :width="60"
-              :stroke-color="complianceReportData.score >= 80 ? '#52c41a' : complianceReportData.score >= 60 ? '#faad14' : '#f5222d'"
+              :stroke-color="(complianceReportData.score || 0) >= 80 ? '#52c41a' : (complianceReportData.score || 0) >= 60 ? '#faad14' : '#f5222d'"
             />
           </div>
 

@@ -685,11 +685,11 @@ const handleNavigateTo = (view: string) => {
 
 // ========== 监听右侧面板的分析请求 ==========
 onMounted(() => {
-  window.addEventListener('tool-analysis', handleToolAnalysisEvent as EventListener)
+  window.addEventListener('tool-analysis', handleToolAnalysisEvent as unknown as EventListener)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('tool-analysis', handleToolAnalysisEvent as EventListener)
+  window.removeEventListener('tool-analysis', handleToolAnalysisEvent as unknown as EventListener)
 })
 
 // 处理来自右侧面板的分析请求
@@ -887,17 +887,18 @@ const handleToolAnalysisEvent = async (event: CustomEvent) => {
       console.warn('结果摘要生成失败（不影响主结果）:', summaryError)
     }
 
-  } catch (error) {
+  } catch (error: unknown) {
+    const err = error as Error
     console.error('=== 工具执行失败详情 ===')
     console.error('工具 ID:', tool?.id)
-    console.error('错误类型:', error?.constructor?.name)
-    console.error('错误消息:', error?.message)
+    console.error('错误类型:', err?.constructor?.name)
+    console.error('错误消息:', err?.message)
     console.error('接收到的 params:', JSON.stringify(params || {}))
-    console.error('错误堆栈:', error?.stack)
+    console.error('错误堆栈:', err?.stack)
     console.error('========================')
     chatStore.addMessage({
       role: 'assistant',
-      content: `❌ 分析执行失败，请检查参数后重试。\n\n\`${error?.message || '未知错误'}\``,
+      content: `❌ 分析执行失败，请检查参数后重试。\n\n\`${err?.message || '未知错误'}\``,
     })
   } finally {
     isLoading.value = false
@@ -939,7 +940,7 @@ const getParamSummary = (toolId: string, params: any): string => {
     case 'market-share':
       return `- 类目：${params.category}\n- 估算方法：${params.estimate_method === 'revenue_based' ? '收入估算' : 'BSR排名估算'}`
     case 'pricing-analysis':
-      return `- 目标ASIN：${params.asin || '全部'}\n- 对比竞品：${params.compare_asins?.join('、') || '无'}\n- 分析深度：${{ basic: '基础', standard: '标准', deep: '深度' }[params.analysis_depth] || '标准'}`
+      return `- 目标ASIN：${params.asin || '全部'}\n- 对比竞品：${params.compare_asins?.join('、') || '无'}\n- 分析深度：${({ basic: '基础', standard: '标准', deep: '深度' } as Record<string, string>)[params.analysis_depth] || '标准'}`
     case 'review-spy':
       return `- 目标ASIN：${params.asin}\n- 关注维度：${params.aspects?.join('、') || '全部'}\n- 采样数：${params.sample_size || 100} 条`
     case 'intruder-alert':
@@ -958,7 +959,7 @@ const getParamSummary = (toolId: string, params: any): string => {
     case 'desc-gen':
       return `- 产品名称：${params.product_name || '未指定'}\n- 模块：${params.modules?.join('、') || '品牌故事+规格+场景'}\n- 风格：${params.tone || '专业可信'}`
     case 'seo-audit':
-      return `- ASIN：${params.asin || '未指定'}\n- 站点：${params.marketplace || 'US'}\n- 深度：${{ basic: '基础', full: '全面' }[params.depth] || '全面'}`
+      return `- ASIN：${params.asin || '未指定'}\n- 站点：${params.marketplace || 'US'}\n- 深度：${({ basic: '基础', full: '全面' } as Record<string, string>)[params.depth] || '全面'}`
     case 'ab-test':
       return `- 测试变量：标题+主图\n- 流量分配：A(40%) / B(30%) / C(30%)\n- 周期：${params.duration || 14} 天`
     // ===== 选品分析师 =====
@@ -1107,11 +1108,11 @@ const executeAdDiagnosis = async (params: any): Promise<any> => {
       { name: 'CPC', value: 0.45 + Math.random() * 0.75, unit: '$', benchmark: 0.75, status: Math.random() > 0.4 ? 'good' : 'warning', change_pct: (Math.random() - 0.5) * 8 },
     ],
     campaigns: [
-      { campaign_name: '自动广告-广泛', campaign_type: 'SP', status: 'active', spend: 450 + Math.random() * 500, impressions: 80000 + Math.floor(Math.random() * 150000), clicks: 1200 + Math.floor(Math.random() * 2000), orders: 40 + Math.floor(Math.random() * 60), sales: orders => orders * (25 + Math.random() * 20), acos: s => (s.spend / s.sales(s) * 100), roas: s => s.sales(s) / s.spend, ctr: c => c.clicks / c.impressions * 100, cvr: c => c.orders / c.clicks * 100, cpc: c => c.spend / c.clicks, health_score: 60 + Math.floor(Math.random() * 30) },
-      { campaign_name: '手动-精准-核心词', campaign_type: 'SP', status: 'active', spend: 600 + Math.random() * 600, impressions: 40000 + Math.floor(Math.random() * 60000), clicks: 2000 + Math.floor(Math.random() * 2500), orders: 80 + Math.floor(Math.random() * 80), sales: o => o * (28 + Math.random() * 18), acos: s => (s.spend / s.sales(s) * 100), roas: s => s.sales(s) / s.spend, ctr: c => c.clicks / c.impressions * 100, cvr: c => c.orders / c.clicks * 100, cpc: c => c.spend / c.clicks, health_score: 70 + Math.floor(Math.random() * 25) },
-      { campaign_name: '手动-短语-长尾词', campaign_type: 'SP', status: 'active', spend: 220 + Math.random() * 180, impressions: 50000 + Math.floor(Math.random() * 70000), clicks: 600 + Math.floor(Math.random() * 900), orders: 18 + Math.floor(Math.random() * 30), sales: o => o * (22 + Math.random() * 16), acos: s => (s.spend / s.sales(s) * 100), roas: s => s.sales(s) / s.spend, ctr: c => c.clicks / c.impressions * 100, cvr: c => c.orders / c.clicks * 100, cpc: c => c.spend / c.clicks, health_score: 65 + Math.floor(Math.random() * 28) },
-      { campaign_name: '品牌-SB-品牌词', campaign_type: 'SB', status: 'active', spend: 150 + Math.random() * 120, impressions: 12000 + Math.floor(Math.random() * 18000), clicks: 350 + Math.floor(Math.random() * 500), orders: 14 + Math.floor(Math.random() * 25), sales: o => o * (32 + Math.random() * 15), acos: s => (s.spend / s.sales(s) * 100), roas: s => s.sales(s) / s.spend, ctr: c => c.clicks / c.impressions * 100, cvr: c => c.orders / c.clicks * 100, cpc: c => c.spend / c.clicks, health_score: 72 + Math.floor(Math.random() * 23) },
-      { campaign_name: '展示-SD-竞品定向', campaign_type: 'SD', status: 'active', spend: 280 + Math.random() * 220, impressions: 30000 + Math.floor(Math.random() * 50000), clicks: 420 + Math.floor(Math.random() * 650), orders: 10 + Math.floor(Math.random() * 20), sales: o => o * (30 + Math.random() * 18), acos: s => (s.spend / s.sales(s) * 100), roas: s => s.sales(s) / s.spend, ctr: c => c.clicks / c.impressions * 100, cvr: c => c.orders / c.clicks * 100, cpc: c => c.spend / c.clicks, health_score: 50 + Math.floor(Math.random() * 30) },
+      { campaign_name: '自动广告-广泛', campaign_type: 'SP', status: 'active', spend: 450 + Math.random() * 500, impressions: 80000 + Math.floor(Math.random() * 150000), clicks: 1200 + Math.floor(Math.random() * 2000), orders: 40 + Math.floor(Math.random() * 60), sales: (orders: any) => orders * (25 + Math.random() * 20), acos: (s: any) => (s.spend / s.sales(s) * 100), roas: (s: any) => s.sales(s) / s.spend, ctr: (c: any) => c.clicks / c.impressions * 100, cvr: (c: any) => c.orders / c.clicks * 100, cpc: (c: any) => c.spend / c.clicks, health_score: 60 + Math.floor(Math.random() * 30) },
+      { campaign_name: '手动-精准-核心词', campaign_type: 'SP', status: 'active', spend: 600 + Math.random() * 600, impressions: 40000 + Math.floor(Math.random() * 60000), clicks: 2000 + Math.floor(Math.random() * 2500), orders: 80 + Math.floor(Math.random() * 80), sales: (o: any) => o * (28 + Math.random() * 18), acos: (s: any) => (s.spend / s.sales(s) * 100), roas: (s: any) => s.sales(s) / s.spend, ctr: (c: any) => c.clicks / c.impressions * 100, cvr: (c: any) => c.orders / c.clicks * 100, cpc: (c: any) => c.spend / c.clicks, health_score: 70 + Math.floor(Math.random() * 25) },
+      { campaign_name: '手动-短语-长尾词', campaign_type: 'SP', status: 'active', spend: 220 + Math.random() * 180, impressions: 50000 + Math.floor(Math.random() * 70000), clicks: 600 + Math.floor(Math.random() * 900), orders: 18 + Math.floor(Math.random() * 30), sales: (o: any) => o * (22 + Math.random() * 16), acos: (s: any) => (s.spend / s.sales(s) * 100), roas: (s: any) => s.sales(s) / s.spend, ctr: (c: any) => c.clicks / c.impressions * 100, cvr: (c: any) => c.orders / c.clicks * 100, cpc: (c: any) => c.spend / c.clicks, health_score: 65 + Math.floor(Math.random() * 28) },
+      { campaign_name: '品牌-SB-品牌词', campaign_type: 'SB', status: 'active', spend: 150 + Math.random() * 120, impressions: 12000 + Math.floor(Math.random() * 18000), clicks: 350 + Math.floor(Math.random() * 500), orders: 14 + Math.floor(Math.random() * 25), sales: (o: any) => o * (32 + Math.random() * 15), acos: (s: any) => (s.spend / s.sales(s) * 100), roas: (s: any) => s.sales(s) / s.spend, ctr: (c: any) => c.clicks / c.impressions * 100, cvr: (c: any) => c.orders / c.clicks * 100, cpc: (c: any) => c.spend / c.clicks, health_score: 72 + Math.floor(Math.random() * 23) },
+      { campaign_name: '展示-SD-竞品定向', campaign_type: 'SD', status: 'active', spend: 280 + Math.random() * 220, impressions: 30000 + Math.floor(Math.random() * 50000), clicks: 420 + Math.floor(Math.random() * 650), orders: 10 + Math.floor(Math.random() * 20), sales: (o: any) => o * (30 + Math.random() * 18), acos: (s: any) => (s.spend / s.sales(s) * 100), roas: (s: any) => s.sales(s) / s.spend, ctr: (c: any) => c.clicks / c.impressions * 100, cvr: (c: any) => c.orders / c.clicks * 100, cpc: (c: any) => c.spend / c.clicks, health_score: 50 + Math.floor(Math.random() * 30) },
     ].map(c => ({
       ...c,
       spend: Math.round(c.spend * 100) / 100,
@@ -2691,7 +2692,7 @@ const addResultSummaryToChat = (toolId: string, result: any) => {
         `优化建议已展示在上方。`
       break
     case 'bid-suggest':
-      content = `💡 **出价建议完成** — 策略：${{ aggressive: '激进', balanced: '平衡', conservative: '保守' }[result.strategy_type] || '平衡'}\n\n` +
+      content = `💡 **出价建议完成** — 策略：${({ aggressive: '激进', balanced: '平衡', conservative: '保守' } as Record<string, string>)[result.strategy_type] || '平衡'}\n\n` +
         `- 分析关键词：${result.total_keywords || 0} 个\n` +
         `- 预计预算变动：$${result.budget_impact > 0 ? '+' : ''}${result.budget_impact}\n` +
         `- 预期 ACoS 变化：${result.expected_acos_change > 0 ? '+' : ''}${result.expected_acos_change.toFixed(1)}%\n\n` +
@@ -2759,7 +2760,7 @@ const addResultSummaryToChat = (toolId: string, result: any) => {
       break
     case 'pricing-analysis':
       content = `💵 **定价策略分析完成** — 分析 **${result.analyzed_count}** 个竞品\n\n` +
-        `- 发现策略类型：${result.strategies?.map((s: any) => ({ premium: '溢价', economy: '经济', competitive: '竞争', dynamic: '动态' }[s.strategy_type] || s.strategy_type)).join(' / ') || '-'}\n` +
+        `- 发现策略类型：${result.strategies?.map((s: any) => ({ premium: '溢价', economy: '经济', competitive: '竞争', dynamic: '动态' } as Record<string, string>)[s.strategy_type] || s.strategy_type).join(' / ') || '-'}\n` +
         `- 最高均价：$${Math.max(...(result.strategies?.map((s: any) => s.base_price) || [0])).toFixed(2)}\n` +
         `- 最大波动率：${(Math.max(...(result.strategies?.map((s: any) => s.price_volatility) || [0])) * 100).toFixed(1)}%\n\n` +
         `策略详情已展示在上方。`

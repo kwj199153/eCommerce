@@ -4,7 +4,7 @@
  * Phase 7: AI 图片生成、主图分析、A+内容、品牌故事、翻译、信息图、合规检查、视频脚本
  */
 
-import request from '../utils/request'
+import request from './request'
 
 // ============================================================
 // 图片生成相关

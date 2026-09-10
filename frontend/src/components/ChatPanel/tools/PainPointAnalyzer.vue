@@ -121,20 +121,20 @@
       <!-- 结果概览卡片 -->
       <div class="overview-cards">
         <div class="overview-card">
-          <div class="card-value">{{ analysisResult.total_reviews_analyzed }}</div>
+          <div class="card-value">{{ analysisResult!.total_reviews_analyzed }}</div>
           <div class="card-label">分析评论数</div>
         </div>
         <div class="overview-card negative">
-          <div class="card-value">{{ analysisResult.negative_review_count }}</div>
+          <div class="card-value">{{ analysisResult!.negative_review_count }}</div>
           <div class="card-label">差评数量</div>
           <div class="card-sub">{{ negativeRate }}% 差评率</div>
         </div>
         <div class="overview-card warning">
-          <div class="card-value">{{ analysisResult.pain_points.length }}</div>
+          <div class="card-value">{{ analysisResult!.pain_points.length }}</div>
           <div class="card-label">发现痛点</div>
         </div>
         <div class="overview-card success">
-          <div class="card-value">{{ analysisResult.market_gap_score }}</div>
+          <div class="card-value">{{ analysisResult!.market_gap_score }}</div>
           <div class="card-label">市场空白分</div>
           <div class="card-sub" :class="gapLevelClass">{{ gapLevelText }}</div>
         </div>
@@ -232,7 +232,7 @@
           <a-col :span="12">
             <div class="insight-card">
               <div class="insight-header"><BulbOutlined /> 产品改进建议</div>
-              <a-list :data-source="analysisResult.improvement_suggestions" size="small">
+              <a-list :data-source="analysisResult!.improvement_suggestions" size="small">
                 <template #renderItem="{ item }">
                   <a-list-item>
                     <a-list-item-meta>
@@ -251,7 +251,7 @@
           <a-col :span="12">
             <div class="insight-card opportunity">
               <div class="insight-header"><ThunderboltOutlined /> 市场机会</div>
-              <a-list :data-source="analysisResult.competitor_weaknesses" size="small">
+              <a-list :data-source="analysisResult!.competitor_weaknesses" size="small">
                 <template #renderItem="{ item }">
                   <a-list-item>
                     <a-list-item-meta>
@@ -565,7 +565,7 @@ const generatePainPointAnalysis = (product: MockProduct, depth: 'quick' | 'deep'
     positive_review_count: positiveReviews.length,
     pain_points: painPoints,
     improvement_suggestions: improvementSuggestions,
-    market_gap_score,
+    market_gap_score: marketGapScore,
     competitor_weaknesses: competitorWeaknesses,
   }
 }

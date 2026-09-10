@@ -97,11 +97,11 @@ const termColumns = [
   { title: '搜索词', dataIndex: 'term', width: 220, ellipsis: true },
   { title: '展示量', dataIndex: 'impressions', width: 65, align: 'right' },
   { title: '点击', dataIndex: 'clicks', width: 50, align: 'right' },
-  { title: 'CTR', dataIndex: 'ctr', width: 55, align: 'right', customRender: ({ text }) => `${Number(text).toFixed(2)}%` },
-  { title: '花费', dataIndex: 'spend', width: 60, align: 'right', customRender: ({ text }) => `$${Number(text).toFixed(2)}` },
-  { title: '销售额', dataIndex: 'sales', width: 70, align: 'right', customRender: ({ text }) => `$${Number(text).toFixed(2)}` },
-  { title: 'ACoS', dataIndex: 'acos', width: 55, align: 'right', customRender: ({ text }) => Number(text) >= 999 ? '∞%' : `${Number(text).toFixed(0)}%` },
-  { title: 'RoAS', dataIndex: 'roas', width: 55, align: 'right', customRender: ({ text }) => Number(text).toFixed(1) },
+  { title: 'CTR', dataIndex: 'ctr', width: 55, align: 'right', customRender: ({ text }: { text: any }) => `${Number(text).toFixed(2)}%` },
+  { title: '花费', dataIndex: 'spend', width: 60, align: 'right', customRender: ({ text }: { text: any }) => `$${Number(text).toFixed(2)}` },
+  { title: '销售额', dataIndex: 'sales', width: 70, align: 'right', customRender: ({ text }: { text: any }) => `$${Number(text).toFixed(2)}` },
+  { title: 'ACoS', dataIndex: 'acos', width: 55, align: 'right', customRender: ({ text }: { text: any }) => Number(text) >= 999 ? '∞%' : `${Number(text).toFixed(0)}%` },
+  { title: 'RoAS', dataIndex: 'roas', width: 55, align: 'right', customRender: ({ text }: { text: any }) => Number(text).toFixed(1) },
   { title: '匹配', dataIndex: 'match_type', width: 50, align: 'center' },
 ]
 </script>

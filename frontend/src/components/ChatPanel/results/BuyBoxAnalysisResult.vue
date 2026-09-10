@@ -109,7 +109,7 @@ const factorColor = (status: string) => ({
   poor: '#ff4d4f',
 }[status] || '#d9d9d9')
 
-const factorLabel = (key: string) => ({
+const factorLabel = (key: string | number) => ({
   price_competitiveness: '价格竞争力',
   shipping_speed: '配送速度',
   seller_rating: '卖家评分',

@@ -1123,6 +1123,7 @@ export const useResultStore = defineStore('result', () => {
     setImage,
     setCode,
     setRawData,
+    setResultData,
     clear,
   }
 })

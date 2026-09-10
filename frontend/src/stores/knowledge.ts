@@ -391,7 +391,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
    */
   async function parseAndImport(file: File): Promise<{ success: number; failed: number; errors: string[] }> {
     const text = await file.text()
-    let imported: Omit<FaqItem, 'id' | 'created_at' | 'updated_at' | 'usage_count'>[] = []
+    let imported: Omit<FaqItem, 'id' | 'kb_id' | 'created_at' | 'updated_at' | 'usage_count'>[] = []
     const errors: string[] = []
     const ext = file.name.split('.').pop()?.toLowerCase()
 

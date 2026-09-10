@@ -190,7 +190,7 @@
                 v-if="record.pdf_url"
                 size="small"
                 type="link"
-                @click="window.open(record.pdf_url, '_blank')"
+                @click="openInvoice(record.pdf_url)"
               >下载发票</a-button>
               <a-button
                 v-if="record.status === 'pending'"
@@ -547,6 +547,11 @@ async function loadPaymentMethods() {
 function handleSwitchPlan(plan: SubscriptionPlan) {
   selectedPlanForUpgrade.value = plan
   showUpgradeModal.value = true
+}
+
+/** 打开发票 PDF */
+function openInvoice(url: string) {
+  window.open(url, '_blank')
 }
 
 /** 确认切换套餐 */

@@ -10,6 +10,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { get, post, put, del } from '@/api/request'
+import type { Store } from '@/api/stores'
 
 // ====== 类型定义 ======
 
@@ -105,9 +106,12 @@ export const useShopStore = defineStore('shop', () => {
 
   /**
    * 从外部设置店铺列表（API 响应后直接设置）
+   *
+   * 参数用后端 Store 类型（/stores 数据源）；Shop 是前端富类型，
+   * 二者描述同一批店铺数据，字段差异为历史遗留（marketplace_id 等可空）。
    */
-  function setShopList(newShops: Shop[]) {
-    shops.value = newShops
+  function setShopList(newShops: Store[]) {
+    shops.value = newShops as unknown as Shop[]
   }
 
   /**

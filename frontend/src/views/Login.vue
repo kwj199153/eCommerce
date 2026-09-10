@@ -118,7 +118,7 @@
               :rules="[
                 { required: true, message: '请确认密码' },
                 {
-                  validator: async (_rule, value) => {
+                  validator: async (_rule: unknown, value: string) => {
                     if (value && value !== registerForm.password) {
                       throw new Error('两次密码不一致')
                     }

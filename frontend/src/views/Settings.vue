@@ -171,7 +171,7 @@
               </div>
               <div class="notify-item">
                 <span>系统更新公告</span>
-                <a-switch v-model:checked="notifForm.systemUpdate" checked />
+                <a-switch v-model:checked="notifForm.systemUpdate" />
               </div>
             </div>
 
@@ -181,11 +181,11 @@
               <h4>站内消息</h4>
               <div class="notify-item">
                 <span>任务完成通知</span>
-                <a-switch v-model:checked="notifForm.taskComplete" checked />
+                <a-switch v-model:checked="notifForm.taskComplete" />
               </div>
               <div class="notify-item">
                 <span>Agent 对话异常告警</span>
-                <a-switch v-model:checked="notifForm.agentError" checked />
+                <a-switch v-model:checked="notifForm.agentError" />
               </div>
             </div>
 

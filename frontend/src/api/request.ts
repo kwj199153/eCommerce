@@ -69,12 +69,11 @@ request.interceptors.response.use(
     }
 
     const { status, data } = response
+    const userStore = useUserStore()
 
     switch (status) {
       case 401:
         // Token 过期或无效
-        const userStore = useUserStore()
-
         // 演示模式：demo-token 被拒时不强制登出，静默处理
         if (isDemoToken(userStore.token)) {
           // 静默失败，由各页面自行使用 Mock 数据兜底
@@ -133,7 +132,7 @@ request.interceptors.response.use(
  * GET 请求
  */
 export function get<T = any>(url: string, params?: Record<string, any>): Promise<T> {
-  return request.get(url, { params })
+  return request.get(url, { params }) as Promise<T>
 }
 
 /**
@@ -144,21 +143,21 @@ export function post<T = any>(
   data?: Record<string, any> | FormData | URLSearchParams,
   config?: AxiosRequestConfig
 ): Promise<T> {
-  return request.post(url, data, config)
+  return request.post(url, data, config) as Promise<T>
 }
 
 /**
  * PUT 请求
  */
 export function put<T = any>(url: string, data?: Record<string, any>): Promise<T> {
-  return request.put(url, data)
+  return request.put(url, data) as Promise<T>
 }
 
 /**
  * DELETE 请求
  */
 export function del<T = any>(url: string): Promise<T> {
-  return request.delete(url)
+  return request.delete(url) as Promise<T>
 }
 
 // 读取店铺 ID（直接读 localStorage 避免 ESM 循环依赖）

@@ -73,9 +73,11 @@ const props = defineProps<{ data: any }>()
 defineEmits<{ (e: 'close'): void }>()
 
 const estimatedResponseTime = computed(() => {
-  const p = props.data.ticket?.priority
-  return { urgent: '2小时', high: '4小时', medium: '24小时', low: '48小时' }[p] || '24h'
+  const p = props.data.ticket?.priority as keyof typeof priorityMap | undefined
+  return (priorityMap[p as keyof typeof priorityMap]) || '24h'
 })
+
+const priorityMap = { urgent: '2小时', high: '4小时', medium: '24小时', low: '48小时' } as const
 
 const categoryLabel = (c: string) => ({
   order: '订单', logistics: '物流', return: '退换货',

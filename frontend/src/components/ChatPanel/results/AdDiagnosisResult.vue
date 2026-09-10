@@ -91,12 +91,12 @@ defineEmits<{
 const campaignColumns = [
   { title: 'Campaign', dataIndex: 'campaign_name', width: 160, ellipsis: true },
   { title: '类型', dataIndex: 'campaign_type', width: 50, align: 'center' },
-  { title: '花费', dataIndex: 'spend', width: 70, align: 'right', customRender: ({ text }) => `$${Number(text).toFixed(0)}` },
-  { title: 'RoAS', dataIndex: 'roas', width: 55, align: 'right', customRender: ({ text }) => Number(text).toFixed(1) },
-  { title: 'ACoS', dataIndex: 'acos', width: 55, align: 'right', customRender: ({ text }) => `${Number(text).toFixed(0)}%` },
-  { title: 'CTR', dataIndex: 'ctr', width: 50, align: 'right', customRender: ({ text }) => `${Number(text).toFixed(2)}%` },
+  { title: '花费', dataIndex: 'spend', width: 70, align: 'right', customRender: ({ text }: { text: any }) => `$${Number(text).toFixed(0)}` },
+  { title: 'RoAS', dataIndex: 'roas', width: 55, align: 'right', customRender: ({ text }: { text: any }) => Number(text).toFixed(1) },
+  { title: 'ACoS', dataIndex: 'acos', width: 55, align: 'right', customRender: ({ text }: { text: any }) => `${Number(text).toFixed(0)}%` },
+  { title: 'CTR', dataIndex: 'ctr', width: 50, align: 'right', customRender: ({ text }: { text: any }) => `${Number(text).toFixed(2)}%` },
   { title: '健康分', dataIndex: 'health_score', width: 60, align: 'center',
-    customRender: ({ text }) => {
+    customRender: ({ text }: { text: any }) => {
       const score = Number(text)
       const color = score >= 80 ? '#52c41a' : score >= 60 ? '#faad14' : '#ff4d4f'
       return `<span style="color:${color};font-weight:600">${score}</span>`

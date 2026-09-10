@@ -68,11 +68,11 @@ defineEmits<{ (e: 'close'): void }>()
 
 const allocColumns = [
   { title: 'Campaign', dataIndex: 'campaign_name', width: 180, ellipsis: true },
-  { title: '当前预算', dataIndex: 'current_budget', width: 80, align: 'right', customRender: ({ text }) => `$${text}` },
-  { title: '建议预算', dataIndex: 'suggested_budget', width: 80, align: 'right', customRender: ({ text }) => `$${text}` },
+  { title: '当前预算', dataIndex: 'current_budget', width: 80, align: 'right', customRender: ({ text }: { text: any }) => `$${text}` },
+  { title: '建议预算', dataIndex: 'suggested_budget', width: 80, align: 'right', customRender: ({ text }: { text: any }) => `$${text}` },
   { title: '变化', dataIndex: 'change', width: 65, align: 'center' },
   { title: '分配占比', dataIndex: 'allocation_pct', width: 75, align: 'center',
-    customRender: ({ text }) => `${Number(text).toFixed(1)}%` },
+    customRender: ({ text }: { text: any }) => `${Number(text).toFixed(1)}%` },
   { title: '预期 RoAS', dataIndex: 'expected_roas', width: 75, align: 'right' },
   { title: '调拨原因', dataIndex: 'reason', ellipsis: true },
 ]
