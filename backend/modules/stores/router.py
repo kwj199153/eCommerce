@@ -9,7 +9,7 @@
 - 费率模板支持系统默认 + 用户自定义
 """
 
-from fastapi import APIRouter, HTTPException, Header, Query
+from fastapi import APIRouter, HTTPException, Header, Query, Depends, Request
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 import uuid
@@ -19,6 +19,7 @@ from models.store import (
     StoreDetailResponse, FeeTemplate, FeeTemplateCreate,
     DiscountTemplate, StoreStatus, ConnectionStatus, SyncStatus,
 )
+from core.auth.dependencies import require_auth_if_enabled
 from core.profit_engine import (
     calculate_profit, ProfitCalculationRequest, ProfitCalculationResult,
     get_fee_template, get_platform_type_from_key, get_currency_for_marketplace,
@@ -53,6 +54,7 @@ def _store_to_record(store: Store) -> StoreRecord:
     return StoreRecord(
         id=store.id,
         tenant_id=store.tenant_id,
+        owner_id=store.owner_id,
         name=store.name,
         platform=store.platform,
         marketplace_id=store.marketplace_id,
@@ -87,6 +89,7 @@ def _record_to_store(r: StoreRecord) -> Store:
     return Store(
         id=r.id,
         tenant_id=r.tenant_id,
+        owner_id=r.owner_id,
         name=r.name,
         platform=r.platform,
         marketplace_id=r.marketplace_id,
@@ -113,6 +116,8 @@ async def _upsert_store_db(store: Store) -> None:
         ).scalar_one_or_none()
         if existing:
             # 更新除主键/时间戳外的字段
+            existing.tenant_id = record.tenant_id
+            existing.owner_id = record.owner_id
             existing.name = record.name
             existing.platform = record.platform
             existing.marketplace_id = record.marketplace_id
@@ -199,6 +204,18 @@ def _get_store(store_id: str) -> Store:
     return store
 
 
+def _check_store_owner(store: Store, current_user) -> None:
+    """
+    归属校验（跟随 AUTH_REQUIRED 开关）：
+    - 演示模式（current_user 为 None）：放行，不破坏演示体验
+    - 生产模式：admin 放行；非 admin 且 owner_id 不匹配 → 403
+    """
+    if current_user is None:
+        return
+    if current_user.role.value != "admin" and store.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权操作该店铺")
+
+
 def _build_profit_context(store: Store) -> Dict[str, Any]:
     """
     根据店铺信息构建利润计算的上下文
@@ -255,9 +272,15 @@ def _build_profit_context(store: Store) -> Dict[str, Any]:
 async def list_stores(
     status: Optional[str] = None,
     platform: Optional[str] = None,
+    request: Request = None,
+    current_user=Depends(require_auth_if_enabled),
 ):
-    """获取店铺列表"""
+    """获取店铺列表（生产模式按当前用户过滤）"""
     stores = list(_store_db.values())
+
+    # 归属过滤：生产模式下只返回当前用户名下的店铺（admin 看全部）
+    if current_user is not None and current_user.role.value != "admin":
+        stores = [s for s in stores if s.owner_id == current_user.id]
 
     if status:
         stores = [s for s in stores if s.status.value == status]
@@ -268,9 +291,13 @@ async def list_stores(
 
 
 @router.get("/{store_id}", response_model=StoreDetailResponse)
-async def get_store(store_id: str):
+async def get_store(
+    store_id: str,
+    current_user=Depends(require_auth_if_enabled),
+):
     """获取店铺详情（含费率模板摘要）"""
     store = _get_store(store_id)
+    _check_store_owner(store, current_user)
 
     # 构建费率模板摘要
     fee_summary = None
@@ -294,7 +321,10 @@ async def get_store(store_id: str):
 
 
 @router.post("", response_model=Store, status_code=201)
-async def create_store(data: StoreCreate):
+async def create_store(
+    data: StoreCreate,
+    current_user=Depends(require_auth_if_enabled),
+):
     """创建新店铺"""
     store_id = f"store_{uuid.uuid4().hex[:8]}"
 
@@ -302,9 +332,13 @@ async def create_store(data: StoreCreate):
     currency = data.currency or get_currency_for_marketplace(data.platform)
     region_code = data.region_code or data.platform.split("_")[-1].upper()
 
+    # 归属：生产模式注入当前用户 ID；演示模式（无登录）置 None
+    owner_id = current_user.id if current_user is not None else None
+
     store = Store(
         id=store_id,
-        tenant_id="default_tenant",  # MVP 阶段硬编码
+        tenant_id="default_tenant",  # 隔离由 owner_id 承担，tenant_id 保留兼容
+        owner_id=owner_id,
         name=data.name,
         platform=data.platform,
         marketplace_id=data.marketplace_id,
@@ -320,9 +354,14 @@ async def create_store(data: StoreCreate):
 
 
 @router.put("/{store_id}", response_model=Store)
-async def update_store(store_id: str, data: StoreUpdate):
+async def update_store(
+    store_id: str,
+    data: StoreUpdate,
+    current_user=Depends(require_auth_if_enabled),
+):
     """更新店铺信息"""
     store = _get_store(store_id)
+    _check_store_owner(store, current_user)
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -335,9 +374,13 @@ async def update_store(store_id: str, data: StoreUpdate):
 
 
 @router.delete("/{store_id}")
-async def delete_store(store_id: str):
+async def delete_store(
+    store_id: str,
+    current_user=Depends(require_auth_if_enabled),
+):
     """删除店铺"""
-    _get_store(store_id)  # 验证存在性
+    store = _get_store(store_id)  # 验证存在性
+    _check_store_owner(store, current_user)
     del _store_db[store_id]
     await _delete_store_db(store_id)  # 从 PG 删除
     return {"message": "店铺已删除", "store_id": store_id}
@@ -349,9 +392,11 @@ async def delete_store(store_id: str):
 async def connect_store_platform(
     store_id: str,
     credentials: Dict[str, Any] = None,
+    current_user=Depends(require_auth_if_enabled),
 ):
     """连接平台 API（配置凭证）"""
     store = _get_store(store_id)
+    _check_store_owner(store, current_user)
 
     # TODO: 实际验证凭证有效性
     # MVP 阶段仅标记为已连接
@@ -369,9 +414,13 @@ async def connect_store_platform(
 
 
 @router.post("/{store_id}/disconnect")
-async def disconnect_store_platform(store_id: str):
+async def disconnect_store_platform(
+    store_id: str,
+    current_user=Depends(require_auth_if_enabled),
+):
     """断开平台 API 连接"""
     store = _get_store(store_id)
+    _check_store_owner(store, current_user)
     store.connection_status = ConnectionStatus.DISCONNECTED
     store.has_credentials = False
     store.updated_at = datetime.utcnow()

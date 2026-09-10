@@ -11,7 +11,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Boolean, DateTime, Text
+from sqlalchemy import String, Boolean, DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 # 复用 core.database 的 Base（与 engine / async_session_factory 同源）
@@ -23,7 +23,15 @@ class StoreRecord(Base):
     __tablename__ = "stores_store"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # store_xxx
+    # 租户标识（历史遗留：恒为 default_tenant）
+    # 说明：数据隔离已由 owner_id（指向 users.id）承担，tenant_id 保留仅作兼容，
+    #       真实「租户」语义（多用户共享一个组织）尚未启用，后续如需企业版再映射。
     tenant_id: Mapped[str] = mapped_column(String(64), default="default_tenant")
+    # 店铺归属用户（打通用户→店铺归属，数据隔离最后一环）
+    # nullable：存量店铺无主（回填脚本统一处理）；新建店铺从登录用户注入
+    owner_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     platform: Mapped[str] = mapped_column(String(32), nullable=False)
     marketplace_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)

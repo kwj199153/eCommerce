@@ -54,6 +54,7 @@ class Store(BaseModel):
     """
     id: str = Field(..., description="店铺唯一标识")
     tenant_id: str = Field(..., description="所属租户 ID")
+    owner_id: Optional[str] = Field(None, description="店铺归属用户 ID（users.id）")
 
     # 基本信息
     name: str = Field(..., description="店铺名称")
