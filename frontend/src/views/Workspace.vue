@@ -12,12 +12,12 @@
     >
       <!-- Logo 区域 + 店铺群触发器 -->
       <div class="logo-row">
-        <div class="logo-brand">
-          <h3 v-if="!sidebarCollapsed" class="logo-title">
-            店管家 AI
+        <div class="logo-brand" :title="!sidebarCollapsed ? '回到店秘书' : ''" @click="goHome">
+          <span class="logo-avatar"><RobotOutlined /></span>
+          <span v-if="!sidebarCollapsed" class="logo-name">
+            <span class="logo-title">店管家 AI</span>
             <span v-if="currentShop" class="logo-shop-name">· {{ currentShop.name }}</span>
-          </h3>
-          <h3 v-else class="logo-title">店</h3>
+          </span>
         </div>
         <!-- 店铺群小图标（右上角） -->
         <a-popover
@@ -202,6 +202,7 @@ import {
   ShopOutlined,
   MessageOutlined,
   AreaChartOutlined,
+  RobotOutlined,
 } from '@ant-design/icons-vue'
 
 import SidebarAgentList from '@/components/Sidebar/AgentList.vue'
@@ -358,6 +359,20 @@ const showCandidateLoader = computed(() => {
 // 切换左侧边栏
 const toggleSidebar = () => {
   sidebarCollapsed.value = !sidebarCollapsed.value
+}
+
+// 点击 Logo 回到店秘书（主入口）
+const goHome = () => {
+  // 清工具 + 切回对话视图 + 切到店秘书
+  currentSelectedTool.value = null
+  if (currentAgent.value?.id !== 'secretary') {
+    const secretary = agentStore.agentList.find((a: any) => a.id === 'secretary')
+    if (secretary) agentStore.setCurrentAgent(secretary)
+  }
+  if (currentView.value !== 'chat') {
+    currentView.value = 'chat'
+    rightPanelCollapsed.value = true
+  }
 }
 
 // 资料库导航切换
@@ -579,17 +594,41 @@ const handleToolAnalysis = (params: any) => {
 .logo-brand {
   display: flex;
   align-items: center;
+  gap: 10px;
   min-width: 0;
   flex: 1;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: opacity 0.15s ease;
 }
 
-.logo-row h3 {
-  margin: 0;
+.logo-brand:hover {
+  opacity: 0.75;
+}
+
+.logo-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 20px;
+}
+
+.logo-name {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
 }
 
 .logo-title {
-  color: var(--primary);
+  color: var(--text-primary);
   font-size: 16px;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

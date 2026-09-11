@@ -65,6 +65,13 @@ class ImageGenerationRequest:
     keywords: List[str] = field(default_factory=list)
     reference_description: str = ""
     dimensions: str = "2000x2000"
+    # 追问字段（子 Agent 接管后逐项追问补齐）
+    material: str = ""
+    shape: str = ""
+    view_angle: str = ""
+    need_logo: Optional[bool] = None
+    product_detail: str = ""
+    background_rule: str = ""
 
 
 @dataclass
@@ -242,28 +249,6 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         self.agent_name = "AIGC 媒体生成器"
         self.version = "2.0.0"  # 升级版本号
 
-    async def _llm_generate_text(self, prompt: str, system_prompt: str = None, max_tokens: int = 1500) -> Optional[str]:
-        """
-        LLM 增强：生成真实文案内容。
-
-        LLM 不可用或失败时返回 None，由调用方降级到模板/规则生成。
-        """
-        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
-            return None
-        try:
-            result = await self.llm_chat(
-                user_message=prompt,
-                system_prompt=system_prompt or self.get_prompt_template("aigc_media"),
-                model=self.DEFAULT_MODEL,
-                temperature=0.8,
-                max_tokens=max_tokens,
-            )
-            if result.success and not result.fallback and result.content:
-                return result.content.strip()
-        except Exception as e:
-            logger.warning(f"[aigc_media] LLM generate failed: {e}")
-        return None
-
         # 图片风格库
         self.image_styles = {
             "professional": {
@@ -344,6 +329,28 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             }
         }
 
+    async def _llm_generate_text(self, prompt: str, system_prompt: str = None, max_tokens: int = 1500) -> Optional[str]:
+        """
+        LLM 增强：生成真实文案内容。
+
+        LLM 不可用或失败时返回 None，由调用方降级到模板/规则生成。
+        """
+        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+            return None
+        try:
+            result = await self.llm_chat(
+                user_message=prompt,
+                system_prompt=system_prompt or self.get_prompt_template("aigc_media"),
+                model=self.DEFAULT_MODEL,
+                temperature=0.8,
+                max_tokens=max_tokens,
+            )
+            if result.success and not result.fallback and result.content:
+                return result.content.strip()
+        except Exception as e:
+            logger.warning(f"[aigc_media] LLM generate failed: {e}")
+        return None
+
     async def generate_product_image(self, request: ImageGenerationRequest) -> Dict[str, Any]:
         """
         生成产品图片
@@ -352,8 +359,19 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             request: 图片生成请求
 
         Returns:
-            生成的图片信息和提示词
+            生成的图片信息和提示词；若关键信息不足，返回 needs_clarification + 缺失字段清单
         """
+        # —— 缺参校验：关键追问字段缺失时，不硬凑结果，返回追问标记 ——
+        clarify_fields = self._collect_missing_clarification_fields(request)
+        if clarify_fields:
+            return {
+                "success": False,
+                "needs_clarification": True,
+                "missing_fields": clarify_fields,
+                "message": "信息不足，需补充以下信息后才能生成高质量图片",
+                "note": "主 Agent 应将本标记透传给用户，逐项追问补齐后再调用本工具",
+            }
+
         image_type = request.image_type
         style_config = self.image_styles.get(request.style, self.image_styles["professional"])
 
@@ -393,6 +411,27 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             "note": "当前为模拟模式，接入真实图片生成服务后返回实际图片URL"
         }
 
+    def _collect_missing_clarification_fields(self, request) -> List[str]:
+        """收集生图所需的追问字段中，哪些尚未提供。
+
+        白底主图/场景图要出高质量结果，关键字段包括材质、造型、视角、
+        是否需要 logo、产品细节、背景规则。缺哪些列哪些，全缺即整张清单。
+        """
+        missing: List[str] = []
+        checks = [
+            ("material", "材质", getattr(request, "material", "")),
+            ("shape", "造型", getattr(request, "shape", "")),
+            ("view_angle", "视角", getattr(request, "view_angle", "")),
+            ("need_logo", "是否需要 logo", getattr(request, "need_logo", None)),
+            ("product_detail", "产品细节", getattr(request, "product_detail", "")),
+            ("background_rule", "背景规则（如纯白底/允许阴影）", getattr(request, "background_rule", "")),
+        ]
+        for _key, label, value in checks:
+            # need_logo 是布尔，None 视为未提供；其余字符串空视为未提供
+            if value is None or (isinstance(value, str) and not value.strip()):
+                missing.append(label)
+        return missing
+
     def _build_image_prompt(self, request: ImageGenerationRequest, style_config: Dict) -> str:
         """构建详细的图片生成提示词"""
         base_prompt = f"Professional product photography of {request.product_name}"
@@ -413,6 +452,20 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
         if request.reference_description:
             base_prompt += f", additional details: {request.reference_description}"
+
+        # 追问字段（补齐后融入提示词）
+        if getattr(request, "material", ""):
+            base_prompt += f", material: {request.material}"
+        if getattr(request, "shape", ""):
+            base_prompt += f", shape: {request.shape}"
+        if getattr(request, "view_angle", ""):
+            base_prompt += f", camera angle: {request.view_angle}"
+        if getattr(request, "need_logo", None) is not None:
+            base_prompt += ", with brand logo" if request.need_logo else ", no logo"
+        if getattr(request, "product_detail", ""):
+            base_prompt += f", highlight detail: {request.product_detail}"
+        if getattr(request, "background_rule", ""):
+            base_prompt += f", background rule: {request.background_rule}"
 
         # 添加图片类型特定指令
         type_instructions = {
@@ -1120,7 +1173,7 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             overall_status=status,
             score=round(score, 1),
             issues=all_issues,
-            passed=all_passed,
+            passed_checks=all_passed,
             recommendations=recommendations
         )
 

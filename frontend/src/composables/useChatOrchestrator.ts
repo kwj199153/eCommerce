@@ -28,6 +28,7 @@ import { useProductLibraryStore } from '@/stores/productLibrary'
 
 import { ToolDefinition, getAgentTools } from '@/components/ChatPanel/tools/toolDefinitions'
 import { toolExecutors, getParamSummary } from '@/mock/toolExecutors'
+import { renderClarification, extractProductName } from '@/utils/clarification'
 
 export interface ChatOrchestratorOptions {
   /** 输入框内容：v-model 绑在组件模板上，须由组件持有 */
@@ -298,11 +299,48 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
   // ========== 监听右侧面板的分析请求 ==========
   onMounted(() => {
     window.addEventListener('tool-analysis', handleToolAnalysisEvent as unknown as EventListener)
+    window.addEventListener('secretary-handoff', handleSecretaryHandoff as unknown as EventListener)
   })
 
   onUnmounted(() => {
     window.removeEventListener('tool-analysis', handleToolAnalysisEvent as unknown as EventListener)
+    window.removeEventListener('secretary-handoff', handleSecretaryHandoff as unknown as EventListener)
   })
+
+  // 处理主 Agent 交接：切到子 Agent 后，由子 Agent「接管」并逐项追问缺失字段
+  const handleSecretaryHandoff = (event: CustomEvent) => {
+    const { agentId, intent, missingFields } = event.detail || {}
+    if (!agentId) return
+
+    const targetAgent = agentStore.agentList.find(a => a.id === agentId)
+    const agentName = targetAgent?.name || agentId
+
+    // 在目标 Agent 对话区渲染「子 Agent 接管 + 追问」消息
+    chatStore.setActiveAgent(agentId)
+
+    // 字段 → 口语化问答模板（含产品名）
+    const productName = extractProductName(intent)
+    const { greeting, questions } = renderClarification({
+      fields: Array.isArray(missingFields) ? missingFields : [],
+      productName,
+    })
+
+    // 招呼语 + 追问气泡
+    const questionLines = questions.map(q => {
+      const ex = q.examples?.length ? `\n   比如：${q.examples.slice(0, 3).join(' / ')}` : ''
+      return `• **${q.label}**：${q.question}${ex}`
+    }).join('\n')
+
+    const takeoverMsg = questionLines
+      ? `${greeting}\n\n${questionLines}\n\n不想挨个说也行，直接给我一段描述，我来拆。`
+      : greeting
+
+    chatStore.addMessage({
+      role: 'assistant',
+      content: takeoverMsg,
+    }, agentId)
+    scrollToBottom()
+  }
 
   // 处理来自右侧面板的分析请求
   const handleToolAnalysisEvent = async (event: CustomEvent) => {
@@ -839,18 +877,89 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
 
   // Agent 响应处理（复用原有逻辑）
   const simulateAgentResponse = async (userMessage: string) => {
-    // 店秘书（全局入口 · 编排层）：识别意图 → 回复 + 派发动作（切 Agent / 打开资料库）
+    // 店秘书（全局入口 · 编排层）：一个大脑，既能导航（切 Agent / 开资料库）又能执行（调工具出结果）
     if (agentStore.currentAgent?.id === 'secretary') {
+      const { dispatchAppAction } = await import('@/utils/appActions')
+
+      // 首选：后端主 Agent（LLM + bind_tools，导航与执行统一用 tool_calls 表达）
+      try {
+        const { chatWithSecretary } = await import('@/api/secretary')
+
+        // 会话级记忆：取本 Agent（secretary）对话区的历史消息，排除刚 push 的当前这条，
+        // 截取最近 N 条传给后端，让 LLM 感知多轮上下文（如「再切换」能理解上一轮主题）。
+        const HISTORY_LIMIT = 10
+        const currentHistory = chatStore.getMessages('secretary')
+        const history = currentHistory
+          .slice(0, -1) // 去掉最后一条（= 当前 userMessage）
+          .slice(-HISTORY_LIMIT)
+          .filter((m: any) => m.content && typeof m.content === 'string')
+          .map((m: any) => ({ role: m.role, content: m.content }))
+
+        const res = await chatWithSecretary({ message: userMessage, history })
+
+        // 动作：交给 dispatchAppAction 按顺序落地（切 Agent / 打开资料库 / 选中产品）
+        // 后端返回有序 actions 列表（如「先选产品，再切 Agent」），依次执行；
+        // 向后兼容：无 actions 时退回单个 action。
+        const actionList = (res.actions && res.actions.length > 0)
+          ? res.actions
+          : (res.action ? [res.action] : [])
+
+        const hasHandoff = actionList.some((a: any) => a?.action === 'handoff')
+
+        // 渲染回复文本
+        // 若有 handoff 动作：LLM 的 reply 通常会复述字段名/工具名，对用户不友好，
+        // 这里覆盖为简洁的"已交接"模板，详细追问交给子 Agent 对话区渲染。
+        let displayReply = res.reply || '处理完成'
+        if (hasHandoff) {
+          const handoffAct: any = actionList.find((a: any) => a?.action === 'handoff')
+          const targetAgent = agentStore.agentList.find(a => a.id === handoffAct?.agentId)
+          const agentLabel = targetAgent?.name || '专业助手'
+          displayReply = `好嘞，这事儿交给 **${agentLabel}** 处理，他会在自己的对话里跟你确认几个细节，确认完就开干。`
+        }
+        chatStore.addMessage({ role: 'assistant', content: displayReply })
+        await scrollToBottom()
+
+        actionList.forEach((act, i) => {
+          // 每个动作稍作错开（700ms + 序号），让前一个动作先落地
+          setTimeout(() => {
+            const { action, agentId, view, product, drawer, intent, missing_fields, mode, shop } = act as any
+            if (action === 'switch_agent' && agentId) {
+              dispatchAppAction({ type: 'switch_agent', agentId })
+            } else if (action === 'navigate' && view) {
+              dispatchAppAction({ type: 'navigate', view })
+            } else if (action === 'select_product' && product?.id) {
+              dispatchAppAction({ type: 'select_product', productId: product.id })
+            } else if (action === 'open_drawer' && drawer) {
+              dispatchAppAction({ type: 'open_drawer', drawer })
+            } else if (action === 'set_theme' && mode) {
+              dispatchAppAction({ type: 'set_theme', mode })
+            } else if (action === 'switch_shop' && shop?.id) {
+              dispatchAppAction({ type: 'switch_shop', shopId: shop.id })
+            } else if (action === 'handoff' && agentId) {
+              dispatchAppAction({
+                type: 'handoff',
+                agentId,
+                intent: intent || '',
+                missingFields: Array.isArray(missing_fields) ? missing_fields : [],
+              })
+            }
+          }, 700 + i * 300)
+        })
+        return
+      } catch (error) {
+        // 后端不可用（演示模式 401 / 后端未启动）→ 降级到前端正则识别
+        console.warn('[店秘书] 后端 orchestrator 不可用，降级到本地正则识别:', error)
+      }
+
+      // 降级：前端正则识别（规则式，覆盖常见说法）
       try {
         const { recognizeSecretaryIntent } = await import('@/mock/secretaryBrain')
-        const { dispatchAppAction } = await import('@/utils/appActions')
         const out = recognizeSecretaryIntent(userMessage)
         chatStore.addMessage({ role: 'assistant', content: out.reply })
         await scrollToBottom()
-        const action = out.action
-        if (action) {
-          // 稍作停顿让用户看到回复，再执行跳转（避免消息还没渲染就被切走）
-          setTimeout(() => dispatchAppAction(action), 700)
+        const fallbackAction = out.action
+        if (fallbackAction) {
+          setTimeout(() => dispatchAppAction(fallbackAction), 700)
         }
       } catch (error) {
         console.error('店秘书调度失败:', error)

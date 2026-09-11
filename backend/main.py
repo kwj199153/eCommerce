@@ -216,6 +216,10 @@ app.include_router(assets_router, dependencies=BUSINESS_AUTH)  # 路由已包含
 from modules.candidates.router import router as candidates_router
 app.include_router(candidates_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
 
+# 店秘书（主 Agent / 编排层）
+from modules.secretary.router import router as secretary_router
+app.include_router(secretary_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
+
 
 # ====== 开发模式启动 ======
 

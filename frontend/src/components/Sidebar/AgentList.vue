@@ -41,8 +41,8 @@ import { useAgentStore } from '@/stores/agent'
 
 const agentStore = useAgentStore()
 
-// Agent 列表（从 store 获取）
-const agentList = computed(() => agentStore.agentList)
+// Agent 列表（从 store 获取，排除「店秘书」——它已由左上角 Logo「店管家 AI」作为唯一入口）
+const agentList = computed(() => agentStore.agentList.filter(a => a.id !== 'secretary'))
 
 // 当前选中的 Agent ID
 const currentAgentId = computed(() => agentStore.currentAgent?.id || '')

@@ -123,7 +123,7 @@ class BaseAgent:
 
     def _get_default_llm(self) -> BaseChatModel:
         """获取默认 LLM（DashScope Qwen）"""
-        from langchain_community.chat_models import ChatOpenAI
+        from langchain_openai import ChatOpenAI
 
         return ChatOpenAI(
             model=config.llm_default_model,
@@ -190,7 +190,7 @@ class BaseAgent:
         """LLM 决策节点：决定是否调用工具或直接回复"""
         messages = [SystemMessage(content=self.system_prompt)] + state["messages"]
 
-        response = await self.llm.ainvoke(messages)
+        response = await self._llm_with_tools().ainvoke(messages)
 
         # 记录 Token 使用量
         if hasattr(response, 'usage_metadata'):
@@ -198,6 +198,16 @@ class BaseAgent:
             logger.debug(f"Token 使用: {token_usage}")
 
         return {"messages": [response]}
+
+    def _llm_with_tools(self) -> BaseChatModel:
+        """绑定工具的 LLM。
+
+        关键：必须 bind_tools，否则 LLM 永不输出 tool_calls，
+        _should_continue 永远走 "respond"，工具循环形同虚设。
+        """
+        if not self.tools:
+            return self.llm
+        return self.llm.bind_tools(self.tools)
 
     async def _respond_node(self, state: AgentState) -> dict:
         """
@@ -212,7 +222,7 @@ class BaseAgent:
         if isinstance(last_message, AIMessage):
             response_content = last_message.content or "处理完成"
         elif isinstance(last_message, ToolMessage):
-            response_content = f"工具执行结果: {last_content[:500]}"
+            response_content = f"工具执行结果: {str(last_message.content)[:500]}"
 
         return {
             "structured_response": {

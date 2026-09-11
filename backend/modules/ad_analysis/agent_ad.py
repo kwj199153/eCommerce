@@ -107,6 +107,7 @@ class SearchTermReport(BaseModel):
     waste_terms: List[SearchTermData]      # 浪费词(有花费无销售)
     new_opportunities: List[SearchTermData] # 新机会词
     suggestions: List[str]
+    summary: str = ""  # 一句话总结（供 service 层 SearchTermResponse.summary 消费）
 
 
 # ---- 出价建议相关 ----
@@ -475,7 +476,11 @@ Amazon PPC 关键指标基准（参考值）：
             low_performers=low_perf,
             waste_terms=waste,
             new_opportunities=opportunities,
-            suggestions=suggestions
+            suggestions=suggestions,
+            summary=llm_suggestions or (
+                f"高效词 {len(high_perf)} 个、低效词 {len(low_perf)} 个、"
+                f"浪费词 {len(waste)} 个，建议否定浪费词、加投高效词"
+            ),
         )
 
         total_spend = sum(t.spend for t in all_terms)
@@ -518,6 +523,10 @@ Amazon PPC 关键指标基准（参考值）：
         budget_impact = total_suggested_bid - total_current_bid
         avg_acos_change = random.uniform(-8, -2)  # 预期 ACoS 改善
 
+        # 提价/降价计数（先算，供下方 llm_context 与正文复用）
+        increase_count = len([k for k in keywords_data if k.bid_change_pct > 0])
+        decrease_count = len([k for k in keywords_data if k.bid_change_pct < 0])
+
         report = BidStrategyReport(
             strategy_type="balanced",
             total_keywords=len(keywords_data),
@@ -536,9 +545,6 @@ Amazon PPC 关键指标基准（参考值）：
         llm_rationale = await self._llm_summarize(llm_context)
         if llm_rationale:
             report.rationale = llm_rationale
-
-        increase_count = len([k for k in keywords_data if k.bid_change_pct > 0])
-        decrease_count = len([k for k in keywords_data if k.bid_change_pct < 0])
 
         content = f"""## 💡 出价优化建议报告
 
@@ -633,9 +639,9 @@ Amazon PPC 关键指标基准（参考值）：
         total_suggested = sum(a.suggested_budget for a in allocations)
 
         improvement = {
-            "expected_roas_increase": f"+{random.uniform(15, 35):.1f}%",
-            "expected_acos_decrease": f"-{random.uniform(3, 8):.1f}%",
-            "efficiency_gain": f"+{random.uniform(10, 25):.1f}%",
+            "expected_roas_increase": round(random.uniform(15, 35), 1),
+            "expected_acos_decrease": round(random.uniform(3, 8), 1),
+            "efficiency_gain": round(random.uniform(10, 25), 1),
         }
 
         report = BudgetOptimizationReport(
@@ -671,9 +677,9 @@ Amazon PPC 关键指标基准（参考值）：
 
         content += f"""
 ### 预期改善
-- RoAS 提升: {improvement['expected_roas_increase']}
-- ACoS 降低: {improvement['expected_acos_decrease']}
-- 整体效率提升: {improvement['efficiency_gain']}
+- RoAS 提升: +{improvement['expected_roas_increase']}%
+- ACoS 降低: -{improvement['expected_acos_decrease']}%
+- 整体效率提升: +{improvement['efficiency_gain']}%
 
 > ⚠️ {report.risk_assessment}
 """
@@ -1012,7 +1018,7 @@ Amazon PPC 关键指标基准（参考值）：
             eff = efficiencies[i % len(efficiencies)]
 
             impr = random.randint(100, 20000)
-            clicks = random.randint(5, int(impr * 0.01))
+            clicks = random.randint(5, max(5, int(impr * 0.01)))
             spend = round(clicks * random.uniform(0.3, 1.5), 2)
 
             if eff == "high":

@@ -59,6 +59,13 @@ class ImageGenerationRequest(BaseModel):
     keywords: List[str] = Field(default_factory=list, description="关键词列表")
     reference_description: str = Field(default="", description="参考描述")
     dimensions: str = Field(default="2000x2000", description="尺寸")
+    # —— 追问字段（子 Agent 接管后逐项追问补齐，缺省视为"未提供"）——
+    material: str = Field(default="", description="产品材质（如不锈钢/玻璃/塑料/陶瓷）")
+    shape: str = Field(default="", description="产品造型（如圆柱/方形/流线型）")
+    view_angle: str = Field(default="", description="拍摄视角（如正面/45度/俯视/三视图）")
+    need_logo: bool | None = Field(default=None, description="是否需要展示 logo")
+    product_detail: str = Field(default="", description="产品细节描述（需突出展示的设计/功能点）")
+    background_rule: str = Field(default="", description="背景规则（如纯白底/允许阴影/场景背景）")
 
 
 class ImageCaption(BaseModel):

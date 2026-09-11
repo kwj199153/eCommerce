@@ -34,6 +34,14 @@ async def generate_product_image_service(request: ImageGenerationRequest) -> Dic
     """生成产品图片"""
     try:
         result = await agent.generate_product_image(request)
+        # 缺参追问：透出 needs_clarification 标记，让主 Agent 逐项追问而非硬凑
+        if isinstance(result, dict) and result.get("needs_clarification"):
+            return {
+                "success": False,
+                "needs_clarification": True,
+                "missing_fields": result.get("missing_fields", []),
+                "message": result.get("message", "信息不足，需补充后生成"),
+            }
         return {
             "success": True,
             "data": result,
@@ -264,7 +272,7 @@ async def check_compliance_service(request: ComplianceCheckRequest) -> Dict[str,
                     "affected_area": i.affected_area
                 } for i in result.issues
             ],
-            "passed_checks": result.passed,
+            "passed_checks": result.passed_checks,
             "recommendations": result.recommendations
         }
         return {
