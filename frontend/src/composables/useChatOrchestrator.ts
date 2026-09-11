@@ -895,7 +895,15 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
           .filter((m: any) => m.content && typeof m.content === 'string')
           .map((m: any) => ({ role: m.role, content: m.content }))
 
-        const res = await chatWithSecretary({ message: userMessage, history })
+        // 决策层 B：跨会话记忆 —— 取持久化的 sessionId（若有），后端据此从 DB 恢复历史
+        const sessionId = chatStore.getSessionId('secretary')
+
+        const res = await chatWithSecretary({ message: userMessage, history, session_id: sessionId })
+
+        // 保存后端返回的 sessionId（跨会话记忆的关键：刷新后凭它恢复历史）
+        if (res.session_id) {
+          chatStore.setSessionId('secretary', res.session_id)
+        }
 
         // 动作：交给 dispatchAppAction 按顺序落地（切 Agent / 打开资料库 / 选中产品）
         // 后端返回有序 actions 列表（如「先选产品，再切 Agent」），依次执行；

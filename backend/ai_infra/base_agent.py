@@ -82,6 +82,7 @@ class BaseAgent:
         hitl_tools: list[str] = [],
         max_iterations: int = 10,
         metadata: dict = {},
+        checkpointer: Optional[AsyncPostgresSaver] = None,
     ):
         """
         初始化 Agent
@@ -94,11 +95,13 @@ class BaseAgent:
             hitl_tools: 需要 HITL 审批的工具名列表
             max_iterations: 最大推理迭代次数（防止死循环）
             metadata: 额外元数据
+            checkpointer: LangGraph checkpointer（PostgreSQL 持久化，None 则内存态）
         """
         self.agent_name = agent_name
         self.system_prompt = system_prompt
         self.max_iterations = max_iterations
         self.hitl_tool_names = set(hitl_tools)
+        self.checkpointer = checkpointer
 
         # 配置 LLM（默认使用 Qwen-max）
         self.llm = llm or self._get_default_llm()
@@ -181,8 +184,8 @@ class BaseAgent:
         workflow.add_edge("tool_node", "llm_call")
         workflow.add_edge("respond", END)
 
-        # 编译图（不绑定 checkpointer，在调用时动态传入）
-        return workflow.compile()
+        # 编译图（checkpointer 在编译期绑定，非运行时 config 传入）
+        return workflow.compile(checkpointer=self.checkpointer)
 
     # ====== 节点函数 ======
 
@@ -260,7 +263,6 @@ class BaseAgent:
         self,
         query: str,
         context_id: str,
-        checkpointer: AsyncPostgresSaver = None,
         tenant_id: str = "",
         shop_id: str = "",
     ) -> dict:
@@ -269,18 +271,15 @@ class BaseAgent:
 
         Args:
             query: 用户输入
-            context_id: 会话 ID（用于持久化）
-            checkpointer: Checkpointer 实例（PostgreSQL 持久化）
+            context_id: 会话 ID（= checkpointer 的 thread_id，用于多轮持久化）
             tenant_id: 租户 ID
             shop_id: 店铺 ID
 
         Returns:
             结构化响应字典
         """
-        # 构建配置
+        # checkpointer 已在编译期绑定，config 只传 thread_id
         graph_config = {"configurable": {"thread_id": context_id}}
-        if checkpointer:
-            graph_config["configurable"]["checkpointer"] = checkpointer
 
         # 更新元数据
         metadata = {
@@ -308,7 +307,6 @@ class BaseAgent:
         self,
         query: str,
         context_id: str,
-        checkpointer: AsyncPostgresSaver = None,
         tenant_id: str = "",
         shop_id: str = "",
     ) -> AsyncIterable[dict]:
@@ -323,8 +321,6 @@ class BaseAgent:
             - {type: "final", response: {...}}
         """
         graph_config = {"configurable": {"thread_id": context_id}}
-        if checkpointer:
-            graph_config["configurable"]["checkpointer"] = checkpointer
 
         metadata = {
             **self.default_metadata,

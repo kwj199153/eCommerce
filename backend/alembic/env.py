@@ -64,8 +64,22 @@ from modules.amazon_sp.db_model import (  # noqa: E402,F401
     AmazonCredential, AmazonAuthLog, DailySales,
     AdMetric, ListingSnapshot, ReportTask, InventoryHealth,
 )
+from modules.conversation.db_model import (  # noqa: E402,F401
+    ConversationRecord, ConversationMessageRecord,
+)
 
 target_metadata = Base.metadata
+
+
+# checkpoint_* 表由 LangGraph AsyncPostgresSaver.setup() 运行时创建，
+# 不属于业务 ORM，必须排除在 autogenerate 之外，否则会被误判为「待删除表」。
+_CHECKPOINT_PREFIXES = ("checkpoint",)
+
+
+def _include_object(obj, name, type_, reflected, compare_to):
+    if type_ == "table" and name.startswith(_CHECKPOINT_PREFIXES):
+        return False
+    return True
 
 
 def run_migrations_offline() -> None:
@@ -76,6 +90,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=_include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -93,6 +108,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,  # 列类型变更也能检测
+            include_object=_include_object,
         )
         with context.begin_transaction():
             context.run_migrations()

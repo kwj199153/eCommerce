@@ -104,6 +104,7 @@ async def init_db():
         AmazonCredential, AmazonAuthLog, DailySales,
         AdMetric, ListingSnapshot, ReportTask, InventoryHealth,
     )
+    from modules.conversation.db_model import ConversationRecord, ConversationMessageRecord
 
     async with engine.begin() as conn:
         # 2026-09-09: 已迁移到 Alembic（backend/alembic）
@@ -128,6 +129,9 @@ async def init_db():
             await conn.run_sync(ListingSnapshot.metadata.create_all)
             await conn.run_sync(ReportTask.metadata.create_all)
             await conn.run_sync(InventoryHealth.metadata.create_all)
+            # 会话持久化表（决策层 B）
+            await conn.run_sync(ConversationRecord.metadata.create_all)
+            await conn.run_sync(ConversationMessageRecord.metadata.create_all)
             print("✅ 数据库表创建完成（注意：已迁移到 Alembic，已有表请走 `alembic upgrade head`）")
 
 

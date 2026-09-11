@@ -8,7 +8,7 @@
 from functools import lru_cache
 from typing import Optional
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, model_validator
 
 
 class Settings(BaseSettings):
@@ -27,6 +27,13 @@ class Settings(BaseSettings):
         "case_sensitive": False,
     }
 
+    @model_validator(mode="after")
+    def _derive_checkpoint_url(self):
+        """checkpoint_database_url 缺省时从 database_url 派生（去 +asyncpg 驱动）。"""
+        if not self.checkpoint_database_url or "+asyncpg" in self.checkpoint_database_url:
+            self.checkpoint_database_url = self.database_url.replace("+asyncpg", "")
+        return self
+
     # ====== 服务器配置 ======
     api_host: str = Field(default="0.0.0.0", description="API 监听地址")
     api_port: int = Field(default=8000, description="API 端口")
@@ -36,6 +43,12 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/ecommerce",
         description="PostgreSQL 异步连接 URL"
+    )
+    # LangGraph Checkpoint 专用连接串（psycopg3 驱动，与业务 asyncpg 分离）
+    # AsyncPostgresSaver 硬依赖 psycopg3，故用 postgresql:// 而非 postgresql+asyncpg://
+    checkpoint_database_url: str = Field(
+        default="postgresql://postgres:postgres@localhost:5432/ecommerce",
+        description="LangGraph checkpoint 持久化连接 URL（psycopg3）"
     )
     database_pool_size: int = Field(default=10, description="连接池大小")
     database_max_overflow: int = Field(default=20, description="连接池最大溢出数")

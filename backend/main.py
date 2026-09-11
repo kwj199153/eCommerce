@@ -30,6 +30,13 @@ async def lifespan(app: FastAPI):
     await init_db()
     print("✅ 数据库初始化完成")
 
+    # 决策层 C：初始化 LangGraph Checkpoint（psycopg3 连接池 + 建 checkpoint 表）
+    try:
+        from core.checkpoint import setup_checkpoint
+        await setup_checkpoint()
+    except Exception as e:
+        print(f"⚠️ Checkpoint 初始化跳过: {e}")
+
     # 启动时：把 PG 里的店铺回灌到内存（stores 读缓存）
     try:
         from modules.stores.router import load_stores_into_memory
@@ -80,6 +87,11 @@ async def lifespan(app: FastAPI):
 
     # 关闭时：清理资源
     print("\n🛑 正在关闭服务...")
+    try:
+        from core.checkpoint import close_checkpoint
+        await close_checkpoint()
+    except Exception:
+        pass
     await close_db()
     print("✅ 资源已释放")
 
@@ -219,6 +231,10 @@ app.include_router(candidates_router, dependencies=BUSINESS_AUTH)  # 路由已�
 # 店秘书（主 Agent / 编排层）
 from modules.secretary.router import router as secretary_router
 app.include_router(secretary_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
+
+# 会话持久化（决策层 B：跨会话记忆）
+from modules.conversation.router import router as conversation_router
+app.include_router(conversation_router, prefix="/api/v1", dependencies=BUSINESS_AUTH)
 
 
 # ====== 开发模式启动 ======

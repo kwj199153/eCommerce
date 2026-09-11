@@ -31,6 +31,8 @@ export interface SecretaryResponse {
   /** 向后兼容：= actions 最后一个 */
   action: SecretaryAction | null
   tool_calls: string[]
+  /** 会话 ID（后端返回，前端持久化后后续请求带回，实现跨会话记忆） */
+  session_id?: string | null
 }
 
 export interface HistoryMessage {
@@ -42,10 +44,12 @@ export interface HistoryMessage {
  * 店秘书对话（全局入口）
  * 后端主 Agent 识别意图：调业务工具出结果，或返回导航/选择动作。
  * history 传本会话历史消息（不含当前 message），用于多轮上下文连贯。
+ * session_id 传会话 ID（跨会话记忆，非空时后端从 DB 读历史 + checkpoint 持久化）。
  */
 export function chatWithSecretary(data: {
   message: string
   history?: HistoryMessage[]
+  session_id?: string | null
 }): Promise<SecretaryResponse> {
   return request.post('/orchestrator/chat', data)
 }

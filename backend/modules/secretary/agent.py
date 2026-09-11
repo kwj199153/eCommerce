@@ -115,7 +115,7 @@ SECRETARY_SYSTEM_PROMPT = """你是「店管家 AI」的店秘书，一个跨境
 class SecretaryAgent(BaseAgent):
     """店秘书主 Agent"""
 
-    def __init__(self, llm=None, shop_id: Optional[str] = None, **kwargs):
+    def __init__(self, llm=None, shop_id: Optional[str] = None, checkpointer=None, **kwargs):
         # 产品选择工具按店铺动态构建（shop_id 为空时返回空标记，由前端提示）
         product_tools = build_product_tools(shop_id)
         shop_tools = build_shop_tools()
@@ -126,6 +126,7 @@ class SecretaryAgent(BaseAgent):
             llm=llm,
             max_iterations=6,
             metadata={"role": "orchestrator"},
+            checkpointer=checkpointer,
             **kwargs,
         )
 
@@ -141,16 +142,21 @@ def get_secretary_agent(shop_id: Optional[str] = None) -> SecretaryAgent:
     店铺上下文，所以：
     - shop_id 为空：返回共享单例（工具集不含产品选择，或含空 shop 的产品工具）
     - shop_id 非空：每次新建实例（开销可接受，agent 初始化很轻）
+
+    决策层 C：优先尝试绑定全局 checkpointer（跨轮持久化）；若未初始化（如
+    测试环境 / DB 未连），退化为无 checkpointer 的内存态，不抛错。
     """
     global _agent
+    from core.checkpoint import get_checkpointer
+    cp = get_checkpointer()
     if shop_id is None:
         if _agent is None:
-            _agent = SecretaryAgent()
+            _agent = SecretaryAgent(checkpointer=cp)
         return _agent
-    return SecretaryAgent(shop_id=shop_id)
+    return SecretaryAgent(shop_id=shop_id, checkpointer=cp)
 
 
-async def route(query: str, shop_id: Optional[str] = None, history: Optional[list[dict]] = None) -> dict:
+async def route(query: str, shop_id: Optional[str] = None, history: Optional[list[dict]] = None, session_id: Optional[str] = None) -> dict:
     """一次路由调用，返回结构化结果。
 
     直接执行图并捕获消息流，从中提取：
@@ -166,15 +172,25 @@ async def route(query: str, shop_id: Optional[str] = None, history: Optional[lis
         history: 本会话的历史消息（[{role, content}]，role ∈ user/assistant），
             用于让 LLM 感知多轮上下文（如「再切换」能理解上一轮在说主题）。
             历史里**不应**包含当前 query（前端取的是「当前消息之前」的最近 N 条）。
+        session_id: 会话 ID。非空时作为 checkpointer 的 thread_id，实现跨轮
+            持久化（决策层 C）；同时优先于前端显式传的 history。
 
     Returns:
         {"reply": str, "actions": [dict], "action": dict|None, "tool_calls": [str]}
     """
     agent = get_secretary_agent(shop_id)
 
-    # 拼接历史上下文 + 当前消息（历史在前，当前在后）
+    # 决策层 C：session_id 作为 checkpointer 的 thread_id，实现跨轮持久化。
+    # 关键语义：checkpointer 会自动把同一 thread_id 的历史消息注入上下文，
+    # 因此有 session_id 时**不应再手动拼 history**（否则历史重复两份）。
+    thread_id = session_id or "secretary-default"
+    use_checkpoint = session_id is not None and agent.checkpointer is not None
+
+    # 拼接输入消息：
+    # - 有 checkpointer：只传当前 query，历史由 checkpointer 自动恢复
+    # - 无 checkpointer：手动拼 history（决策层 A 的会话级记忆）
     messages: list = []
-    if history:
+    if not use_checkpoint and history:
         for h in history:
             role = (h or {}).get("role")
             content = (h or {}).get("content", "")
@@ -186,10 +202,21 @@ async def route(query: str, shop_id: Optional[str] = None, history: Optional[lis
                 messages.append(HumanMessage(content=content))
     messages.append(HumanMessage(content=query))
 
-    # 直接跑图（不传 checkpointer，上下文由前端显式传入的 history 承载）
+    # 记录本次调用前的历史消息数（用于只提取本次新增的动作，避免历史动作重复提取）
+    if use_checkpoint:
+        try:
+            prev_state = await agent.graph.aget_state(
+                {"configurable": {"thread_id": thread_id}}
+            )
+            prev_count = len(prev_state.values.get("messages", [])) if prev_state.values else 0
+        except Exception:
+            prev_count = 0
+    else:
+        prev_count = 0
+
     state = await agent.graph.ainvoke(
         {"messages": messages},
-        config={"configurable": {"thread_id": "secretary-default"}},
+        config={"configurable": {"thread_id": thread_id}},
     )
 
     messages = state.get("messages", [])
@@ -201,7 +228,7 @@ async def route(query: str, shop_id: Optional[str] = None, history: Optional[lis
     # 3) 最终回复文本（最后一条 AIMessage 的非空 content）
     reply = "处理完成"
 
-    for m in messages:
+    for m in messages[prev_count:]:
         cls = m.__class__.__name__
         if cls == "ToolMessage":
             content = str(m.content)
