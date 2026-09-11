@@ -105,6 +105,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 租户上下文中间件：从 X-Shop-ID / ?shop_id= 提取当前店铺写入请求级 ContextVar
+from core.tenant.middleware import TenantMiddleware
+app.add_middleware(TenantMiddleware)
+
+# 限流 + 请求日志（后 add 的更靠外层，因此请求日志在最外层，能统计到限流拒绝的请求）
+from core.middleware import RateLimitMiddleware, RequestLogMiddleware
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(RequestLogMiddleware)
+
 
 # ====== 全局异常处理 ======
 

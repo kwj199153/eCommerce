@@ -75,6 +75,14 @@ class Settings(BaseSettings):
     # ====== 限流 & 计费 ======
     rate_limit_requests_per_minute: int = Field(default=60, description="每分钟请求限制")
     rate_limit_requests_per_day: int = Field(default=1000, description="每日请求限制")
+    rate_limit_enabled: bool = Field(
+        default=True,
+        description="是否启用请求速率限制中间件（测试/压测时可关闭）",
+    )
+    request_log_enabled: bool = Field(
+        default=True,
+        description="是否启用请求日志中间件",
+    )
     free_tier_monthly_quota: int = Field(default=100, description="免费套餐月度额度")
 
     # ====== 文件存储 ======

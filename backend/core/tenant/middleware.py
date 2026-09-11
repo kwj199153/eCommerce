@@ -5,10 +5,12 @@
 支持从 Header 或 Token 中提取 tenant_id（shop_id）。
 """
 
+import contextvars
 from typing import Optional
 from fastapi import Request, HTTPException, status, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from core.database import get_db
 from core.auth.dependencies import require_auth_if_enabled
@@ -28,14 +30,24 @@ TENANT_QUERY_PARAM = "shop_id"
 
 class TenantContext:
     """
-    租户上下文（请求级别单例）
+    租户上下文（请求级「值对象」）
 
-    在一次请求中存储当前租户信息，供后续业务逻辑使用。
+    只读：仅暴露 shop / shop_id / is_set 属性，不提供原地修改方法。
+    所有写入统一走 `tenant_context.xxx` 代理（替换式更新 ContextVar），
+    避免出现「两个实例各改各的」这类语义分裂。
     """
 
-    def __init__(self):
-        self._shop: Optional[Shop] = None
-        self._shop_id: Optional[str] = None
+    __slots__ = ("_shop", "_shop_id")
+
+    def __init__(self, shop: Optional[Shop] = None, shop_id: Optional[str] = None):
+        object.__setattr__(self, "_shop", shop)
+        object.__setattr__(
+            self, "_shop_id",
+            shop_id if shop_id is not None else (shop.id if shop else None),
+        )
+
+    def __setattr__(self, key, value):
+        raise AttributeError("TenantContext 是只读值对象，请通过 tenant_context 代理写入")
 
     @property
     def shop(self) -> Optional[Shop]:
@@ -52,23 +64,97 @@ class TenantContext:
         """是否已设置租户"""
         return self._shop_id is not None
 
-    def set_shop(self, shop: Shop):
-        """设置当前店铺"""
-        self._shop = shop
-        self._shop_id = shop.id
 
-    def set_shop_id(self, shop_id: str):
-        """仅设置店铺 ID（不加载完整对象）"""
-        self._shop_id = shop_id
+# ====== 请求级租户上下文（ContextVar 隔离）======
+#
+# 修复记录：原先这里是模块级单例 `tenant_context = TenantContext()`，
+# 所有请求共享同一个可变对象。异步并发下（同一 worker 内多个请求交错
+# 执行）会导致 A 请求读到 B 请求的 shop，属于跨请求数据串扰。
+#
+# 现改为 ContextVar + 「替换式写入」：
+#   1. 每个请求（asyncio Task）持有自己的上下文副本，天然隔离；
+#   2. 写入时构造新实例并 set 进 ContextVar，而不是原地改字段——
+#      这样即便某个 Task 继承了父级 Context 里的旧实例，写入也不会
+#      污染父级或兄弟 Task。
+_tenant_context_var: contextvars.ContextVar[Optional[TenantContext]] = contextvars.ContextVar(
+    "tenant_context", default=None
+)
 
-    def clear(self):
-        """清除租户信息（请求结束后调用）"""
-        self._shop = None
-        self._shop_id = None
+
+def _read_context() -> TenantContext:
+    """读取当前请求的上下文实例（懒创建，内部使用）"""
+    ctx = _tenant_context_var.get()
+    if ctx is None:
+        ctx = TenantContext()
+        _tenant_context_var.set(ctx)
+    return ctx
 
 
-# 全局租户上下文实例（每个请求会重置）
-tenant_context = TenantContext()
+def _update_context(**changes) -> TenantContext:
+    """
+    以「替换」语义更新当前请求上下文，返回新实例。
+
+    不在旧实例上原地改字段，而是构造新实例并 set 进当前 Context。
+    """
+    cur = _tenant_context_var.get()
+    cur_shop = cur._shop if cur else None
+    cur_shop_id = cur._shop_id if cur else None
+
+    new_shop = changes.get("shop", cur_shop)
+    new_shop_id = changes.get("shop_id", cur_shop_id)
+    if "shop" in changes and changes["shop"] is not None and "shop_id" not in changes:
+        new_shop_id = changes["shop"].id
+
+    new_ctx = TenantContext(shop=new_shop, shop_id=new_shop_id)
+    _tenant_context_var.set(new_ctx)
+    return new_ctx
+
+
+class _TenantContextProxy:
+    """
+    租户上下文代理（对外唯一入口）
+
+    - 读：`tenant_context.shop_id` / `.shop` / `.is_set` 转发到当前请求实例
+    - 写：`set_shop` / `set_shop_id` / `clear` 走「替换式」更新，保证 Task 隔离
+
+    保留此代理是为了让既有的 `tenant_context.set_shop(...)` 等调用点无需修改。
+    """
+
+    __slots__ = ()
+
+    def set_shop(self, shop: Shop) -> TenantContext:
+        return _update_context(shop=shop, shop_id=shop.id)
+
+    def set_shop_id(self, shop_id: str) -> TenantContext:
+        return _update_context(shop_id=shop_id)
+
+    def clear(self) -> TenantContext:
+        return _update_context(shop=None, shop_id=None)
+
+    @property
+    def shop(self) -> Optional[Shop]:
+        return _read_context().shop
+
+    @property
+    def shop_id(self) -> Optional[str]:
+        return _read_context().shop_id
+
+    @property
+    def is_set(self) -> bool:
+        return _read_context().is_set
+
+
+# 请求级租户上下文入口（所有读写都落在当前请求的 ContextVar 上）
+tenant_context = _TenantContextProxy()
+
+
+def get_tenant_context() -> _TenantContextProxy:
+    """
+    获取当前请求的租户上下文入口。
+
+    返回代理而非裸实例，确保调用方拿到的永远是安全（替换式）语义。
+    """
+    return tenant_context
 
 
 # ====== 依赖注入函数 ======
@@ -236,15 +322,18 @@ def require_shop_owner():
 
 # ====== FastAPI 中间件 ======
 
-class TenantMiddleware:
+class TenantMiddleware(BaseHTTPMiddleware):
     """
-    多租户中间件（可选）
+    多租户中间件
 
-    自动从请求头/查询参数提取租户信息并设置到上下文。
+    自动从请求头/查询参数提取租户信息并设置到当前请求的上下文。
     如果不需要强制要求租户，可以使用此中间件自动处理。
+
+    注册方式（main.py）：
+        app.add_middleware(TenantMiddleware)
     """
 
-    async def __call__(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next):
         # 尝试提取租户信息（不强制）
         shop_id = (
             request.headers.get(TENANT_HEADER)
@@ -252,12 +341,11 @@ class TenantMiddleware:
         )
 
         if shop_id:
-            tenant_context.set_shop_id(shop_id)
+            get_tenant_context().set_shop_id(shop_id)
 
-        # 执行请求
+        # 同时挂到 request.state：外层中间件（请求日志）与异常处理器可直接读取
+        request.state.shop_id = shop_id
+
+        # 执行请求（ContextVar 在请求 Task 结束时随副本一起失效）
         response = await call_next(request)
-
-        # 清理上下文
-        tenant_context.clear()
-
         return response
