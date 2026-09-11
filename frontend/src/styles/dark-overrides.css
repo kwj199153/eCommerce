@@ -1,0 +1,166 @@
+/**
+ * 深色模式精调（html.dark 下的组件级补丁）
+ *
+ * 来源（S0 归位，原为组件内非 scoped <style> 块）：
+ *   - ChatPanel/results/BidOptimizeResult.vue   html.dark .bid-optimize-result ...
+ *   - ChatPanel/results/BudgetAllocResult.vue   html.dark .budget-alloc-result ...
+ *   - ChatPanel/results/BlueOceanResult.vue     html.dark .blue-ocean-result / .stat-* ...
+ *
+ * 注：BlueOceanResult 原写法是 `:global(html.dark) xxx`，但该块本身是「非 scoped」的，
+ * Vue 不会对非 scoped 块做 :global() 解析，选择器被原样输出成非法 CSS（浏览器整条丢弃），
+ * 属于从未生效的死规则。此处归位为真正的全局层后已去掉 :global() 包装，规则开始生效。
+ *
+ * 后续方向（见 docs/refactor-plan.md）：这些硬编码色值应逐步收敛到 token 层
+ * （App.vue 的 :root / html.dark 变量），而不是继续堆组件级补丁。
+ */
+
+/* ===== BidOptimizeResult ===== */
+html.dark .bid-optimize-result {
+  background: #262626;
+  border-color: #404040;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+html.dark .bid-optimize-result .strat-aggressive {
+  background: linear-gradient(135deg, rgba(250,173,20,0.16), rgba(250,173,20,0.05));
+  border-color: rgba(250,173,20,0.4);
+}
+html.dark .bid-optimize-result .strat-balanced {
+  background: linear-gradient(135deg, rgba(24,144,255,0.16), rgba(24,144,255,0.05));
+  border-color: rgba(24,144,255,0.4);
+}
+html.dark .bid-optimize-result .strat-conservative {
+  background: linear-gradient(135deg, rgba(82,196,26,0.16), rgba(82,196,26,0.05));
+  border-color: rgba(82,196,26,0.4);
+}
+html.dark .bid-optimize-result .strategy-label { color: rgba(255, 255, 255, 0.55); }
+html.dark .bid-optimize-result .strategy-name { color: rgba(255, 255, 255, 0.95); }
+html.dark .bid-optimize-result .overview-stats { color: rgba(255, 255, 255, 0.7); }
+html.dark .bid-optimize-result .overview-stats .stat b { color: rgba(255, 255, 255, 0.95); }
+html.dark .bid-optimize-result .section-title { color: rgba(255, 255, 255, 0.95); }
+html.dark .bid-optimize-result .header-increase {
+  background: rgba(82,196,26,0.18);
+  border-color: rgba(82,196,26,0.45);
+  color: #73d13d;
+}
+html.dark .bid-optimize-result .header-decrease {
+  background: rgba(255,77,79,0.18);
+  border-color: rgba(255,77,79,0.45);
+  color: #ff7875;
+}
+html.dark .bid-optimize-result .rationale-box {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+html.dark .bid-optimize-result .rationale-box h4 { color: rgba(255, 255, 255, 0.85); }
+html.dark .bid-optimize-result .rationale-box p { color: rgba(255, 255, 255, 0.6); }
+html.dark .bid-optimize-result .result-footer { border-top-color: rgba(255, 255, 255, 0.1); }
+html.dark .bid-optimize-result .ant-table-thead > tr > th {
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+html.dark .bid-optimize-result .ant-table-tbody > tr > td {
+  background: transparent !important;
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+  color: rgba(255, 255, 255, 0.85);
+}
+html.dark .bid-optimize-result .row-increase > td {
+  background-color: rgba(82,196,26,0.08) !important;
+}
+html.dark .bid-optimize-result .row-decrease > td {
+  background-color: rgba(250,173,20,0.08) !important;
+}
+
+/* ===== BudgetAllocResult ===== */
+html.dark .budget-alloc-result {
+  background: #262626;
+  border-color: #404040;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+html.dark .budget-alloc-result .budget-overview {
+  background: linear-gradient(135deg, rgba(82,196,26,0.1), rgba(24,144,255,0.08));
+  border: 1px solid rgba(82,196,26,0.3);
+}
+html.dark .budget-alloc-result .budget-card .label { color: rgba(255, 255, 255, 0.55); }
+html.dark .budget-alloc-result .budget-card .value { color: rgba(255, 255, 255, 0.95); }
+html.dark .budget-alloc-result .budget-card.suggested .value { color: #73d13d; }
+html.dark .budget-alloc-result .arrow { color: rgba(255, 255, 255, 0.4); }
+html.dark .budget-alloc-result .section-title { color: rgba(255, 255, 255, 0.95); }
+html.dark .budget-alloc-result .improvement-grid {
+  background: rgba(24,144,255,0.12);
+  border-color: rgba(24,144,255,0.35);
+}
+html.dark .budget-alloc-result .improvement-grid h4 { color: #40a9ff; }
+html.dark .budget-alloc-result .imp-item {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+html.dark .budget-alloc-result .imp-label { color: rgba(255, 255, 255, 0.55); }
+html.dark .budget-alloc-result .imp-value { color: #40a9ff; }
+html.dark .budget-alloc-result .risk-low { background: rgba(82,196,26,0.12); border-color: rgba(82,196,26,0.4); }
+html.dark .budget-alloc-result .risk-medium { background: rgba(250,173,20,0.12); border-color: rgba(250,173,20,0.4); }
+html.dark .budget-alloc-result .risk-high { background: rgba(255,77,79,0.12); border-color: rgba(255,77,79,0.4); }
+html.dark .budget-alloc-result .risk-low h4 { color: #73d13d; }
+html.dark .budget-alloc-result .risk-medium h4 { color: #ffc53d; }
+html.dark .budget-alloc-result .risk-high h4 { color: #ff7875; }
+html.dark .budget-alloc-result .risk-box p { color: rgba(255, 255, 255, 0.75); }
+html.dark .budget-alloc-result .result-footer { border-top-color: rgba(255, 255, 255, 0.1); }
+html.dark .budget-alloc-result .ant-table-thead > tr > th {
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+html.dark .budget-alloc-result .ant-table-tbody > tr > td {
+  background: transparent !important;
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* ===== BlueOceanResult ===== */
+html.dark .result-header {
+  --bo-header-bg: linear-gradient(135deg, #4338a6 0%, #6b21a8 50%, #7c3aed 100%);
+  box-shadow: 0 2px 12px rgba(124, 58, 237, 0.25);
+}
+html.dark .stat-card {
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+}
+html.dark .stat-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 2px 0 0 2px;
+}
+html.dark .stat-excellent {
+  background: rgba(34, 197, 94, 0.12);
+}
+html.dark .stat-excellent::before { background: #22c55e; }
+html.dark .stat-excellent .stat-value { color: #4ade80; }
+
+html.dark .stat-medium {
+  background: rgba(234, 179, 8, 0.12);
+}
+html.dark .stat-medium::before { background: #eab308; }
+html.dark .stat-medium .stat-value { color: #facc15; }
+
+html.dark .stat-poor {
+  background: rgba(239, 68, 68, 0.10);
+}
+html.dark .stat-poor::before { background: #ef4444; }
+html.dark .stat-poor .stat-value { color: #f87171; }
+
+html.dark .stat-saved {
+  background: rgba(59, 130, 246, 0.12);
+}
+html.dark .stat-saved::before { background: #3b82f6; }
+html.dark .stat-saved .stat-value { color: #60a5fa; }
+
+html.dark .stat-label {
+  color: var(--text-tertiary);
+}
+html.dark .stats-row {
+  border-bottom-color: var(--border-base);
+}
+html.dark .blue-ocean-result {
+  border-color: var(--border-base);
+}
