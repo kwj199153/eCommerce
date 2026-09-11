@@ -451,214 +451,14 @@
       </template>
     </a-table>
 
-    <!-- 新增/编辑弹窗 -->
-    <a-modal
-      v-model:open="modalVisible"
-      :title="editingId ? '编辑产品' : '新增产品'"
-      width="720px"
-      @ok="handleSubmit"
-      :okLoading="submitting"
-      cancelText="取消"
-    >
-      <a-form :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }">
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="ASIN" required>
-              <a-input v-model:value="form.asin" placeholder="B0XXXXXXXX" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="SKU">
-              <a-input v-model:value="form.sku" placeholder="内部 SKU" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-form-item label="产品标题" required>
-          <a-textarea v-model:value="form.title" placeholder="产品名称/Listing 标题" :rows="2" />
-        </a-form-item>
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="品牌">
-              <a-input v-model:value="form.brand" placeholder="品牌名" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="分类">
-              <a-select v-model:value="form.category" placeholder="选择分类">
-                <a-select-option v-for="cat in CATEGORIES" :key="cat.key" :value="cat.key">
-                  {{ cat.icon }} {{ cat.label }}
-                </a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="16">
-          <a-col :span="8">
-            <a-form-item label="售价 ($)">
-              <a-input-number v-model:value="form.price" :min="0" :precision="2" style="width:100%" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item label="成本 ($)">
-              <a-input-number v-model:value="form.cost" :min="0" :precision="2" style="width:100%" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item label="配送方式">
-              <a-select v-model:value="form.fulfillment_type">
-                <a-select-option value="FBA">FBA</a-select-option>
-                <a-select-option value="FBM">FBM</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="16">
-          <a-col :span="8">
-            <a-form-item label="FBA 库存">
-              <a-input-number v-model:value="form.fba_stock" :min="0" style="width:100%" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item label="FBM 库存">
-              <a-input-number v-model:value="form.fbm_stock" :min="0" style="width:100%" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item label="日均销量">
-              <a-input-number v-model:value="form.daily_sales_avg" :min="0" style="width:100%" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-form-item label="标签">
-          <a-select v-model:value="form.tags" mode="tags" placeholder="输入标签回车添加" style="width:100%" />
-        </a-form-item>
-        <a-form-item label="分组">
-          <a-select
-            v-model:value="form.groups"
-            mode="multiple"
-            placeholder="选择所属分组（可多选）"
-            style="width:100%"
-            :options="store.groups.map(g => ({ label: g.name, value: g.id }))"
-          />
-        </a-form-item>
-        <a-form-item label="备注">
-          <a-textarea v-model:value="form.notes" placeholder="运营备注..." :rows="2" />
-        </a-form-item>
+    <!-- 新增/编辑产品弹窗 -->
+    <ProductFormModal v-model:open="modalVisible" :editing-id="editingId" @saved="onSaved" />
 
-        <!-- 创建SPU（仅新增时可选） -->
-        <template v-if="!editingId">
-          <a-divider orientation="left" style="margin: 16px 0 8px">
-            <span style="font-size: 13px; color: var(--text-secondary)">SPU</span>
-          </a-divider>
-          <a-form-item label="创建SPU">
-            <a-switch v-model:checked="createVariation" :disabled="editingId !== null" />
-            <span style="margin-left: 8px; font-size: 12px; color: var(--text-tertiary)">
-              开启后生成 1 个SPU + 多个SKU，SKU各自独立维护价格/库存/文案
-            </span>
-          </a-form-item>
-          <template v-if="createVariation">
-            <a-form-item label="规格主题" required>
-              <a-select v-model:value="variationTheme" placeholder="选择规格维度" style="width: 100%">
-                <a-select-option value="Color">颜色 Color</a-select-option>
-                <a-select-option value="Size">尺寸 Size</a-select-option>
-                <a-select-option value="Color-Size">颜色 + 尺寸</a-select-option>
-                <a-select-option value="Style">款式 Style</a-select-option>
-                <a-select-option value="Package">包装 Package</a-select-option>
-              </a-select>
-            </a-form-item>
-            <a-form-item label="SKU">
-              <div style="width: 100%">
-                <div v-for="(ch, i) in childVariations" :key="i" class="var-child-row">
-                  <a-input
-                    v-model:value="ch.spec_value"
-                    :placeholder="variationTheme === 'Size' ? '如 M / L / XL' : '如 红色 / 蓝色'"
-                    style="width: 120px"
-                  />
-                  <a-input v-model:value="ch.asin" placeholder="ASIN (B0XXXX)" style="width: 140px" />
-                  <a-input-number v-model:value="ch.price" :min="0" :precision="2" placeholder="价格" style="width: 90px" />
-                  <a-input-number v-model:value="ch.stock" :min="0" placeholder="库存" style="width: 80px" />
-                  <a-button type="text" danger size="small" @click="removeChildVariation(i)">
-                    <DeleteOutlined />
-                  </a-button>
-                </div>
-                <a-button type="dashed" size="small" block style="margin-top: 6px" @click="addChildVariationRow">
-                  <PlusOutlined /> 添加SKU
-                </a-button>
-              </div>
-            </a-form-item>
-          </template>
-        </template>
-      </a-form>
-    </a-modal>
+    <!-- SKU 增删弹窗 -->
+    <SkuFormModal v-model:open="childModalVisible" :editing-id="childEditingId" :parent-id="childParentId" @saved="onSaved" />
 
-    <!-- SKU新增/编辑弹窗 -->
-    <a-modal
-      v-model:open="childModalVisible"
-      :title="childEditingId ? '编辑SKU' : '新增SKU'"
-      width="480px"
-      @ok="submitChild"
-      :okLoading="childSubmitting"
-      cancelText="取消"
-    >
-      <a-form :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }">
-        <a-form-item label="规格值" required>
-          <a-input v-model:value="childForm.spec_value" placeholder="如 红色 / M / XL" />
-        </a-form-item>
-        <a-form-item label="ASIN">
-          <a-input v-model:value="childForm.asin" placeholder="B0XXXXXXXX" />
-        </a-form-item>
-        <a-form-item label="SKU">
-          <a-input v-model:value="childForm.sku" placeholder="内部 SKU" />
-        </a-form-item>
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="价格 ($)">
-              <a-input-number v-model:value="childForm.price" :min="0" :precision="2" style="width:100%" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="库存">
-              <a-input-number v-model:value="childForm.stock" :min="0" style="width:100%" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </a-form>
-    </a-modal>
-
-    <!-- 提升为SPU弹窗 -->
-    <a-modal
-      v-model:open="promoteModalVisible"
-      title="提升为SPU"
-      width="480px"
-      @ok="submitPromoteToGroup"
-      :okLoading="promoteSubmitting"
-      okText="确定组化"
-      cancelText="取消"
-    >
-      <a-alert
-        type="info"
-        show-icon
-        style="margin-bottom: 16px"
-        message="本产品将成为该 SPU 的首个 SKU，保留其 ASIN/价格/库存/评分等信息；同时生成一个 SPU 作为公共模板。"
-      />
-      <a-form :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }">
-        <a-form-item label="规格主题" required>
-          <a-select v-model:value="promoteForm.spu_theme" placeholder="选择规格维度" style="width: 100%">
-            <a-select-option value="Color">颜色 Color</a-select-option>
-            <a-select-option value="Size">尺寸 Size</a-select-option>
-            <a-select-option value="Color-Size">颜色 + 尺寸</a-select-option>
-            <a-select-option value="Style">款式 Style</a-select-option>
-            <a-select-option value="Package">包装 Package</a-select-option>
-          </a-select>
-        </a-form-item>
-        <a-form-item label="本产品规格值" required>
-          <a-input
-            v-model:value="promoteForm.first_value"
-            :placeholder="promoteForm.spu_theme === 'Size' ? '如 M / L / XL' : '如 黑色 / 红色'"
-          />
-        </a-form-item>
-      </a-form>
-    </a-modal>
+    <!-- 提升为 SPU 弹窗 -->
+    <PromoteSkuModal v-model:open="promoteModalVisible" :product-id="promoteTargetId" @saved="onSaved" />
 
     <!-- 详情抽屉 -->
     <a-drawer
@@ -913,7 +713,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   PlusOutlined,
@@ -933,6 +733,9 @@ import {
 } from '@ant-design/icons-vue'
 import { useProductLibraryStore, PRODUCT_CATEGORIES, GROUP_COLORS, type ProductItem, type ProductGroup } from '@/stores/productLibrary'
 import CompetitorManager from '@/components/competitor/CompetitorManager.vue'
+import ProductFormModal from './ProductLibrary/ProductFormModal.vue'
+import SkuFormModal from './ProductLibrary/SkuFormModal.vue'
+import PromoteSkuModal from './ProductLibrary/PromoteSkuModal.vue'
 import { useCompetitorPoolStore } from '@/stores/competitorPool'
 import { useMonitorPoolStore } from '@/stores/monitorPool'
 import { productTagColor, productStatusColor } from '@/utils/colorSemantics'
@@ -1104,151 +907,22 @@ const listingStatusMap: Record<string, { status: string; text: string }> = {
   pending: { status: 'processing', text: '待上架' },
 }
 
-// ====== 弹窗 ======
+// ====== 弹窗（子组件自治，主文件只持 open 状态与当前编辑对象 id）======
 const modalVisible = ref(false)
 const editingId = ref<string | null>(null)
-const submitting = ref(false)
-
-const form = reactive({
-  asin: '',
-  sku: '',
-  title: '',
-  brand: '',
-  category: 'other',
-  price: 0,
-  cost: 0,
-  fulfillment_type: 'FBA' as 'FBA' | 'FBM',
-  fba_stock: 0,
-  fbm_stock: 0,
-  daily_sales_avg: 0,
-  tags: [] as string[],
-  notes: '',
-  groups: [] as string[],
-})
-
-// ====== SPU创建（仅新增时可用）======
-const createVariation = ref(false)
-const variationTheme = ref('Color')
-const childVariations = ref<Array<{ spec_value: string; asin: string; price: number; stock: number }>>([])
-
-function addChildVariationRow() {
-  childVariations.value.push({ spec_value: '', asin: '', price: 0, stock: 0 })
-}
-
-function removeChildVariation(i: number) {
-  childVariations.value.splice(i, 1)
-}
-
-function resetVariationState() {
-  createVariation.value = false
-  variationTheme.value = 'Color'
-  childVariations.value = []
-}
-
-function resetForm() {
-  Object.assign(form, {
-    asin: '', sku: '', title: '', brand: '', category: 'other',
-    price: 0, cost: 0, fulfillment_type: 'FBA',
-    fba_stock: 0, fbm_stock: 0, daily_sales_avg: 0,
-    tags: [], notes: '', groups: [],
-  })
-  resetVariationState()
-}
 
 function openAddModal() {
-  resetForm()
   editingId.value = null
   modalVisible.value = true
 }
 
 function openEditModal(record: ProductItem) {
   editingId.value = record.id
-  resetVariationState()
-  Object.assign(form, {
-    asin: record.asin, sku: record.sku, title: record.title,
-    brand: record.brand, category: record.category,
-    price: record.price, cost: record.cost,
-    fulfillment_type: record.fulfillment_type,
-    fba_stock: record.fba_stock, fbm_stock: record.fbm_stock,
-    daily_sales_avg: record.daily_sales_avg,
-    tags: [...record.tags], notes: record.notes,
-    groups: [...(record.groups || [])],
-  })
   modalVisible.value = true
 }
 
-async function handleSubmit() {
-  if (!form.title.trim()) {
-    message.warning('请填写产品标题')
-    return
-  }
-  submitting.value = true
-  try {
-    // 创建SPU：生成SPU + SKU（走 createVariationGroup）
-    if (!editingId.value && createVariation.value) {
-      if (!variationTheme.value) {
-        message.warning('请选择规格主题')
-        return
-      }
-      const children = childVariations.value.filter(c => c.spec_value.trim())
-      if (children.length === 0) {
-        message.warning('请至少添加一个 SKU')
-        return
-      }
-      for (const c of children) {
-        if (!c.spec_value.trim()) {
-          message.warning('SKU的「规格值」不能为空')
-          return
-        }
-      }
-      await store.createVariationGroup(
-        {
-          title: form.title,
-          brand: form.brand,
-          category: form.category,
-          spu_theme: variationTheme.value,
-          selling_points: '',
-          keywords: [],
-          groups: form.groups,
-        },
-        children.map(c => ({ spec_value: c.spec_value.trim(), asin: c.asin.trim(), price: c.price, stock: c.stock })),
-      )
-      message.success(`已创建SPU：1 个SPU + ${children.length} 个SKU`)
-      modalVisible.value = false
-      return
-    }
-
-    // 普通新增/编辑
-    const payload = {
-      ...form,
-      currency: 'USD',
-      sub_category: '',
-      listing_status: 'pending' as const,
-      bsr: null as number | null,
-      rating: 0,
-      review_count: 0,
-      main_image: '',
-      images: [] as string[],
-      spu_id: null,
-      spu_theme: null,
-      variations: [] as any[],
-      roi: 0,
-      margin: form.price > 0 ? Math.round(((form.price - form.cost) / form.price) * 100) : 0,
-      shop_id: '',
-      status: 'active' as const,
-    }
-    if (editingId.value) {
-      await store.updateItem(editingId.value, payload)
-      message.success('产品已更新')
-    } else {
-      await store.addItem(payload)
-      message.success('产品已添加')
-    }
-    modalVisible.value = false
-  } finally {
-    submitting.value = false
-  }
-}
+/** 任一弹窗保存成功后回调（子组件已自行关弹窗 + 弹提示） */
+function onSaved() {}
 
 async function handleDelete(id: string) {
   await store.deleteItem(id)
@@ -1337,121 +1011,35 @@ function handleListingOptimize(record: ProductItem) {
   }))
 }
 
-// ====== SPU 下 SKU 的增删维护 ======
-
-/** SKU新增/编辑弹窗状态 */
+// ====== SPU 下 SKU 的增删维护（弹窗已下沉 SkuFormModal，主文件持 open 与当前对象）======
 const childModalVisible = ref(false)
 const childEditingId = ref<string | null>(null)
 const childParentId = ref<string | null>(null)
-const childSubmitting = ref(false)
-const childForm = reactive({
-  spec_value: '',
-  asin: '',
-  sku: '',
-  price: 0,
-  stock: 0,
-})
 
 function openAddChild(parent: ProductItem) {
   childEditingId.value = null
   childParentId.value = parent.id
-  Object.assign(childForm, { spec_value: '', asin: '', sku: '', price: 0, stock: 0 })
   childModalVisible.value = true
-}
-
-// ====== 自我组化：独立产品 → SPU ======
-const promoteModalVisible = ref(false)
-const promoteSubmitting = ref(false)
-const promoteTargetId = ref<string | null>(null)
-const promoteForm = reactive({
-  spu_theme: 'Color',
-  first_value: '',
-})
-
-function openPromoteToGroup(product: ProductItem) {
-  promoteTargetId.value = product.id
-  Object.assign(promoteForm, { spu_theme: 'Color', first_value: '' })
-  promoteModalVisible.value = true
-}
-
-async function submitPromoteToGroup() {
-  if (!promoteForm.spu_theme) {
-    message.warning('请选择规格主题')
-    return
-  }
-  if (!promoteForm.first_value.trim()) {
-    message.warning('请填写本产品的规格值')
-    return
-  }
-  const product = store.items.find(i => i.id === promoteTargetId.value)
-  if (!product) { message.error('产品不存在'); return }
-  promoteSubmitting.value = true
-  try {
-    await store.promoteToVariationGroup(
-      product,
-      promoteForm.spu_theme,
-      promoteForm.first_value.trim(),
-    )
-    message.success('已提升为 SPU，本产品已成为该 SPU 的首个 SKU')
-    promoteModalVisible.value = false
-  } finally {
-    promoteSubmitting.value = false
-  }
 }
 
 function openEditChild(child: ProductItem) {
   childEditingId.value = child.id
   childParentId.value = child.spu_id || null
-  Object.assign(childForm, {
-    spec_value: child.spec_value || '',
-    asin: child.asin,
-    sku: child.sku,
-    price: child.price,
-    stock: child.fba_stock,
-  })
   childModalVisible.value = true
-}
-
-async function submitChild() {
-  if (!childForm.spec_value.trim()) {
-    message.warning('请填写规格值')
-    return
-  }
-  childSubmitting.value = true
-  try {
-    if (childEditingId.value) {
-      // 编辑已有SKU
-      await store.updateItem(childEditingId.value, {
-        spec_value: childForm.spec_value.trim(),
-        asin: childForm.asin.trim(),
-        sku: childForm.sku.trim(),
-        price: childForm.price,
-        fba_stock: childForm.stock,
-        title: `${store.items.find(i => i.id === childEditingId.value)?.title.split(' - ')[0] || ''} - ${childForm.spec_value.trim()}`,
-      })
-      message.success('SKU已更新')
-    } else if (childParentId.value) {
-      // 新增SKU到SPU下
-      const parent = store.findRowById(childParentId.value)
-      if (!parent) { message.error('SPU不存在'); return }
-      await store.addChildVariation(parent, {
-        spec_value: childForm.spec_value.trim(),
-        asin: childForm.asin.trim(),
-        sku: childForm.sku.trim(),
-        price: childForm.price,
-        stock: childForm.stock,
-      })
-      message.success('SKU已添加')
-    }
-    childModalVisible.value = false
-  } finally {
-    childSubmitting.value = false
-  }
 }
 
 async function handleDeleteChild(child: ProductItem) {
   await store.deleteItem(child.id)
   message.success('SKU已删除')
+}
+
+// ====== 自我组化：独立产品 → SPU（弹窗已下沉 PromoteSkuModal）======
+const promoteModalVisible = ref(false)
+const promoteTargetId = ref<string | null>(null)
+
+function openPromoteToGroup(product: ProductItem) {
+  promoteTargetId.value = product.id
+  promoteModalVisible.value = true
 }
 
 // ====== AIGC 媒体生成（跳转到 AIGC Agent + 载入产品）======

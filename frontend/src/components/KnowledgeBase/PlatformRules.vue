@@ -573,131 +573,7 @@
     </a-modal>
 
     <!-- 新增/编辑规则弹窗 -->
-    <a-modal
-      v-model:open="editModalVisible"
-      :title="editingId ? '编辑规则' : '新增规则'"
-      width="600px"
-      :confirm-loading="saving"
-      @ok="handleSubmit"
-    >
-      <a-form layout="vertical">
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item label="平台" required>
-              <a-select v-model:value="editForm.platform" placeholder="选择平台">
-                <a-select-option v-for="p in PLATFORMS" :key="p.key" :value="p.key">
-                  {{ p.icon }} {{ p.label }}
-                </a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="规则分类" required>
-              <a-select v-model:value="editForm.category" placeholder="选择分类">
-                <a-select-option v-for="c in RULE_CATEGORIES" :key="c.key" :value="c.key">
-                  {{ c.icon }} {{ c.label }}
-                </a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-form-item label="规则标题" required>
-          <a-input v-model:value="editForm.title" placeholder="如：商品标题字符数限制" />
-        </a-form-item>
-        <a-form-item label="规则内容" required>
-          <a-textarea
-            v-model:value="editForm.content"
-            :rows="5"
-            placeholder="输入规则正文..."
-          />
-        </a-form-item>
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item label="生效日期" required>
-              <a-date-picker
-                v-model:value="editForm.effective_date"
-                value-format="YYYY-MM-DD"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="失效日期">
-              <a-date-picker
-                v-model:value="editForm.expiry_date"
-                value-format="YYYY-MM-DD"
-                style="width: 100%"
-                placeholder="留空=永不过期"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <!-- 有效期快捷选择 -->
-        <div class="validity-quick-select">
-          <span class="vqs-label">快捷设置有效期：</span>
-          <a-space :size="6" wrap>
-            <a-button
-              size="small"
-              :type="!expDateStr ? 'primary' : 'default'"
-              @click="setExpiryDate(null)"
-            >♾️ 永久</a-button>
-            <a-button
-              size="small"
-              :type="isExpiryMatch(3) ? 'primary' : 'default'"
-              @click="setExpiryDate(3)"
-            >3 个月</a-button>
-            <a-button
-              size="small"
-              :type="isExpiryMatch(6) ? 'primary' : 'default'"
-              @click="setExpiryDate(6)"
-            >6 个月</a-button>
-            <a-button
-              size="small"
-              :type="isExpiryMatch(12) ? 'primary' : 'default'"
-              @click="setExpiryDate(12)"
-            >1 年</a-button>
-            <a-button
-              size="small"
-              :type="isExpiryMatch(24) ? 'primary' : 'default'"
-              @click="setExpiryDate(24)"
-            >2 年</a-button>
-          </a-space>
-          <span v-if="expDateStr && effDateStr" class="vqs-preview">
-            （有效期 {{ calcDurationDays }} 天）
-          </span>
-        </div>
-        <a-form-item label="状态">
-          <a-select v-model:value="editForm.status">
-            <a-select-option value="auto">🤖 自动（根据日期计算，推荐）</a-select-option>
-            <a-select-option value="active">🟢 强制生效中</a-select-option>
-            <a-select-option value="upcoming">🟡 强制即将生效</a-select-option>
-            <a-select-option value="expired">⚪ 强制已失效</a-select-option>
-          </a-select>
-          <div class="form-hint">选择「自动」时，系统根据生效/失效日期实时判定状态；手动选项用于特殊场景覆盖（如提前失效）</div>
-        </a-form-item>
-        <a-form-item label="标签（逗号分隔）">
-          <a-input v-model:value="editForm.tagsText" placeholder="如：标题, 字符限制, Listing" />
-        </a-form-item>
-        <a-form-item label="来源链接">
-          <a-input v-model:value="editForm.source" placeholder="https://..." />
-        </a-form-item>
-        <a-form-item label="来源文档">
-          <a-select
-            v-model:value="editForm.source_doc_id"
-            placeholder="关联到已上传的规则原文文档"
-            allow-clear
-            style="width: 100%"
-          >
-            <a-select-option v-for="doc in store.docs" :key="doc.id" :value="doc.id">
-              {{ getDocIcon(doc.file_type) }} {{ doc.filename }}
-              <span class="select-doc-platform">({{ platformMeta(doc.platform).label }})</span>
-            </a-select-option>
-          </a-select>
-          <div class="form-hint">选择后可在规则详情中一键跳转到完整原文</div>
-        </a-form-item>
-      </a-form>
-    </a-modal>
+    <RuleFormModal v-model:open="editModalVisible" :editing-id="editingId" @saved="onSaved" />
 
     <!-- 详情弹窗 -->
     <a-modal
@@ -838,6 +714,7 @@ import {
 import { usePlatformRulesStore, PLATFORMS, RULE_CATEGORIES, type PlatformRule, type PlatformRuleDoc, type PendingRuleWithDup, type DupStatus, getResolvedStatus } from '@/stores/platformRules'
 import { todayStamp } from '@/utils/download'
 import ExportModal from '@/components/common/ExportModal.vue'
+import RuleFormModal from './PlatformRules/RuleFormModal.vue'
 import { COLOR_INFO, COLOR_PLATFORM } from '@/utils/colorSemantics'
 
 const store = usePlatformRulesStore()
@@ -1239,150 +1116,22 @@ function calcDetailDuration(rule: PlatformRule): string {
   return `有效期 ${y} 年`
 }
 
-// ====== 新增/编辑 ======
+// ====== 新增/编辑（弹窗已下沉 RuleFormModal，主文件持 open 与 editingId）======
 const editModalVisible = ref(false)
-const saving = ref(false)
 const editingId = ref<string | null>(null)
-const editForm = reactive({
-  platform: 'amazon',
-  category: 'listing',
-  title: '',
-  content: '',
-  effective_date: '',
-  expiry_date: undefined as string | undefined,
-  status: 'auto' as PlatformRule['status'],
-  tagsText: '',
-  source: '',
-  source_doc_id: undefined as string | undefined,
-})
-
-// ====== 有效期快捷选择 ======
-
-/**
- * 统一日期值提取：兼容 Dayjs 对象（a-date-picker 返回）和字符串
- * a-date-picker v-model 绑定的值在用户选择后是 Dayjs，不是 string
- */
-function toDateStr(val: any): string {
-  if (!val) return ''
-  // Dayjs 对象
-  if (typeof val === 'object' && val.format && typeof val.format === 'function') {
-    return val.format('YYYY-MM-DD')
-  }
-  // 已经是字符串
-  if (typeof val === 'string') return val
-  return ''
-}
-
-/** 获取生效日期的字符串形式 */
-const effDateStr = computed(() => toDateStr(editForm.effective_date))
-
-/** 获取失效日期的字符串形式 */
-const expDateStr = computed(() => toDateStr(editForm.expiry_date))
-
-/** 根据生效日期 + 月数计算失效日期 */
-function calcExpiryDate(months: number): string {
-  const effRaw = effDateStr.value || new Date().toISOString().slice(0, 10)
-  const eff = new Date(effRaw + 'T00:00:00')
-  eff.setMonth(eff.getMonth() + months)
-  return eff.toISOString().slice(0, 10)
-}
-
-/** 设置失效日期（null=永久/清除） */
-function setExpiryDate(months: number | null) {
-  if (months === null) {
-    editForm.expiry_date = undefined as any
-  } else {
-    // 如果还没填生效日期，默认用今天
-    if (!effDateStr.value) {
-      editForm.effective_date = new Date().toISOString().slice(0, 10) as any
-    }
-    editForm.expiry_date = calcExpiryDate(months) as any
-  }
-}
-
-/** 判断当前 expiry_date 是否匹配指定月数（用于高亮按钮） */
-function isExpiryMatch(months: number): boolean {
-  const exp = expDateStr.value
-  if (!exp || !effDateStr.value) return false
-  const expected = calcExpiryDate(months)
-  return exp === expected
-}
-
-/** 计算当前设置的有效期天数 */
-const calcDurationDays = computed(() => {
-  const eff = effDateStr.value
-  const exp = expDateStr.value
-  if (!eff || !exp) return 0
-  const effDt = new Date(eff + 'T00:00:00')
-  const expDt = new Date(exp + 'T00:00:00')
-  return Math.ceil((expDt.getTime() - effDt.getTime()) / (1000 * 60 * 60 * 24))
-})
 
 function openAddModal() {
   editingId.value = null
-  Object.assign(editForm, {
-    platform: 'amazon',
-    category: 'listing',
-    title: '',
-    content: '',
-    effective_date: '',
-    expiry_date: undefined,
-    status: 'auto',
-    tagsText: '',
-    source: '',
-    source_doc_id: undefined,
-  })
   editModalVisible.value = true
 }
 
 function openEditModal(record: PlatformRule) {
   editingId.value = record.id
-  Object.assign(editForm, {
-    platform: record.platform,
-    category: record.category,
-    title: record.title,
-    content: record.content,
-    effective_date: record.effective_date,
-    expiry_date: record.expiry_date,
-    status: record.status,
-    tagsText: record.tags.join(', '),
-    source: record.source || '',
-    source_doc_id: record.source_doc_id,
-  })
   editModalVisible.value = true
 }
 
-async function handleSubmit() {
-  if (!editForm.title.trim() || !editForm.content.trim()) {
-    message.warning('请填写规则标题和内容')
-    return
-  }
-  saving.value = true
-  try {
-    const payload = {
-      platform: editForm.platform,
-      category: editForm.category,
-      title: editForm.title.trim(),
-      content: editForm.content.trim(),
-      effective_date: effDateStr.value || new Date().toISOString().slice(0, 10),
-      expiry_date: expDateStr.value || undefined,
-      status: editForm.status,
-      tags: editForm.tagsText.split(',').map(t => t.trim()).filter(Boolean),
-      source: editForm.source.trim(),
-      source_doc_id: editForm.source_doc_id || undefined,
-    }
-    if (editingId.value) {
-      await store.updateItem(editingId.value, payload)
-      message.success('规则已更新')
-    } else {
-      await store.addItem(payload)
-      message.success('规则已新增')
-    }
-    editModalVisible.value = false
-  } finally {
-    saving.value = false
-  }
-}
+/** 规则表单保存成功回调 */
+function onSaved() {}
 
 function handleDelete(record: PlatformRule) {
   store.deleteItem(record.id)
@@ -1578,30 +1327,6 @@ onMounted(() => {
   cursor: default;
 }
 
-/* 有效期快捷选择 */
-.validity-quick-select {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--bg-sidebar);
-  border-radius: 6px;
-  border: 1px solid var(--border-base);
-  margin-top: -8px;
-  margin-bottom: 4px;
-  flex-wrap: wrap;
-}
-.vqs-label {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  white-space: nowrap;
-}
-.vqs-preview {
-  font-size: 12px;
-  color: var(--primary);
-  white-space: nowrap;
-}
-
 /* 详情弹窗 */
 .detail-body {
   padding: 4px 0;
@@ -1745,20 +1470,6 @@ onMounted(() => {
   font-size: 12px;
   color: var(--text-tertiary);
   font-weight: 500;
-}
-
-/* 表单提示 */
-.form-hint {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  margin-top: 2px;
-}
-
-/* 下拉选项中文档平台标签 */
-.select-doc-platform {
-  color: var(--text-tertiary);
-  font-size: 11px;
-  margin-left: 4px;
 }
 
 /* ====== 来源文档预览弹窗 ====== */
