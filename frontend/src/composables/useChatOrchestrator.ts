@@ -179,7 +179,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
       return
     }
     activeIntelChip.value = c.id
-    isLoading.value = true
+    setLoading(true, 'candidate-chip')
     const { analyzeCandidateSelection } = await import('@/mock/competitorIntel')
     try {
       await ensureCandidateLoaded()
@@ -193,7 +193,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
       console.error('选品评估失败:', error)
       chatStore.addMessage({ role: 'assistant', content: '❌ 评估执行失败，请重试。' })
     } finally {
-      isLoading.value = false
+      setLoading(false, 'candidate-chip-finally')
       setTimeout(() => { activeIntelChip.value = null }, 400)
     }
   }
@@ -202,7 +202,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
   const runIntelChip = async (c: (typeof intelChips)[number]) => {
     if (isLoading.value) return
     activeIntelChip.value = c.id
-    isLoading.value = true
+    setLoading(true, 'intel-chip')
     const { analyzeCompetitorIntel } = await import('@/mock/competitorIntel')
     try {
       const out = analyzeCompetitorIntel(c.question, {
@@ -222,7 +222,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
       console.error('竞品监控动作条推理失败:', error)
       chatStore.addMessage({ role: 'assistant', content: '❌ 分析执行失败，请重试。' })
     } finally {
-      isLoading.value = false
+      setLoading(false, 'intel-chip-finally')
       // 保留高亮一小会便于看到来源，随后复位
       setTimeout(() => { activeIntelChip.value = null }, 400)
     }
@@ -248,6 +248,36 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
 
   // 加载状态
   const isLoading = ref(false)
+
+  // 看门狗：兜底"AI 正在思考…"卡死
+  // 任何路径把 isLoading=true 后若 60s 内未释放（流式网络挂起、同步函数异常吞掉等），
+  // 强制置 false 并插入一条错误消息，避免用户面对永久 spinner 无可操作。
+  const LOADING_WATCHDOG_MS = 60_000
+  let loadingWatchdogTimer: ReturnType<typeof setTimeout> | null = null
+  const setLoading = (on: boolean, source: string) => {
+    isLoading.value = on
+    if (on) {
+      if (loadingWatchdogTimer) clearTimeout(loadingWatchdogTimer)
+      loadingWatchdogTimer = setTimeout(() => {
+        if (isLoading.value) {
+          isLoading.value = false
+          loadingWatchdogTimer = null
+          console.warn(`[isLoading 看门狗] 60s 未释放（来源：${source}），强制重置`)
+          try {
+            chatStore.addMessage({
+              role: 'assistant',
+              content: '⏱️ **请求超时**：超过 60 秒未收到响应，可能是网络异常或后端服务未启动。\n\n请确认：① 后端 `uvicorn main:app --port 8000` 是否运行；② 网络是否可达。点击重试。',
+            })
+          } catch { /* 兜底中的兜底 */ }
+        }
+      }, LOADING_WATCHDOG_MS)
+    } else {
+      if (loadingWatchdogTimer) {
+        clearTimeout(loadingWatchdogTimer)
+        loadingWatchdogTimer = null
+      }
+    }
+  }
 
   // 输入框提示文字
   const inputPlaceholder = computed(() => {
@@ -283,7 +313,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
     // 设置当前工具状态
     selectedTool.value = { ...tool }
     currentMode.value = 'tool'
-    isLoading.value = true
+    setLoading(true, 'tool-click')
 
     // ===== 竞品监控员·智能推理工具（读监控池 → 解读+证据，不走 form 结果表）=====
     if (['intel-chat', 'intel-weekly', 'intel-anomaly', 'intel-strategy'].includes(tool.id)) {
@@ -305,7 +335,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         console.error('竞品监控智能推理失败:', error)
         chatStore.addMessage({ role: 'assistant', content: `❌ 智能推理执行失败，请重试。` })
       } finally {
-        isLoading.value = false
+        setLoading(false, 'tool-click-finally')
       }
       return
     }
@@ -368,7 +398,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         content: `❌ 分析执行失败，请检查参数后重试。\n\n\`${err?.message || '未知错误'}\``,
       })
     } finally {
-      isLoading.value = false
+      setLoading(false, 'tool-click-finally2')
       await scrollToBottom()
     }
   }
@@ -795,14 +825,14 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
 
     chatStore.addMessage({ role: 'user', content: text })
     inputMessage.value = ''
-    isLoading.value = true
+    setLoading(true, 'send-message')
 
     try {
       await simulateAgentResponse(text)
     } catch (error) {
       message.error('发送失败，请重试')
     } finally {
-      isLoading.value = false
+      setLoading(false, 'send-finally')
     }
     await scrollToBottom()
   }
@@ -821,7 +851,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         await streamSSE('/product-research/chat/stream', { message: userMessage }, {
           onDelta: (text) => {
             streamed = true
-            isLoading.value = false
+            setLoading(false, 'sse-delta-product')
             chatStore.appendToLastMessage(text)
           },
           onDone: (fullText) => {
@@ -879,7 +909,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         chatStore.addMessage({ role: 'assistant', content: '' })
         await streamSSE('/listing/chat/stream', { message: userMessage }, {
           onDelta: (text) => {
-            isLoading.value = false  // 首 token 到达即隐藏"思考中"spinner
+            setLoading(false, 'sse-delta-listing')  // 首 token 到达即隐藏"思考中"spinner
             chatStore.appendToLastMessage(text)
           },
           onError: () => {
@@ -948,7 +978,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         chatStore.addMessage({ role: 'assistant', content: '' })
         await streamSSE('/ad-analysis/chat/stream', { message: userMessage }, {
           onDelta: (text) => {
-            isLoading.value = false
+            setLoading(false, 'sse-delta-ad')
             chatStore.appendToLastMessage(text)
           },
           onError: () => {
@@ -1006,7 +1036,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         chatStore.addMessage({ role: 'assistant', content: '' })
         await streamSSE('/customer-service/chat/stream', { message: userMessage }, {
           onDelta: (text) => {
-            isLoading.value = false
+            setLoading(false, 'sse-delta-cs')
             chatStore.appendToLastMessage(text)
           },
           onError: () => {
