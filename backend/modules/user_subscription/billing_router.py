@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.database import get_db
 from core.auth.dependencies import get_current_user, get_admin_user, require_auth_if_enabled
 from core.billing.usage_tracker import UsageTracker, init_default_plans
+from core.billing.payment_gateway import get_gateway, ChargeIntent
 from modules.user_subscription.models import (
     User,
     Subscription,
@@ -123,24 +124,6 @@ async def _get_subscription_or_404(db: AsyncSession, user_id: str) -> Subscripti
     return sub
 
 
-def _make_invoice(sub: Subscription, plan: SubscriptionPlan, billing_cycle: str) -> Invoice:
-    """为一次套餐变更生成账单（模拟支付成功）"""
-    amount = round(plan.price_monthly * 10, 2) if billing_cycle == "yearly" else plan.price_monthly
-    now = datetime.utcnow()
-    return Invoice(
-        id=str(uuid.uuid4()),
-        user_id=sub.user_id,
-        number=f"INV-{now.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}",
-        amount=amount,
-        currency="CNY",
-        status="paid",
-        description=f"{plan.display_name}{'年付' if billing_cycle == 'yearly' else '月付'}",
-        issued_at=now,
-        paid_at=now,
-        pdf_url=None,
-    )
-
-
 # ====== 用量 & 套餐（只读） ======
 
 @router.get("/usage")
@@ -199,8 +182,9 @@ async def change_plan(
 
     plan_id 为套餐表主键的字符串形式（与 /plans 返回的 id 一致）。
 
-    说明：真实支付需接 Stripe/支付宝，此处以「模拟支付成功」闭环——
-    生成一条 paid 账单 + 更新订阅套餐与周期。接入真实网关时替换此逻辑。
+    支付流程：面向 `PaymentGateway` 协议编程（见 core/billing/payment_gateway.py），
+    扣款由当前配置的网关完成（默认 mock 模拟支付成功）。
+    接入 Stripe / 支付宝 / 微信时改 config.payment_gateway 即可，无需改动此端点。
     """
     plan_id = body.plan_id
     billing_cycle = body.billing_cycle
@@ -259,9 +243,27 @@ async def change_plan(
 
     sub.updated_at = now
 
-    # 生成账单
-    invoice = _make_invoice(sub, plan, billing_cycle)
-    db.add(invoice)
+    # 通过支付网关扣款（默认 mock 模拟成功；真实网关替换配置即可）
+    amount = round(plan.price_monthly * 10, 2) if billing_cycle == "yearly" else plan.price_monthly
+    gateway = get_gateway()
+    result = await gateway.charge(ChargeIntent(
+        user_id=current_user.id,
+        amount=amount,
+        currency="CNY",
+        description=f"{plan.display_name}{'年付' if billing_cycle == 'yearly' else '月付'}",
+        billing_cycle=billing_cycle,
+        plan=plan,
+    ))
+
+    if not result.success:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=result.error or "支付失败，请重试",
+        )
+
+    # 支付成功：落账单
+    if result.invoice is not None:
+        db.add(result.invoice)
 
     await db.commit()
     await db.refresh(sub)
@@ -269,8 +271,8 @@ async def change_plan(
     return {
         "subscription": _serialize_subscription(sub),
         # 前端 changePlan 返回里含 client_secret（Stripe 支付意图）。
-        # 模拟支付下无真实 secret，返回空串占位。
-        "client_secret": "",
+        # mock 下无真实 secret，返回网关透传值（空串占位）。
+        "client_secret": result.client_secret,
     }
 
 

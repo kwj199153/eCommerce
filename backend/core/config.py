@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     )
     free_tier_monthly_quota: int = Field(default=100, description="免费套餐月度额度")
 
+    # ====== 支付网关 ======
+    payment_gateway: str = Field(
+        default="mock",
+        description="支付网关实现：mock（模拟支付，默认）/ stripe / alipay / wechat（待接入）",
+    )
+
     # ====== 文件存储 ======
     upload_dir: str = Field(default="./uploads", description="文件上传目录")
     max_upload_size_mb: int = Field(default=10, description="最大上传文件大小(MB)")
