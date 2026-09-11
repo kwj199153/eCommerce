@@ -284,182 +284,23 @@
   </div>
 
   <!-- 单行详情抽屉：点击行尾「详情」右侧滑出完整数据 -->
-  <a-drawer
+  <BlueOceanDetailDrawer
     v-model:open="detailVisible"
-    :width="460"
-    placement="right"
-    :closable="true"
-    :title="detailRecord ? `${detailRecord.asin} 完整档案` : '商品档案'"
-  >
-    <template v-if="detailRecord">
-      <!-- 头部：图 + 标题 + 直达 -->
-      <div class="detail-hero">
-        <img
-          v-if="detailRecord.main_image || detailRecord.image"
-          class="detail-hero-img"
-          :src="detailRecord.main_image || detailRecord.image"
-          alt=""
-          loading="lazy"
-          @error="onImgError"
-        />
-        <span v-else class="detail-hero-ph">🖼️</span>
-        <div class="detail-hero-info">
-          <div class="detail-hero-title">{{ detailRecord.title }}</div>
-          <div class="detail-hero-sub">
-            <span class="detail-brand">{{ detailRecord.brand || '-' }}</span>
-            <a
-              class="detail-link"
-              :href="listingUrl(detailRecord.asin, detailRecord.marketplace)"
-              target="_blank"
-              rel="noopener"
-            >🔗 打开亚马逊 Listing ↗</a>
-          </div>
-        </div>
-      </div>
-
-      <!-- 综合指标头图 -->
-      <div class="detail-kpis">
-        <div class="dkpi">
-          <div class="dkpi-label">蓝海评分</div>
-          <div class="dkpi-val" :style="{ color: getScoreColor(detailRecord.blue_ocean_score) }">{{ detailRecord.blue_ocean_score }}</div>
-        </div>
-        <div class="dkpi">
-          <div class="dkpi-label">售价</div>
-          <div class="dkpi-val mono">${{ money(detailRecord.price) }}</div>
-        </div>
-        <div class="dkpi">
-          <div class="dkpi-label">月销</div>
-          <div class="dkpi-val mono">{{ detailRecord.estimated_monthly_sales ? Number(detailRecord.estimated_monthly_sales).toLocaleString() : '-' }}</div>
-        </div>
-        <div class="dkpi">
-          <div class="dkpi-label">ROI</div>
-          <div class="dkpi-val" :class="roiClass(detailRecord.roi_estimated)">{{ detailRecord.roi_estimated }}%</div>
-        </div>
-      </div>
-
-      <!-- 合规 / 风险标签 -->
-      <div class="detail-section">
-        <div class="detail-section-title">🏷️ 判定标签</div>
-        <div class="detail-tags">
-          <a-tag v-for="(t, i) in complianceTags(detailRecord)" :key="i" :color="t.type">{{ t.text }}</a-tag>
-        </div>
-      </div>
-
-      <!-- AI 洞察 -->
-      <div class="detail-section">
-        <div class="detail-section-title">🤖 AI 洞察</div>
-        <div class="detail-insight">{{ aiInsight(detailRecord) }}</div>
-      </div>
-
-      <!-- 基本信息 -->
-      <div class="detail-section">
-        <div class="detail-section-title">📋 基本信息</div>
-        <div class="detail-rows">
-          <div class="drow"><span>站点</span><b>{{ detailRecord.marketplace || 'Amazon US' }}</b></div>
-          <div class="drow"><span>完整类目</span><b>{{ (detailRecord.category_path || []).join(' › ') || detailRecord.category_l2 || '-' }}</b></div>
-          <div class="drow"><span>上架时间</span><b>{{ detailRecord.listed_date || '-' }}</b></div>
-          <div class="drow"><span>上架时长</span><b>{{ listedAge(detailRecord) }}</b></div>
-          <div class="drow"><span>重量 / 尺寸</span><b>{{ detailRecord.weight_lbs ? detailRecord.weight_lbs + ' lb' : '-' }} / {{ detailRecord.dimensions || '-' }} in</b></div>
-          <div class="drow"><span>卖家数</span><b>{{ detailRecord.seller_count ?? '-' }}</b></div>
-        </div>
-      </div>
-
-      <!-- 市场指标 -->
-      <div class="detail-section">
-        <div class="detail-section-title">📈 市场指标</div>
-        <div class="detail-rows">
-          <div class="drow"><span>BSR 排名</span><b>#{{ detailRecord.bsr_rank ? Number(detailRecord.bsr_rank).toLocaleString() : '-' }} <span class="muted">{{ detailRecord.bsr_category || '' }}</span></b></div>
-          <div class="drow"><span>商品星级</span><b :class="ratingClass(detailRecord.rating)">★ {{ detailRecord.rating ? Number(detailRecord.rating).toFixed(1) : '-' }}</b></div>
-          <div class="drow"><span>评论数</span><b>{{ detailRecord.review_count ? Number(detailRecord.review_count).toLocaleString() : '-' }}</b></div>
-          <div class="drow"><span>变体数量</span><b>{{ detailRecord.variation_count ?? 1 }}</b></div>
-          <div class="drow"><span>30天价格波动</span><b :class="(detailRecord.price_trend_30d ?? 0) >= 0 ? 'trend-up' : 'trend-down'">{{ detailRecord.price_trend_30d ?? 0 }}%</b></div>
-          <div class="drow"><span>30天销量波动</span><b :class="(detailRecord.sales_trend_30d ?? 0) >= 0 ? 'trend-up' : 'trend-down'">{{ detailRecord.sales_trend_30d ?? 0 }}%</b></div>
-        </div>
-      </div>
-
-      <!-- 成本拆解 -->
-      <div class="detail-section">
-        <div class="detail-section-title">💰 成本拆解（单件）</div>
-        <div class="cost-box">
-          <div class="cost-row"><span>售价</span><b>${{ money(detailRecord.price) }}</b></div>
-          <div class="cost-row"><span>采购成本</span><b>${{ money(detailRecord.cost_price) }}</b></div>
-          <div class="cost-row"><span>头程物流</span><b>${{ money(detailRecord.freight_cost ?? estFreight(detailRecord)) }}</b></div>
-          <div class="cost-row"><span>平台佣金</span><b>${{ money(commission(detailRecord)) }}</b></div>
-          <div class="cost-row"><span>FBA 配送费</span><b>${{ money(detailRecord.fba_fees) }}</b></div>
-          <div class="cost-divider"></div>
-          <div class="cost-row net"><span>预估净利</span><b>${{ money(detailRecord.net_profit ?? estNet(detailRecord)) }}</b></div>
-          <div class="cost-row total"><span>ROI</span><b :class="roiClass(detailRecord.roi_estimated)">{{ detailRecord.roi_estimated }}%</b></div>
-        </div>
-      </div>
-
-      <!-- Listing 卖点 -->
-      <div v-if="detailRecord.selling_points?.length" class="detail-section">
-        <div class="detail-section-title">💡 核心卖点</div>
-        <ul class="detail-points">
-          <li v-for="(sp, i) in detailRecord.selling_points" :key="i">{{ sp }}</li>
-        </ul>
-      </div>
-
-      <!-- Listing 质量评分 -->
-      <div class="detail-section">
-        <div class="detail-section-title">📊 Listing 质量</div>
-        <div class="lq-rows">
-          <div class="lq-row">
-            <span>标题</span>
-            <a-progress :percent="detailRecord.title_score" :stroke-color="getScoreColor(detailRecord.title_score)" size="small" />
-          </div>
-          <div class="lq-row">
-            <span>五点</span>
-            <a-progress :percent="detailRecord.bullet_score" :stroke-color="getScoreColor(detailRecord.bullet_score)" size="small" />
-          </div>
-          <div class="lq-row">
-            <span>图片</span>
-            <a-progress :percent="detailRecord.image_score" :stroke-color="getScoreColor(detailRecord.image_score)" size="small" />
-          </div>
-          <div class="lq-row">
-            <span>综合</span>
-            <a-progress :percent="detailRecord.overall_listing_score" :stroke-color="getScoreColor(detailRecord.overall_listing_score)" size="small" />
-          </div>
-        </div>
-      </div>
-
-      <!-- 底部操作 -->
-      <div class="detail-actions">
-        <a-button
-          type="primary"
-          block
-          :disabled="savedAsins.has(detailRecord.asin)"
-          @click="saveOne(detailRecord)"
-        >
-          {{ savedAsins.has(detailRecord.asin) ? '✓ 已加入选品库' : '➕ 保存到选品库' }}
-        </a-button>
-        <!-- 游离监控：蓝海随手盯，不归属任何项目，仅入统一监控池独立跟踪 -->
-        <a-button
-          block
-          class="mon-btn"
-          :type="isDetailMonitored ? 'default' : 'dashed'"
-          @click="toggleFreeMonitor(detailRecord)"
-        >
-          <template v-if="isDetailMonitored">
-            <FundOutlined /> 已开启游离监控 · 查看走势 ›
-          </template>
-          <template v-else>
-            <FundOutlined /> 🛰️ 开启游离监控（不归属，独立盯）
-          </template>
-        </a-button>
-      </div>
-    </template>
-  </a-drawer>
+    :record="detailRecord"
+    :saved="detailRecord ? savedAsins.has(detailRecord.asin) : false"
+    @save="onDetailSave"
+    @navigate-to="(v: string) => $emit('navigateTo', v)"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { CloseOutlined, SaveOutlined, ExportOutlined, PlusOutlined, FundOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, SaveOutlined, ExportOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import MarkdownIt from 'markdown-it'
 import { useCandidateLibraryStore, type CandidateItem } from '@/stores/candidateLibrary'
 import { GROUP_COLORS } from '@/stores/productLibrary'
-import { useMonitorPoolStore } from '@/stores/monitorPool'
+import BlueOceanDetailDrawer from './BlueOceanDetailDrawer.vue'
 
 const props = defineProps<{
   data: any
@@ -472,7 +313,6 @@ const emit = defineEmits<{
 
 const md = new MarkdownIt()
 const candidateStore = useCandidateLibraryStore()
-const monitorStore = useMonitorPoolStore()
 
 // ====== 选择状态 ======
 const selectedRowKeys = ref<string[]>([])
@@ -727,9 +567,9 @@ async function doSaveBatch(groupIds: string[]) {
   selectedRowKeys.value = []
 }
 
-/** 从详情抽屉保存单个候选到选品库（直接加入，不带分组） */
-async function saveOne(record: any) {
-  if (savedAsins.value.has(record.asin)) return
+/** 详情抽屉单个保存：转候选入池 + 同步 savedAsins 状态 */
+async function onDetailSave(record: any) {
+  if (!record?.asin || savedAsins.value.has(record.asin)) return
   try {
     const candidateData = mapToCandidate(record, [])
     await candidateStore.addItem(candidateData)
@@ -737,43 +577,6 @@ async function saveOne(record: any) {
     message.success('已加入选品库（待评审）')
   } catch (e) {
     message.error('保存失败，请重试')
-  }
-}
-
-// ====== 游离监控（蓝海随手盯，不归属任何项目） ======
-
-/** 当前详情 ASIN 是否已在统一监控池 */
-const isDetailMonitored = computed(() =>
-  detailRecord.value ? monitorStore.isAsinInPool(detailRecord.value.asin) : false
-)
-
-/** 切换游离监控：已入池则跳转竞品监控页定位；未入池则加入（无归属） */
-function toggleFreeMonitor(record: any) {
-  if (!record?.asin) return
-  if (isDetailMonitored.value) {
-    monitorStore.setSelected([record.asin])
-    monitorStore.selectGroup(null)
-    monitorStore.selectOwnership('all')
-    emit('navigateTo', 'monitor')
-    message.success(`已定位到 ${record.asin} 的竞品监控`)
-    return
-  }
-  const { added } = monitorStore.addFreeMonitor({
-    asin: record.asin,
-    title: record.title,
-    brand: extractBrand(record.title),
-    main_image: record.main_image || record.image,
-    latest_price: parseFloat(record.price) || undefined,
-    latest_bsr: record.bsr_rank || undefined,
-    rating: parseFloat(record.rating) || undefined,
-    review_count: parseInt(record.review_count) || undefined,
-    est_monthly_sales: parseInt(record.estimated_monthly_sales) || undefined,
-    bsr_category: record.bsr_category || undefined,
-  })
-  if (added) {
-    message.success(`已将 ${record.asin} 加入监控池（游离监控，后台定时抓取价格/BSR/评论）`)
-  } else {
-    message.info(`${record.asin} 已在监控池中`)
   }
 }
 
@@ -828,85 +631,12 @@ const estNet = (record: any): number => {
   return Math.round((price - cost - freight - commission(record) - fba) * 100) / 100
 }
 
-/** 是否新品（上架距今 < 12 个月） */
-const isNewListing = (date: string): boolean => {
-  if (!date) return false
-  const t = new Date(date + 'T00:00:00').getTime()
-  if (isNaN(t)) return false
-  return Date.now() - t < 365 * 24 * 3600 * 1000
-}
-
 /** 图片加载失败隐藏破图 */
 const onImgError = (e: Event) => {
   ;(e.target as HTMLImageElement).style.display = 'none'
 }
 
 const renderMarkdown = (content: string) => md.render(content)
-
-// ====== 详情抽屉：派生合规标签 & AI 洞察（UI 层规则推导，非底层虚构数据） ======
-/** 合规 / 风险标签：基于竞争结构、变体、评分推导的确定性标签 */
-function complianceTags(record: any): Array<{ text: string; type: 'success' | 'warning' | 'danger' | 'default' | 'processing' }> {
-  const tags: Array<{ text: string; type: any }> = []
-  const score = record.blue_ocean_score || 0
-  if (record.is_amazon_owned) tags.push({ text: '⚠️ 亚马逊自营占位', type: 'danger' })
-  else if ((record.seller_count ?? 4) <= 2) tags.push({ text: '卖家少·真蓝海', type: 'success' })
-  else if ((record.seller_count ?? 4) >= 6) tags.push({ text: '卖家多·竞争激烈', type: 'warning' })
-
-  const variation = record.variation_count ?? 1
-  if (variation <= 3) tags.push({ text: '少变体·开发省心', type: 'success' })
-  else if (variation >= 7) tags.push({ text: '多变体·开发成本高', type: 'warning' })
-
-  if ((record.rating ?? 0) < 3.8) tags.push({ text: '差评率高·谨慎', type: 'danger' })
-  if (score >= 70) tags.push({ text: '高潜蓝海', type: 'success' })
-  else if (score >= 40) tags.push({ text: '中等潜力', type: 'processing' })
-  else tags.push({ text: '竞争红海', type: 'warning' })
-
-  if (tags.length === 0) tags.push({ text: '常规候选', type: 'default' })
-  return tags.slice(0, 5)
-}
-
-/** AI 洞察：综合各指标给出一段决策建议 */
-function aiInsight(record: any): string {
-  const score = record.blue_ocean_score || 0
-  const roi = record.roi_estimated || 0
-  const sales = record.estimated_monthly_sales || 0
-  const rating = record.rating || 0
-  const variation = record.variation_count ?? 1
-  const sellers = record.seller_count ?? 4
-  const price = parseFloat(record.price) || 0
-
-  const parts: string[] = []
-
-  // 需求与竞争判断
-  if (score >= 70) {
-    parts.push('综合属于**高潜蓝海**：销量可观且竞争结构健康，适合作为首推立项候选。')
-  } else if (score >= 40) {
-    parts.push('处于**中等潜力**区间：有一定需求，但竞争或利润未拉开明显差距，建议先小批量测款。')
-  } else {
-    parts.push('竞争已较**红海**或利润偏薄，优先级靠后，除非有强差异化切入点否则不建议投入。')
-  }
-
-  // 利润判断
-  if (roi >= 30) parts.push(`预估 ROI 达 **${roi}%**，净利空间充足，广告预算容错度高。`)
-  else if (roi >= 15) parts.push(`ROI 约 **${roi}%**，尚可覆盖广告成本，需控制 CPC。`)
-  else parts.push(`ROI 仅 **${roi}%**，利润薄，广告稍高即亏损，需谨慎。`)
-
-  // 评论/评分
-  if (rating >= 4.4) parts.push(`评分 **${rating}** 高，信任度基础好，新链接更容易起步。`)
-  else if (rating < 4.0) parts.push(`评分 **${rating}** 偏低，切入时可在痛点（差评）上做针对性改进。`)
-
-  // 结构/竞争
-  if (variation <= 3) parts.push(`变体仅 ${variation} 个，开发与备货简单，可快速上线。`)
-  if (sellers <= 2) parts.push(`在售卖家仅 ${sellers} 家，独占性强。`)
-  if (price >= 25) parts.push(`定价 $${money(price)}，毛利空间与退货缓冲较充足。`)
-  else parts.push(`客单价 $${money(price)} 偏低，需靠走量摊薄固定成本。`)
-
-  // 销量基数
-  if (sales >= 2000) parts.push(`月销约 ${Number(sales).toLocaleString()} 件，需求基数大，但也是多数卖家盯上的标的市场。`)
-  else if (sales < 500) parts.push(`月销约 ${Number(sales).toLocaleString()} 件，盘子偏小，需评估是否支撑稳定盈利。`)
-
-  return parts.join(' ')
-}
 
 // ====== 悬浮次要指标卡 ======
 function secondaryItems(record: any): Array<{ label: string; value: string; cls?: string }> {
@@ -933,17 +663,6 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   items.push({ label: 'BSR', value: `#${bsr}` })
   items.push({ label: '评论', value: review })
   return items
-}
-
-/** 上架距今月数 / 新品判断文案 */
-function listedAge(record: any): string {
-  if (!record.listed_date) return '-'
-  const t = new Date(record.listed_date + 'T00:00:00').getTime()
-  if (isNaN(t)) return record.listed_date
-  const months = Math.floor((Date.now() - t) / (30 * 24 * 3600 * 1000))
-  if (months < 1) return '不足 1 个月'
-  if (months < 12) return `${months} 个月（新品窗口期）`
-  return `${Math.floor(months / 12)} 年 ${months % 12} 个月`
 }
 </script>
 
