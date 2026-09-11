@@ -86,41 +86,41 @@ const threatLabel = (level: string) => ({ high: '高威胁', medium: '中威胁'
 </script>
 
 <style scoped>
-.intruder-result { padding: 16px; background: #fff; border-radius: 8px; }
+.intruder-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
 .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.result-header.alert-mode { background: #fff1f0; margin: -16px -16px 14px; padding: 12px 16px; border-radius: 8px 8px 0 0; }
+.result-header.alert-mode { background: var(--bg-elevated)1f0; margin: -16px -16px 14px; padding: 12px 16px; border-radius: 8px 8px 0 0; }
 .result-header h3 { margin: 0; font-size: 16px; }
 .threat-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
 .threat-stat { text-align: center; padding: 10px; border-radius: 8px; }
 .ts-label { display: block; font-size: 11.5px; margin-bottom: 2px; }
 .ts-value { font-size: 24px; font-weight: 700; }
-.threat-high { background: #fff1f0; }
+.threat-high { background: var(--bg-elevated)1f0; }
 .threat-high .ts-value { color: #cf1322; }
-.threat-medium { background: #fffbe6; }
+.threat-medium { background: var(--bg-elevated)be6; }
 .threat-medium .ts-value { color: #d46b08; }
 .threat-low { background: #f6ffed; }
 .threat-low .ts-value { color: #389e0d; }
-.intruder-list h4 { margin: 0 0 10px; font-size: 13px; color: #262626; }
+.intruder-list h4 { margin: 0 0 10px; font-size: 13px; color: var(--text-primary); }
 .intruder-card { padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid; }
-.intruder-card.threat-high { background: #fff1f0; border-color: #ff4d4f; }
-.intruder-card.threat-medium { background: #fffbe6; border-color: #faad14; }
+.intruder-card.threat-high { background: var(--bg-elevated)1f0; border-color: #ff4d4f; }
+.intruder-card.threat-medium { background: var(--bg-elevated)be6; border-color: #faad14; }
 .intruder-card.threat-low { background: #f6ffed; border-color: #52c41a; }
 .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .threat-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
 .badge-high { background: #ff4d4f; color: #fff; }
 .badge-medium { background: #faad14; color: #fff; }
 .badge-low { background: #52c41a; color: #fff; }
-.entry-date { font-size: 11px; color: #8c8c8c; }
+.entry-date { font-size: 11px; color: var(--text-tertiary); }
 .card-body { font-size: 13px; margin-bottom: 6px; }
-.asin-text { font-family: monospace; color: #8c8c8c; font-size: 11.5px; margin-left: 8px; }
+.asin-text { font-family: monospace; color: var(--text-tertiary); font-size: 11.5px; margin-left: 8px; }
 .price-text { font-weight: 600; color: #1890ff; margin-left: 8px; }
 .affected-tag { margin-left: 8px; font-size: 11.5px; }
-.reason-list { margin: 4px 0 0; padding-left: 18px; font-size: 11.5px; line-height: 1.5; color: #595959; }
+.reason-list { margin: 4px 0 0; padding-left: 18px; font-size: 11.5px; line-height: 1.5; color: var(--text-secondary); }
 .strategy-section { margin-top: 16px; padding: 14px; background: #e6f7ff; border-radius: 8px; }
 .strategy-section h4 { margin: 0 0 10px; font-size: 13px; }
-.strategy-item { padding: 10px; background: #fff; border-radius: 6px; margin-bottom: 8px; }
+.strategy-item { padding: 10px; background: var(--bg-elevated); border-radius: 6px; margin-bottom: 8px; }
 .strat-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.strat-type { font-size: 11px; color: #8c8c8c; }
+.strat-type { font-size: 11px; color: var(--text-tertiary); }
 .action-steps { margin: 0; padding-left: 20px; font-size: 12px; line-height: 1.6; }
 .result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; margin-top: 12px; }
 </style>

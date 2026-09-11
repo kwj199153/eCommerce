@@ -74,7 +74,7 @@ const statusIcon = (s: string) => ({
 </script>
 
 <style scoped>
-.order-track-result { padding: 16px; background: #fff; border-radius: 8px; }
+.order-track-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
 
 .order-header {
   display: flex; align-items: center; gap: 14px;
@@ -82,11 +82,11 @@ const statusIcon = (s: string) => ({
 }
 .status-delivered { background: #f6ffed; border: 1px solid #b7eb8f; }
 .status-shipped { background: #e6f7ff; border: 1px solid #91d5ff; }
-.status-processing { background: #fffbe6; border: 1px solid #ffe58f; }
-.status-unknown { background: #fafafa; border: 1px solid #f0f0f0; }
+.status-processing { background: var(--bg-elevated)be6; border: 1px solid #ffe58f; }
+.status-unknown { background: var(--bg-base); border: 1px solid #f0f0f0; }
 
 .status-icon { font-size: 32px; }
-.header-info h3 { margin: 0; font-size: 16px; color: #262626; font-family: monospace; }
+.header-info h3 { margin: 0; font-size: 16px; color: var(--text-primary); font-family: monospace; }
 .status-text { font-size: 13px; font-weight: 500; margin-top: 2px; }
 .status-delivered .status-text { color: #52c41a; }
 .status-shipped .status-text { color: #1890ff; }
@@ -95,24 +95,24 @@ const statusIcon = (s: string) => ({
 .order-details { margin-bottom: 14px; }
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .detail-item {
-  padding: 10px 12px; background: #fafafa; border-radius: 8px;
+  padding: 10px 12px; background: var(--bg-base); border-radius: 8px;
 }
-.detail-item .label { display: block; font-size: 11px; color: #8c8c8c; margin-bottom: 3px; }
-.detail-item .value { font-size: 13.5px; color: #262626; font-weight: 500; }
+.detail-item .label { display: block; font-size: 11px; color: var(--text-tertiary); margin-bottom: 3px; }
+.detail-item .value { font-size: 13.5px; color: var(--text-primary); font-weight: 500; }
 .product-name { font-weight: 600; }
 .amount { font-size: 17px !important; font-weight: 700; color: #1890ff; }
 
 .logistics-section { margin-bottom: 14px; }
-.logistics-section h4 { font-size: 14px; font-weight: 600; color: #262626; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #f0f0f0; }
+.logistics-section h4 { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #f0f0f0; }
 .logistics-card { padding: 14px; background: #e6f7ff; border-radius: 8px; border: 1px solid #91d5ff; }
 .log-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .log-row:last-of-type { margin-bottom: 0; }
-.log-label { font-size: 12px; color: #595959; }
-.log-value { font-size: 13px; color: #262626; font-weight: 500; }
-.tracking-code { font-family: monospace; background: #fff; padding: 2px 6px; border-radius: 4px; font-size: 12.5px; }
+.log-label { font-size: 12px; color: var(--text-secondary); }
+.log-value { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+.tracking-code { font-family: monospace; background: var(--bg-elevated); padding: 2px 6px; border-radius: 4px; font-size: 12.5px; }
 .delivery-date { color: #1890ff; font-weight: 600; }
 
-.action-hints { padding: 10px 14px; background: #fafafa; border-radius: 8px; font-size: 12.5px; color: #595959; line-height: 1.5; }
+.action-hints { padding: 10px 14px; background: var(--bg-base); border-radius: 8px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; }
 
 .result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; }
 </style>

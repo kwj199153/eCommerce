@@ -99,7 +99,7 @@
                 class="image-card"
               >
                 <div class="image-placeholder">
-                  <PictureOutlined style="font-size: 32px; color: #d9d9d9" />
+                  <PictureOutlined style="font-size: 32px; color: var(--text-disabled)" />
                   <span>图 {{ idx + 1 }}</span>
                 </div>
                 <div class="image-score" :class="img.grade">
@@ -327,7 +327,7 @@ const getGradeClass = (score: number) => {
 
 <style scoped>
 .seo-diagnostic-result {
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -357,7 +357,7 @@ const getGradeClass = (score: number) => {
   display: flex;
   gap: 24px;
   padding: 24px 20px;
-  background: #fafbfc;
+  background: var(--bg-base);
   border-bottom: 1px solid #f0f0f0;
   align-items: center;
 }
@@ -369,12 +369,12 @@ const getGradeClass = (score: number) => {
 .score-number {
   font-size: 36px;
   font-weight: 700;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .score-label {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
 }
 
 .score-grade {
@@ -403,7 +403,7 @@ const getGradeClass = (score: number) => {
 .detail-label {
   width: 80px;
   font-size: 12px;
-  color: #595959;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
@@ -441,7 +441,7 @@ const getGradeClass = (score: number) => {
 .metric-name {
   width: 100px;
   font-size: 13px;
-  color: #595959;
+  color: var(--text-secondary);
 }
 
 .metric-value {
@@ -456,13 +456,13 @@ const getGradeClass = (score: number) => {
 
 .metric-target {
   font-size: 12px;
-  color: #bfbfbf;
+  color: var(--text-disabled);
 }
 
 .improvement-box {
   margin-top: 16px;
   padding: 12px;
-  background: #fffbe6;
+  background: var(--bg-elevated)be6;
   border-radius: 6px;
   border-left: 3px solid #faad14;
 }
@@ -477,7 +477,7 @@ const getGradeClass = (score: number) => {
   margin: 0;
   padding-left: 18px;
   font-size: 13px;
-  color: #595959;
+  color: var(--text-secondary);
 }
 
 .improvement-box li {
@@ -492,7 +492,7 @@ const getGradeClass = (score: number) => {
 }
 
 .quality-card {
-  background: #fafafa;
+  background: var(--bg-base);
   border-radius: 8px;
   padding: 12px;
   text-align: center;
@@ -507,7 +507,7 @@ const getGradeClass = (score: number) => {
   width: 24px;
   height: 24px;
   line-height: 24px;
-  background: #f0f0f0;
+  background: var(--bg-hover-light);
   border-radius: 50%;
   font-size: 12px;
   font-weight: 700;
@@ -517,7 +517,7 @@ const getGradeClass = (score: number) => {
 .quality-score {
   font-size: 20px;
   font-weight: 700;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .quality-issues {
@@ -528,7 +528,7 @@ const getGradeClass = (score: number) => {
   display: inline-block;
   font-size: 10px;
   padding: 2px 6px;
-  background: #fff1f0;
+  background: var(--bg-elevated)1f0;
   color: #cf1322;
   border-radius: 4px;
   margin: 2px;
@@ -542,7 +542,7 @@ const getGradeClass = (score: number) => {
 }
 
 .image-card {
-  background: #fafafa;
+  background: var(--bg-base);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -553,9 +553,9 @@ const getGradeClass = (score: number) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: #f5f5f5;
+  background: var(--bg-base);
   gap: 4px;
-  color: #bfbfbf;
+  color: var(--text-disabled);
   font-size: 11px;
 }
 
@@ -567,8 +567,8 @@ const getGradeClass = (score: number) => {
 }
 
 .image-score.good { background: #f6ffed; color: #52c41a; }
-.image-score.warn { background: #fffbe6; color: #faad14; }
-.image-score.bad { background: #fff2f0; color: #ff4d4f; }
+.image-score.warn { background: var(--bg-elevated)be6; color: #faad14; }
+.image-score.bad { background: var(--bg-elevated)2f0; color: #ff4d4f; }
 
 .image-issues {
   padding: 8px;
@@ -579,7 +579,7 @@ const getGradeClass = (score: number) => {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #595959;
+  color: var(--text-secondary);
   margin-bottom: 3px;
 }
 
@@ -609,7 +609,7 @@ const getGradeClass = (score: number) => {
 }
 
 .price-item.current {
-  background: #fff1f0;
+  background: var(--bg-elevated)1f0;
   border: 1px solid #ffa39e;
 }
 
@@ -621,7 +621,7 @@ const getGradeClass = (score: number) => {
 .price-item label {
   display: block;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   margin-bottom: 6px;
 }
 
@@ -647,7 +647,7 @@ const getGradeClass = (score: number) => {
 .stat-value {
   font-size: 24px;
   font-weight: 700;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .stat-value.positive { color: #52c41a; }
@@ -655,7 +655,7 @@ const getGradeClass = (score: number) => {
 
 .stat-label {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   margin-top: 4px;
 }
 
@@ -668,7 +668,7 @@ const getGradeClass = (score: number) => {
 .benchmark-title {
   font-size: 13px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 
@@ -679,11 +679,11 @@ const getGradeClass = (score: number) => {
 }
 
 .benchmark-table th {
-  background: #fafafa;
+  background: var(--bg-base);
   padding: 8px;
   text-align: left;
   font-weight: 600;
-  color: #595959;
+  color: var(--text-secondary);
   border-bottom: 2px solid #f0f0f0;
 }
 
@@ -694,7 +694,7 @@ const getGradeClass = (score: number) => {
 
 .row-label {
   font-weight: 500;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .cell-value.ok { color: #52c41a; font-weight: 600; }
@@ -703,24 +703,24 @@ const getGradeClass = (score: number) => {
 /* 行动计划 */
 .action-plan {
   padding: 16px 20px;
-  background: #fafbfc;
+  background: var(--bg-base);
 }
 
 .plan-title {
   font-size: 13px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 
 .action-item strong {
   font-size: 13px;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .action-item p {
   margin: 4px 0 8px;
   font-size: 12px;
-  color: #595959;
+  color: var(--text-secondary);
 }
 </style>

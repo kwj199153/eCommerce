@@ -428,7 +428,7 @@ const handleSaveToProduct = async () => {
 
 <style scoped>
 .desc-generator-result {
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -500,7 +500,7 @@ const handleSaveToProduct = async () => {
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px;
-  background: #fafafa;
+  background: var(--bg-base);
   border-bottom: 1px solid #f0f0f0;
 }
 .module-toolbar-actions {
@@ -514,7 +514,7 @@ const handleSaveToProduct = async () => {
 .module-field label {
   display: block;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   margin-bottom: 4px;
 }
 .field-input {
@@ -537,7 +537,7 @@ const handleSaveToProduct = async () => {
 }
 
 .content-module {
-  background: #fff;
+  background: var(--bg-elevated);
   border: 1px solid #f0f0f0;
   border-radius: 8px;
   overflow: hidden;
@@ -545,7 +545,7 @@ const handleSaveToProduct = async () => {
 
 .module-header {
   padding: 14px 18px;
-  background: #fafafa;
+  background: var(--bg-base);
   border-bottom: 1px solid #f0f0f0;
 }
 
@@ -553,14 +553,14 @@ const handleSaveToProduct = async () => {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .module-body {
   padding: 16px 18px;
   font-size: 13px;
   line-height: 1.75;
-  color: #434343;
+  color: var(--text-secondary);
 }
 
 .module-body :deep(p) {
@@ -581,7 +581,7 @@ const handleSaveToProduct = async () => {
 .it-layout.right { grid-template-columns: 1fr 180px; }
 
 .it-image {
-  background: #f5f5f5;
+  background: var(--bg-base);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -596,7 +596,7 @@ const handleSaveToProduct = async () => {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  color: #bfbfbf;
+  color: var(--text-disabled);
   font-size: 11px;
   padding: 20px;
 }
@@ -609,13 +609,13 @@ const handleSaveToProduct = async () => {
   margin: 0 0 10px;
   font-size: 14px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .it-text p {
   margin: 0 0 8px;
   font-size: 13px;
-  color: #595959;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -631,11 +631,11 @@ const handleSaveToProduct = async () => {
 }
 
 .comp-table th {
-  background: #fafafa;
+  background: var(--bg-base);
   padding: 10px 12px;
   text-align: center;
   font-weight: 600;
-  color: #595959;
+  color: var(--text-secondary);
   border-bottom: 2px solid #f0f0f0;
 }
 
@@ -648,7 +648,7 @@ const handleSaveToProduct = async () => {
 .feature-name {
   text-align: left !important;
   font-weight: 500;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .comp-table td.highlight {
@@ -688,14 +688,14 @@ const handleSaveToProduct = async () => {
 .hl-content strong {
   display: block;
   font-size: 13px;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 2px;
 }
 
 .hl-content p {
   margin: 0;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   line-height: 1.5;
 }
 
@@ -716,7 +716,7 @@ const handleSaveToProduct = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 50%;
   font-size: 20px;
   font-weight: 700;
@@ -727,13 +727,13 @@ const handleSaveToProduct = async () => {
 .footer-text h4 {
   margin: 0 0 4px;
   font-size: 15px;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .footer-text p {
   margin: 0;
   font-size: 12px;
-  color: #595959;
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
@@ -742,7 +742,7 @@ const handleSaveToProduct = async () => {
   display: flex;
   justify-content: space-around;
   padding: 14px 20px;
-  background: #fafbfc;
+  background: var(--bg-base);
   border-top: 1px solid #f0f0f0;
 }
 
@@ -752,7 +752,7 @@ const handleSaveToProduct = async () => {
   align-items: center;
   gap: 2px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
 }
 
 .stat-item .anticon {
@@ -764,7 +764,7 @@ const handleSaveToProduct = async () => {
 .s-value {
   font-size: 16px;
   font-weight: 700;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 /* 操作栏 */

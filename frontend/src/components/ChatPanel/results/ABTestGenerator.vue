@@ -227,7 +227,7 @@ const exportVariant = (idx: number) => {
 
 <style scoped>
 .ab-test-result {
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -257,11 +257,11 @@ const exportVariant = (idx: number) => {
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   padding: 20px;
-  background: #fafbfc;
+  background: var(--bg-base);
 }
 
 .variant-card {
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 8px;
   border: 2px solid #f0f0f0;
   overflow: hidden;
@@ -273,7 +273,7 @@ const exportVariant = (idx: number) => {
 }
 
 .variant-card.is-control {
-  border-color: #d9d9d9;
+  border-color: var(--border-strong);
   position: relative;
 }
 
@@ -282,7 +282,7 @@ const exportVariant = (idx: number) => {
   position: absolute;
   top: 8px;
   right: -24px;
-  background: #d9d9d9;
+  background: var(--bg-hover-light);
   color: #fff;
   font-size: 10px;
   padding: 2px 8px;
@@ -294,8 +294,8 @@ const exportVariant = (idx: number) => {
   padding: 8px;
   font-size: 13px;
   font-weight: 600;
-  background: #f5f5f5;
-  color: #595959;
+  background: var(--bg-base);
+  color: var(--text-secondary);
 }
 
 .compare-section {
@@ -305,7 +305,7 @@ const exportVariant = (idx: number) => {
 
 .section-label {
   font-size: 11px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   font-weight: 600;
   margin-bottom: 6px;
   text-transform: uppercase;
@@ -314,7 +314,7 @@ const exportVariant = (idx: number) => {
 .content-text {
   font-size: 12px;
   line-height: 1.55;
-  color: #434343;
+  color: var(--text-secondary);
   max-height: 60px;
   overflow: hidden;
   display: -webkit-box;
@@ -327,9 +327,9 @@ const exportVariant = (idx: number) => {
   margin-top: 4px;
   font-size: 10px;
   padding: 1px 6px;
-  background: #f0f0f0;
+  background: var(--bg-hover-light);
   border-radius: 4px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
 }
 
 .bullets-list {
@@ -341,7 +341,7 @@ const exportVariant = (idx: number) => {
 .mini-bullet {
   font-size: 11px;
   line-height: 1.5;
-  color: #595959;
+  color: var(--text-secondary);
   display: flex;
   gap: 4px;
 }
@@ -369,7 +369,7 @@ const exportVariant = (idx: number) => {
   display: flex;
   justify-content: space-around;
   padding: 12px;
-  background: #fafafa;
+  background: var(--bg-base);
   border-top: 1px solid #f0f0f0;
 }
 
@@ -380,7 +380,7 @@ const exportVariant = (idx: number) => {
 .m-label {
   display: block;
   font-size: 10px;
-  color: #bfbfbf;
+  color: var(--text-disabled);
   margin-bottom: 2px;
 }
 
@@ -405,7 +405,7 @@ const exportVariant = (idx: number) => {
 .highlight-title {
   font-size: 13px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 
@@ -416,11 +416,11 @@ const exportVariant = (idx: number) => {
 }
 
 .diff-table th {
-  background: #fafafa;
+  background: var(--bg-base);
   padding: 8px;
   text-align: left;
   font-weight: 600;
-  color: #595959;
+  color: var(--text-secondary);
   border-bottom: 2px solid #f0f0f0;
 }
 
@@ -432,11 +432,11 @@ const exportVariant = (idx: number) => {
 
 .dim-label {
   font-weight: 500;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .changed-cell {
-  background: #fffbe6;
+  background: var(--bg-elevated)be6;
   color: #d48806;
   font-weight: 500;
 }
@@ -444,13 +444,13 @@ const exportVariant = (idx: number) => {
 /* 测试建议 */
 .test-recommendation {
   padding: 16px 20px;
-  background: #fafbfc;
+  background: var(--bg-base);
 }
 
 .rec-title {
   font-size: 13px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 

@@ -87,7 +87,7 @@ const getPositionLabel = (pos: string): string => {
 
 <style scoped>
 .competitor-result {
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 8px;
   border: 1px solid #e8e8e8;
   margin: 12px 16px;
@@ -105,12 +105,12 @@ const getPositionLabel = (pos: string): string => {
 .overview-bar {
   display: flex; gap: 20px; padding: 10px 16px;
   font-size: 12px; border-bottom: 1px solid #f0f0f0;
-  background: #fafafa;
+  background: var(--bg-base);
 }
 
 .conclusion {
   padding: 12px 16px; border-top: 1px solid #f0f0f0;
 }
 .conclusion-title { font-weight: 600; margin-bottom: 6px; }
-.conclusion p { margin: 0; font-size: 12px; line-height: 1.6; color: #595959; }
+.conclusion p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
 </style>

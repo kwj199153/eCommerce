@@ -371,7 +371,7 @@ const handleSaveToProduct = async () => {
 
 <style scoped>
 .bullet-generator-result {
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -419,7 +419,7 @@ const handleSaveToProduct = async () => {
 }
 
 .bullet-card {
-  background: #fafafa;
+  background: var(--bg-base);
   border-radius: 8px;
   padding: 14px 16px;
   border-left: 3px solid #f5576c;
@@ -461,12 +461,12 @@ const handleSaveToProduct = async () => {
 
 /* 卖点标题 / 正文可编辑 textarea */
 .bullet-title-editor {
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 4px;
   border: 1px dashed #d9d9d9;
   font-size: 14px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   padding: 4px 8px;
   margin-bottom: 6px;
   line-height: 1.5;
@@ -477,11 +477,11 @@ const handleSaveToProduct = async () => {
 }
 
 .bullet-content-editor {
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 4px;
   border: 1px dashed #d9d9d9;
   font-size: 13px;
-  color: #434343;
+  color: var(--text-secondary);
   padding: 4px 8px;
   line-height: 1.6;
 }
@@ -505,20 +505,20 @@ const handleSaveToProduct = async () => {
 
 .bullet-category {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   font-weight: 500;
 }
 
 .bullet-title {
   font-size: 14px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 6px;
 }
 
 .bullet-body {
   font-size: 13px;
-  color: #595959;
+  color: var(--text-secondary);
   line-height: 1.65;
 }
 
@@ -528,20 +528,20 @@ const handleSaveToProduct = async () => {
   gap: 16px;
   margin-top: 10px;
   font-size: 11px;
-  color: #bfbfbf;
+  color: var(--text-disabled);
 }
 
 /* 分析概览 */
 .analysis-overview {
   padding: 16px 20px;
   border-top: 1px solid #f0f0f0;
-  background: #fafbfc;
+  background: var(--bg-base);
 }
 
 .overview-title {
   font-size: 13px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 
@@ -554,13 +554,13 @@ const handleSaveToProduct = async () => {
 .overview-item {
   text-align: center;
   padding: 10px;
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 6px;
 }
 
 .item-label {
   font-size: 11px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   margin-bottom: 4px;
 }
 
@@ -576,7 +576,7 @@ const handleSaveToProduct = async () => {
 
 .item-desc {
   font-size: 10px;
-  color: #bfbfbf;
+  color: var(--text-disabled);
   margin-top: 2px;
 }
 
@@ -589,7 +589,7 @@ const handleSaveToProduct = async () => {
 .stats-title {
   font-size: 13px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 
@@ -619,7 +619,7 @@ const handleSaveToProduct = async () => {
 .tips-title {
   font-size: 13px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 10px;
 }
 
@@ -645,5 +645,5 @@ const handleSaveToProduct = async () => {
 .tip-icon.warn { color: #faad14; }
 .tip-icon.fail { color: #ff4d4f; }
 
-.tip-text { color: #595959; }
+.tip-text { color: var(--text-secondary); }
 </style>

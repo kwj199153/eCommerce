@@ -81,17 +81,17 @@ const priceColumns = [
 </script>
 
 <style scoped>
-.price-track-result { padding: 16px; background: #fff; border-radius: 8px; }
+.price-track-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
 .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .result-header h3 { margin: 0; font-size: 16px; }
-.ranking-section { margin-top: 18px; padding: 14px; background: #f6f8fa; border-radius: 8px; }
+.ranking-section { margin-top: 18px; padding: 14px; background: var(--bg-base); border-radius: 8px; }
 .ranking-section h4 { margin: 0 0 10px; font-size: 13px; }
 .ranking-list { display: flex; flex-direction: column; gap: 6px; }
-.rank-item { display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: #fff; border-radius: 6px; }
-.rank-item.top3 { background: #fffbe6; border: 1px solid #ffe58f; }
+.rank-item { display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: var(--bg-elevated); border-radius: 6px; }
+.rank-item.top3 { background: var(--bg-elevated)be6; border: 1px solid #ffe58f; }
 .rank-num { font-weight: 700; color: #1890ff; min-width: 28px; }
 .rank-brand { flex: 1; font-size: 13px; }
-.rank-score { font-weight: 600; color: #262626; }
+.rank-score { font-weight: 600; color: var(--text-primary); }
 .insight-box { margin-top: 14px; padding: 12px; background: #e6f7ff; border-radius: 8px; font-size: 12.5px; line-height: 1.7; }
 .insight-box p { margin: 0 0 6px; }
 .insight-box ul { margin: 0; padding-left: 18px; }

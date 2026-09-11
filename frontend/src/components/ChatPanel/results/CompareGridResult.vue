@@ -155,38 +155,38 @@ const barWidth = (dim: string, val: any) => {
 </script>
 
 <style scoped>
-.compare-grid-result { padding: 16px; background: #fff; border-radius: 8px; }
+.compare-grid-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
 .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .result-header h3 { margin: 0; font-size: 16px; }
-.dimensions-section { margin-top: 18px; padding: 14px; background: #f6f8fa; border-radius: 8px; }
+.dimensions-section { margin-top: 18px; padding: 14px; background: var(--bg-base); border-radius: 8px; }
 .dimensions-section h4 { margin: 0 0 12px; font-size: 13.5px; }
 .dimension-card { margin-bottom: 16px; }
 .dimension-card:last-child { margin-bottom: 0; }
-.dimension-card h5 { margin: 0 0 10px; font-size: 13px; color: #262626; }
+.dimension-card h5 { margin: 0 0 10px; font-size: 13px; color: var(--text-primary); }
 .dim-bars { display: flex; flex-direction: column; gap: 6px; }
 .dim-bar-item { display: flex; align-items: center; gap: 8px; }
-.bar-label { min-width: 90px; font-size: 11.5px; font-family: monospace; color: #595959; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar-track { flex: 1; height: 20px; background: #f0f0f0; border-radius: 4px; position: relative; min-width: 60px; }
+.bar-label { min-width: 90px; font-size: 11.5px; font-family: monospace; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { flex: 1; height: 20px; background: var(--bg-hover-light); border-radius: 4px; position: relative; min-width: 60px; }
 .bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
 .bar-value { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-size: 10.5px; font-weight: 600; white-space: nowrap; }
-.value-ranking { margin-top: 18px; padding: 14px; background: #fffbe6; border-radius: 8px; }
+.value-ranking { margin-top: 18px; padding: 14px; background: var(--bg-elevated)be6; border-radius: 8px; }
 .value-ranking h4 { margin: 0 0 10px; font-size: 13.5px; }
 .rank-list { display: flex; flex-direction: column; gap: 6px; }
-.rank-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: #fff; border-radius: 6px; }
+.rank-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--bg-elevated); border-radius: 6px; }
 .rank-row.top1 { background: linear-gradient(135deg, #fffbe6, #fff7e6); border: 1px solid #ffd666; }
-.rank-row.top2 { background: #fafafa; border: 1px solid #e8e8e8; }
-.rank-row.top3 { background: #fff7e6; border: 1px solid #ffe7ba; }
+.rank-row.top2 { background: var(--bg-base); border: 1px solid #e8e8e8; }
+.rank-row.top3 { background: var(--bg-elevated)7e6; border: 1px solid #ffe7ba; }
 .rank-num { font-weight: 700; font-size: 15px; min-width: 24px; }
 .rank-row.top1 .rank-num { color: #d48806; }
-.rank-row.top2 .rank-num { color: #8c8c8c; }
+.rank-row.top2 .rank-num { color: var(--text-tertiary); }
 .rank-row.top3 .rank-num { color: #ad6800; }
 .rank-brand { flex: 1; font-size: 13px; }
 .rank-score { font-weight: 600; font-size: 12px; min-width: 40px; text-align: right; }
 .diff-section { margin-top: 18px; padding: 14px; background: #f9f0ff; border-radius: 8px; }
 .diff-section h4 { margin: 0 0 10px; font-size: 13.5px; }
 .diff-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
-.diff-stat { text-align: center; padding: 10px; background: #fff; border-radius: 6px; }
-.ds-label { display: block; font-size: 11px; color: #8c8c8c; }
+.diff-stat { text-align: center; padding: 10px; background: var(--bg-elevated); border-radius: 6px; }
+.ds-label { display: block; font-size: 11px; color: var(--text-tertiary); }
 .ds-value { font-size: 20px; font-weight: 700; color: #722ed1; }
 .gap-box { font-size: 12.5px; line-height: 1.7; }
 .gap-box p { margin: 0 0 4px; }

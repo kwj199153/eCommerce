@@ -49,7 +49,7 @@
           <a-tooltip v-if="record.alert_count > 0" :title="`${record.alert_count} 条警报`">
             <a-tag color="red">{{ record.alert_count }}</a-tag>
           </a-tooltip>
-          <span v-else style="color: #bfbfbf;">-</span>
+          <span v-else style="color: var(--text-disabled);">-</span>
         </template>
       </template>
     </a-table>
@@ -61,7 +61,7 @@
         <a-timeline-item v-for="(alert, i) in data.summary.recent_alerts.slice(0, 5)" :key="i" :color="severityColor(alert.severity)">
           <strong>{{ alert.type === 'price_drop' ? '价格骤降' : alert.type === 'rank_jump' ? '排名突变' : alert.type === 'stock_out' ? '缺货' : alert.type }}</strong>
           — {{ alert.message }}
-          <br><span style="font-size: 11px; color: #8c8c8c;">{{ alert.timestamp }}</span>
+          <br><span style="font-size: 11px; color: var(--text-tertiary);">{{ alert.timestamp }}</span>
         </a-timeline-item>
       </a-timeline>
     </div>
@@ -107,11 +107,11 @@ const formatBSR = (rank: number) => rank ? `#${rank.toLocaleString()}` : '-'
 </script>
 
 <style scoped>
-.monitor-result { padding: 16px; background: #fff; border-radius: 8px; }
+.monitor-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
 .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .result-header h3 { margin: 0; font-size: 16px; }
-.summary-card { background: #f6f8fa; padding: 12px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; line-height: 1.6; }
-.alert-section { margin-top: 16px; padding: 12px; background: #fffbe6; border-radius: 8px; border: 1px solid #ffe58f; }
+.summary-card { background: var(--bg-base); padding: 12px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; line-height: 1.6; }
+.alert-section { margin-top: 16px; padding: 12px; background: var(--bg-elevated)be6; border-radius: 8px; border: 1px solid #ffe58f; }
 .alert-section h4 { margin: 0 0 10px; font-size: 13px; color: #d46b08; }
 .up { color: #cf1322; }
 .down { color: #389e0d; }

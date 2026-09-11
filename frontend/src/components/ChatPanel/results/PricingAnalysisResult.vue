@@ -97,7 +97,7 @@ const aggregatedRecommendations = computed(() => {
 </script>
 
 <style scoped>
-.pricing-result { padding: 16px; background: #fff; border-radius: 8px; }
+.pricing-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
 .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .result-header h3 { margin: 0; font-size: 16px; }
 .strategy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 14px; }
@@ -108,19 +108,19 @@ const aggregatedRecommendations = computed(() => {
 .strategy-dynamic { background: linear-gradient(135deg, #f9f0ff, #fff0f6); border-color: #d3adf7; }
 .strategy-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .strategy-name { font-weight: 600; font-size: 13.5px; }
-.strategy-price { font-size: 18px; font-weight: 700; color: #262626; }
+.strategy-price { font-size: 18px; font-weight: 700; color: var(--text-primary); }
 .strategy-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
 .metric { text-align: center; padding: 4px; background: rgba(255,255,255,0.6); border-radius: 4px; }
-.m-label { display: block; font-size: 10.5px; color: #8c8c8c; }
-.m-val { font-weight: 600; font-size: 12.5px; color: #262626; }
-.rec-list { margin: 0; padding-left: 16px; font-size: 11.5px; line-height: 1.6; color: #434343; }
+.m-label { display: block; font-size: 10.5px; color: var(--text-tertiary); }
+.m-val { font-weight: 600; font-size: 12.5px; color: var(--text-primary); }
+.rec-list { margin: 0; padding-left: 16px; font-size: 11.5px; line-height: 1.6; color: var(--text-secondary); }
 .rec-list li { margin-bottom: 2px; }
-.position-map { padding: 12px; background: #fafafa; border-radius: 8px; margin-bottom: 14px; }
+.position-map { padding: 12px; background: var(--bg-base); border-radius: 8px; margin-bottom: 14px; }
 .position-map h4 { margin: 0 0 8px; font-size: 13px; }
 .position-legend { display: flex; flex-wrap: wrap; gap: 12px; }
 .legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.insight-box { padding: 12px; background: #fff0f6; border-radius: 8px; font-size: 12.5px; line-height: 1.7; }
+.insight-box { padding: 12px; background: var(--bg-elevated)0f6; border-radius: 8px; font-size: 12.5px; line-height: 1.7; }
 .insight-box p { margin: 0 0 6px; }
 .insight-box ul { margin: 0; padding-left: 18px; }
 .result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; margin-top: 12px; }

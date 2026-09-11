@@ -77,7 +77,7 @@ const costPercent = computed(() => {
 
 <style scoped>
 .profit-result {
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 8px;
   border: 1px solid #e8e8e8;
   margin: 12px 16px;
@@ -94,15 +94,15 @@ const costPercent = computed(() => {
 
 .key-metrics {
   display: flex; align-items: center; justify-content: center;
-  gap: 20px; padding: 14px 16px; background: #fafafa;
+  gap: 20px; padding: 14px 16px; background: var(--bg-base);
 }
 .metric { text-align: center; }
-.metric-label { font-size: 11px; color: #8c8c8c; }
-.metric-value { font-size: 18px; font-weight: 700; color: #262626; display: block; margin-top: 2px; }
+.metric-label { font-size: 11px; color: var(--text-tertiary); }
+.metric-value { font-size: 18px; font-weight: 700; color: var(--text-primary); display: block; margin-top: 2px; }
 .metric-value.price { color: #1890ff; }
 .metric-value.cost { color: #ff4d4f; }
 .metric-value.profit { color: #52c41a !important; }
-.metric-divider { width: 1px; height: 32px; background: #e8e8e8; }
+.metric-divider { width: 1px; height: 32px; background: var(--bg-hover-light); }
 
 .breakdown-section { padding: 12px 16px; border-top: 1px solid #f0f0f0; }
 .section-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
@@ -110,17 +110,17 @@ const costPercent = computed(() => {
 .breakdown-list { font-size: 13px; }
 .breakdown-item {
   display: flex; justify-content: space-between; padding: 5px 0;
-  color: #595959;
+  color: var(--text-secondary);
 }
 .breakdown-item.total {
   border-top: 1px dashed #d9d9d9; margin-top: 6px; padding-top: 8px;
-  font-weight: 600; color: #262626;
+  font-weight: 600; color: var(--text-primary);
 }
 
 .profit-visual { padding: 12px 16px; }
 .bar-container {
   display: flex; height: 20px; border-radius: 4px; overflow: hidden;
-  background: #f0f0f0;
+  background: var(--bg-hover-light);
 }
 .bar { transition: width 0.3s ease; }
 .cost-bar { background: #ff4d4f; }
@@ -128,7 +128,7 @@ const costPercent = computed(() => {
 
 .bar-legend {
   display: flex; justify-content: center; gap: 20px; margin-top: 8px;
-  font-size: 11px; color: #8c8c8c;
+  font-size: 11px; color: var(--text-tertiary);
 }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
 .cost-dot { background: #ff4d4f; }

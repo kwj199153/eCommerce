@@ -136,21 +136,21 @@ const formatNumber = (n: number | undefined) => n ? n.toLocaleString('en-US', { 
 </script>
 
 <style scoped>
-.market-share-result { padding: 16px; background: #fff; border-radius: 8px; }
+.market-share-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
 .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .result-header h3 { margin: 0; font-size: 16px; }
 .market-overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
-.overview-stat { background: #f6f8fa; padding: 12px; border-radius: 8px; text-align: center; }
-.stat-label { display: block; font-size: 11px; color: #8c8c8c; margin-bottom: 4px; }
+.overview-stat { background: var(--bg-base); padding: 12px; border-radius: 8px; text-align: center; }
+.stat-label { display: block; font-size: 11px; color: var(--text-tertiary); margin-bottom: 4px; }
 .stat-value { font-size: 20px; font-weight: 700; color: #1890ff; }
-.stat-unit { font-size: 11px; color: #8c8c8c; }
+.stat-unit { font-size: 11px; color: var(--text-tertiary); }
 .concentration-section { margin-top: 18px; padding: 14px; background: #f9f0ff; border-radius: 8px; }
 .concentration-section h4 { margin: 0 0 10px; font-size: 13px; }
 .conc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .conc-item { text-align: center; }
-.conc-label { display: block; font-size: 11px; color: #8c8c8c; }
+.conc-label { display: block; font-size: 11px; color: var(--text-tertiary); }
 .conc-value { font-size: 22px; font-weight: 700; color: #722ed1; }
-.conc-hint { font-size: 11px; color: #8c8c8c; }
+.conc-hint { font-size: 11px; color: var(--text-tertiary); }
 .insight-box { margin-top: 14px; padding: 12px; background: #f6ffed; border-radius: 8px; font-size: 12.5px; line-height: 1.7; }
 .insight-box p { margin: 0 0 6px; }
 .insight-box ul { margin: 0; padding-left: 18px; }

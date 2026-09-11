@@ -70,7 +70,7 @@ const positionMap: Record<string, string> = {
 </script>
 
 <style scoped>
-.competitor-ad-result { padding: 16px; background: #fff; border-radius: 8px; }
+.competitor-ad-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
 
 .sov-overview {
   display: flex; align-items: center; gap: 16px;
@@ -78,7 +78,7 @@ const positionMap: Record<string, string> = {
   border-radius: 12px; margin-bottom: 16px;
 }
 .sov-card { flex: 1; }
-.sov-card .label { display: block; font-size: 12px; color: #595959; margin-bottom: 4px; }
+.sov-card .label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
 .sov-card .value { display: block; font-size: 32px; font-weight: 800; color: #1890ff; }
 
 .position-badge {
@@ -88,7 +88,7 @@ const positionMap: Record<string, string> = {
 .pos-challenger { background: #91d5ff; color: #003a8c; }
 .pos-nicher { background: #b7eb8f; color: #237804; }
 
-.section-title { font-size: 14px; font-weight: 600; color: #262626; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #f0f0f0; }
+.section-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #f0f0f0; }
 
 .competitor-cards { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
 .comp-card {
@@ -98,20 +98,20 @@ const positionMap: Record<string, string> = {
 .comp-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 
 .comp-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.comp-name { font-size: 15px; font-weight: 600; color: #262626; }
+.comp-name { font-size: 15px; font-weight: 600; color: var(--text-primary); }
 
 .comp-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
-.metric { text-align: center; padding: 6px; background: #fafafa; border-radius: 6px; }
-.m-label { display: block; font-size: 10.5px; color: #8c8c8c; }
-.m-value { display: block; font-size: 14px; font-weight: 600; color: #262626; margin-top: 2px; }
+.metric { text-align: center; padding: 6px; background: var(--bg-base); border-radius: 6px; }
+.m-label { display: block; font-size: 10.5px; color: var(--text-tertiary); }
+.m-value { display: block; font-size: 14px; font-weight: 600; color: var(--text-primary); margin-top: 2px; }
 
 .comp-swot { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.swot-col ul { margin: 4px 0 0; padding-left: 16px; font-size: 11.5px; line-height: 1.6; color: #595959; }
-.swot-label { font-size: 11px; font-weight: 600; color: #8c8c8c; }
+.swot-col ul { margin: 4px 0 0; padding-left: 16px; font-size: 11.5px; line-height: 1.6; color: var(--text-secondary); }
+.swot-label { font-size: 11px; font-weight: 600; color: var(--text-tertiary); }
 
-.insights-box { padding: 12px; background: #fff7e6; border-radius: 8px; border: 1px solid #ffd591; }
+.insights-box { padding: 12px; background: var(--bg-elevated)7e6; border-radius: 8px; border: 1px solid #ffd591; }
 .insights-box h4 { margin: 0 0 8px; font-size: 13px; color: #d46b08; }
-.insights-box ul { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.8; color: #434343; }
+.insights-box ul { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.8; color: var(--text-secondary); }
 
 .result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; }
 </style>

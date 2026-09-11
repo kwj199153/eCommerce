@@ -92,7 +92,7 @@ const getSeverityTagColor = (severity: string): string => {
 
 <style scoped>
 .pain-point-result {
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 8px;
   border: 1px solid #e8e8e8;
   margin: 12px 16px;
@@ -113,21 +113,21 @@ const getSeverityTagColor = (severity: string): string => {
 .overview-cards {
   display: flex;
   gap: 1px;
-  background: #f0f0f0;
+  background: var(--bg-hover-light);
 }
 .overview-card {
   flex: 1;
   text-align: center;
   padding: 10px;
-  background: #fff;
+  background: var(--bg-elevated);
 }
 .overview-card .card-value {
   font-size: 18px;
   font-weight: 700;
-  color: #262626;
+  color: var(--text-primary);
 }
 .overview-card.negative .card-value { color: #ff4d4f; }
-.card-label { font-size: 11px; color: #8c8c8c; margin-top: 2px; }
+.card-label { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
 .suggestions {
   padding: 12px 16px;
@@ -139,6 +139,6 @@ const getSeverityTagColor = (severity: string): string => {
   padding-left: 18px;
   font-size: 12px;
   line-height: 1.8;
-  color: #595959;
+  color: var(--text-secondary);
 }
 </style>

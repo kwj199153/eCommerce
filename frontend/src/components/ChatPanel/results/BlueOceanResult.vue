@@ -727,7 +727,7 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 
 .stat-label {
   font-size: 11px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   margin-top: 2px;
 }
 
@@ -851,11 +851,11 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 }
 .cat-l1 {
   font-size: 12px;
-  color: #262626;
+  color: var(--text-primary);
 }
 .cat-l2 {
   font-size: 11px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
 }
 
 /* 星级 */
@@ -905,7 +905,7 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 }
 .listed-date {
   font-size: 12px;
-  color: #595959;
+  color: var(--text-secondary);
 }
 .listed-date.new {
   color: #0958d9;
@@ -920,7 +920,7 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   border-radius: 3px;
 }
 .muted {
-  color: #bfbfbf;
+  color: var(--text-disabled);
 }
 
 .report-summary {
@@ -933,13 +933,13 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 8px;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .report-content {
   font-size: 12px;
   line-height: 1.6;
-  color: #595959;
+  color: var(--text-secondary);
 }
 
 .report-content :deep(h2),
@@ -966,7 +966,7 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 
 .saved-list-title {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   margin-bottom: 8px;
 }
 
@@ -993,7 +993,7 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 
 .pool-selected-tip {
   font-size: 13px;
-  color: #595959;
+  color: var(--text-secondary);
   margin-bottom: 12px;
   line-height: 1.6;
 }
@@ -1004,7 +1004,7 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 
 .pool-empty {
   text-align: center;
-  color: #bfbfbf;
+  color: var(--text-disabled);
   padding: 24px 0;
   font-size: 13px;
 }
@@ -1047,12 +1047,12 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   flex: 1;
   font-size: 13px;
   font-weight: 500;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .pool-group-count {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
 }
 
 .pool-new-form {
@@ -1075,7 +1075,7 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 }
 
 .pool-color-swatch.active {
-  border-color: #262626;
+  border-color: var(--text-primary);
   transform: scale(1.15);
 }
 
@@ -1133,7 +1133,7 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   font-family: monospace;
   font-size: 12px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1161,12 +1161,12 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 }
 .hc-label {
   font-size: 11px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
 }
 .hc-value {
   font-size: 12px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
 }
 .hc-value.good { color: #389e0d; }
 .hc-value.warn { color: #fa541c; }

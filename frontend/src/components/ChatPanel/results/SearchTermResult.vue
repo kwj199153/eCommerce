@@ -53,7 +53,7 @@
               <span style="color: #ff4d4f; font-weight: 600;">{{ record.acos === 999 ? '∞' : record.acos + '%' }}</span>
             </template>
             <template v-if="column.dataIndex === 'sales'">
-              <span style="color: #8c8c8c;">$0.00</span>
+              <span style="color: var(--text-tertiary);">$0.00</span>
             </template>
           </template>
         </a-table>
@@ -107,18 +107,18 @@ const termColumns = [
 </script>
 
 <style scoped>
-.search-term-result { padding: 16px; background: #fff; border-radius: 8px; }
+.search-term-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
 
 .summary-bar {
   display: flex; gap: 16px; padding: 12px 16px;
-  background: #fafafa; border-radius: 8px; margin-bottom: 14px;
-  flex-wrap: wrap; font-size: 12.5px; color: #595959;
+  background: var(--bg-base); border-radius: 8px; margin-bottom: 14px;
+  flex-wrap: wrap; font-size: 12.5px; color: var(--text-secondary);
 }
-.stat-item b { color: #262626; margin-left: 2px; }
+.stat-item b { color: var(--text-primary); margin-left: 2px; }
 
 .suggestions-box { margin-top: 14px; padding: 12px; background: #f6ffed; border-radius: 8px; border: 1px solid #b7eb8f; }
 .suggestions-box h4 { margin: 0 0 8px; font-size: 13px; color: #389e0d; }
-.suggestions-box ul { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.8; color: #434343; }
+.suggestions-box ul { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.8; color: var(--text-secondary); }
 
 .result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; }
 

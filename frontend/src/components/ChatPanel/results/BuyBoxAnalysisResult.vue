@@ -40,7 +40,7 @@
               </template>
               <template v-else-if="column.key === 'winner'">
                 <a-tag v-if="record.is_winner" color="gold">👑 赢家</a-tag>
-                <span v-else style="color: #bfbfbf;">-</span>
+                <span v-else style="color: var(--text-disabled);">-</span>
               </template>
             </template>
           </a-table>
@@ -120,19 +120,19 @@ const factorLabel = (key: string | number) => ({
 </script>
 
 <style scoped>
-.buybox-result { padding: 16px; background: #fff; border-radius: 8px; }
+.buybox-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
 .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .result-header h3 { margin: 0; font-size: 16px; }
-.buybox-card { background: #fafafa; border-radius: 10px; padding: 14px; margin-bottom: 12px; border: 1px solid #f0f0f0; }
+.buybox-card { background: var(--bg-base); border-radius: 10px; padding: 14px; margin-bottom: 12px; border: 1px solid #f0f0f0; }
 .card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .product-name { font-weight: 600; font-size: 13.5px; }
-.asin-text { font-family: monospace; font-size: 11.5px; color: #8c8c8c; }
-.sellers-section h5, .factors-section h5 { margin: 0 0 8px; font-size: 12.5px; color: #595959; }
+.asin-text { font-family: monospace; font-size: 11.5px; color: var(--text-tertiary); }
+.sellers-section h5, .factors-section h5 { margin: 0 0 8px; font-size: 12.5px; color: var(--text-secondary); }
 .sellers-section { margin-bottom: 12px; }
 .factors-section { padding-top: 8px; border-top: 1px solid #eee; }
 .factors-grid { display: flex; flex-direction: column; gap: 6px; }
 .factor-item { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }
-.factor-name { min-width: 85px; color: #595959; }
+.factor-name { min-width: 85px; color: var(--text-secondary); }
 .factor-status { min-width: 40px; text-align: right; font-weight: 600; font-size: 11px; }
 .practices-box { padding: 12px; background: #fcffe6; border-radius: 8px; font-size: 12.5px; line-height: 1.7; }
 .practices-box p { margin: 0 0 6px; }

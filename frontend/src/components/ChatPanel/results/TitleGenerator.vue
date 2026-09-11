@@ -495,7 +495,7 @@ const getBulletEmoji = (idx: number) => {
 
 <style scoped>
 .title-generator-result {
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -548,12 +548,12 @@ const getBulletEmoji = (idx: number) => {
   gap: 6px;
   font-size: 13px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 
 .title-display {
-  background: #f6f8fa;
+  background: var(--bg-base);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 12px;
@@ -561,7 +561,7 @@ const getBulletEmoji = (idx: number) => {
 
 /* 主标题可编辑 textarea：白底+蓝边，与背景区分 */
 .title-editor {
-  background: #fff;
+  background: var(--bg-elevated);
   border-radius: 6px;
   border: 1px solid #d9e3f0;
   font-size: 15px;
@@ -580,7 +580,7 @@ const getBulletEmoji = (idx: number) => {
   gap: 16px;
   margin-top: 10px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
 }
 
 .char-count.ok { color: #52c41a; }
@@ -611,7 +611,7 @@ const getBulletEmoji = (idx: number) => {
 
 .detail-desc-item {
   padding: 10px 12px;
-  background: #fafafa;
+  background: var(--bg-base);
   border-radius: 6px;
   border-left: 3px solid #fa8c16;
 }
@@ -619,13 +619,13 @@ const getBulletEmoji = (idx: number) => {
 .detail-desc-heading {
   font-weight: 600;
   font-size: 13px;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 4px;
 }
 
 .detail-desc-content {
   font-size: 12px;
-  color: #595959;
+  color: var(--text-secondary);
   line-height: 1.6;
   white-space: pre-wrap;
 }
@@ -640,7 +640,7 @@ const getBulletEmoji = (idx: number) => {
   display: flex;
   gap: 10px;
   padding: 10px 12px;
-  background: #fafafa;
+  background: var(--bg-base);
   border-radius: 6px;
   border-left: 3px solid #1890ff;
 }
@@ -653,13 +653,13 @@ const getBulletEmoji = (idx: number) => {
 .bullet-title {
   font-weight: 600;
   font-size: 13px;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 2px;
 }
 
 .bullet-text {
   font-size: 12px;
-  color: #595959;
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
@@ -685,7 +685,7 @@ const getBulletEmoji = (idx: number) => {
 
 .aplus-body {
   font-size: 13px;
-  color: #595959;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -712,7 +712,7 @@ const getBulletEmoji = (idx: number) => {
 }
 /* 备选区不再可点击切换 selected，仅浅灰边不再加 hover 蓝边避免暗示可点 */
 .variant-item:hover {
-  border-color: #e8e8e8;
+  border-color: var(--border-base);
 }
 
 /* 删除 .variant-item.selected 与 .variant-item.selected .variant-rank 误导样式 */
@@ -723,7 +723,7 @@ const getBulletEmoji = (idx: number) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f0f0f0;
+  background: var(--bg-hover-light);
   border-radius: 50%;
   font-size: 12px;
   font-weight: 600;
@@ -733,7 +733,7 @@ const getBulletEmoji = (idx: number) => {
 .variant-text {
   flex: 1;
   font-size: 13px;
-  color: #434343;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -750,7 +750,7 @@ const getBulletEmoji = (idx: number) => {
 
 .variants-hint {
   margin-left: 4px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   font-size: 13px;
   cursor: help;
 }
@@ -765,7 +765,7 @@ const getBulletEmoji = (idx: number) => {
 }
 
 .analysis-card {
-  background: #fafafa;
+  background: var(--bg-base);
   border-radius: 8px;
   padding: 14px;
   text-align: center;
@@ -773,20 +773,20 @@ const getBulletEmoji = (idx: number) => {
 
 .card-title {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   margin-bottom: 8px;
 }
 
 .card-value {
   font-size: 20px;
   font-weight: 700;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 4px;
 }
 
 .card-detail {
   font-size: 11px;
-  color: #bfbfbf;
+  color: var(--text-disabled);
   margin-bottom: 8px;
 }
 

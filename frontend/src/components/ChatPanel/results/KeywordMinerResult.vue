@@ -269,7 +269,7 @@ const handleSaveToProduct = async () => {
 </script>
 
 <style scoped>
-.keyword-miner-result { background: #fff; border-radius: 8px; overflow: hidden; }
+.keyword-miner-result { background: var(--bg-elevated); border-radius: 8px; overflow: hidden; }
 
 .result-header {
   display: flex; justify-content: space-between; align-items: center;
@@ -291,22 +291,22 @@ const handleSaveToProduct = async () => {
 .stat-card.stat-low .stat-value { color: #52c41a; }
 .stat-card.stat-good .stat-value { color: #1890ff; }
 .stat-card.stat-avg .stat-value { color: #722ed1; }
-.stat-label { font-size: 12px; color: #8c8c8c; }
+.stat-label { font-size: 12px; color: var(--text-tertiary); }
 
 .table-toolbar {
   display: flex; justify-content: space-between; align-items: center;
   padding: 4px 20px 8px; flex-wrap: wrap; gap: 6px;
 }
-.edit-hint { font-size: 12px; color: #8c8c8c; }
+.edit-hint { font-size: 12px; color: var(--text-tertiary); }
 
 .table-wrap { padding: 0 20px 12px; }
 .kw-input { border: 1px dashed #d9d9d9 !important; border-radius: 4px; font-weight: 500; color: #1a1a1a; width: 100%; }
 .kw-input:focus { border: 1px solid #13c2c2 !important; box-shadow: 0 0 0 2px rgba(19, 194, 194, 0.1); }
 .kw-badge { font-size: 11px; padding: 0 5px; border-radius: 3px; margin-left: 6px; }
-.kw-badge.comp { background: #fff1f0; color: #cf1322; }
+.kw-badge.comp { background: var(--bg-elevated)1f0; color: #cf1322; }
 .kw-badge.expand { background: #f0f5ff; color: #2f54eb; }
 .kw-badge.tail { background: #f6ffed; color: #389e0d; }
-.kw-badge.manual { background: #f0f0f0; color: #595959; }
+.kw-badge.manual { background: var(--bg-hover-light); color: var(--text-secondary); }
 .rel-val { margin-left: 6px; font-size: 12px; font-weight: 600; }
 
 .summary-box { margin: 0 20px 16px; background: #f7f9fc; border-radius: 6px; padding: 12px 16px; font-size: 13px; }
