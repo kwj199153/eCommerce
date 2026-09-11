@@ -133,9 +133,9 @@ def test_ad_analysis_tools_registry():
 
 
 def test_secretary_agent_binds_tools():
-    """店秘书 agent 应持有 47 个工具（4 listing + 8 aigc + 4 选品 + 4 客服 + 6 广告 + 8 竞品 + 6 复盘 + 5 导航 + 1 选产品 + 1 切店铺）"""
+    """店秘书 agent 应持有 48 个工具（4 listing + 8 aigc + 4 选品 + 4 客服 + 6 广告 + 8 竞品 + 6 复盘 + 1 订阅查询 + 5 导航 + 1 选产品 + 1 切店铺）"""
     agent = SecretaryAgent(llm=MagicMock())
-    assert len(agent.tools) == 47
+    assert len(agent.tools) == 48
     assert agent.system_prompt == SECRETARY_SYSTEM_PROMPT
 
 

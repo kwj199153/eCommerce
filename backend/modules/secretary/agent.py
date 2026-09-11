@@ -25,6 +25,7 @@ from modules.ad_analysis.tools import ad_analysis_tools
 from modules.competitor_intel.tools import competitor_intel_tools
 from modules.review_analyst.tools import review_analyst_tools
 from modules.secretary.navigation_tools import navigation_tools
+from modules.secretary.subscription_tools import subscription_tools
 from modules.secretary.product_tools import build_product_tools
 from modules.secretary.shop_tools import build_shop_tools
 
@@ -91,8 +92,12 @@ SECRETARY_SYSTEM_PROMPT = """你是「店管家 AI」的店秘书，一个跨境
 【导航工具】
 - switch_agent：切换到某个业务 Agent（如选品、广告、做图、改文案）
 - open_view：打开某个资料库 / 看板（产品库、选品库、竞品监控等）
+- open_drawer：打开前端全局抽屉（settings=外观/主题设置；memory=记忆与进化）——**只用于改外观/记忆，不用于查订阅/账单**
 - handoff_to_agent：把对话交接给专业 Agent 接管，让它追问缺失信息后执行
 - set_theme：切换界面外观主题（浅色 / 深色 / 跟随系统）
+
+【订阅查询工具】
+- get_my_subscription：查询当前账号的订阅套餐详情（套餐名、状态、价格、当前周期、特性列表）。老板问订阅/套餐/账单/续费时**优先调此工具**，不要用 open_drawer 应付。
 
 【产品选择工具】
 - select_product：选中产品库里的第 N 个产品（默认第一个）作为「工作商品」
@@ -109,6 +114,8 @@ SECRETARY_SYSTEM_PROMPT = """你是「店管家 AI」的店秘书，一个跨境
 6. 【重要】老板提出专业生成类需求（生图/视频脚本/A+内容），但关键信息不足（如生图缺材质/造型/视角/是否需要 logo/产品细节）时，**不要**自己用默认值调业务工具硬凑结果，而是调 handoff_to_agent 把对话交接给专业 Agent，让它在自己的领域内逐项追问补齐后再执行。判断标准：老板一句话里，生成所需的核心参数（≥2 个）缺失时即视为信息不足。
 7. 【兜底】若你调用了业务工具（如 generate_product_image），而它返回了 needs_clarification=true 和 missing_fields（缺失字段清单），**不要**把假结果汇报成已完成，也**不要**用默认值再次调用；应把 missing_fields 逐项转述给老板，请其补充后再继续。
 8. 老板要「切店铺/换店铺/用 XX 店」→ 调 switch_shop 切数据源。
+9. 【订阅查询】老板问「我订阅了什么套餐 / 套餐详情 / 账单 / 续费日期 / 当前订阅」时，**优先调 get_my_subscription** 查询当前账号的套餐、价格、周期、特性，然后把这些信息直接写进 reply 告诉老板。**严禁**用 open_drawer(settings) 应付订阅查询——设置抽屉里没有订阅信息（订阅在独立 /subscription 路由页），那会让老板误以为「打开了设置就等于看了订阅」。
+10. 【兜底回执】若 get_my_subscription 返回 found=false，**不要**强行说「免费版」，而是直接告诉老板「当前未订阅」并给出 /subscription 路由入口。
 """
 
 
@@ -122,7 +129,7 @@ class SecretaryAgent(BaseAgent):
         super().__init__(
             agent_name="secretary",
             system_prompt=SECRETARY_SYSTEM_PROMPT,
-            tools=listing_tools + aigc_tools + product_research_tools + customer_service_tools + ad_analysis_tools + competitor_intel_tools + review_analyst_tools + navigation_tools + product_tools + shop_tools,
+            tools=listing_tools + aigc_tools + product_research_tools + customer_service_tools + ad_analysis_tools + competitor_intel_tools + review_analyst_tools + subscription_tools + navigation_tools + product_tools + shop_tools,
             llm=llm,
             max_iterations=6,
             metadata={"role": "orchestrator"},
