@@ -70,7 +70,7 @@
 
             <!-- 竞品监控员：顶部不展示工具卡片（看数面板收敛到监控看板；推理走输入框上方 chip） -->
             <!-- 运营复盘师/广告分析师：仅对话模式显示工具按钮（数据模式看宽看板自带 Tab 切换） -->
-            <template v-if="!isCompetitorIntelAgent && !(isReviewAgent && reviewMode === 'data') && !(isAdAnalyst && reviewMode === 'data')">
+            <template v-if="!isSecretaryAgent && !isCompetitorIntelAgent && !(isReviewAgent && reviewMode === 'data') && !(isAdAnalyst && reviewMode === 'data')">
               <a-divider type="vertical" :margin="8" />
               <div class="toolbar-tools">
                 <div
@@ -107,8 +107,8 @@
             @select="onWorkspaceCandidateSelect"
           />
 
-          <!-- 未选 Agent 提示（仅对话视图） -->
-          <span v-else-if="currentView === 'chat'" class="no-agent-hint">选择左侧 Agent 开始</span>
+          <!-- 未选 Agent 提示（仅对话视图且确实未选 Agent） -->
+          <span v-else-if="!currentAgent && currentView === 'chat'" class="no-agent-hint">选择左侧 Agent 开始</span>
         </div>
         <div class="header-right">
           <!-- 宽看板 Agent（运营复盘师 / Listing 优化师）：双模式切换（对话模式 / 大屏模式[复盘]·文案模式[Listing]） -->
@@ -165,7 +165,7 @@
 
     <!-- 右侧任务配置面板（仅对话视图显示） -->
     <a-layout-sider
-      v-if="currentView === 'chat'"
+      v-if="currentView === 'chat' && !isSecretaryAgent"
       :width="isWideBoardAgent ? 528 : 340"
       :collapsed="rightPanelCollapsed"
       :collapsed-width="0"
@@ -222,6 +222,7 @@ import type { ToolDefinition } from '@/components/ChatPanel/tools/toolDefinition
 import { getAgentTools } from '@/components/ChatPanel/tools/toolDefinitions'
 
 import { useAgentStore } from '@/stores/agent'
+import { useChatStore } from '@/stores/chat'
 import { useShopStore } from '@/stores/shop'
 import { useProductLibraryStore } from '@/stores/productLibrary'
 import { useAssetLibraryStore } from '@/stores/assetLibrary'
@@ -231,6 +232,7 @@ import CandidateLoaderButton from '@/components/TaskConfigPanel/configs/Candidat
 
 const router = useRouter()
 const agentStore = useAgentStore()
+const chatStore = useChatStore()
 const shopStore = useShopStore()
 const productLibraryStore = useProductLibraryStore()
 const assetLibraryStore = useAssetLibraryStore()
@@ -306,6 +308,9 @@ const isListingAgent = computed(() => currentAgent.value?.id === 'listing-genera
 
 // 广告分析师：右侧为「广告大屏看板」，6 Tab 数据面板
 const isAdAnalyst = computed(() => currentAgent.value?.id === 'ad-analysis')
+
+// 店秘书（全局入口 · 编排层）：无工具卡片、无右侧配置面板，纯对话 + 自动调度
+const isSecretaryAgent = computed(() => currentAgent.value?.id === 'secretary')
 
 // 需要「宽看板」的 Agent（复盘数据看板 / Listing 统一工作区 / 广告大屏看板）
 const isWideBoardAgent = computed(() => isReviewAgent.value || isListingAgent.value || isAdAnalyst.value)
@@ -395,6 +400,22 @@ onMounted(() => {
   candidateLibraryStore.fetchItems()
   productLibraryStore.fetchItems()
   assetLibraryStore.fetchItems()
+
+  // 店秘书首屏欢迎语（仅首次进入且该会话无消息时注入）
+  if (chatStore.getMessages('secretary').length === 0) {
+    chatStore.addMessage({
+      role: 'assistant',
+      content: [
+        '👋 我是**店秘书**，你的全局助手。直接告诉我你想做什么，我帮你一步到位：',
+        '',
+        '- 「帮我改下这个 listing」→ Listing 优化师',
+        '- 「找找蓝海产品」→ 选品分析师',
+        '- 「看看竞品动向」→ 竞品监控员',
+        '- 「做张商品图 / 视频」→ AIGC 媒体生成器',
+        '- 「打开产品库 / 选品库 / 竞品监控看板」→ 直达对应模块',
+      ].join('\n'),
+    }, 'secretary')
+  }
 })
 onUnmounted(() => {
   window.removeEventListener('view-navigate', handleViewNavigate as EventListener)

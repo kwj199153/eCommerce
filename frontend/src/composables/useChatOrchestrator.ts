@@ -839,6 +839,26 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
 
   // Agent 响应处理（复用原有逻辑）
   const simulateAgentResponse = async (userMessage: string) => {
+    // 店秘书（全局入口 · 编排层）：识别意图 → 回复 + 派发动作（切 Agent / 打开资料库）
+    if (agentStore.currentAgent?.id === 'secretary') {
+      try {
+        const { recognizeSecretaryIntent } = await import('@/mock/secretaryBrain')
+        const { dispatchAppAction } = await import('@/utils/appActions')
+        const out = recognizeSecretaryIntent(userMessage)
+        chatStore.addMessage({ role: 'assistant', content: out.reply })
+        await scrollToBottom()
+        const action = out.action
+        if (action) {
+          // 稍作停顿让用户看到回复，再执行跳转（避免消息还没渲染就被切走）
+          setTimeout(() => dispatchAppAction(action), 700)
+        }
+      } catch (error) {
+        console.error('店秘书调度失败:', error)
+        chatStore.addMessage({ role: 'assistant', content: '❌ 调度执行失败，请重试。' })
+      }
+      return
+    }
+
     // 选品分析师
     if (agentStore.currentAgent?.id === 'product-research') {
       try {

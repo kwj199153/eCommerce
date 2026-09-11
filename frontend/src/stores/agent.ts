@@ -9,6 +9,7 @@ import {
   BarChartOutlined,
   CustomerServiceOutlined,
   LineChartOutlined,
+  RobotOutlined,
 } from '@ant-design/icons-vue'
 
 export interface Agent {
@@ -21,6 +22,14 @@ export interface Agent {
 
 // 预定义的 Agent 列表（按真实业务流排序）
 const AGENT_LIST: Agent[] = [
+  // 0. 店秘书（全局入口 · 编排层）：不产出业务结果，负责把用户一句话调度到对应 Agent / 资料库
+  {
+    id: 'secretary',
+    name: '店秘书',
+    icon: RobotOutlined,
+    description: '全局调度：一句话直达对应 Agent 或打开资料库',
+    status: 'active',
+  },
   // 1. 选品分析师
   {
     id: 'product-research',
@@ -80,8 +89,8 @@ const AGENT_LIST: Agent[] = [
 ]
 
 export const useAgentStore = defineStore('agent', () => {
-  // 当前选中的 Agent
-  const currentAgent = ref<Agent | null>(null)
+  // 当前选中的 Agent（默认进入「店秘书」全局入口，形态 B：AI 原生的默认首页）
+  const currentAgent = ref<Agent | null>(AGENT_LIST[0])
 
   // Agent 列表（计算属性，可后续从 API 获取）
   const agentList = computed(() => AGENT_LIST)
@@ -101,6 +110,9 @@ export const useAgentStore = defineStore('agent', () => {
     agentClickCounter.value++
     console.log('✅ 切换 Agent:', agent.name)
   }
+
+  // 初始化：把默认 Agent（店秘书）同步到 chatStore，保证首屏消息路由正确
+  useChatStore().setActiveAgent(AGENT_LIST[0].id)
 
   return {
     currentAgent,

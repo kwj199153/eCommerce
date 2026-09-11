@@ -19,6 +19,10 @@ export interface ToolDefinition {
 
 // 按 Agent 分组的工具集（业务流排序）
 export const AGENT_TOOLS: Record<string, ToolDefinition[]> = {
+  // ====== 0. 店秘书（全局入口 · 编排层）======
+  // 不挂任何工具卡片：它只做意图调度（切 Agent / 打开资料库），不产出业务结果。
+  'secretary': [],
+
   // ====== 1. 选品分析师 ======
   // 顶部工具栏只保留「产出报表」类 form 工具（蓝海挖掘 / 利润测算）。
   // 痛点分析 / 选品避坑 / 竞品对比 移入对话框上方的候选评估 chip 区，由 AI 推理模板针对载入候选输出。
@@ -223,6 +227,7 @@ export const getToolDefinition = (agentId: string, toolId: string): ToolDefiniti
 
 /** Agent 显示顺序（用于侧边栏/顶部导航排列） */
 export const AGENT_ORDER = [
+  'secretary',            // 0. 店秘书（全局入口）
   'product-research',     // 1. 选品分析师
   'competitor-intel',     // 2. 竞品监控员
   'aigc-media',           // 3. AIGC 媒体生成器
