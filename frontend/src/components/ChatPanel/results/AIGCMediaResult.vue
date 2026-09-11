@@ -298,7 +298,7 @@ function renderMarkdown(text: string): string {
 function onImgError(e: Event) {
   const el = e.target as HTMLImageElement
   el.style.opacity = '0.3'
-  el.style.background = '#fafafa'
+  el.style.background = 'var(--bg-hover-light)'
 }
 </script>
 
@@ -328,7 +328,7 @@ function onImgError(e: Event) {
 .result-title {
   font-size: 14px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 /* 素材预览网格 */
@@ -339,7 +339,7 @@ function onImgError(e: Event) {
 }
 
 .asset-preview-item {
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--border-base);
   border-radius: 8px;
   overflow: hidden;
   position: relative;
@@ -361,8 +361,8 @@ function onImgError(e: Event) {
 
 .asset-type-chip {
   font-size: 10px;
-  background: #e6f4ff;
-  color: #0958d9;
+  background: var(--info-bg);
+  color: var(--primary);
   border-radius: 4px;
   padding: 1px 5px;
   flex-shrink: 0;
@@ -370,7 +370,7 @@ function onImgError(e: Event) {
 
 .asset-desc {
   font-size: 10px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -381,12 +381,12 @@ function onImgError(e: Event) {
   align-items: center;
   gap: 10px;
   padding-top: 8px;
-  border-top: 1px dashed #f0f0f0;
+  border-top: 1px dashed var(--border-base);
 }
 
 .footer-hint {
   font-size: 11px;
-  color: #bfbfbf;
+  color: var(--text-disabled);
 }
 
 /* 脚本 */
@@ -398,8 +398,8 @@ function onImgError(e: Event) {
 
 .script-summary {
   font-size: 12px;
-  color: #595959;
-  background: #fafafa;
+  color: var(--text-secondary);
+  background: var(--bg-hover-light);
   border-radius: 6px;
   padding: 8px 10px;
   line-height: 1.7;
@@ -420,8 +420,8 @@ function onImgError(e: Event) {
 
 .camera-chip {
   font-size: 11px;
-  color: #531dab;
-  background: #f9f0ff;
+  color: var(--purple);
+  background: var(--purple-bg);
   padding: 1px 6px;
   border-radius: 4px;
   margin-right: 4px;
@@ -429,7 +429,7 @@ function onImgError(e: Event) {
 
 .shot-size {
   font-size: 10px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
 }
 
 .frame-thumb {
@@ -437,11 +437,11 @@ function onImgError(e: Event) {
   height: 40px;
   object-fit: cover;
   border-radius: 4px;
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--border-base);
 }
 
 .text-muted {
-  color: #bfbfbf;
+  color: var(--text-disabled);
 }
 
 /* 视频结果 */
@@ -461,7 +461,7 @@ function onImgError(e: Event) {
   flex-shrink: 0;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--border-base);
 }
 
 .video-player img {
@@ -493,12 +493,12 @@ function onImgError(e: Event) {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .meta-label {
   width: 56px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   font-size: 11px;
   flex-shrink: 0;
 }
@@ -510,7 +510,7 @@ function onImgError(e: Event) {
 .frames-title {
   font-size: 12px;
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   margin-bottom: 8px;
 }
 </style>

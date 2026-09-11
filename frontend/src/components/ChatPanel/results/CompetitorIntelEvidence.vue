@@ -40,7 +40,7 @@
 
         <!-- 评分 -->
         <template v-else-if="column.key === 'rating'">
-          <span :style="{ color: record.rating < 4 ? '#fa541c' : '#52c41a' }">★ {{ Number(record.rating).toFixed(1) }}</span>
+          <span :class="record.rating < 4 ? 'cie-rate-low' : 'cie-rate-high'">★ {{ Number(record.rating).toFixed(1) }}</span>
         </template>
 
         <!-- 评论 -->
@@ -129,12 +129,17 @@ const columns: any[] = [
 </script>
 
 <style scoped>
+/*
+  颜色一律走主题 token（App.vue :root / html.dark 双份定义）。
+  原先写死 #d9f7be/#fcfff5/#ffffff/#237804 等浅色，深色模式下会变成"浅底浅字"，
+  表头与数据几乎不可见。token 值与这些硬编码一一对应，浅色观感不变，深色自动适配。
+*/
 .cie-box {
   margin-top: 10px;
-  border: 1px solid #d9f7be;
+  border: 1px solid var(--success-border);
   border-radius: 8px;
   padding: 10px 12px;
-  background: linear-gradient(180deg, #fcfff5, #ffffff);
+  background: var(--success-bg);
 }
 .cie-head {
   display: flex;
@@ -145,7 +150,7 @@ const columns: any[] = [
 .cie-title {
   font-size: 13px;
   font-weight: 600;
-  color: #237804;
+  color: var(--success);
 }
 .cie-cmp {
   display: flex;
@@ -157,19 +162,27 @@ const columns: any[] = [
 }
 .cie-asin {
   font-size: 10px;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
   font-family: monospace;
 }
 .cie-muted {
-  color: #bbb;
+  color: var(--text-disabled);
 }
 .cie-d {
   font-size: 11px;
 }
+/* BSR 数值变大 = 排名下滑 = 不利（红），反之向好（绿） */
 .cie-up {
-  color: #52c41a;
+  color: var(--success);
 }
 .cie-down {
-  color: #f5222d;
+  color: var(--danger);
+}
+/* 星级评分：<4 分预警，≥4 分良好 */
+.cie-rate-low {
+  color: var(--warning);
+}
+.cie-rate-high {
+  color: var(--success);
 }
 </style>

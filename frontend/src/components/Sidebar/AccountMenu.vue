@@ -46,6 +46,13 @@
               <span class="mi-extra"></span>
             </a-menu-item>
 
+            <!-- 1.5 订阅与计费 -->
+            <a-menu-item key="subscription" @click="openSubscription">
+              <span class="mi-icon"><CrownOutlined /></span>
+              <span class="mi-label">订阅与计费</span>
+              <span class="mi-extra"></span>
+            </a-menu-item>
+
             <!-- 2. 记忆与进化 -->
             <a-menu-item key="memory" @click="openMemoryDrawer">
               <span class="mi-icon"><ExperimentOutlined /></span>
@@ -115,7 +122,7 @@ import { message } from 'ant-design-vue'
 import {
   SettingOutlined, ExperimentOutlined, BgColorsOutlined,
   QuestionCircleOutlined, ReloadOutlined, LogoutOutlined,
-  DownOutlined, CheckOutlined, CopyOutlined,
+  DownOutlined, CheckOutlined, CopyOutlined, CrownOutlined,
 } from '@ant-design/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useThemeStore } from '@/stores/theme'
@@ -160,6 +167,11 @@ const themeOptions = [
 const openSettings = () => {
   menuOpen.value = false
   window.dispatchEvent(new CustomEvent('open-settings-drawer'))
+}
+
+const openSubscription = () => {
+  menuOpen.value = false
+  router.push('/subscription')
 }
 
 const openMemoryDrawer = () => {

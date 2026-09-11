@@ -225,13 +225,23 @@ export const useListingDraftStore = defineStore('listingDraft', () => {
       seo_score: seoScore.value ?? undefined,
       generated_at: new Date().toISOString(),
     }
-    await productLibrary.updateListing(productId.value, payload)
-    // 关键词单独走 updateItem（合并去重，避免覆盖产品原有关键词）
-    const picked = keywords.value.filter(k => k.selected && k.word.trim()).map(k => k.word.trim())
-    if (picked.length) {
-      const cur = productLibrary.items.find(i => i.id === productId.value)
-      const merged = Array.from(new Set([...(cur?.keywords || []), ...picked]))
-      await productLibrary.updateItem(productId.value, { keywords: merged })
+    // 关键：整段包 try/catch，任何失败都以 { ok:false } 返回。
+    // 否则异常会以未处理的 rejection 冒到调用方，用户看到的只是「点了没反应」。
+    try {
+      const r = await productLibrary.updateListing(productId.value, payload)
+      if (r && r.synced === false) {
+        return { ok: false, msg: `草稿已更新，但后端保存失败：${r.error || '未知错误'}` }
+      }
+      // 关键词单独走 updateItem（合并去重，避免覆盖产品原有关键词）
+      const picked = keywords.value.filter(k => k.selected && k.word.trim()).map(k => k.word.trim())
+      if (picked.length) {
+        const cur = productLibrary.items.find(i => i.id === productId.value)
+        const merged = Array.from(new Set([...(cur?.keywords || []), ...picked]))
+        await productLibrary.updateItem(productId.value, { keywords: merged })
+      }
+    } catch (e: any) {
+      console.error('[ListingDraft] 保存到产品库失败', e)
+      return { ok: false, msg: `保存失败：${e?.message || '未知错误'}` }
     }
     return { ok: true, msg: `已保存到「${productName.value || productId.value}」` }
   }

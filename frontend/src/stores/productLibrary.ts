@@ -767,7 +767,7 @@ export const useProductLibraryStore = defineStore('productLibrary', () => {
     seo_score?: number
     generated_at?: string
     version?: number
-  }): Promise<void> {
+  }): Promise<{ synced: boolean; error?: string }> {
     const idx = skus.value.findIndex(i => i.id === id)
     if (idx === -1) throw new Error(`SKU ${id} not found`)
     const sku = skus.value[idx]
@@ -791,9 +791,13 @@ export const useProductLibraryStore = defineStore('productLibrary', () => {
     skus.value[idx] = { ...sku, ...updated, updated_at: new Date().toISOString() }
     try {
       await updateSkuListing(id, listingData)
-    } catch (e) {
+    } catch (e: any) {
+      // 不能静默吞掉：调用方（如「保存全部」）必须能区分
+      // 「已落库」与「只更新了内存」，否则会显示成功却查不到数据。
       console.warn('[ProductLibrary] Listing 写回失败', e)
+      return { synced: false, error: e?.message || '后端同步失败' }
     }
+    return { synced: true }
   }
 
   // ====== 分组 Actions ======

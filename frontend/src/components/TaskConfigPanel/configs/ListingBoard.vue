@@ -236,6 +236,10 @@ async function saveAll() {
   try {
     const r = await draft.saveToProduct()
     r.ok ? message.success(r.msg) : message.warning(r.msg)
+  } catch (e: any) {
+    // 兜底：不让异常变成未处理的 rejection（那会表现为「点了没反应」）
+    console.error('[ListingBoard] 保存失败', e)
+    message.error(`保存失败：${e?.message || '未知错误'}`)
   } finally {
     saving.value = false
   }

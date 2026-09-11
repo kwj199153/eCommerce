@@ -48,6 +48,15 @@ export const useChatStore = defineStore('chat', () => {
     })
   }
 
+  // 向指定 Agent 的最后一条消息追加文本（流式渲染）
+  const appendToLastMessage = (delta: string, agentId?: string) => {
+    const targetId = agentId || activeAgentId.value || 'default'
+    const list = messagesByAgent.value[targetId]
+    if (!list || list.length === 0) return
+    const last = list[list.length - 1]
+    last.content = (last.content || '') + delta
+  }
+
   // 从当前 Agent 的消息列表中移除指定索引的消息
   const removeMessage = (index: number, agentId?: string) => {
     const targetId = agentId || activeAgentId.value || 'default'
@@ -75,6 +84,7 @@ export const useChatStore = defineStore('chat', () => {
     setActiveAgent,
     getMessages,
     addMessage,
+    appendToLastMessage,
     removeMessage,
     clearMessages,
     clearAllMessages,

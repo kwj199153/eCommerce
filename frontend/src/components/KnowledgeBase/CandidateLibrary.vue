@@ -976,11 +976,3 @@ const onImgError = (e: Event) => {
   overflow: hidden;
 }
 </style>
-
-<style>
-/* 行内 ⋮ 更多下拉 popup：菜单项文字不允许换行（popup 被 teleported 到 body，scoped CSS 不可达） */
-.row-more-menu .ant-dropdown-menu-item {
-  white-space: nowrap !important;
-  min-width: 140px !important;
-}
-</style>
