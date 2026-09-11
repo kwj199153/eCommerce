@@ -22,6 +22,8 @@ from modules.aigc_media.tools import aigc_tools
 from modules.product_research.tools import product_research_tools
 from modules.customer_service.tools import customer_service_tools
 from modules.ad_analysis.tools import ad_analysis_tools
+from modules.competitor_intel.tools import competitor_intel_tools
+from modules.review_analyst.tools import review_analyst_tools
 from modules.secretary.navigation_tools import navigation_tools
 from modules.secretary.product_tools import build_product_tools
 from modules.secretary.shop_tools import build_shop_tools
@@ -68,6 +70,24 @@ SECRETARY_SYSTEM_PROMPT = """你是「店管家 AI」的店秘书，一个跨境
 - optimize_budget：预算分配优化（提升 ROI）
 - detect_ad_anomalies：广告异常检测（花费突增/转化骤降）
 
+【竞品监控业务工具】
+- monitor_competitor：竞品 Listing 监控（价格/排名/评论/库存变化）
+- track_batch_asins：ASIN 批量追踪（批量对比关键指标）
+- analyze_market_share：市场份额分析（CR4/HHI 竞争格局）
+- analyze_pricing_strategy：定价策略分析（定价模式/促销节奏/价格弹性）
+- analyze_competitor_reviews：竞品评论深度分析（优劣势/痛点/差异化机会）
+- detect_intruders：入侵者检测（新进入市场的竞争者威胁评估）
+- analyze_buy_box：Buy Box 竞争分析（价格竞争力/赢取建议）
+- compare_competitors：多维度竞品对比（价格/评分/评论/BSR/性价比）
+
+【运营复盘业务工具】
+- weekly_report：经营概览周报（销售/广告/库存/退款汇总）
+- monthly_review：月度复盘（GMV/ACoS/转化率/退货率趋势 + SKU 贡献）
+- ad_review：广告归因分析（ROAS/ACoS/CPC/CTR + campaign 评级）
+- product_performance：商品表现分析（SKU 销量/利润/评分/周转排名）
+- inventory_health：库存健康分析（滞销/断货/周转/补货建议）
+- profit_audit：利润审计（销售额-佣金-广告-退货全链路净利润）
+
 【导航工具】
 - switch_agent：切换到某个业务 Agent（如选品、广告、做图、改文案）
 - open_view：打开某个资料库 / 看板（产品库、选品库、竞品监控等）
@@ -102,7 +122,7 @@ class SecretaryAgent(BaseAgent):
         super().__init__(
             agent_name="secretary",
             system_prompt=SECRETARY_SYSTEM_PROMPT,
-            tools=listing_tools + aigc_tools + product_research_tools + customer_service_tools + ad_analysis_tools + navigation_tools + product_tools + shop_tools,
+            tools=listing_tools + aigc_tools + product_research_tools + customer_service_tools + ad_analysis_tools + competitor_intel_tools + review_analyst_tools + navigation_tools + product_tools + shop_tools,
             llm=llm,
             max_iterations=6,
             metadata={"role": "orchestrator"},

@@ -39,7 +39,7 @@ async def monitor_competitor(request: CompetitorMonitorRequest) -> Dict[str, Any
     agent = _get_agent()
     context = {"asin": request.asin}
 
-    result = await agent.monitor_competitor(
+    result = await agent._monitor_competitor(
         query=f"监控竞品 {request.asin or '全部'}",
         context=context,
     )
@@ -61,7 +61,7 @@ async def track_batch_asins(request: BatchTrackRequest) -> Dict[str, Any]:
     agent = _get_agent()
     context = {"asins": request.asins}
 
-    result = await agent.track_batch_asins(
+    result = await agent._track_batch_asins(
         query=f"批量追踪 {', '.join(request.asins[:5])}{'...' if len(request.asins) > 5 else ''}",
         context=context,
     )
@@ -83,7 +83,7 @@ async def analyze_market_share(request: MarketShareRequest) -> Dict[str, Any]:
     agent = _get_agent()
     context = {"category": request.category}
 
-    result = await agent.analyze_market_share(
+    result = await agent._analyze_market_share(
         query=f"分析 {request.category} 类目的市场份额",
         context=context,
     )
@@ -114,7 +114,7 @@ async def analyze_pricing_strategy(request: PricingAnalysisRequest) -> Dict[str,
         "compare_asins": request.compare_asins,
     }
 
-    result = await agent.analyze_pricing_strategy(
+    result = await agent._analyze_pricing_strategy(
         query=query,
         context=context,
     )
@@ -138,7 +138,7 @@ async def analyze_competitor_reviews(request: ReviewAnalysisRequest) -> Dict[str
     aspects_str = ", ".join(request.aspects) if request.aspects else "全维度"
     context = {"asin": request.asin, "aspects": request.aspects}
 
-    result = await agent.analyze_competitor_reviews(
+    result = await agent._analyze_competitor_reviews(
         query=f"分析 {request.asin} 的评论（关注{aspects_str}）",
         context=context,
     )
@@ -160,7 +160,7 @@ async def detect_intruders(request: IntruderDetectionRequest) -> Dict[str, Any]:
     agent = _get_agent()
     context = {"category": request.category}
 
-    result = await agent.detect_intruders(
+    result = await agent._detect_intruders(
         query=f"检测 {request.category} 类目的新进入者",
         context=context,
     )
@@ -189,7 +189,7 @@ async def analyze_buy_box(request: BuyBoxAnalysisRequest) -> Dict[str, Any]:
 
     context = {"asin": request.asin, "marketplace": request.marketplace}
 
-    result = await agent.analyze_buy_box(
+    result = await agent._analyze_buy_box(
         query=query,
         context=context,
     )
@@ -211,7 +211,7 @@ async def compare_competitors(request: CompetitorCompareRequest) -> Dict[str, An
     agent = _get_agent()
     context = {"asins": request.asins, "dimensions": request.dimensions}
 
-    result = await agent.compare_competitors(
+    result = await agent._compare_competitors(
         query=f"对比竞品 {', '.join(request.asins[:4])}",
         context=context,
     )
