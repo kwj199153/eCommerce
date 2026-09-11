@@ -75,6 +75,13 @@ class CustomerServiceService:
         return response
 
     @staticmethod
+    async def stream_chat(message: str):
+        """流式对话入口（返回逐 token 异步迭代器）"""
+        agent = get_cs_agent()
+        async for chunk in agent.stream_chat(message):
+            yield chunk
+
+    @staticmethod
     async def search_faq(request: FAQSearchRequest) -> FAQSearchResponse:
         """
         搜索知识库

@@ -339,6 +339,11 @@ class ProductResearchService:
             suggestions=self._generate_suggestions(result),
         )
 
+    async def stream_chat(self, message: str):
+        """流式对话入口（返回逐 token 异步迭代器）"""
+        async for chunk in self.agent.stream_chat(message):
+            yield chunk
+
     @staticmethod
     def _generate_suggestions(agent_response) -> List[str]:
         """基于响应生成后续建议"""

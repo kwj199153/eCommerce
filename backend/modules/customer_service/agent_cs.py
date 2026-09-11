@@ -19,7 +19,7 @@
 
 import json
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncIterable
 from datetime import datetime, timedelta
 import random
 import hashlib
@@ -357,6 +357,43 @@ class CustomerServiceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         self._add_assistant_turn(conv_context, result.content, intent)
 
         return result
+
+    async def stream_chat(self, query: str) -> AsyncIterable[str]:
+        """
+        流式对话（逐 token 返回 LLM 文本）。
+
+        客服对话类意图走 LLM 流式；结构化意图（订单追踪/工单等）退化为一次性文本。
+
+        Yields:
+            文本片段（供 ai_infra.sse.sse_event_stream 包装成 SSE）
+        """
+        intent = self._classify_intent(query)
+
+        # 结构化意图：走 invoke 一次性返回（含结构化卡片数据）
+        if intent in ("order_tracking", "ticket_create", "escalation"):
+            result = await self.invoke(query)
+            yield result.content
+            return
+
+        # 对话类：走 LLM 流式（RAG 客服优先用 RAG 回答，此处简化走 LLM）
+        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+            result = await self.invoke(query)
+            yield result.content
+            return
+
+        try:
+            async for chunk in self.llm_stream(
+                query,
+                system_prompt=self.get_prompt_template("customer_service"),
+                model=self.DEFAULT_MODEL,
+                temperature=0.7,
+                max_tokens=1024,
+            ):
+                yield chunk
+        except Exception as e:
+            logger.warning(f"[customer_service] stream_chat failed: {e}")
+            result = await self.invoke(query)
+            yield result.content
 
     # ---- 意图分类 ----
 

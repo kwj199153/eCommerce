@@ -11,7 +11,7 @@
 7. Buy Box 竞争分析
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, AsyncIterable
 from datetime import datetime, timedelta
 import random
 import re
@@ -749,6 +749,48 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
                 "多维度竞品对比",
             ],
         }
+
+    async def stream_chat(self, query: str) -> AsyncIterable[str]:
+        """
+        流式对话（逐 token 返回 LLM 文本）。
+
+        对话/通用意图走 LLM 流式；结构化意图（监控/对比/份额等）退化为一次性文本。
+
+        Yields:
+            文本片段（供 ai_infra.sse.sse_event_stream 包装成 SSE）
+        """
+        intent = self._classify_intent(query)
+
+        # 结构化意图：走 analyze 一次性返回（含结构化数据）
+        if intent != "general":
+            result = await self.analyze(query)
+            # 提取可读文本（message 或摘要字段）
+            text = result.get("message") or result.get("summary") or result.get("analysis", "")
+            if isinstance(text, str) and text:
+                yield text
+            else:
+                yield f"已生成「{intent}」分析结果，详情见右侧结构化面板。"
+            return
+
+        # 对话类：走 LLM 流式
+        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+            result = await self._general_analysis(query)
+            yield result.get("message", "")
+            return
+
+        try:
+            async for chunk in self.llm_stream(
+                query,
+                system_prompt=self.get_prompt_template("competitor_intel"),
+                model=self.DEFAULT_MODEL,
+                temperature=0.6,
+                max_tokens=800,
+            ):
+                yield chunk
+        except Exception as e:
+            logger.warning(f"[competitor_intel] stream_chat failed: {e}")
+            result = await self._general_analysis(query)
+            yield result.get("message", "")
 
     # ==================== 工具方法 ====================
 

@@ -2,8 +2,12 @@
 竞品情报监控 - API 路由
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from core.billing.usage_tracker import meter_agent_chat
 from typing import Optional, List
+
+from ai_infra.sse import sse_event_stream
 
 from .schemas import (
     CompetitorMonitorRequest, BatchTrackRequest, MarketShareRequest,
@@ -11,8 +15,9 @@ from .schemas import (
     BuyBoxAnalysisRequest, CompetitorCompareRequest, CompetitorAnalysisResponse,
 )
 from . import service
+from .service import CompetitorIntelService
 
-router = APIRouter(prefix="/api/v1/competitor", tags=["竞品情报监控"])
+router = APIRouter(prefix="/competitor", tags=["竞品情报监控"])
 
 
 # ==================== 竞品监控 ====================
@@ -227,3 +232,21 @@ async def general_analysis(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"分析失败: {str(e)}")
+
+
+@router.post("/chat/stream", summary="竞品情报对话（SSE 流式）")
+async def chat_stream(
+    query: str = Query(..., description="自然语言查询"),
+    _meter=Depends(meter_agent_chat),
+):
+    """竞品情报对话，SSE 流式返回（打字机效果）。"""
+    import json as _json
+
+    async def _wrapped():
+        try:
+            async for event in sse_event_stream(CompetitorIntelService.stream_chat(query)):
+                yield event
+        except Exception as e:
+            yield f"event: error\ndata: {_json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(_wrapped(), media_type="text/event-stream")

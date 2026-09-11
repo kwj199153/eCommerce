@@ -376,3 +376,30 @@ async def chat_service(message: str, context: Optional[Dict] = None) -> Dict[str
             "error": str(e),
             "message": "处理失败"
         }
+
+
+async def stream_chat(message: str):
+    """流式对话入口（返回逐 token 异步迭代器）"""
+    async for chunk in agent.stream_chat(message):
+        yield chunk
+
+
+# ============================================================
+# Service 类（统一入口，收敛函数式风格）
+# ============================================================
+
+class AIGCMediaService:
+    """AIGC 媒体生成服务（统一命名空间，便于与其他模块风格对齐）"""
+
+    agent = agent
+
+    generate_product_image = staticmethod(generate_product_image_service)
+    analyze_main_image = staticmethod(analyze_main_image_service)
+    generate_a_plus_content = staticmethod(generate_a_plus_content_service)
+    generate_brand_story = staticmethod(generate_brand_story_service)
+    translate_content = staticmethod(translate_content_service)
+    generate_infographic = staticmethod(generate_infographic_service)
+    check_compliance = staticmethod(check_compliance_service)
+    generate_video_script = staticmethod(generate_video_script_service)
+    chat = staticmethod(chat_service)
+    stream_chat = staticmethod(stream_chat)

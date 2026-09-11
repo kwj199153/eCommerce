@@ -4,8 +4,12 @@
 提供广告分析相关的 RESTful API 端点
 """
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi.responses import StreamingResponse
+from core.billing.usage_tracker import meter_agent_chat
 from typing import Optional, List
+
+from ai_infra.sse import sse_event_stream
 
 from .schemas import (
     AdDiagnosisRequest,
@@ -129,7 +133,10 @@ async def detect_anomalies(request: AnomalyDetectionRequest):
 
 
 @router.post("/chat", summary="自然语言对话")
-async def chat(request: AdChatRequest):
+async def chat(
+    request: AdChatRequest,
+    _meter=Depends(meter_agent_chat),
+):
     """
     广告分析师对话入口（推荐使用）
 
@@ -155,6 +162,24 @@ async def chat(request: AdChatRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/chat/stream", summary="自然语言对话（SSE 流式）")
+async def chat_stream(
+    request: AdChatRequest,
+    _meter=Depends(meter_agent_chat),
+):
+    """广告分析师对话，SSE 流式返回（打字机效果）。"""
+    import json as _json
+
+    async def _wrapped():
+        try:
+            async for event in sse_event_stream(AdAnalysisService.stream_chat(request.message)):
+                yield event
+        except Exception as e:
+            yield f"event: error\ndata: {_json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
 @router.get("/capabilities", summary="查询 Agent 能力")

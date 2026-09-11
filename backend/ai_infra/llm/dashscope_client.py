@@ -21,6 +21,7 @@ from enum import Enum
 import httpx
 
 from core.logger import get_logger
+from core.billing.llm_meter import record_llm_usage
 
 logger = get_logger(__name__)
 
@@ -289,9 +290,12 @@ class DashScopeLLM:
             "max_tokens": kwargs.get("max_tokens", self.max_tokens),
             "top_p": kwargs.get("top_p", self.top_p),
             "stream": True,
+            # 请求服务端在最后一个 chunk 返回 usage，便于精确计量
+            "stream_options": {"include_usage": True},
         }
 
         full_content = ""
+        stream_usage: Dict = {}
         start_time = time.time()
 
         async with self.client.stream(
@@ -303,6 +307,9 @@ class DashScopeLLM:
                 if line.startswith("data: ") and line != "data: [DONE]":
                     try:
                         chunk = json.loads(line[6:])
+                        # 部分兼容端点把 usage 放在最后一个 chunk
+                        if chunk.get("usage"):
+                            stream_usage = chunk["usage"] or {}
                         delta = chunk.get("choices", [{}])[0].get("delta", {})
                         content = delta.get("content", "")
                         if content:
@@ -314,6 +321,23 @@ class DashScopeLLM:
         # 记录统计
         latency = (time.time() - start_time) * 1000
         logger.info(f"Stream completed: {len(full_content)} chars, {latency:.0f}ms")
+
+        # 计量：优先用服务端 usage，缺失则按字符数估算
+        model = payload["model"]
+        if stream_usage:
+            input_tokens = int(stream_usage.get("prompt_tokens", 0) or 0)
+            output_tokens = int(stream_usage.get("completion_tokens", 0) or 0)
+        else:
+            prompt_chars = sum(len(str(m.get("content", ""))) for m in formatted_messages)
+            input_tokens = self._estimate_tokens(prompt_chars)
+            output_tokens = self._estimate_tokens(len(full_content))
+
+        record_llm_usage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost=self._compute_cost(model, input_tokens, output_tokens),
+            model=model,
+        )
 
     # ====== 便捷方法 ======
 
@@ -434,9 +458,7 @@ class DashScopeLLM:
         output_tokens = usage.get("completion_tokens", 0)
         model = data.get("model", self.model)
 
-        # 计算成本
-        pricing = LLMConfig.PRICING.get(model, {"input": 0.01, "output": 0.03})
-        cost = (input_tokens / 1000) * pricing["input"] + (output_tokens / 1000) * pricing["output"]
+        cost = self._compute_cost(model, input_tokens, output_tokens)
 
         return LLMResponse(
             content=message.get("content", ""),
@@ -444,17 +466,41 @@ class DashScopeLLM:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=input_tokens + output_tokens,
-            cost=round(cost, 6),
+            cost=cost,
             latency_ms=(time.time() - start_time) * 1000,
             finish_reason=choices[0].get("finish_reason", "") if choices else "",
             raw_response=data,
         )
+
+    @staticmethod
+    def _compute_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+        """按模型定价计算成本（元）"""
+        pricing = LLMConfig.PRICING.get(model, {"input": 0.01, "output": 0.03})
+        cost = (input_tokens / 1000) * pricing["input"] + (output_tokens / 1000) * pricing["output"]
+        return round(cost, 6)
+
+    @staticmethod
+    def _estimate_tokens(char_count: int) -> int:
+        """
+        无 usage 时的 token 估算（中文场景经验值）。
+
+        qwen 系列对中文约 1 token ≈ 1.5 字符，这里做保守估计，
+        仅用于流式接口服务端未返回 usage 时的兜底计量。
+        """
+        return max(1, int(char_count / 1.5)) if char_count else 0
 
     def _update_stats(self, response: LLMResponse):
         """更新使用统计"""
         self._stats.total_calls += 1
         self._stats.total_tokens += response.total_tokens
         self._stats.total_cost += response.cost
+        # 记入请求级计费计量器（当前请求未开启计量时自动忽略）
+        record_llm_usage(
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+            cost=response.cost,
+            model=response.model,
+        )
 
     @property
     def stats(self) -> UsageStats:

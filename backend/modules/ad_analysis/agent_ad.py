@@ -18,7 +18,7 @@
 """
 
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncIterable
 from datetime import datetime, timedelta
 import random
 
@@ -753,6 +753,43 @@ Amazon PPC 关键指标基准（参考值）：
 你可以说：「{query.split()[0] if query else '帮我诊断广告账户'}」开始分析。
 """
         return AgentResponse(content=content, display_type="text")
+
+    async def stream_chat(self, query: str) -> AsyncIterable[str]:
+        """
+        流式对话（逐 token 返回 LLM 文本）。
+
+        对话类意图走 LLM 流式；结构化意图（诊断/搜索词/出价等）退化为一次性文本。
+
+        Yields:
+            文本片段（供 ai_infra.sse.sse_event_stream 包装成 SSE）
+        """
+        intent = self._classify_intent(query)
+
+        # 结构化意图：走 invoke 一次性返回（含图表数据，不适合流式）
+        if intent != "general":
+            result = await self.invoke(query)
+            yield result.content
+            return
+
+        # 对话类：走 LLM 流式
+        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+            result = await self._general_response(query)
+            yield result.content
+            return
+
+        try:
+            async for chunk in self.llm_stream(
+                query,
+                system_prompt=self.system_prompt,
+                model=self.DEFAULT_MODEL,
+                temperature=0.6,
+                max_tokens=1024,
+            ):
+                yield chunk
+        except Exception as e:
+            logger.warning(f"[ad_analysis] stream_chat failed: {e}")
+            result = await self._general_response(query)
+            yield result.content
 
     # ====== 数据生成辅助方法（模拟数据）======
 

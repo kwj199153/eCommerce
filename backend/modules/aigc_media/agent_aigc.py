@@ -16,7 +16,7 @@ import re
 import random
 import math
 from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, AsyncIterable
 from datetime import datetime, timedelta
 from enum import Enum
 
@@ -1347,6 +1347,49 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
     # ============================================================
     # Intent 分类（用于聊天路由）
     # ============================================================
+
+    async def stream_chat(self, query: str) -> AsyncIterable[str]:
+        """
+        流式对话（逐 token 返回 LLM 文本）。
+
+        对话类意图走 LLM 流式；具体工具类意图（生图/翻译等）退化为引导文本。
+
+        Yields:
+            文本片段（供 ai_infra.sse.sse_event_stream 包装成 SSE）
+        """
+        intent = self.classify_intent(query)
+
+        # 具体工具意图：返回引导文本（一次性）
+        if intent != "general":
+            guide = (
+                f"检测到您想做「{intent}」，请使用对应的顶部工具填写详细信息。\n"
+                f"我也可以直接帮您生成文案，例如说「帮我写一段品牌故事」或「翻译这段文案」。"
+            )
+            yield guide
+            return
+
+        # 对话类：走 LLM 流式
+        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+            yield (
+                "我是 AIGC 媒体生成助手，可以帮您：\n"
+                "- 🎨 AI 产品图片生成\n- 📝 A+/EBC 内容生成\n"
+                "- 🏆 品牌故事文案\n- 🌍 多语言 SEO 翻译\n"
+                "- 🎬 短视频脚本生成"
+            )
+            return
+
+        try:
+            async for chunk in self.llm_stream(
+                query,
+                system_prompt=self.get_prompt_template("aigc_media"),
+                model=self.DEFAULT_MODEL,
+                temperature=0.8,
+                max_tokens=1200,
+            ):
+                yield chunk
+        except Exception as e:
+            logger.warning(f"[aigc_media] stream_chat failed: {e}")
+            yield "（流式生成中断，请重试或改用顶部工具）"
 
     def classify_intent(self, user_input: str) -> str:
         """

@@ -310,7 +310,7 @@ class ProductResearchAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             "query": query,
             "category": category,
             "opportunities": [opp.dict() for opp in opportunities[:5]],  # Top 5
-            "summary": f"在「{category}」领域发现 {len(opportitions)} 个蓝海机会",
+            "summary": f"在「{category}」领域发现 {len(opportunities)} 个蓝海机会",
         }
 
         # ====== LLM 增强：智能总结与建议 ======
@@ -485,6 +485,43 @@ class ProductResearchAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
                        f"4. ⚔️ 对比多个竞品\n\n"
                        f"请告诉我您想了解哪个方面？",
         }
+
+    async def stream_chat(self, query: str) -> AsyncIterable[str]:
+        """
+        流式对话（逐 token 返回 LLM 文本）。
+
+        对话类意图走 LLM 流式；结构化意图（蓝海/利润/痛点/竞品）退化为一次性文本。
+
+        Yields:
+            文本片段（供 ai_infra.sse.sse_event_stream 包装成 SSE）
+        """
+        intent = await self._classify_intent(query)
+
+        # 结构化意图：走 invoke 一次性返回（含结构化数据）
+        if intent in ("blue_ocean", "profit", "pain_points", "competitor"):
+            result = await self.invoke(query)
+            yield result.content
+            return
+
+        # 对话类：走 LLM 流式
+        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+            result = await self._general_chat(query)
+            yield result.get("response", "")
+            return
+
+        try:
+            async for chunk in self.llm_stream(
+                query,
+                system_prompt=self.get_prompt_template("product_research", market="全球"),
+                model=self.DEFAULT_MODEL,
+                temperature=0.7,
+                max_tokens=1024,
+            ):
+                yield chunk
+        except Exception as e:
+            logger.warning(f"[product_research] stream_chat failed: {e}")
+            result = await self._general_chat(query)
+            yield result.get("response", "")
 
     # ====== 工具函数（供 LLM 调用）======
 

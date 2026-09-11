@@ -264,8 +264,14 @@ class AdAnalysisService:
         )
 
     @staticmethod
+    async def stream_chat(message: str):
+        """流式对话入口（返回逐 token 异步迭代器）"""
+        agent = get_agent()
+        async for chunk in agent.stream_chat(message):
+            yield chunk
+
+    @staticmethod
     async def get_capabilities() -> Dict[str, Any]:
-        """获取 Agent 能力说明"""
         return {
             "agent_name": "广告分析师",
             "agent_id": "ad-analysis",

@@ -13,9 +13,13 @@
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import List
+from fastapi.responses import StreamingResponse
+from core.billing.usage_tracker import meter_agent_chat
+from typing import List, Optional
 
-from core.auth.dependencies import get_current_user, get_current_active_user
+from ai_infra.sse import sse_event_stream
+
+from core.auth.dependencies import require_auth_if_enabled
 from modules.user_subscription.models import User
 
 from modules.product_research.schemas import (
@@ -43,7 +47,7 @@ service = ProductResearchService()
 @router.post("/blue-ocean", response_model=ApiResponse)
 async def analyze_blue_ocean(
     request: BlueOceanRequest,
-    current_user: User = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
 ):
     """
     蓝海品类挖掘（MVP 完整版）
@@ -78,7 +82,7 @@ async def analyze_blue_ocean(
 @router.post("/profit", response_model=ApiResponse)
 async def analyze_profit(
     request: ProfitAnalysisRequest,
-    current_user: User = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
 ):
     """
     SKU 利润计算
@@ -108,7 +112,7 @@ async def analyze_profit(
 @router.post("/pain-points", response_model=ApiResponse)
 async def analyze_pain_points(
     request: PainPointRequest,
-    current_user: User = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
 ):
     """
     痛点机会识别
@@ -136,7 +140,7 @@ async def analyze_pain_points(
 @router.post("/competitors", response_model=ApiResponse)
 async def compare_competitors(
     request: CompetitorCompareRequest,
-    current_user: User = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
 ):
     """
     竞品深度对比
@@ -165,7 +169,8 @@ async def compare_competitors(
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
-    current_user: User = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
+    _meter=Depends(meter_agent_chat),
 ):
     """
     选品助手对话（主入口）
@@ -193,9 +198,28 @@ async def chat(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/chat/stream")
+async def chat_stream(
+    request: ChatRequest,
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
+    _meter=Depends(meter_agent_chat),
+):
+    """选品助手对话，SSE 流式返回（打字机效果）。"""
+    import json as _json
+
+    async def _wrapped():
+        try:
+            async for event in sse_event_stream(service.stream_chat(request.message)):
+                yield event
+        except Exception as e:
+            yield f"event: error\ndata: {_json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(_wrapped(), media_type="text/event-stream")
+
+
 @router.get("/capabilities", response_model=ApiResponse)
 async def get_capabilities(
-    current_user: User = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
 ):
     """
     查询选品 Agent 能力说明

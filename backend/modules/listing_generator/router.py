@@ -16,8 +16,12 @@ POST /api/v1/listing/chat               - 自然语言对话
 GET  /api/v1/listing/capabilities       - Agent 能力说明
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from core.billing.usage_tracker import meter_agent_chat
 from typing import List
+
+from ai_infra.sse import sse_event_stream
 
 from .schemas import (
     GenerateListingRequest,
@@ -187,7 +191,10 @@ async def create_ab_test(request: ABTestRequest):
 
 
 @router.post("/chat", response_model=ApiResponse, summary="自然语言对话")
-async def chat_with_listing_agent(request: ListingChatRequest):
+async def chat_with_listing_agent(
+    request: ListingChatRequest,
+    _meter=Depends(meter_agent_chat),
+):
     """
     与 Listing 优化专家进行自然语言对话
 
@@ -202,6 +209,31 @@ async def chat_with_listing_agent(request: ListingChatRequest):
         return ApiResponse(data=result, message="OK")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/chat/stream", summary="自然语言对话（SSE 流式）")
+async def chat_with_listing_agent_stream(
+    request: ListingChatRequest,
+    _meter=Depends(meter_agent_chat),
+):
+    """
+    与 Listing 优化专家对话，SSE 流式返回（打字机效果）。
+
+    事件协议：
+    - event: delta  → data: {"text": "..."}  增量文本
+    - event: done   → data: {"text": "..."}  完整文本
+    - event: error  → data: {"message": "..."}
+    """
+    import json as _json
+
+    async def _wrapped():
+        try:
+            async for event in sse_event_stream(service.stream_chat(request.message)):
+                yield event
+        except Exception as e:
+            yield f"event: error\ndata: {_json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
 @router.get("/capabilities", summary="Agent 能力说明")

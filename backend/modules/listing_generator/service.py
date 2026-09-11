@@ -261,6 +261,11 @@ class ListingGeneratorService:
             "display_type": result.display_type,
         }
 
+    async def stream_chat(self, message: str):
+        """流式对话入口（返回逐 token 异步迭代器）"""
+        async for chunk in self.agent.stream_chat(message):
+            yield chunk
+
     @staticmethod
     def _calculate_grade(score: float) -> str:
         """根据分数计算等级"""

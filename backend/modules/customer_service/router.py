@@ -4,8 +4,12 @@
 提供客服相关的 RESTful API 端点
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from core.billing.usage_tracker import meter_agent_chat
 from typing import Optional
+
+from ai_infra.sse import sse_event_stream
 
 from .schemas import (
     ChatRequest, ChatResponse,
@@ -29,7 +33,10 @@ router = APIRouter(
 # ====== 对话接口 ======
 
 @router.post("/chat", response_model=ApiResponse, summary="客服对话")
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(
+    request: ChatRequest,
+    _meter=Depends(meter_agent_chat),
+):
     """
     智能客服对话主入口
 
@@ -52,6 +59,24 @@ async def chat_endpoint(request: ChatRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/chat/stream", summary="客服对话（SSE 流式）")
+async def chat_stream(
+    request: ChatRequest,
+    _meter=Depends(meter_agent_chat),
+):
+    """智能客服对话，SSE 流式返回（打字机效果）。"""
+    import json as _json
+
+    async def _wrapped():
+        try:
+            async for event in sse_event_stream(CustomerServiceService.stream_chat(request.message)):
+                yield event
+        except Exception as e:
+            yield f"event: error\ndata: {_json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
 @router.post("/quick-reply", response_model=ApiResponse, summary="快速回复")

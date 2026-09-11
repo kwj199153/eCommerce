@@ -1049,6 +1049,67 @@ class ListingGeneratorAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
     # ====== 通用对话 ======
 
+    async def stream_chat(self, query: str) -> AsyncIterable[str]:
+        """
+        流式对话（逐 token 返回 LLM 文本）。
+
+        仅用于「文本生成类」意图（标题/五点/描述/通用问答），
+        结构化场景（完整 Listing、SEO 评分、A/B 变体）仍走 invoke 一次性返回。
+
+        Yields:
+            文本片段（供 ai_infra.sse.sse_event_stream 包装成 SSE）
+        """
+        intent = await self._classify_intent(query)
+
+        # 结构化场景不支持流式 → 退化为一次性文本
+        if intent in ("seo_analysis", "ab_test"):
+            result = await self._process_query(query)
+            yield result.content
+            return
+
+        # 文本生成类：构造 prompt 走 LLM 流式
+        product_info = self._extract_product_info(query, None)
+        product_name = product_info.get("name", query)
+        features = product_info.get("features", [])
+        brand = product_info.get("brand", "")
+        category = product_info.get("category", "general")
+
+        if intent == "optimize":
+            prompt = (
+                f"请针对以下产品给出 Listing 优化建议（英文，分点列出）：\n"
+                f"- 产品名: {product_name}\n- 类目: {category}\n"
+                f"- 卖点: {', '.join(features[:4]) or '无'}\n"
+                f"从标题、五点、描述、关键词四个维度给出可落地的优化点。"
+            )
+        else:
+            # generate / general：默认生成完整 Listing 文案
+            prompt = (
+                f"请为以下产品撰写一套 Amazon Listing 文案（英文）：\n"
+                f"- 产品名: {product_name}\n- 品牌: {brand or '未指定'}\n"
+                f"- 类目: {category or '通用'}\n- 卖点: {', '.join(features[:4]) or '无'}\n"
+                f"请输出：1) 优化标题 2) 五点描述 3) 产品描述。"
+            )
+
+        # LLM 可用则流式；否则降级到规则引擎一次性文本
+        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+            result = await self._process_query(query)
+            yield result.content
+            return
+
+        try:
+            async for chunk in self.llm_stream(
+                prompt,
+                system_prompt=self.system_prompt,
+                model=self.DEFAULT_MODEL,
+                temperature=0.7,
+                max_tokens=1200,
+            ):
+                yield chunk
+        except Exception as e:
+            logger.warning(f"[listing_generator] stream_chat failed: {e}")
+            result = await self._process_query(query)
+            yield result.content
+
     async def _general_chat(self, query: str) -> dict:
         """通用对话"""
         return {

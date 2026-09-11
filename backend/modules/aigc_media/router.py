@@ -4,9 +4,13 @@ AIGC 媒体生成模块 - API 路由 (Router)
 提供 12 个 RESTful API 端点
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from core.billing.usage_tracker import meter_agent_chat
 from typing import Optional, Dict, Any
 import logging
+
+from ai_infra.sse import sse_event_stream
 
 from .schemas import (
     ImageGenerationRequest,
@@ -28,23 +32,13 @@ from .schemas import (
     ChatRequest,
     AgentResponse,
 )
-from .service import (
-    generate_product_image_service,
-    analyze_main_image_service,
-    generate_a_plus_content_service,
-    generate_brand_story_service,
-    translate_content_service,
-    generate_infographic_service,
-    check_compliance_service,
-    generate_video_script_service,
-    chat_service,
-)
+from .service import AIGCMediaService
 
 logger = logging.getLogger(__name__)
 
 # 创建路由器
 router = APIRouter(
-    prefix="/api/v1/aigc",
+    prefix="/aigc",
     tags=["AIGC 媒体生成 (Phase 7)"]
 )
 
@@ -77,7 +71,7 @@ async def generate_image(request: ImageGenerationRequest):
     - minimalist: 极简主义
     - dramatic: 戏剧性风格
     """
-    result = await generate_product_image_service(request)
+    result = await AIGCMediaService.generate_product_image(request)
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result.get("error", "图片生成失败"))
     return AgentResponse(
@@ -106,7 +100,7 @@ async def analyze_image(request: MainImageAnalysisRequest):
     - CTR 预测
     - A/B 测试变体建议
     """
-    result = await analyze_main_image_service(request)
+    result = await AIGCMediaService.analyze_main_image(request)
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result.get("error", "主图分析失败"))
     return AgentResponse(
@@ -140,7 +134,7 @@ async def create_a_plus_content(request: APlusContentRequest):
     - 规格参数表
     - 使用场景展示
     """
-    result = await generate_a_plus_content_service(request)
+    result = await AIGCMediaService.generate_a_plus_content(request)
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result.get("error", "A+内容生成失败"))
     return AgentResponse(
@@ -177,7 +171,7 @@ async def create_brand_story(request: BrandStoryRequest):
     - 完整 About 描述（可用于 Amazon Store）
     - 多角度叙事版本
     """
-    result = await generate_brand_story_service(request)
+    result = await AIGCMediaService.generate_brand_story(request)
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result.get("error", "品牌故事生成失败"))
     return AgentResponse(
@@ -210,7 +204,7 @@ async def translate_content(request: TranslationRequest):
     - 多版本输出（正式版/口语版）
     - 支持主流电商语言
     """
-    result = await translate_content_service(request)
+    result = await AIGCMediaService.translate_content(request)
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result.get("error", "翻译失败"))
     return AgentResponse(
@@ -245,7 +239,7 @@ async def design_infographic(request: InfographicRequest):
 
     输出完整设计稿规格，可直接用于设计工具制作
     """
-    result = await generate_infographic_service(request)
+    result = await AIGCMediaService.generate_infographic(request)
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result.get("error", "信息图生成失败"))
     return AgentResponse(
@@ -280,7 +274,7 @@ async def check_image_compliance(request: ComplianceCheckRequest):
 
     输出：通过/警告/不通过 + 具体问题 + 修改建议
     """
-    result = await check_compliance_service(request)
+    result = await AIGCMediaService.check_compliance(request)
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result.get("error", "合规检查失败"))
     return AgentResponse(
@@ -316,7 +310,7 @@ async def create_video_script(request: VideoScriptRequest):
 
     支持平台：TikTok, Instagram Reels, YouTube Shorts
     """
-    result = await generate_video_script_service(request)
+    result = await AIGCMediaService.generate_video_script(request)
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result.get("error", "视频脚本生成失败"))
     return AgentResponse(
@@ -339,7 +333,10 @@ async def create_video_script(request: VideoScriptRequest):
     summary="AIGC 助手聊天",
     description="智能识别用户意图并分发到对应的功能模块"
 )
-async def aigc_chat(request: ChatRequest):
+async def aigc_chat(
+    request: ChatRequest,
+    _meter=Depends(meter_agent_chat),
+):
     """
     AIGC 媒体助手聊天接口
 
@@ -353,7 +350,7 @@ async def aigc_chat(request: ChatRequest):
     - 合规检查 → 引导至合规检测
     - 视频脚本 → 引导至视频脚本工具
     """
-    result = await chat_service(
+    result = await AIGCMediaService.chat(
         message=request.message,
         context=request.context
     )
@@ -365,6 +362,27 @@ async def aigc_chat(request: ChatRequest):
         message=result.get("message", ""),
         timestamp=result.get("timestamp", "")
     )
+
+
+@router.post(
+    "/chat/stream",
+    summary="AIGC 助手聊天（SSE 流式）",
+)
+async def aigc_chat_stream(
+    request: ChatRequest,
+    _meter=Depends(meter_agent_chat),
+):
+    """AIGC 助手聊天，SSE 流式返回（打字机效果）。"""
+    import json as _json
+
+    async def _wrapped():
+        try:
+            async for event in sse_event_stream(AIGCMediaService.stream_chat(request.message)):
+                yield event
+        except Exception as e:
+            yield f"event: error\ndata: {_json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
 # ============================================================

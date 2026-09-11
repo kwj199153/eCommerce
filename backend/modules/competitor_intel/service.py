@@ -240,3 +240,27 @@ async def general_analysis(query: str, context: Optional[Dict] = None) -> Dict[s
         "message": "分析完成",
         "timestamp": datetime.now().isoformat(),
     }
+
+
+async def stream_chat(message: str):
+    """流式对话入口（返回逐 token 异步迭代器）"""
+    agent = _get_agent()
+    async for chunk in agent.stream_chat(message):
+        yield chunk
+
+
+# ==================== Service 类（统一入口）====================
+
+class CompetitorIntelService:
+    """竞品情报监控服务（统一命名空间，便于与其他模块风格对齐）"""
+
+    monitor_competitor = staticmethod(monitor_competitor)
+    track_batch_asins = staticmethod(track_batch_asins)
+    analyze_market_share = staticmethod(analyze_market_share)
+    analyze_pricing_strategy = staticmethod(analyze_pricing_strategy)
+    analyze_competitor_reviews = staticmethod(analyze_competitor_reviews)
+    detect_intruders = staticmethod(detect_intruders)
+    analyze_buy_box = staticmethod(analyze_buy_box)
+    compare_competitors = staticmethod(compare_competitors)
+    general_analysis = staticmethod(general_analysis)
+    stream_chat = staticmethod(stream_chat)
