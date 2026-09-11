@@ -7,7 +7,7 @@
 
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import String, Boolean, DateTime, Text, Integer, ForeignKey, Enum as SAEnum
+from sqlalchemy import String, Boolean, DateTime, Text, Integer, Float, ForeignKey, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
 
@@ -95,7 +95,10 @@ class Subscription(Base):
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), unique=True, nullable=False)
     plan_id: Mapped[int] = mapped_column(Integer, ForeignKey("subscription_plans.id"), nullable=False)
 
-    status: Mapped[str] = mapped_column(String(20), default="active")  # active / cancelled / expired / past_due
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active / cancelled / expired / past_due / trialing
+    # 是否「周期结束后取消」（cancel_at_period_end）：true 表示用户已发起取消，
+    # 但当前周期内仍可用，到期后自动转为 cancelled。
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
     current_period_start: Mapped[datetime] = mapped_column(DateTime)
     current_period_end: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
@@ -103,12 +106,18 @@ class Subscription(Base):
     api_calls_used: Mapped[int] = mapped_column(Integer, default=0)
     agent_chats_used: Mapped[int] = mapped_column(Integer, default=0)
 
+    # LLM 消耗计量（由 core/billing/llm_meter.py 按调用累积落库）
+    llm_tokens_used: Mapped[int] = mapped_column(Integer, default=0)          # 累计 token 数
+    llm_cost_used: Mapped[float] = mapped_column(Float, default=0.0)          # 累计成本（元）
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # 关系
     user: Mapped["User"] = relationship("User", back_populates="subscription")
-    plan: Mapped["SubscriptionPlan"] = relationship("SubscriptionPlan")
+    # plan 必须是 eager load：计费逻辑（check_quota/record_usage）在异步上下文
+    # 中访问 subscription.plan.xxx，若为默认懒加载会抛 MissingGreenlet。
+    plan: Mapped["SubscriptionPlan"] = relationship("SubscriptionPlan", lazy="selectin")
 
     @property
     def is_active(self) -> bool:
@@ -128,7 +137,51 @@ class Subscription(Base):
         return f"<Subscription(user_id={self.user_id}, plan_id={self.plan_id}, status={self.status})>"
 
 
-# ====== 店铺（租户）=====
+# ====== 账单（发票）======
+
+class Invoice(Base):
+    """账单表（订阅付费记录）"""
+    __tablename__ = "invoices"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # UUID
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    number: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # 账单号 INV-xxxx
+    amount: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 金额（元，正=收款，负=退款）
+    currency: Mapped[str] = mapped_column(String(8), default="CNY")
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # paid / pending / failed / refunded
+    description: Mapped[Optional[str]] = mapped_column(String(255))  # 描述（如「专业版年付」）
+    issued_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    pdf_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<Invoice(number={self.number}, amount={self.amount}, status={self.status})>"
+
+
+# ====== 支付方式 ======
+
+class PaymentMethod(Base):
+    """支付方式表（信用卡/支付宝/微信）"""
+    __tablename__ = "payment_methods"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # UUID
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)  # card / alipay / wechat
+    brand: Mapped[str] = mapped_column(String(32), default="")  # visa / mastercard / unionpay ...
+    last4: Mapped[str] = mapped_column(String(4), default="")  # 卡号后四位
+    exp_month: Mapped[int] = mapped_column(Integer, default=1)
+    exp_year: Mapped[int] = mapped_column(Integer, default=2026)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<PaymentMethod(type={self.type}, brand={self.brand}, last4={self.last4})>"
+
+
+# ====== 店铺（租户）======
 
 class Shop(Base):
     """店铺表（多租户核心）"""
