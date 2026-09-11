@@ -6,13 +6,15 @@ import request from './request'
 
 /** 后端 orchestrator 返回的动作 */
 export interface SecretaryAction {
-  action: 'switch_agent' | 'navigate' | 'select_product' | 'open_drawer' | 'handoff' | 'set_theme' | 'switch_shop'
+  action: 'switch_agent' | 'navigate' | 'select_product' | 'open_drawer' | 'account_menu' | 'handoff' | 'set_theme' | 'switch_shop'
   agentId?: string
   view?: string
   /** select_product 专属：选中的产品（id 用于前端从 productLibrary 定位完整对象） */
   product?: { id: string; title: string; asin: string; spu_id?: string } | null
   /** open_drawer 专属：drawer 标识（settings | memory） */
   drawer?: 'settings' | 'memory'
+  /** account_menu 专属：账户菜单 target（settings | memory | subscription | logout） */
+  target?: 'settings' | 'memory' | 'subscription' | 'logout'
   /** handoff 专属：已识别的意图 + 需追问的缺失字段 */
   intent?: string
   missing_fields?: string[]

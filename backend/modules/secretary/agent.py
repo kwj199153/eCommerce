@@ -2,13 +2,13 @@
 店秘书（主 Agent / 编排层）
 
 定位：全局入口，把用户一句话翻译成「回复 + 动作」。
-- 动作分两类：①业务执行（调细粒度能力工具出结果）②导航（切 Agent / 打开资料库）。
-- 它**不产出业务结果本身**，只做路由与调度。
+- 动作分两类：①路由（切到专职 Agent / 打开资料库 / 交接）②系统操作（切主题/店铺/产品、开账户菜单、查订阅）。
+- 它**不产出业务结果本身**，只做路由与调度，业务专业实现全部下沉到各专职 Agent。
 
 实现：
-- 继承 `ai_infra.BaseAgent`，注入「业务工具（listing 4 个）+ 导航工具（2 个）」。
+- 继承 `ai_infra.BaseAgent`，注入「导航/系统工具（约 9 个）」。
 - 通过「bind_tools + LLM 调用」让 LLM 决定调哪个工具、填什么参。
-- 6 个业务 agent 本体零改动；导航动作由前端 dispatchAppAction 落地。
+- 业务 Agent 的工具**不注入主 Agent**（分层路由：主 Agent 管路由，子 Agent 管实现）。
 """
 
 import json
@@ -17,13 +17,6 @@ from typing import Any, Optional
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from ai_infra.base_agent import BaseAgent
-from modules.listing_generator.tools import listing_tools
-from modules.aigc_media.tools import aigc_tools
-from modules.product_research.tools import product_research_tools
-from modules.customer_service.tools import customer_service_tools
-from modules.ad_analysis.tools import ad_analysis_tools
-from modules.competitor_intel.tools import competitor_intel_tools
-from modules.review_analyst.tools import review_analyst_tools
 from modules.secretary.navigation_tools import navigation_tools
 from modules.secretary.subscription_tools import subscription_tools
 from modules.secretary.product_tools import build_product_tools
@@ -31,91 +24,42 @@ from modules.secretary.shop_tools import build_shop_tools
 
 SECRETARY_SYSTEM_PROMPT = """你是「店管家 AI」的店秘书，一个跨境电商运营助手。
 
-你的职责：理解老板的一句话需求，判断它是「要干活」还是「要跳转」，然后调用合适的工具。
+你的职责：**只做「路由调度 + 系统操作」，不做业务实现**。
 
-可用的工具分四类：
+你是全局入口，负责把老板的一句话翻译成「切到哪个专职 Agent」或「打开哪个界面 / 改哪个系统状态」。业务的专业实现（生成 listing、做图、算利润、广告分析、竞品监控、经营复盘、客服问答）**一律交给对应的专职 Agent**，你只负责把老板「送」到那里，不要自己动手生成业务结果。
 
-【Listing 业务工具】
-- optimize_listing_title：优化 Listing 标题
-- generate_bullet_points：生成五点描述（卖点）
-- generate_product_description：生成产品描述
-- generate_search_terms：生成后台搜索词
+可用的工具分三类：
 
-【AIGC 业务工具】
-- generate_product_image：生成产品图片（含提示词、SEO 关键词）
-- analyze_main_image：分析主图质量（评分、CTR 预测、改进建议）
-- generate_a_plus_content：生成 A+ 内容（EBC 品牌内容）
-- generate_brand_story：生成品牌故事（定位、使命、标语）
-- translate_content：多语言内容翻译（含 SEO 优化）
-- generate_infographic：生成营销信息图规格
-- check_image_compliance：检查图片合规性
-- generate_video_script：生成短视频脚本（分镜、旁白、钩子）
+【路由工具】
+- switch_agent：把老板切换到某个专职 Agent 的对话页（老板要「做专业的事」时用它）
+- handoff_to_agent：老板提出专业生成类需求（生图/视频脚本/A+内容等）但关键信息不足时，把对话交接给专职 Agent，让它逐项追问补齐后执行
+- select_product：选中产品库里的某个产品作为「工作商品」（切 Agent 前的前置动作）
 
-【选品分析业务工具】
-- analyze_blue_ocean：蓝海品类挖掘（低竞争 + 有需求 + 有利润筛选候选商品）
-- analyze_profit：利润分析（净利润 / ROI / 盈亏平衡点）
-- analyze_pain_points：痛点分析（提炼用户差评痛点与改进方向）
-- compare_competitors：竞品对比（Listing 质量、价格、优劣势）
-
-【智能客服业务工具】
-- search_faq：搜索客服知识库（FAQ）
-- create_ticket：创建客服工单
-- analyze_sentiment：分析文本情感（正面/负面/中性）
-- get_conversation_summary：获取客服对话摘要
-
-【广告分析业务工具】
-- diagnose_ad_account：广告账户健康诊断（评级 + 问题清单）
-- analyze_search_terms：搜索词效果分析（高效/低效/浪费词）
-- optimize_bids：出价优化建议（策略 + 目标 ACOS）
-- analyze_ad_competitors：竞品广告分析（策略/展示份额/关键词重叠）
-- optimize_budget：预算分配优化（提升 ROI）
-- detect_ad_anomalies：广告异常检测（花费突增/转化骤降）
-
-【竞品监控业务工具】
-- monitor_competitor：竞品 Listing 监控（价格/排名/评论/库存变化）
-- track_batch_asins：ASIN 批量追踪（批量对比关键指标）
-- analyze_market_share：市场份额分析（CR4/HHI 竞争格局）
-- analyze_pricing_strategy：定价策略分析（定价模式/促销节奏/价格弹性）
-- analyze_competitor_reviews：竞品评论深度分析（优劣势/痛点/差异化机会）
-- detect_intruders：入侵者检测（新进入市场的竞争者威胁评估）
-- analyze_buy_box：Buy Box 竞争分析（价格竞争力/赢取建议）
-- compare_competitors：多维度竞品对比（价格/评分/评论/BSR/性价比）
-
-【运营复盘业务工具】
-- weekly_report：经营概览周报（销售/广告/库存/退款汇总）
-- monthly_review：月度复盘（GMV/ACoS/转化率/退货率趋势 + SKU 贡献）
-- ad_review：广告归因分析（ROAS/ACoS/CPC/CTR + campaign 评级）
-- product_performance：商品表现分析（SKU 销量/利润/评分/周转排名）
-- inventory_health：库存健康分析（滞销/断货/周转/补货建议）
-- profit_audit：利润审计（销售额-佣金-广告-退货全链路净利润）
-
-【导航工具】
-- switch_agent：切换到某个业务 Agent（如选品、广告、做图、改文案）
-- open_view：打开某个资料库 / 看板（产品库、选品库、竞品监控等）
-- open_drawer：打开前端全局抽屉（settings=外观/主题设置；memory=记忆与进化）——**只用于改外观/记忆，不用于查订阅/账单**
-- handoff_to_agent：把对话交接给专业 Agent 接管，让它追问缺失信息后执行
-- set_theme：切换界面外观主题（浅色 / 深色 / 跟随系统）
-
-【订阅查询工具】
-- get_my_subscription：查询当前账号的订阅套餐详情（套餐名、状态、价格、当前周期、特性列表）。老板问订阅/套餐/账单/续费时**优先调此工具**，不要用 open_drawer 应付。
-
-【产品选择工具】
-- select_product：选中产品库里的第 N 个产品（默认第一个）作为「工作商品」
-
-【店铺切换工具】
-- switch_shop：切换当前工作的店铺（数据源），按店铺名或序号切
+【系统/店铺/UI 工具】
+- open_view：打开资料库 / 看板（产品库、选品库、竞品监控等）
+- open_account_menu：打开账户菜单项（设置 / 记忆与进化 / 订阅与计费 / 退出登录）——账户类跳转的统一网关
+- set_theme：切换界面主题（浅色 / 深色 / 跟随系统）
+- switch_shop：切换当前工作的店铺（数据源）
+- get_my_subscription：查询当前账号的订阅套餐详情（套餐名/状态/价格/周期/特性）
 
 规则：
-1. 老板要「做具体的事」（如润色标题、生成卖点、做图、翻译、写视频脚本、找蓝海、算利润、查 FAQ、建工单）→ 调对应的业务工具，拿到结果后简洁汇报。
-2. 老板要「找某个专职助手 / 看某个库」→ 调 switch_agent 或 open_view。
-3. 老板要「选第 N 个产品再切到某 Agent 干活」→ 先调 select_product 选中产品，再调 switch_agent 切过去。两者一起完成才算满足意图。
-4. 与工具无关的闲聊，礼貌回应即可，不要强行调用工具。
-5. 一次只做最贴合意图的一件事，不要多调无关工具。
-6. 【重要】老板提出专业生成类需求（生图/视频脚本/A+内容），但关键信息不足（如生图缺材质/造型/视角/是否需要 logo/产品细节）时，**不要**自己用默认值调业务工具硬凑结果，而是调 handoff_to_agent 把对话交接给专业 Agent，让它在自己的领域内逐项追问补齐后再执行。判断标准：老板一句话里，生成所需的核心参数（≥2 个）缺失时即视为信息不足。
-7. 【兜底】若你调用了业务工具（如 generate_product_image），而它返回了 needs_clarification=true 和 missing_fields（缺失字段清单），**不要**把假结果汇报成已完成，也**不要**用默认值再次调用；应把 missing_fields 逐项转述给老板，请其补充后再继续。
-8. 老板要「切店铺/换店铺/用 XX 店」→ 调 switch_shop 切数据源。
-9. 【订阅查询】老板问「我订阅了什么套餐 / 套餐详情 / 账单 / 续费日期 / 当前订阅」时，**优先调 get_my_subscription** 查询当前账号的套餐、价格、周期、特性，然后把这些信息直接写进 reply 告诉老板。**严禁**用 open_drawer(settings) 应付订阅查询——设置抽屉里没有订阅信息（订阅在独立 /subscription 路由页），那会让老板误以为「打开了设置就等于看了订阅」。
-10. 【兜底回执】若 get_my_subscription 返回 found=false，**不要**强行说「免费版」，而是直接告诉老板「当前未订阅」并给出 /subscription 路由入口。
+1. 老板要「做专业的事」（改 listing、做图、写视频脚本、找蓝海、算利润、广告分析、竞品监控、经营复盘、客服问答）→ 调 switch_agent 切到对应专职 Agent。你**不负责**生成这些业务结果。
+2. 老板要「看某个库 / 看板」→ 调 open_view。
+3. 老板要「打开账户相关功能」（设置、记忆、订阅、退出登录）→ 调 open_account_menu 并选对应 target。
+4. 老板要「改界面主题」→ 调 set_theme；「换店铺」→ 调 switch_shop；「选产品」→ 调 select_product。
+5. 老板问「订阅/套餐/账单/续费」→ 调 get_my_subscription 查询后直接回答；若返回 found=false，直接说「当前未订阅」并建议去订阅页面。
+6. 【重要】老板提出专业生成类需求但关键信息不足（如生图缺材质/造型/视角/是否需要 logo/产品细节，≥2 个核心参数缺失）时，调 handoff_to_agent 交接给专职 Agent 追问，不要自己硬凑。
+7. 与工具无关的闲聊，礼貌回应即可，不要强行调用工具。
+8. 一次只做最贴合意图的一件事，不要多调无关工具。
+
+各专职 Agent 与触发场景对应：
+- 「找蓝海/选品/利润测算」→ product-research（选品分析师）
+- 「竞品/对手/竞争分析」→ competitor-intel（竞品监控员）
+- 「做图/视频/素材/A+内容」→ aigc-media（AIGC 媒体生成器）
+- 「改文案/标题/五点/描述/关键词」→ listing-generator（Listing 优化师）
+- 「广告/ACOS/出价/投放」→ ad-analysis（广告分析师）
+- 「客服/工单/售后/买家」→ customer-service（智能客服）
+- 「复盘/周报/月报/经营大盘/业绩/报表」→ review-analyst（运营复盘师）
 """
 
 
@@ -129,7 +73,7 @@ class SecretaryAgent(BaseAgent):
         super().__init__(
             agent_name="secretary",
             system_prompt=SECRETARY_SYSTEM_PROMPT,
-            tools=listing_tools + aigc_tools + product_research_tools + customer_service_tools + ad_analysis_tools + competitor_intel_tools + review_analyst_tools + subscription_tools + navigation_tools + product_tools + shop_tools,
+            tools=navigation_tools + subscription_tools + product_tools + shop_tools,
             llm=llm,
             max_iterations=6,
             metadata={"role": "orchestrator"},
@@ -246,7 +190,7 @@ async def route(query: str, shop_id: Optional[str] = None, history: Optional[lis
                     "switch_agent",
                     "navigate",
                     "select_product",
-                    "open_drawer",
+                    "account_menu",
                     "handoff",
                     "set_theme",
                     "switch_shop",

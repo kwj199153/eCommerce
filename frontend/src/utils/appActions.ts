@@ -15,6 +15,8 @@
 import { useAgentStore } from '@/stores/agent'
 import { useProductLibraryStore } from '@/stores/productLibrary'
 import { useThemeStore } from '@/stores/theme'
+import { useUserStore } from '@/stores/user'
+import router from '@/router'
 
 /** 资料库 / 内容区视图枚举（与 Workspace.currentView 保持一致） */
 export type AppView =
@@ -47,6 +49,8 @@ export type AppAction =
   | { type: 'select_product'; productId: string; agentId?: string }
   /** 打开前端全局 Drawer（设置 / 记忆与进化） */
   | { type: 'open_drawer'; drawer: 'settings' | 'memory' }
+  /** 打开账户菜单项（设置/记忆/订阅/退出登录）——账户类跳转的统一网关 */
+  | { type: 'account_menu'; target: 'settings' | 'memory' | 'subscription' | 'logout' }
   /** 把对话交接给专业 Agent 接管（子 Agent 追问缺失字段后执行） */
   | { type: 'handoff'; agentId: string; intent: string; missingFields: string[] }
   /** 切换界面外观主题 */
@@ -107,6 +111,28 @@ export function dispatchAppAction(action: AppAction): boolean {
     const eventName = `open-${action.drawer}-drawer`
     window.dispatchEvent(new CustomEvent(eventName))
     return true
+  }
+
+  if (action.type === 'account_menu') {
+    // 账户菜单网关：settings/memory 复用 drawer 事件；subscription 跳路由；logout 登出
+    if (action.target === 'settings') {
+      window.dispatchEvent(new CustomEvent('open-settings-drawer'))
+      return true
+    }
+    if (action.target === 'memory') {
+      window.dispatchEvent(new CustomEvent('open-memory-drawer'))
+      return true
+    }
+    if (action.target === 'subscription') {
+      router.push('/subscription')
+      return true
+    }
+    if (action.target === 'logout') {
+      useUserStore().logout()
+      router.push('/login')
+      return true
+    }
+    return false
   }
 
   if (action.type === 'handoff') {

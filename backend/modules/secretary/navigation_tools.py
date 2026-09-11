@@ -32,8 +32,8 @@ AGENT_IDS = [
 # 与前端 utils/appActions.ts 的 AppView 对齐
 VIEW_IDS = ["faq", "candidates", "products", "assets", "rules", "monitor"]
 
-# 与前端 Workspace.vue 监听的 drawer CustomEvent 对齐
-DRAWER_IDS = ["settings", "memory"]
+# 账户菜单网关的 target（与前端 appActions.ts 的 account_menu 对齐）
+ACCOUNT_MENU_TARGETS = ["settings", "memory", "subscription", "logout"]
 
 AgentId = Literal[
     "product-research",
@@ -45,7 +45,7 @@ AgentId = Literal[
     "review-analyst",
 ]
 ViewId = Literal["faq", "candidates", "products", "assets", "rules", "monitor"]
-DrawerId = Literal["settings", "memory"]
+AccountMenuTarget = Literal["settings", "memory", "subscription", "logout"]
 ThemeMode = Literal["light", "dark", "system"]
 
 
@@ -67,13 +67,17 @@ def _open_view(view: ViewId) -> str:
     return f'{{"action": "navigate", "view": "{view}"}}'
 
 
-def _open_drawer(drawer: DrawerId) -> str:
-    """打开前端全局 Drawer（设置 / 记忆与进化）。
+def _open_account_menu(target: AccountMenuTarget) -> str:
+    """打开账户菜单里的某一项（设置 / 记忆与进化 / 订阅与计费 / 退出登录）。
+
+    这是「账户 / 系统」类操作的统一网关：把侧栏账户下拉菜单里的跳转项
+    收敛成单一工具，用 target 区分具体要打开哪一项。MCP 式单接口思路。
 
     Args:
-        drawer: 目标 Drawer 标识（枚举值：settings | memory）。
+        target: 目标菜单项（settings=设置；memory=记忆与进化；
+            subscription=订阅与计费；logout=退出登录）。
     """
-    return f'{{"action": "open_drawer", "drawer": "{drawer}"}}'
+    return f'{{"action": "account_menu", "target": "{target}"}}'
 
 
 def _set_theme(mode: ThemeMode) -> str:
@@ -138,12 +142,14 @@ navigation_tools = [
         ),
     ),
     StructuredTool.from_function(
-        func=_open_drawer,
-        name="open_drawer",
+        func=_open_account_menu,
+        name="open_account_menu",
         description=(
-            "打开前端全局 Drawer（侧栏触发的浮层）。"
-            "「打开设置/个人设置/偏好」→ settings；"
-            "「打开记忆与进化」→ memory。"
+            "打开账户菜单里的某一项（账户/系统类跳转的统一网关）。老板想打开账户相关功能时使用："
+            "「打开设置/个人设置/偏好/系统设置」→ settings；"
+            "「打开记忆与进化/查看记忆」→ memory；"
+            "「查看订阅/订阅与计费/我的套餐/账单/续费」→ subscription；"
+            "「退出登录/登出/注销」→ logout。"
         ),
     ),
     StructuredTool.from_function(

@@ -930,7 +930,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         actionList.forEach((act, i) => {
           // 每个动作稍作错开（700ms + 序号），让前一个动作先落地
           setTimeout(() => {
-            const { action, agentId, view, product, drawer, intent, missing_fields, mode, shop } = act as any
+            const { action, agentId, view, product, drawer, target, intent, missing_fields, mode, shop } = act as any
             if (action === 'switch_agent' && agentId) {
               dispatchAppAction({ type: 'switch_agent', agentId })
             } else if (action === 'navigate' && view) {
@@ -939,6 +939,8 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
               dispatchAppAction({ type: 'select_product', productId: product.id })
             } else if (action === 'open_drawer' && drawer) {
               dispatchAppAction({ type: 'open_drawer', drawer })
+            } else if (action === 'account_menu' && target) {
+              dispatchAppAction({ type: 'account_menu', target })
             } else if (action === 'set_theme' && mode) {
               dispatchAppAction({ type: 'set_theme', mode })
             } else if (action === 'switch_shop' && shop?.id) {

@@ -21,7 +21,7 @@ from ai_infra.base_agent import BaseAgent
 from modules.listing_generator.tools import listing_tools
 from modules.aigc_media.tools import aigc_tools
 from modules.secretary.agent import SecretaryAgent, SECRETARY_SYSTEM_PROMPT
-from modules.secretary.navigation_tools import navigation_tools, _switch_agent, _open_view, _handoff_to_agent, _set_theme
+from modules.secretary.navigation_tools import navigation_tools, _switch_agent, _open_view, _open_account_menu, _handoff_to_agent, _set_theme
 from modules.secretary.product_tools import build_product_tools
 from modules.secretary.shop_tools import build_shop_tools
 from modules.product_research.tools import product_research_tools
@@ -63,12 +63,17 @@ def test_aigc_tools_registry():
 def test_navigation_tools_marker():
     """导航工具返回结构化 action 标记，供前端 dispatchAppAction 消费"""
     names = {t.name for t in navigation_tools}
-    assert names == {"switch_agent", "open_view", "open_drawer", "handoff_to_agent", "set_theme"}
+    assert names == {"switch_agent", "open_view", "open_account_menu", "handoff_to_agent", "set_theme"}
 
     assert '"switch_agent"' in _switch_agent("product-research")
     assert '"product-research"' in _switch_agent("product-research")
     assert '"navigate"' in _open_view("products")
     assert '"products"' in _open_view("products")
+
+    # account_menu 网关：返回账户菜单标记 + target
+    menu_out = _open_account_menu("subscription")
+    assert '"account_menu"' in menu_out
+    assert '"subscription"' in menu_out
 
     # handoff 工具：返回交接标记 + 意图 + 缺失字段
     handoff_out = _handoff_to_agent("aigc-media", "生成水壶白底图", ["材质", "造型", "视角"])
@@ -133,9 +138,9 @@ def test_ad_analysis_tools_registry():
 
 
 def test_secretary_agent_binds_tools():
-    """店秘书 agent 应持有 48 个工具（4 listing + 8 aigc + 4 选品 + 4 客服 + 6 广告 + 8 竞品 + 6 复盘 + 1 订阅查询 + 5 导航 + 1 选产品 + 1 切店铺）"""
+    """店秘书 agent 应持有 8 个工具（5 导航 + 1 订阅查询 + 1 选产品 + 1 切店铺），业务细粒度工具全部下沉到子 Agent"""
     agent = SecretaryAgent(llm=MagicMock())
-    assert len(agent.tools) == 48
+    assert len(agent.tools) == 8
     assert agent.system_prompt == SECRETARY_SYSTEM_PROMPT
 
 
