@@ -105,6 +105,14 @@ async def init_db():
         AdMetric, ListingSnapshot, ReportTask, InventoryHealth,
     )
     from modules.conversation.db_model import ConversationRecord, ConversationMessageRecord
+    from modules.monitors.db_model import MonitorRecord, MonitorGroupRecord
+    from modules.platform_rules.db_model import PlatformRuleRecord, PlatformRuleDocRecord
+    from modules.knowledge_base.db_model import (
+        KnowledgeBaseRecord, KnowledgeFaqRecord, KnowledgeDocRecord,
+    )
+    # 附加模块：语音克隆（独立表 shop_voice，不 ALTER 任何既有表）
+    # 无条件导入以完成 metadata 注册；是否真正启用由 config.voice_clone_enabled 决定
+    from modules.voice_clone.db_model import ShopVoice
 
     async with engine.begin() as conn:
         # 2026-09-09: 已迁移到 Alembic（backend/alembic）
@@ -132,6 +140,17 @@ async def init_db():
             # 会话持久化表（决策层 B）
             await conn.run_sync(ConversationRecord.metadata.create_all)
             await conn.run_sync(ConversationMessageRecord.metadata.create_all)
+            # 竞品监控池表
+            await conn.run_sync(MonitorRecord.metadata.create_all)
+            await conn.run_sync(MonitorGroupRecord.metadata.create_all)
+            await conn.run_sync(PlatformRuleRecord.metadata.create_all)
+            await conn.run_sync(PlatformRuleDocRecord.metadata.create_all)
+            # 业务话术库表
+            await conn.run_sync(KnowledgeBaseRecord.metadata.create_all)
+            await conn.run_sync(KnowledgeFaqRecord.metadata.create_all)
+            await conn.run_sync(KnowledgeDocRecord.metadata.create_all)
+            # 附加模块：客服音色表（开关关闭时依然建表 —— 表结构无害，避免开关切换时丢数据）
+            await conn.run_sync(ShopVoice.metadata.create_all)
             print("✅ 数据库表创建完成（注意：已迁移到 Alembic，已有表请走 `alembic upgrade head`）")
 
 

@@ -85,6 +85,8 @@
 </template>
 
 <script setup lang="ts">
+import { SEM } from '@/theme/semantic'
+import { bandColor } from '@/theme/bands'
 defineProps<{ data: any }>()
 defineEmits<{ (e: 'close'): void }>()
 
@@ -96,17 +98,14 @@ const sellerColumns = [
   { title: '赢家', key: 'winner', width: 65 },
 ]
 
-const scoreColor = (score: number) => {
-  if (score >= 75) return '#52c41a'
-  if (score >= 50) return '#faad14'
-  return '#ff4d4f'
-}
+/** 竞争力评分（与价格追踪同档，见 bands.ts `competitiveness`） */
+const scoreColor = (score: number) => bandColor('competitiveness', score)
 
 const factorColor = (status: string) => ({
-  excellent: '#52c41a',
-  good: '#1890ff',
-  fair: '#faad14',
-  poor: '#ff4d4f',
+  excellent: SEM.success,
+  good: SEM.primary,
+  fair: SEM.warning,
+  poor: SEM.danger,
 }[status] || '#d9d9d9')
 
 const factorLabel = (key: string | number) => ({
@@ -120,22 +119,22 @@ const factorLabel = (key: string | number) => ({
 </script>
 
 <style scoped>
-.buybox-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
-.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.result-header h3 { margin: 0; font-size: 16px; }
-.buybox-card { background: var(--bg-base); border-radius: 10px; padding: 14px; margin-bottom: 12px; border: 1px solid #f0f0f0; }
-.card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
-.product-name { font-weight: 600; font-size: 13.5px; }
-.asin-text { font-family: monospace; font-size: 11.5px; color: var(--text-tertiary); }
-.sellers-section h5, .factors-section h5 { margin: 0 0 8px; font-size: 12.5px; color: var(--text-secondary); }
-.sellers-section { margin-bottom: 12px; }
-.factors-section { padding-top: 8px; border-top: 1px solid #eee; }
-.factors-grid { display: flex; flex-direction: column; gap: 6px; }
-.factor-item { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }
+.buybox-result { padding: var(--space-16); background: var(--bg-elevated); border-radius: var(--radius-8); }
+.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-14); }
+.result-header h3 { margin: 0; font-size: var(--font-size-16); }
+.buybox-card { background: var(--bg-base); border-radius: var(--radius-10); padding: var(--space-14); margin-bottom: var(--space-12); border: 1px solid var(--border-base); }
+.card-header { display: flex; align-items: center; gap: var(--space-10); margin-bottom: var(--space-12); flex-wrap: wrap; }
+.product-name { font-weight: 600; font-size: var(--font-size-13-5); }
+.asin-text { font-family: monospace; font-size: var(--font-size-11-5); color: var(--text-tertiary); }
+.sellers-section h5, .factors-section h5 { margin: 0 0 var(--space-8); font-size: var(--font-size-12-5); color: var(--text-secondary); }
+.sellers-section { margin-bottom: var(--space-12); }
+.factors-section { padding-top: var(--space-8); border-top: 1px solid var(--border-base); }
+.factors-grid { display: flex; flex-direction: column; gap: var(--space-6); }
+.factor-item { display: flex; align-items: center; gap: var(--space-8); font-size: var(--font-size-11-5); }
 .factor-name { min-width: 85px; color: var(--text-secondary); }
-.factor-status { min-width: 40px; text-align: right; font-weight: 600; font-size: 11px; }
-.practices-box { padding: 12px; background: #fcffe6; border-radius: 8px; font-size: 12.5px; line-height: 1.7; }
-.practices-box p { margin: 0 0 6px; }
-.practices-box ul { margin: 0; padding-left: 18px; }
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; margin-top: 12px; }
+.factor-status { min-width: 40px; text-align: right; font-weight: 600; font-size: var(--font-size-11); }
+.practices-box { padding: var(--space-12); background: var(--success-bg); border-radius: var(--radius-8); font-size: var(--font-size-12-5); line-height: 1.7; }
+.practices-box p { margin: 0 0 var(--space-6); }
+.practices-box ul { margin: 0; padding-left: var(--space-18); }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); margin-top: var(--space-12); }
 </style>

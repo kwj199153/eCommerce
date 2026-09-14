@@ -393,15 +393,15 @@ const handleReset = () => {
 /* 平台提示条 */
 .platform-banner {
   flex-shrink: 0;
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
 }
 .platform-banner-text {
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 .platform-mode-hint {
-  margin-left: 8px;
-  color: #8c8c8c;
-  font-size: 11px;
+  margin-left: var(--space-8);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-11);
 }
 
 .pitfalls-config :deep(.ant-collapse) {
@@ -410,11 +410,11 @@ const handleReset = () => {
 }
 
 .config-actions {
-  padding: 16px 0 0;
-  border-top: 1px solid #f0f0f0;
+  padding: var(--space-16) 0 0;
+  border-top: 1px solid var(--border-base);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-8);
   flex-shrink: 0;
 }
 
@@ -422,7 +422,7 @@ const handleReset = () => {
 .input-with-picker {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
+  gap: var(--space-4);
 }
 .input-with-picker .ant-input {
   flex: 1;
@@ -430,129 +430,129 @@ const handleReset = () => {
 
 /* 已选产品预览 */
 .seed-preview {
-  margin-top: 8px;
+  margin-top: var(--space-8);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
   flex-wrap: wrap;
 }
 .text-hint {
-  font-size: 12px;
-  color: #8c8c8c;
+  font-size: var(--font-size-12);
+  color: var(--text-tertiary);
 }
 
 /* 自动读取字段预览 */
 .auto-fields-preview {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: #f6ffed;
-  border: 1px solid #b7eb8f;
-  border-radius: 6px;
+  margin-top: var(--space-12);
+  padding: var(--space-10) var(--space-12);
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  border-radius: var(--radius-6);
 }
 .preview-title {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   font-weight: 600;
-  color: #389e0d;
-  margin-bottom: 6px;
+  color: var(--success);
+  margin-bottom: var(--space-6);
 }
 .preview-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px 16px;
+  gap: var(--space-4) var(--space-16);
 }
 .preview-item {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   line-height: 1.6;
 }
 .preview-item .label {
-  color: #8c8c8c;
+  color: var(--text-tertiary);
 }
 .preview-item .value {
-  color: #262626;
+  color: var(--text-primary);
 }
 
 /* 字段提示 */
 .field-hint {
-  font-size: 11px;
-  color: #8c8c8c;
-  margin-top: 4px;
+  font-size: var(--font-size-11);
+  color: var(--text-tertiary);
+  margin-top: var(--space-4);
 }
 
 /* 风险类别卡片列表 */
 .risk-category-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-8);
 }
 .risk-category-card {
-  padding: 12px 14px;
-  border: 1.5px solid #d9d9d9;
-  border-radius: 8px;
+  padding: var(--space-12) var(--space-14);
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-8);
   cursor: pointer;
   transition: all 0.2s ease;
-  background: #fff;
+  background: var(--bg-elevated);
   user-select: none;
 }
 .risk-category-card:hover {
-  border-color: #faad14;
-  background: #fffbe6;
+  border-color: var(--warning);
+  background: var(--warning-bg);
 }
 .risk-category-card.active {
   border-color: #fa8c16;
-  background: #fff7e6;
+  background: var(--orange-bg);
   box-shadow: 0 0 0 2px rgba(250, 140, 22, 0.12);
 }
 .cat-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: var(--space-8);
+  margin-bottom: var(--space-4);
 }
 .cat-icon {
-  font-size: 20px;
+  font-size: var(--font-size-20);
   flex-shrink: 0;
 }
 .cat-name {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
 }
 .cat-desc {
-  font-size: 11px;
-  color: #8c8c8c;
-  margin-bottom: 6px;
-  margin-left: 28px;
+  font-size: var(--font-size-11);
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-6);
+  margin-left: var(--space-28);
 }
 .cat-items {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-left: 28px;
+  gap: var(--space-4);
+  margin-left: var(--space-28);
 }
 .cat-item-tag {
-  font-size: 10px;
-  padding: 1px 6px;
-  background: #f5f5f5;
-  border-radius: 4px;
-  color: #595959;
+  font-size: var(--font-size-10);
+  padding: var(--space-1) var(--space-6);
+  background: var(--bg-hover-light);
+  border-radius: var(--radius-4);
+  color: var(--text-secondary);
 }
 .risk-category-card.active .cat-item-tag {
-  background: #fff7e6;
-  color: #d46b08;
+  background: var(--orange-bg);
+  color: var(--orange-strong);
 }
 
 /* 输出选项 */
 .output-options {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-8);
 }
 .output-options .ant-checkbox-wrapper {
-  padding: 6px 10px;
-  border-radius: 6px;
+  padding: var(--space-6) var(--space-10);
+  border-radius: var(--radius-6);
   transition: background 0.2s;
 }
 .output-options .ant-checkbox-wrapper:hover {
-  background: #fafafa;
+  background: var(--bg-sidebar);
 }
 </style>

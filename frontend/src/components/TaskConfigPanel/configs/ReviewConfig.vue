@@ -81,13 +81,13 @@
 
       <div class="panel-card chart-card">
         <div class="card-head">整月每日销售趋势（GMV）</div>
-        <LineChart :series="[{ name: '销售额', color: '#5b8ff9', data: MONTH_DAILY_REVENUE }]" :labels="dayTicks(30)" :legend="false" />
+        <LineChart :series="[{ name: '销售额', color: 'var(--chart-1)', data: MONTH_DAILY_REVENUE }]" :labels="dayTicks(30)" :legend="false" />
       </div>
 
       <div class="two-col flex-block">
         <div class="panel-card chart-card">
           <div class="card-head">周维度对比</div>
-          <BarChart :groups="[{ name: 'GMV', color: '#5ad8a6', data: WEEK_GMV.map(w => w.value) }]" :categories="WEEK_GMV.map(w => w.name)" :legend="false" />
+          <BarChart :groups="[{ name: 'GMV', color: 'var(--chart-2)', data: WEEK_GMV.map(w => w.value) }]" :categories="WEEK_GMV.map(w => w.name)" :legend="false" />
         </div>
         <div class="panel-card">
           <div class="card-head">利润汇总（口径）</div>
@@ -125,7 +125,7 @@
 
       <div class="panel-card chart-card">
         <div class="card-head">SP / SB / SD 花费对比</div>
-        <BarChart :groups="[{ name: '花费', color: '#e8684a', data: AD_TYPE.spend }, { name: '销售额', color: '#5b8ff9', data: AD_TYPE.sales }]" :categories="AD_TYPE.labels" :legend="true" />
+        <BarChart :groups="[{ name: '花费', color: 'var(--chart-4)', data: AD_TYPE.spend }, { name: '销售额', color: 'var(--chart-1)', data: AD_TYPE.sales }]" :categories="AD_TYPE.labels" :legend="true" />
       </div>
 
       <div class="panel-card">
@@ -139,7 +139,7 @@
             <span class="c-role"><a-tag color="blue" class="type-tag">{{ g.type }}</a-tag>{{ g.name }}</span>
             <span class="c-num">${{ fmtMoney(g.spend) }}</span>
             <span class="c-num">${{ fmtMoney(g.sales) }}</span>
-            <span class="c-num" :class="g.acos > 33 ? 'danger' : g.acos > 25 ? 'warn' : 'ok'">{{ g.acos.toFixed(1) }}%</span>
+            <span class="c-num" :class="bandOf('acos', g.acos)">{{ g.acos.toFixed(1) }}%</span>
             <span class="c-num">{{ g.roas.toFixed(2) }}</span>
             <span class="c-badge"><a-tag :color="g.status === '优' ? 'green' : g.status === '中' ? 'orange' : 'red'">{{ g.status }}</a-tag></span>
           </div>
@@ -169,7 +169,7 @@
 
       <div class="panel-card chart-card">
         <div class="card-head">7 天广告趋势</div>
-        <LineChart :series="[{ name: '花费', color: '#e8684a', data: AD_TREND_7.spend }, { name: '广告销售额', color: '#5b8ff9', data: AD_TREND_7.sales }]" :labels="DAY_7" />
+        <LineChart :series="[{ name: '花费', color: 'var(--chart-4)', data: AD_TREND_7.spend }, { name: '广告销售额', color: 'var(--chart-1)', data: AD_TREND_7.sales }]" :labels="DAY_7" />
       </div>
     </section>
 
@@ -205,11 +205,11 @@
       <div class="two-col flex-block">
         <div class="panel-card chart-card">
           <div class="card-head">爆款单品销量趋势（Smart Plug）</div>
-          <LineChart :series="[{ name: '销量', color: '#5b8ff9', data: TOP_ASIN_TREND.sales }]" :labels="DAY_7" :legend="false" />
+          <LineChart :series="[{ name: '销量', color: 'var(--chart-1)', data: TOP_ASIN_TREND.sales }]" :labels="DAY_7" :legend="false" />
         </div>
         <div class="panel-card chart-card">
           <div class="card-head">BSR 排名走势（越低越好）</div>
-          <LineChart :series="[{ name: 'BSR', color: '#f6bd16', data: TOP_ASIN_TREND.bsr }]" :labels="DAY_7" :legend="false" />
+          <LineChart :series="[{ name: 'BSR', color: 'var(--chart-3)', data: TOP_ASIN_TREND.bsr }]" :labels="DAY_7" :legend="false" />
         </div>
       </div>
 
@@ -237,7 +237,7 @@
 
       <div class="panel-card chart-card">
         <div class="card-head">可售库存水位</div>
-        <BarChart :groups="[{ name: '可售', color: '#5b8ff9', data: INVENTORY_LEVEL.map(i => i.level) }]" :categories="INVENTORY_LEVEL.map(i => i.name)" :legend="false" />
+        <BarChart :groups="[{ name: '可售', color: 'var(--chart-1)', data: INVENTORY_LEVEL.map(i => i.level) }]" :categories="INVENTORY_LEVEL.map(i => i.name)" :legend="false" />
       </div>
 
       <div class="panel-card">
@@ -252,7 +252,7 @@
             <span class="c-num">{{ it.fulfillable }}</span>
             <span class="c-num">{{ it.inbound }}</span>
             <span class="c-num">{{ it.daily }}</span>
-            <span class="c-num" :class="it.days <= 14 ? 'danger' : it.days <= 30 ? 'warn' : 'ok'">{{ it.days }}天</span>
+            <span class="c-num" :class="bandOf('restockDays', it.days)">{{ it.days }}天</span>
             <span class="c-badge"><a-tag :color="it.riskColor">{{ it.risk }}</a-tag></span>
           </div>
         </div>
@@ -308,6 +308,8 @@
 </template>
 
 <script setup lang="ts">
+import { CHART_VARS } from '@/theme/semantic'
+import { bandOf } from '@/theme/bands'
 import { ref, computed, watch, inject } from 'vue'
 import type { Ref } from 'vue'
 import LineChart from '@/components/charts/LineChart.vue'
@@ -381,7 +383,7 @@ const dailyRevenueSeries = computed(() => {
   const perDay = DAY_7.map((_, i) =>
     Object.entries(DAILY_SALES).reduce((acc, [asin, arr]) => acc + arr[i] * asinOf(asin).price, 0)
   )
-  return [{ name: '销售额', color: '#5b8ff9', data: perDay }]
+  return [{ name: '销售额', color: 'var(--chart-1)', data: perDay }]
 })
 const rankRows = computed(() => {
   const rows = Object.entries(DAILY_SALES).map(([asin, arr]) => {
@@ -392,7 +394,7 @@ const rankRows = computed(() => {
   return rows.map((r) => ({ ...r, pct: (r.sales / total) * 100 }))
 })
 function rankColor(i: number): string {
-  return ['#5b8ff9', '#5ad8a6', '#f6bd16', '#e8684a', '#9270ca'][i] || '#5b8ff9'
+  return CHART_VARS[i % CHART_VARS.length]
 }
 
 // ====== 月度派生 ======
@@ -432,17 +434,17 @@ const profitCats = computed(() => {
 
 <style scoped>
 /* 整个看板锁定在面板可视高度内：Tab 固定，内容区吃掉剩余空间，不产生页面滚动条 */
-.rv-config { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; }
+.rv-config { display: flex; flex-direction: column; gap: var(--space-10); height: 100%; min-height: 0; }
 
 /* Tab 导航 */
-.rv-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: var(--bg-hover-light); border-radius: 10px; flex-shrink: 0; }
-.rv-tab { display: inline-flex; align-items: center; gap: 5px; padding: 8px 13px; border: none; background: transparent; border-radius: 8px; cursor: pointer; font-size: 12.5px; font-weight: 500; white-space: nowrap; color: var(--text-secondary); transition: all .15s; }
+.rv-tabs { display: flex; flex-wrap: wrap; gap: var(--space-4); padding: var(--space-4); background: var(--bg-hover-light); border-radius: var(--radius-10); flex-shrink: 0; }
+.rv-tab { display: inline-flex; align-items: center; gap: var(--space-5); padding: var(--space-8) 13px; border: none; background: transparent; border-radius: var(--radius-8); cursor: pointer; font-size: var(--font-size-12-5); font-weight: 500; white-space: nowrap; color: var(--text-secondary); transition: all .15s; }
 .rv-tab:hover { background: var(--bg-elevated); color: var(--text-primary); }
 .rv-tab.active { background: var(--bg-elevated); color: var(--primary); box-shadow: 0 1px 4px rgba(0,0,0,.08); font-weight: 600; }
-.rv-tab-icon { font-size: 14px; }
+.rv-tab-icon { font-size: var(--font-size-14); }
 
 /* Pane */
-.rv-pane { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; overflow: hidden; }
+.rv-pane { display: flex; flex-direction: column; gap: var(--space-10); flex: 1; min-height: 0; overflow: hidden; }
 
 /* ====== 一屏自适应：固定块按内容高度，图表块吸收剩余高度 ====== */
 .rv-pane > .pane-head { flex-shrink: 0; }
@@ -451,101 +453,101 @@ const profitCats = computed(() => {
 .rv-pane > .chart-card { flex: 1.2; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .chart-card > :deep(.chart-root) { flex: 1; min-height: 0; }
 /* 含图表的两栏：同样吸收剩余高度 */
-.rv-pane > .two-col.flex-block { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rv-pane > .two-col.flex-block { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-10); }
 .rv-pane > .two-col.flex-block > .panel-card { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 /* 纯表格/列表两栏：按内容高度，不抢占图表空间 */
 .rv-pane > .two-col:not(.flex-block) { flex-shrink: 0; }
 /* 内容超长时只允许「卡片内部」滚动，页面本身不滚 */
 .rv-pane .tbl { overflow-y: auto; min-height: 0; }
 .rv-pane .rank-list { overflow-y: auto; min-height: 0; }
-.pane-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.pane-title { font-size: 15px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 6px; }
-.pane-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; line-height: 1.5; }
-.mini-tag { font-size: 10px; margin: 0; }
+.pane-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-8); }
+.pane-title { font-size: var(--font-size-15); font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: var(--space-6); }
+.pane-sub { font-size: var(--font-size-11); color: var(--text-tertiary); margin-top: var(--space-2); line-height: 1.5; }
+.mini-tag { font-size: var(--font-size-10); margin: 0; }
 
 /* KPI 卡片 */
-.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
-.kpi-card { background: var(--bg-elevated); border: 1px solid var(--border-base); border-radius: 10px; padding: 10px 12px; }
-.kpi-label { font-size: 11px; color: var(--text-tertiary); }
-.kpi-value { font-size: 17px; font-weight: 700; color: var(--text-primary); margin-top: 2px; }
-.kpi-value.warning { color: #faad14; }
-.kpi-value.danger { color: #ff4d4f; }
-.kpi-value.success { color: #52c41a; }
-.kpi-value.soft { font-size: 15px; }
-.kpi-change { font-size: 10px; margin-top: 2px; }
-.kpi-change .up { color: #52c41a; }
-.kpi-change .down { color: #ff4d4f; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: var(--space-8); }
+.kpi-card { background: var(--bg-elevated); border: 1px solid var(--border-base); border-radius: var(--radius-10); padding: var(--space-10) var(--space-12); }
+.kpi-label { font-size: var(--font-size-11); color: var(--text-tertiary); }
+.kpi-value { font-size: var(--font-size-17); font-weight: 700; color: var(--text-primary); margin-top: var(--space-2); }
+.kpi-value.warning { color: var(--warning); }
+.kpi-value.danger { color: var(--danger); }
+.kpi-value.success { color: var(--success); }
+.kpi-value.soft { font-size: var(--font-size-15); }
+.kpi-change { font-size: var(--font-size-10); margin-top: var(--space-2); }
+.kpi-change .up { color: var(--success); }
+.kpi-change .down { color: var(--danger); }
 .kpi-change em { font-style: normal; color: var(--text-disabled); }
 .kpi-change .muted { color: var(--text-disabled); }
-.goal-track { height: 6px; border-radius: 4px; background: var(--bg-hover-light); margin-top: 6px; overflow: hidden; }
-.goal-fill { display: block; height: 100%; background: linear-gradient(90deg, #5b8ff9, #5ad8a6); border-radius: 4px; }
+.goal-track { height: 6px; border-radius: var(--radius-4); background: var(--bg-hover-light); margin-top: var(--space-6); overflow: hidden; }
+.goal-fill { display: block; height: 100%; background: linear-gradient(90deg, #5b8ff9, #5ad8a6); border-radius: var(--radius-4); }
 
 /* 通用卡片 */
-.panel-card { background: var(--bg-elevated); border: 1px solid var(--border-base); border-radius: 10px; padding: 12px 14px; }
-.card-head { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
-.card-head.ok { color: #52c41a; }
-.card-head.danger { color: #ff4d4f; }
-.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.panel-card { background: var(--bg-elevated); border: 1px solid var(--border-base); border-radius: var(--radius-10); padding: var(--space-12) var(--space-14); }
+.card-head { font-size: var(--font-size-13); font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-8); }
+.card-head.ok { color: var(--success); }
+.card-head.danger { color: var(--danger); }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-12); }
 @media (max-width: 480px) { .two-col { grid-template-columns: 1fr; } }
 
 /* ASIN 排行 */
-.rank-list { display: flex; flex-direction: column; gap: 8px; }
-.rank-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-.rank-idx { width: 18px; height: 18px; border-radius: 50%; background: var(--bg-hover-light); color: var(--text-secondary); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+.rank-list { display: flex; flex-direction: column; gap: var(--space-8); }
+.rank-row { display: flex; align-items: center; gap: var(--space-8); font-size: var(--font-size-12); }
+.rank-idx { width: 18px; height: 18px; border-radius: var(--radius-circle); background: var(--bg-hover-light); color: var(--text-secondary); display: flex; align-items: center; justify-content: center; font-size: var(--font-size-10); font-weight: 700; flex-shrink: 0; }
 .rank-idx.idx-1 { background: #ffd666; color: #613400; }
-.rank-idx.idx-2 { background: #d9d9d9; color: #595959; }
+.rank-idx.idx-2 { background: #d9d9d9; color: var(--text-secondary); }
 .rank-idx.idx-3 { background: #ffbb96; color: #612500; }
 .rank-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
-.rank-asin { font-family: monospace; font-size: 9px; color: var(--text-tertiary); margin-right: 4px; }
-.rank-orders { color: var(--text-secondary); font-size: 11px; white-space: nowrap; }
-.rank-bar-track { width: 80px; height: 7px; background: var(--bg-hover-light); border-radius: 4px; overflow: hidden; flex-shrink: 0; }
-.rank-bar { display: block; height: 100%; border-radius: 4px; }
-.rank-share { width: 38px; text-align: right; font-size: 11px; color: var(--text-secondary); }
+.rank-asin { font-family: monospace; font-size: var(--font-size-9); color: var(--text-tertiary); margin-right: var(--space-4); }
+.rank-orders { color: var(--text-secondary); font-size: var(--font-size-11); white-space: nowrap; }
+.rank-bar-track { width: 80px; height: 7px; background: var(--bg-hover-light); border-radius: var(--radius-4); overflow: hidden; flex-shrink: 0; }
+.rank-bar { display: block; height: 100%; border-radius: var(--radius-4); }
+.rank-share { width: 38px; text-align: right; font-size: var(--font-size-11); color: var(--text-secondary); }
 
 /* KV 列表 */
 .kv-list { display: flex; flex-direction: column; }
-.kv-row { display: flex; justify-content: space-between; padding: 6px 2px; font-size: 12.5px; color: var(--text-secondary); border-bottom: 1px dashed var(--border-base); }
+.kv-row { display: flex; justify-content: space-between; padding: var(--space-6) var(--space-2); font-size: var(--font-size-12-5); color: var(--text-secondary); border-bottom: 1px dashed var(--border-base); }
 .kv-row:last-child { border-bottom: none; }
 .kv-row span:last-child { color: var(--text-primary); font-weight: 600; }
-.kv-row.total { font-weight: 700; color: var(--text-primary); padding-top: 8px; border-top: 1px solid var(--border-base); border-bottom: none; }
-.kv-row.total span:last-child { color: #52c41a; }
+.kv-row.total { font-weight: 700; color: var(--text-primary); padding-top: var(--space-8); border-top: 1px solid var(--border-base); border-bottom: none; }
+.kv-row.total span:last-child { color: var(--success); }
 
 /* 表格 */
-.tbl { border: 1px solid var(--border-base); border-radius: 8px; overflow: hidden; font-size: 12px; }
-.tbl.sm { font-size: 11.5px; }
-.tbl-head, .tbl-row { display: flex; align-items: center; gap: 6px; padding: 7px 10px; }
-.tbl-head { background: var(--bg-hover-light); font-size: 11px; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-base); }
+.tbl { border: 1px solid var(--border-base); border-radius: var(--radius-8); overflow: hidden; font-size: var(--font-size-12); }
+.tbl.sm { font-size: var(--font-size-11-5); }
+.tbl-head, .tbl-row { display: flex; align-items: center; gap: var(--space-6); padding: 7px var(--space-10); }
+.tbl-head { background: var(--bg-hover-light); font-size: var(--font-size-11); font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-base); }
 .tbl-row { border-bottom: 1px solid var(--border-base); }
 .tbl-row:last-child { border-bottom: none; }
-.c-role { flex: 2.2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); display: flex; align-items: center; gap: 4px; }
+.c-role { flex: 2.2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); display: flex; align-items: center; gap: var(--space-4); }
 .c-num { flex: 1; text-align: right; color: var(--text-primary); white-space: nowrap; }
 .c-badge { flex: 0.8; text-align: right; }
 .pt-name { display: inline-flex; flex-direction: column; line-height: 1.2; }
-.type-tag { font-size: 9px; margin-right: 2px; }
-.rev { color: var(--text-tertiary); font-size: 10px; }
-.star { color: #faad14; font-size: 11px; margin-left: 2px; }
-.ok { color: #52c41a; }
-.warn { color: #faad14; }
-.danger { color: #ff4d4f; }
+.type-tag { font-size: var(--font-size-9); margin-right: var(--space-2); }
+.rev { color: var(--text-tertiary); font-size: var(--font-size-10); }
+.star { color: var(--warning); font-size: var(--font-size-11); margin-left: var(--space-2); }
+.ok { color: var(--success); }
+.warn { color: var(--warning); }
+.danger { color: var(--danger); }
 
 /* 评价变动日志 */
-.rv-log { display: flex; flex-direction: column; gap: 6px; }
-.rv-log-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 5px 0; border-bottom: 1px dashed var(--border-base); }
+.rv-log { display: flex; flex-direction: column; gap: var(--space-6); }
+.rv-log-row { display: flex; align-items: center; gap: var(--space-8); font-size: var(--font-size-12); padding: var(--space-5) 0; border-bottom: 1px dashed var(--border-base); }
 .rv-log-row:last-child { border-bottom: none; }
-.rv-log-date { color: var(--text-tertiary); font-size: 11px; font-family: monospace; }
-.rv-log-asin { font-family: monospace; font-size: 10px; color: var(--text-secondary); }
+.rv-log-date { color: var(--text-tertiary); font-size: var(--font-size-11); font-family: monospace; }
+.rv-log-asin { font-family: monospace; font-size: var(--font-size-10); color: var(--text-secondary); }
 .rv-log-delta { margin: 0; }
 .rv-log-note { flex: 1; color: var(--text-primary); min-width: 0; }
 
 /* 盈亏分类 */
-.cat-blocks { display: flex; gap: 8px; }
-.cat-block { flex: 1; border-radius: 10px; padding: 12px 8px; text-align: center; }
+.cat-blocks { display: flex; gap: var(--space-8); }
+.cat-block { flex: 1; border-radius: var(--radius-10); padding: var(--space-12) var(--space-8); text-align: center; }
 .cat-block.good { background: rgba(82, 196, 26, .1); border: 1px solid rgba(82,196,26,.3); }
 .cat-block.warn { background: rgba(250,173,20,.1); border: 1px solid rgba(250,173,20,.3); }
 .cat-block.bad { background: rgba(255,77,79,.1); border: 1px solid rgba(255,77,79,.3); }
-.cat-num { font-size: 22px; font-weight: 700; }
-.cat-block.good .cat-num { color: #52c41a; }
-.cat-block.warn .cat-num { color: #faad14; }
-.cat-block.bad .cat-num { color: #ff4d4f; }
-.cat-label { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+.cat-num { font-size: var(--font-size-22); font-weight: 700; }
+.cat-block.good .cat-num { color: var(--success); }
+.cat-block.warn .cat-num { color: var(--warning); }
+.cat-block.bad .cat-num { color: var(--danger); }
+.cat-label { font-size: var(--font-size-11); color: var(--text-secondary); margin-top: var(--space-2); }
 </style>

@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-page-node-id="cVyc2HmF6H24RcC8HZa1a1">
+<head data-page-node-id="gWSLBWdgaAMXWsDXbGwrAx">
+<meta charset="UTF-8" data-page-node-id="u9KYDNC5JNgT3QGvrNlpDJ" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="rfYX3frqUusANjq05Hjoa1" />
+<title>主题对照预览 · 浅色 / 深色 / 马卡龙</title>
+<style>
+html[data-theme='light'] {
+    --bg-base: #f5f7fa;
+    --bg-elevated: #ffffff;
+    --bg-toolbar: #ffffff;
+    --bg-hover-light: #f5f5f5;
+    --bg-hover-dark: rgba(255, 255, 255, 0.06);
+    --bg-active-light: #e6f7ff;
+    --bg-active-dark: rgba(22, 119, 255, 0.18);
+    --bg-sidebar: #fafafa;
+    --bg-card-pill: #f0f0f0;
+    --border-base: #f0f0f0;
+    --border-strong: #d9d9d9;
+    --text-primary: #262626;
+    --text-secondary: #595959;
+    --text-tertiary: #8c8c8c;
+    --text-disabled: #bfbfbf;
+    --text-inverse: #ffffff;
+    --primary: #1890ff;
+    --primary-hover: #40a9ff;
+    --danger: #ff4d4f;
+    --success: #389e0d;
+    --warning: #ad6800;
+    --purple: #722ed1;
+    --success-bg: #f6ffed;
+    --success-border: #b7eb8f;
+    --info-bg: #e6f7ff;
+    --info-border: #91d5ff;
+    --purple-bg: #f9f0ff;
+    --purple-border: #efdbff;
+    --warning-bg: #fffbe6;
+    --warning-border: #ffe58f;
+    --danger-bg: #fff1f0;
+    --danger-border: #ffccc7;
+    --primary-strong: #0958d9;
+    --warning-strong: #d48806;
+    --danger-strong: #cf1322;
+    --danger-border-strong: #ffa39e;
+    --orange-bg: #fff7e6;
+    --orange-bg-2: #ffe7ba;
+    --orange-border: #ffd591;
+    --orange-strong: #d46b08;
+    --info-bg-2: #d6e4ff;
+    --success-bg-2: #d9f7be;
+    --bg-raised: #ffffff;
+    --shadow-overlay: 0 8px 28px rgba(0, 0, 0, 0.14);
+    --shadow-card: none;
+    --danger-hover-bg: rgba(255, 77, 79, 0.08);
+    --accent-pink: #f5576c;
+    --accent-pink-2: #f093fb;
+    --accent-pink-soft: rgba(245, 87, 108, 0.1);
+    --bo-header-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --bo-header-shadow: none;
+    --surface-ring: none;
+    --stat-bar-opacity: 0;
+    --cyan: #08979c;
+    --gold: #d48806;
+    --cyan-bg: #e6fffb;
+    --cyan-border: #87e8de;
+    --geekblue: #1d39c4;
+    --geekblue-bg: #f0f5ff;
+    --geekblue-border: #adc6ff;
+    --chart-1: #5b8ff9;
+    --chart-2: #5ad8a6;
+    --chart-3: #f6bd16;
+    --chart-4: #e8684a;
+    --chart-5: #9270ca;
+    --chart-6: #269a99;
+    --chart-7: #eb2f96;
+    --chart-8: #fa8c16;
+    --rank-1: #faad14;
+    --rank-2: #d9d9d9;
+    --rank-3: #cd7f32;
+}
+
+html[data-theme='dark'] {
+    --bg-base: #141414;
+    --bg-elevated: #1f1f1f;
+    --bg-toolbar: #141414;
+    --bg-hover-light: rgba(255, 255, 255, 0.06);
+    --bg-hover-dark: rgba(255, 255, 255, 0.06);
+    --bg-active-light: rgba(22, 119, 255, 0.18);
+    --bg-active-dark: rgba(22, 119, 255, 0.18);
+    --bg-sidebar: #141414;
+    --bg-card-pill: #262626;
+    --border-base: #303030;
+    --border-strong: #434343;
+    --text-primary: rgba(255, 255, 255, 0.92);
+    --text-secondary: rgba(255, 255, 255, 0.65);
+    --text-tertiary: rgba(255, 255, 255, 0.45);
+    --text-disabled: rgba(255, 255, 255, 0.25);
+    --text-inverse: #1f1f1f;
+    --primary: #177ddc;
+    --primary-hover: #3d9be6;
+    --danger: #ff7875;
+    --success: #73d13d;
+    --warning: #ffc53d;
+    --purple: #b37feb;
+    --success-bg: rgba(82, 196, 26, 0.12);
+    --success-border: rgba(82, 196, 26, 0.4);
+    --info-bg: rgba(24, 144, 255, 0.12);
+    --info-border: rgba(24, 144, 255, 0.4);
+    --purple-bg: rgba(114, 46, 209, 0.12);
+    --purple-border: rgba(114, 46, 209, 0.4);
+    --warning-bg: rgba(250, 173, 20, 0.12);
+    --warning-border: rgba(250, 173, 20, 0.4);
+    --danger-bg: rgba(255, 77, 79, 0.12);
+    --danger-border: rgba(255, 77, 79, 0.4);
+    --primary-strong: #3d9be6;
+    --warning-strong: #ffc53d;
+    --danger-strong: #ff7875;
+    --orange-strong: #ffa940;
+    --danger-border-strong: rgba(255, 77, 79, 0.45);
+    --orange-bg: rgba(250, 173, 20, 0.16);
+    --orange-bg-2: rgba(250, 173, 20, 0.05);
+    --orange-border: rgba(250, 173, 20, 0.4);
+    --info-bg-2: rgba(24, 144, 255, 0.05);
+    --success-bg-2: rgba(82, 196, 26, 0.05);
+    --bg-raised: #262626;
+    --shadow-overlay: 0 8px 28px rgba(0, 0, 0, 0.5);
+    --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --danger-hover-bg: rgba(255, 77, 79, 0.18);
+    --accent-pink: #ff7a90;
+    --accent-pink-2: #f093fb;
+    --accent-pink-soft: rgba(245, 87, 108, 0.18);
+    --bo-header-bg: linear-gradient(135deg, #4338a6 0%, #6b21a8 50%, #7c3aed 100%);
+    --bo-header-shadow: 0 2px 12px rgba(124, 58, 237, 0.25);
+    --surface-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    --stat-bar-opacity: 1;
+    --cyan: #5cdbd3;
+    --gold: #ffc53d;
+    --cyan-bg: rgba(19, 194, 194, 0.12);
+    --cyan-border: rgba(19, 194, 194, 0.4);
+    --geekblue: #85a5ff;
+    --geekblue-bg: rgba(29, 57, 196, 0.12);
+    --geekblue-border: rgba(29, 57, 196, 0.4);
+    --chart-1: #7db3ff;
+    --chart-2: #7ee0c0;
+    --chart-3: #ffd666;
+    --chart-4: #ff9d7a;
+    --chart-5: #b79bf0;
+    --chart-6: #5cdbd3;
+    --chart-7: #ff85c0;
+    --chart-8: #ffb066;
+    --rank-1: #ffc53d;
+    --rank-2: #d9d9d9;
+    --rank-3: #cd7f32;
+}
+
+html[data-theme='macaron'] {
+    --bg-base: #fdf6f8;
+    --bg-elevated: #ffffff;
+    --bg-toolbar: #fffbfc;
+    --bg-hover-light: #f9edf2;
+    --bg-hover-dark: rgba(255, 255, 255, 0.06);
+    --bg-active-light: #fce4ee;
+    --bg-active-dark: rgba(22, 119, 255, 0.18);
+    --bg-sidebar: #faf0f4;
+    --bg-card-pill: #f7e9ef;
+    --border-base: #f3e3ea;
+    --border-strong: #e6d2dc;
+    --text-primary: #4a3b42;
+    --text-secondary: #7d6a72;
+    --text-tertiary: #a8949c;
+    --text-disabled: #cfc0c6;
+    --text-inverse: #ffffff;
+    --primary: #c33a76;
+    --primary-hover: #d85f91;
+    --danger: #ff4d4f;
+    --success: #389e0d;
+    --warning: #ad6800;
+    --purple: #722ed1;
+    --success-bg: #eefaf1;
+    --success-border: #bfe6c8;
+    --info-bg: #eef3fd;
+    --info-border: #c9d4f5;
+    --purple-bg: #f5eefd;
+    --purple-border: #dcc7f5;
+    --warning-bg: #fff9ea;
+    --warning-border: #ffe3a8;
+    --danger-bg: #fdeef2;
+    --danger-border: #f7c7d4;
+    --primary-strong: #0958d9;
+    --warning-strong: #d48806;
+    --danger-strong: #cf1322;
+    --danger-border-strong: #ffa39e;
+    --orange-bg: #fff6ee;
+    --orange-bg-2: #ffe5d1;
+    --orange-border: #ffd2ab;
+    --orange-strong: #d46b08;
+    --info-bg-2: #dde5fa;
+    --success-bg-2: #d6f2de;
+    --bg-raised: #ffffff;
+    --shadow-overlay: 0 8px 28px rgba(186, 106, 145, 0.18);
+    --shadow-card: none;
+    --danger-hover-bg: rgba(255, 77, 79, 0.08);
+    --accent-pink: #e86a9a;
+    --accent-pink-2: #c9a7f0;
+    --accent-pink-soft: rgba(232, 106, 154, 0.12);
+    --bo-header-bg: linear-gradient(135deg, #f5a3c7 0%, #b58ce0 100%);
+    --bo-header-shadow: none;
+    --surface-ring: none;
+    --stat-bar-opacity: 0;
+    --cyan: #08979c;
+    --gold: #d48806;
+    --cyan-bg: #eafaf8;
+    --cyan-border: #b3e4de;
+    --geekblue: #1d39c4;
+    --geekblue-bg: #eff0fd;
+    --geekblue-border: #c6cbf0;
+    --chart-1: #7ba7f7;
+    --chart-2: #7ed6a5;
+    --chart-3: #f5c95c;
+    --chart-4: #f79a86;
+    --chart-5: #a78bda;
+    --chart-6: #6cc5c6;
+    --chart-7: #ef8cba;
+    --chart-8: #f7b26a;
+    --rank-1: #faad14;
+    --rank-2: #d9d9d9;
+    --rank-3: #cd7f32;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 0 0 60px;
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg-base); color: var(--text-primary);
+  transition: background .18s, color .18s;
+}
+.bar {
+  position: sticky; top: 0; z-index: 9; display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px; background: var(--bg-toolbar); border-bottom: 1px solid var(--border-base);
+}
+.bar b { margin-right: 6px; }
+.bar button {
+  padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  border: 1px solid var(--border-strong); background: var(--bg-elevated); color: var(--text-primary);
+}
+.bar button.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.bar .hint { margin-left: auto; color: var(--text-tertiary); font-size: 12px; }
+
+.wrap { display: flex; gap: 20px; padding: 20px; align-items: flex-start; }
+.frame {
+  flex: 0 0 620px; display: flex; border-radius: 12px; overflow: hidden;
+  border: 1px solid var(--border-base); box-shadow: var(--shadow-overlay); background: var(--bg-base);
+}
+.side { width: 168px; flex: none; background: var(--bg-sidebar); border-right: 1px solid var(--border-base); padding: 12px 8px; }
+.logo { display: flex; align-items: center; gap: 8px; padding: 6px 8px 14px; font-weight: 600; }
+.logo i { width: 22px; height: 22px; border-radius: 6px; background: var(--bo-header-bg); display: block; }
+.nav { padding: 8px 10px; border-radius: 6px; color: var(--text-secondary); margin-bottom: 3px; font-size: 13px; }
+.nav.on { background: var(--bg-active-light); color: var(--primary); font-weight: 600; }
+.nav:hover { background: var(--bg-hover-light); }
+.acc { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border-base); font-size: 12px; color: var(--text-tertiary); }
+
+.main { flex: 1; min-width: 0; }
+.top { height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 14px;
+  background: var(--bg-toolbar); border-bottom: 1px solid var(--border-base); font-weight: 600; }
+.main-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.bubble { max-width: 78%; padding: 8px 12px; border-radius: 10px; font-size: 13px;
+  background: var(--bg-card-pill); color: var(--text-primary); }
+.bubble.me { align-self: flex-end; background: var(--primary); color: #fff; }
+
+.card { background: var(--bg-elevated); border: 1px solid var(--border-base); border-radius: 10px; overflow: hidden; }
+.card-h { padding: 9px 12px; font-weight: 600; font-size: 13px;
+  background: var(--bo-header-bg); color: #fff; }
+.card-b { padding: 12px; }
+.muted { color: var(--text-secondary); font-size: 12px; }
+.faint { color: var(--text-tertiary); font-size: 12px; }
+.dis { color: var(--text-disabled); font-size: 12px; }
+
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { padding: 5px 14px; border-radius: 6px; font-size: 13px; border: 1px solid var(--border-strong);
+  background: var(--bg-elevated); color: var(--text-primary); cursor: pointer; }
+.btn.pri { background: var(--primary); border-color: var(--primary); color: #fff; }
+.btn.dan { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.gh { background: transparent; border-color: var(--primary); color: var(--primary); }
+
+.tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.tag { padding: 1px 8px; border-radius: 4px; font-size: 12px; border: 1px solid transparent; }
+
+table.tb { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.tb th { text-align: left; padding: 7px 10px; background: var(--bg-card-pill); color: var(--text-secondary); font-weight: 600; }
+table.tb td { padding: 7px 10px; border-top: 1px solid var(--border-base); }
+table.tb tr.sel td { background: var(--bg-active-light); }
+table.tb tbody tr:hover td { background: var(--bg-hover-light); }
+
+.charts { display: flex; gap: 0; border-radius: 6px; overflow: hidden; height: 16px; }
+.charts i { flex: 1; display: block; }
+
+.ranks { display: flex; gap: 10px; align-items: center; font-size: 12px; }
+.ranks s { display: flex; align-items: center; gap: 5px; text-decoration: none; color: var(--text-secondary); }
+.ranks em { width: 14px; height: 14px; border-radius: 50%; display: block; }
+
+.states { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.state { padding: 8px 10px; border-radius: 8px; border: 1px solid; font-size: 12px; }
+.s-ok { background: var(--success-bg); border-color: var(--success-border); color: var(--success); }
+.s-in { background: var(--info-bg); border-color: var(--info-border); color: var(--primary-strong); }
+.s-wa { background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning); }
+.s-da { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-strong); }
+.s-or { background: var(--orange-bg); border-color: var(--orange-border); color: var(--orange-strong); }
+.s-pu { background: var(--purple-bg); border-color: var(--purple-border); color: var(--purple); }
+
+/* 对照表区域：固定中性底，避免主题底色干扰读色 */
+.compare { flex: 1; min-width: 0; }
+.compare h2 { font-size: 15px; margin: 0 0 4px; }
+table.cmp { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; color: #1f1f1f;
+  border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+table.cmp th, table.cmp td { padding: 5px 8px; border-bottom: 1px solid #f0f0f0; text-align: left; vertical-align: middle; }
+table.cmp thead th { background: #fafafa; position: sticky; top: 47px; }
+table.cmp tr.grp td { background: #f0f2f5; font-weight: 700; color: #555; }
+table.cmp tr.same th::after { content: ' ='; color: #bbb; font-weight: 400; }
+table.cmp code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: #444; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px;
+  vertical-align: -1px; border: 1px solid rgba(0,0,0,.14); }
+.legend { font-size: 11px; color: #888; margin: 6px 0 14px; }
+</style>
+</head>
+<body data-page-node-id="6FeFVrivS9ZowwtdUBikif">
+<div class="bar" data-page-node-id="HclfYjFRlB5K8Vy6i1FMMH">
+  <b data-page-node-id="KlyCefOG3SBsTcvI1l0FfP">主题对照预览</b>
+  <button data-t="light" class="on" data-page-node-id="W175TvV6daLZ83EBgnK03s">☀️ 浅色</button><button data-t="dark" data-page-node-id="E4w9ShLQ9U3vMNZNMFvsnE">🌙 深色</button><button data-t="macaron" data-page-node-id="WEgkFTMLAVf1wmnZea2giH">🧁 马卡龙</button>
+  <span class="hint" data-page-node-id="gUfZdeqvyw1MGEBH4XNMTE">左侧为拟真界面片段（只读 CSS 变量），右侧为三主题色值逐条对照（灰底 = 三主题同值）</span>
+</div>
+
+<div class="wrap" data-page-node-id="82qJ5yXA92Oo8ADDlAMZGE">
+  <div class="frame" data-page-node-id="zTDewbeg8lOHMZsKZepNpv">
+    <div class="side" data-page-node-id="BwIca3RNYziULB7HZp92u2">
+      <div class="logo" data-page-node-id="z1XBwCEHRZ1DxnQt4bqmmj"><i data-page-node-id="z8lmphjUFy8DwEWGWcFMSo"></i>店管家 AI</div>
+      <div class="nav on" data-page-node-id="7yrUI85Ys1mv7uvKAaPc10">💬 店秘书</div>
+      <div class="nav" data-page-node-id="lVhPmFcAMqJruKRppjnSDW">🔍 选品分析师</div>
+      <div class="nav" data-page-node-id="QsGBf5CVRUoBdEiba5FCBL">📊 广告诊断师</div>
+      <div class="nav" data-page-node-id="metbn32LJCdEU1xPcgtVbn">🎧 智能客服</div>
+      <div class="acc" data-page-node-id="LF00WTiFH3WnBUdJ00wgzI">账户 · 马卡龙模式预览</div>
+    </div>
+    <div class="main" data-page-node-id="UpFxhXCLEE3SA9UmuB0A3B">
+      <div class="top" data-page-node-id="aUtxwWOdXQuEUP1zWSxdzb">店秘书</div>
+      <div class="main-body" data-page-node-id="82Ll6X69UflgGfFmcdcCEG">
+        <div class="bubble" data-page-node-id="kx31PSVqjpAVt5UpmGcXyg">帮我看看厨房用品近期有没有蓝海机会</div>
+        <div class="bubble me" data-page-node-id="FU9kMJe0UFxmkWpxCzMrgD">好的，正在分析…</div>
+
+        <div class="card" data-page-node-id="KgT2dnCLfwL5H4682EUMMV">
+          <div class="card-h" data-page-node-id="uzyqJFMR1AhFbi4U3dm8nt">🎯 蓝海机会 Top 3（厨房用品）</div>
+          <div class="card-b" data-page-node-id="KaiwB7n4vW3Eugh5TwbZev">
+            <table class="tb" data-page-node-id="EIdmfA21yyGqwG3dmH6AAY">
+              <thead data-page-node-id="0n7CnB69vm9wBABLRQ2at8"><tr data-page-node-id="FBmo193nrSmEAk3mbYcQ8U"><th data-page-node-id="15vUC35y8Z5ZmpZf2iW2Yk">商品</th><th data-page-node-id="leYDQFtZLiEjeyWci1zkIk">售价</th><th data-page-node-id="0nELjdCLzLelpdOu2fzknw">月销</th><th data-page-node-id="YAQikp6XnpZUm55XgpkEex">蓝海分</th></tr></thead>
+              <tbody data-page-node-id="vtnS2hvkUcIWfblO64ysLv">
+                <tr class="sel" data-page-node-id="LdkszZXiAnbMg08AKdOir4"><td data-page-node-id="0bl0iRMHd8p3x0nWKTXwnc">折叠沥水篮</td><td data-page-node-id="NEVEPWchrDMCQLcFOkB6aW">$18.9</td><td data-page-node-id="Q4WLgxACxClAnt0nmygyLn">1,240</td><td data-page-node-id="a2cqbezhvbZlc5ybU32pgM">86</td></tr>
+                <tr data-page-node-id="vOG7wXn2uHl1olpAsJctB0"><td data-page-node-id="1fB01A6LrVUC6EzIucGmBR">硅胶厨具十件套</td><td data-page-node-id="2WB6LvDDobGpUcBBqGlaSC">$24.5</td><td data-page-node-id="F878rsIm7DwUPRkQ3VoLvq">980</td><td data-page-node-id="baQUTrBksVxA5wq8B7cC0m">79</td></tr>
+                <tr data-page-node-id="rhQ2ts5xbhBSZZNEKIJoAJ"><td data-page-node-id="FAT4yM27atJmIiCYksNT1m">抽屉分隔收纳盒</td><td data-page-node-id="vukoFFlqGW6CDbPoeK13MJ">$12.9</td><td data-page-node-id="xqvibDT7cl0jtPqCmRqgCE">2,340</td><td data-page-node-id="GM0ecKvHbZauY03sx0T3Vc">74</td></tr>
+              </tbody>
+            </table>
+            <div class="muted" style="margin-top:8px" data-page-node-id="01yii2hIg2YPJW8I9NiJAu">选中行 / hover 行 / 表头分别用 <code data-page-node-id="Busu8ISFGHcuJQ2wEBdshy">--bg-active-light</code> / <code data-page-node-id="2oaHjKn7l2nwGXOZK2Y83U">--bg-hover-light</code> / <code data-page-node-id="WOPB05FHLNKdDhlIoeFLrt">--bg-card-pill</code></div>
+          </div>
+        </div>
+
+        <div class="card" data-page-node-id="kKxaY3FgA2w3jMTMbqU08z">
+          <div class="card-b" style="display:flex;flex-direction:column;gap:11px" data-page-node-id="mwujksLfjU6Cy9uv5oMdSe">
+            <div class="btns" data-page-node-id="3mzVoYtyHeVIrmCBcKfjYY">
+              <button class="btn pri" data-page-node-id="8TRNxCCTddMMBEi0kj53WF">开始分析</button>
+              <button class="btn" data-page-node-id="LuCPLlZYMsBuUzbPeGYyq0">导出</button>
+              <button class="btn gh" data-page-node-id="HaVlYQEpRGpqQBoYUPnVQA">查看详情</button>
+              <button class="btn dan" data-page-node-id="HEHEDgHGAdL2o9o0AfJJhV">删除</button>
+            </div>
+            <div class="tags" data-page-node-id="oeCc0JaptMtutlD4O2MJQr"><span class="tag" style="color:var(--primary-strong);background:var(--info-bg);border-color:var(--info-border)" data-page-node-id="bS1OZUfS1SSyE6l2rrZ3z3">blue</span><span class="tag" style="color:var(--success);background:var(--success-bg);border-color:var(--success-border)" data-page-node-id="VVeGeIYYVBz2D2QxrYCEms">green</span><span class="tag" style="color:var(--danger-strong);background:var(--danger-bg);border-color:var(--danger-border-strong)" data-page-node-id="ErLzR4BTw9GeKSlmo8dFwb">red</span><span class="tag" style="color:var(--orange-strong);background:var(--orange-bg);border-color:var(--orange-border)" data-page-node-id="DMTuoyqKaVK2inGOOd2KLM">orange</span><span class="tag" style="color:var(--gold);background:var(--warning-bg);border-color:var(--warning-border)" data-page-node-id="9IIiVh6CRVdw5bORHTqDmv">gold</span><span class="tag" style="color:var(--purple);background:var(--purple-bg);border-color:var(--purple-border)" data-page-node-id="wNaHLbiVL6j4vIkNNn1H3H">purple</span><span class="tag" style="color:var(--cyan);background:var(--cyan-bg);border-color:var(--cyan-border)" data-page-node-id="6nN21Ut1Sbll5CCDuGx5KM">cyan</span><span class="tag" style="color:var(--geekblue);background:var(--geekblue-bg);border-color:var(--geekblue-border)" data-page-node-id="BucnbE1NhzCv9XjcQAwM1H">geekblue</span></div>
+            <div class="charts" data-page-node-id="jJxJhKRQflamrVv9B4yRSl"><i style="background:var(--chart-1)" title="--chart-1" data-page-node-id="cXbrEfnYLd76H94UzUWx50"></i><i style="background:var(--chart-2)" title="--chart-2" data-page-node-id="diRUBwgxSDhGAMVAIzwkz3"></i><i style="background:var(--chart-3)" title="--chart-3" data-page-node-id="zYReqWOF2MntnEgy3bTNBl"></i><i style="background:var(--chart-4)" title="--chart-4" data-page-node-id="Pw84JHAovYK74BBkB7GgdS"></i><i style="background:var(--chart-5)" title="--chart-5" data-page-node-id="Ka5SyJ391QYDgAoSrgUPK3"></i><i style="background:var(--chart-6)" title="--chart-6" data-page-node-id="JK6T0NQrBWsUxyhFKwgp7i"></i><i style="background:var(--chart-7)" title="--chart-7" data-page-node-id="oND8UfB7C4zKTb9KXEPHpn"></i><i style="background:var(--chart-8)" title="--chart-8" data-page-node-id="F2luHlCZ4qWJ4UnrvwJexm"></i></div>
+            <div class="states" data-page-node-id="eDh3VfejK2Z5yDCatupcld">
+              <div class="state s-ok" data-page-node-id="akbyvoyv3BsmbaxFCrcPdf">✔ 运营正常 · 通过审核</div>
+              <div class="state s-in" data-page-node-id="mlPnCGgCDGMG6RBZimNE63">ℹ 数据同步中 · 平台：Amazon</div>
+              <div class="state s-wa" data-page-node-id="tAAICyImN3BE4gr7hpBRBM">⚠ 库存偏低 · 需补货</div>
+              <div class="state s-da" data-page-node-id="1WgflaJBbNPkrHUienNLD1">✖ 广告超预算 · 已暂停</div>
+              <div class="state s-or" data-page-node-id="xxaum9QSeIzu4GtucysouU">◑ 评分下滑 · 关注差评</div>
+              <div class="state s-pu" data-page-node-id="pPlmsc9Ce4kVDkFsTz58n3">◆ SPU 合并 · 3 个变体</div>
+            </div>
+            <div class="ranks" data-page-node-id="1PGRXKrzEAG4y0TYqcjiE3">
+              <s data-page-node-id="l1LTzIwJNFRJJONdhm15Zf"><em style="background:var(--rank-1)" data-page-node-id="IciApH4XpKeECGUP8YA65g"></em>金 #1</s>
+              <s data-page-node-id="syGOjG9N246oriI6OxTqq1"><em style="background:var(--rank-2)" data-page-node-id="XoGkhracQdd10em4yFHTjg"></em>银 #2</s>
+              <s data-page-node-id="NxuByHICbOcQc1WNK1uWvz"><em style="background:var(--rank-3)" data-page-node-id="Dm40xZhGeiIhWwb7aoMdH8"></em>铜 #3</s>
+            </div>
+            <div data-page-node-id="e65WstWOXi62DDDFzVbvO0">
+              <div class="muted" data-page-node-id="sAgTKVPd8Wh0IqIxmO6lTz">正文文字 --text-primary</div>
+              <div class="muted" style="color:var(--text-secondary)" data-page-node-id="fVS218IrxsMOnPzqWDC6N9">次要文字 --text-secondary</div>
+              <div class="faint" data-page-node-id="kNo15ACmDLdQf5E3QjnC12">辅助文字 --text-tertiary</div>
+              <div class="dis" data-page-node-id="bJCI7OSQUqKWV0behQaPuB">禁用文字 --text-disabled</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="compare" data-page-node-id="HCktDsgEfIKpNYQCa0Hnqv">
+    <h2 data-page-node-id="PDAyUB4NZubCcPNSDkhrxu">三主题色值逐条对照</h2>
+    <div class="legend" data-page-node-id="M9NoWOJNzGOxSaG57XrAwI">色块为该变量在当前主题渲染出的实际值 · <code data-page-node-id="TveT7by7CzAEpoE9Xewc0j">=</code> 表示三主题同值（即马卡龙未覆盖、从浅色继承）</div>
+    <table class="cmp" data-page-node-id="rumqANgG4BmFOENiwglsrM">
+      <thead data-page-node-id="QKklPljEZRyFnvrsQMHEvd"><tr data-page-node-id="E02CpuVbJPc5390QCtsBlO"><th style="width:26%" data-page-node-id="fiPkAzAO1Yt44szZViTrI9">变量</th><th data-page-node-id="ZEX87T0sAtpUz1ewFM4Ebt">☀️ 浅色</th><th data-page-node-id="HW8UR0igiScU5LFqMo1bD4">🌙 深色</th><th data-page-node-id="2vLuw6KchlAfuYMIVWQQJN">🧁 马卡龙</th></tr></thead>
+      <tbody data-page-node-id="eUymi61qEE6mR5vJOrIDX5"><tr class="grp" data-page-node-id="EtlyJzBHZCPv2qxszePQ0f"><td colspan="4" data-page-node-id="viHMaHpqMC93hnte3hFm6U">背景层</td></tr>
+<tr class="" data-page-node-id="1sHSH9roiVB90G2I71G3Oi"><th data-page-node-id="9B2Lxbusadsy6zrAvU7bzU"><code data-page-node-id="TXvGK9Bj3lbCYNtVVtIq4p">--bg-base</code></th><td data-page-node-id="4jmk4W3ZDoz9UgSLeze6Do"><span class="sw" style="background:#f5f7fa" data-page-node-id="yjFLXxnxTjJVMZuO5BhLAH"></span><code data-page-node-id="inC7aU0ZOMwPgWBzOZxPFO">#f5f7fa</code></td><td data-page-node-id="NpTUFzGOBXWW7wdB8Po4Ip"><span class="sw" style="background:#141414" data-page-node-id="b0Bap5xV8c0GFkFuCdZVxO"></span><code data-page-node-id="QKf08U6Vvs0jYZx473Ff74">#141414</code></td><td data-page-node-id="0e2MfKYVVh7mV8WJM3hl72"><span class="sw" style="background:#fdf6f8" data-page-node-id="81cc2tXHPlJuwteDcpDg2r"></span><code data-page-node-id="1XboNhqMMEocFu0ILyQEhv">#fdf6f8</code></td></tr>
+<tr class="" data-page-node-id="WSEnlaqAcn1INdcutEt6xM"><th data-page-node-id="ggkUAs1wgS62PIjWU4lQEj"><code data-page-node-id="cmXxIta4E7CPCDlbRcEvpQ">--bg-elevated</code></th><td data-page-node-id="yOgg7sSjoFsAUVGgN67wne"><span class="sw" style="background:#ffffff" data-page-node-id="wkC0zlGCXWx87CqJt7fc0r"></span><code data-page-node-id="mkirKkxl5Wy4bxp4S3x1C8">#ffffff</code></td><td data-page-node-id="50jPRIa2i7qi7qfZLDI2hY"><span class="sw" style="background:#1f1f1f" data-page-node-id="DSbd4CufPbnuSXlrm6AmJe"></span><code data-page-node-id="El5X9FQArBsEtCDFbfTMPA">#1f1f1f</code></td><td data-page-node-id="tu5RS0L7C57JhlGSkM8IMG"><span class="sw" style="background:#ffffff" data-page-node-id="qRhnlstN71aDOuTZFbcRy7"></span><code data-page-node-id="dECPQ3gOdpk1mLzCHKjYFy">#ffffff</code></td></tr>
+<tr class="" data-page-node-id="UFyAAa3llxni3EqNe9ZBjn"><th data-page-node-id="62sAVDcCGgPy7XhpKqpCTR"><code data-page-node-id="ld4ONkf61A6gK7twXqaLtD">--bg-toolbar</code></th><td data-page-node-id="HqET4HT1BqISuoQDsqmXvz"><span class="sw" style="background:#ffffff" data-page-node-id="EyQeniEklVKSR9OJB2sFKN"></span><code data-page-node-id="l2rK5vnmZo9ixeapSiJ72X">#ffffff</code></td><td data-page-node-id="2GcCWBCHSI8PifyN1PEvlk"><span class="sw" style="background:#141414" data-page-node-id="jx0uzQGLeRNpXLBpcApjv9"></span><code data-page-node-id="Zy0aMuPikxV6U0C5r1mwjK">#141414</code></td><td data-page-node-id="9s6IEC5ZQjP13wwyFF7ltc"><span class="sw" style="background:#fffbfc" data-page-node-id="EjlqeLyJINXYbAE5Fbsk8i"></span><code data-page-node-id="6rByFdVKffw5wH3Fb7gJqA">#fffbfc</code></td></tr>
+<tr class="" data-page-node-id="4uIWiF9qCNmVMcyGufwDgM"><th data-page-node-id="HFynVQAvHn5NJKRLHukogK"><code data-page-node-id="fGGHYqcyiRCrLeiNBnNZ0k">--bg-sidebar</code></th><td data-page-node-id="QSBg78HxHBitDgl8rnWGTj"><span class="sw" style="background:#fafafa" data-page-node-id="pgBOZt7kZLKNMlPI6YGM96"></span><code data-page-node-id="aYMBBLw4rOLpkoX7SV4juu">#fafafa</code></td><td data-page-node-id="3gOr3VBOrTJaNRMRex1kRQ"><span class="sw" style="background:#141414" data-page-node-id="XCwCQGueIHofFCPDJsPjhu"></span><code data-page-node-id="L1ZjaIJjFJHxXEjkqf30mC">#141414</code></td><td data-page-node-id="fqZk93IxQ9CdQmaoaiFWWh"><span class="sw" style="background:#faf0f4" data-page-node-id="k6jeOiQ2DK1KpTTXT5hXNZ"></span><code data-page-node-id="HG5fMzafDjj6XJYg3ygEbZ">#faf0f4</code></td></tr>
+<tr class="" data-page-node-id="OoB3QfADtbrk5HhyMiDnwF"><th data-page-node-id="sqhGJ2sO8EKYuB3AzzCGaq"><code data-page-node-id="1soAYAfyR9niEKE9VpOU1d">--bg-card-pill</code></th><td data-page-node-id="hIubbIYKUHOH6jqj2NteLM"><span class="sw" style="background:#f0f0f0" data-page-node-id="w2THFwi36m8vnnGNUmYtq6"></span><code data-page-node-id="EoRB6iJQVTXQPE0hj71ht7">#f0f0f0</code></td><td data-page-node-id="cKhmF6OQZ5TsjlPGqTNQTr"><span class="sw" style="background:#262626" data-page-node-id="X8oe5tvkxbFU7TitcKyMdE"></span><code data-page-node-id="5BmjcU7clFJoYV7nCqH8lM">#262626</code></td><td data-page-node-id="NNK7aiLivRNGegk6heyPwp"><span class="sw" style="background:#f7e9ef" data-page-node-id="u4R3cH1yaiB38uMzT5HG6n"></span><code data-page-node-id="mfQAIXiq7ykokHikF9FPym">#f7e9ef</code></td></tr>
+<tr class="" data-page-node-id="nK7Te8jpAkCR6aj2t0e30X"><th data-page-node-id="0N2EHEgJEFyDRvp3P6D2at"><code data-page-node-id="QiN0j6mFvJ3dRCrQZAKYK3">--bg-hover-light</code></th><td data-page-node-id="gfQnHJgz1gTii9qpgkhH3Y"><span class="sw" style="background:#f5f5f5" data-page-node-id="ndJEGOL1dqy3jNTYmI8AFy"></span><code data-page-node-id="0X66jXyKrp2msvVoRiciol">#f5f5f5</code></td><td data-page-node-id="Wq0jNp1q0fYeqn9vjjVINQ"><span class="sw" style="background:rgba(255, 255, 255, 0.06)" data-page-node-id="G9tUCDxi3U7U9mVBQrAkCt"></span><code data-page-node-id="aB4aw5yRIiStpr7VKJ05jr">rgba(255, 255, 255, 0.06)</code></td><td data-page-node-id="VYGM67mlEWkFz6tCQaU3DR"><span class="sw" style="background:#f9edf2" data-page-node-id="yxqVA08hTM7zJuyp7QFTbg"></span><code data-page-node-id="njp1XaNxBkBAqWnwcva7FE">#f9edf2</code></td></tr>
+<tr class="" data-page-node-id="9FhyEDpQtHWBFHYZBk4iJh"><th data-page-node-id="YL2iqpXK22cxwS1fYO4WBG"><code data-page-node-id="dqCYBjtvfY1EK5ri841G2k">--bg-active-light</code></th><td data-page-node-id="C2O20xNrAS1Z81tmcF8xrd"><span class="sw" style="background:#e6f7ff" data-page-node-id="DCyjG4seXsdGhHQ5ERVJjh"></span><code data-page-node-id="9WKKT9O5ZIkIhcaFBjYMlB">#e6f7ff</code></td><td data-page-node-id="aUoKDetFFlqurg7EnN4gqE"><span class="sw" style="background:rgba(22, 119, 255, 0.18)" data-page-node-id="zEUORkd9b4M78NzF110pto"></span><code data-page-node-id="QZSsn4NDNfFH82hwskDPmI">rgba(22, 119, 255, 0.18)</code></td><td data-page-node-id="DuRCKGhtlrRrTSE7bDpe5P"><span class="sw" style="background:#fce4ee" data-page-node-id="oYv4uAF1CzoHhkXBzz2ZFD"></span><code data-page-node-id="kqPGh9C8K3QqHCzMmN1tkO">#fce4ee</code></td></tr>
+<tr class="" data-page-node-id="lfbLLqf5E9dBIxdAusgQjL"><th data-page-node-id="HINWYncT0duCbXZEhI2GwQ"><code data-page-node-id="YHakPHveMADsBGQTCxSBEY">--bg-raised</code></th><td data-page-node-id="SEUHzHdfuOSvFTAuV3lws7"><span class="sw" style="background:#ffffff" data-page-node-id="EreWKgj1UM4k4FoObVaS6j"></span><code data-page-node-id="iFH9VNY8VHt5aNXw3zAMLy">#ffffff</code></td><td data-page-node-id="4l2kavcWV8EwiS9wRR18MC"><span class="sw" style="background:#262626" data-page-node-id="FKZoADBB3fiy7u2a1YO1Rl"></span><code data-page-node-id="E6GCpJzMSduBbcAmjfior8">#262626</code></td><td data-page-node-id="j3ArSm5PtKfvTVDDswCDdX"><span class="sw" style="background:#ffffff" data-page-node-id="VK8ZWpaDnZbNzs85GCD17C"></span><code data-page-node-id="ygnFBlH8P28STfR2pBaG60">#ffffff</code></td></tr></tbody>
+<tbody data-page-node-id="6Ba3vhSxZF8lkThzoa13N6"><tr class="grp" data-page-node-id="TyWMGDntFeEfRCFiNhr5Kg"><td colspan="4" data-page-node-id="4O1oqTSvnZaJ3lBY06MH0I">边框</td></tr>
+<tr class="" data-page-node-id="iNoIeBKzmIu5FgK79ISDC9"><th data-page-node-id="gke1PVy7PDu7NSPYUdBT6T"><code data-page-node-id="sxtQef374XupiQaxr8bpAi">--border-base</code></th><td data-page-node-id="r7UfhNM5ETnWFhoXTtJq21"><span class="sw" style="background:#f0f0f0" data-page-node-id="V1qnDJ0CeZFPzD6hz4IvGy"></span><code data-page-node-id="gPSFUeAfF5XVdUojDgJRP9">#f0f0f0</code></td><td data-page-node-id="TI4W2Nda7jLDfPrD42TsGX"><span class="sw" style="background:#303030" data-page-node-id="ECJpJDMs1WwagjEMPlPBvt"></span><code data-page-node-id="5SvpWIjBClqByFhVp9cSp5">#303030</code></td><td data-page-node-id="puBzb9HfOBHfaxjGhvu5cw"><span class="sw" style="background:#f3e3ea" data-page-node-id="oFawjwtzkjHhWu9HoCaqe2"></span><code data-page-node-id="jMaOh4wG6xj52xQe5ZJiMp">#f3e3ea</code></td></tr>
+<tr class="" data-page-node-id="MO6xv03vA6mVAEoNG3GqZW"><th data-page-node-id="T42NjdzR20LL56uWrZiceD"><code data-page-node-id="F3HEMn4MnbJxCzsNC7xJwG">--border-strong</code></th><td data-page-node-id="ANF6LblTWMGTUGqvSewAy2"><span class="sw" style="background:#d9d9d9" data-page-node-id="bPESNQrrAdbBBP0WFgEMUW"></span><code data-page-node-id="gf8z0iCfT6C68X63w9YSRQ">#d9d9d9</code></td><td data-page-node-id="5eahOASmPZkxLDBgk9m3FD"><span class="sw" style="background:#434343" data-page-node-id="EF05MUNxOAKLpoTPM1A484"></span><code data-page-node-id="FAGGu2PRfcGgnfF2wh7hcc">#434343</code></td><td data-page-node-id="zzEKMVqaNwhckkmeqPZA26"><span class="sw" style="background:#e6d2dc" data-page-node-id="uZ7aBuy2l41AozYAVPHpog"></span><code data-page-node-id="TGrBwLrmLjTFWPCrYoIiMZ">#e6d2dc</code></td></tr></tbody>
+<tbody data-page-node-id="InSltdcgNpJXKrcvNoDpa2"><tr class="grp" data-page-node-id="HKSCa9lm6S6t81L0uGuoax"><td colspan="4" data-page-node-id="IOjGVf35iVmvLYj62qNtZJ">文字</td></tr>
+<tr class="" data-page-node-id="yY6QRa1rfhOkFRsemTRRgW"><th data-page-node-id="cdJvznCW8SblRguCmAClYG"><code data-page-node-id="ZQ6i8C2VCHLx1gW2tsPErH">--text-primary</code></th><td data-page-node-id="EXekAp7znfVDxUo8mv0Ojh"><span class="sw" style="background:#262626" data-page-node-id="BGF1cx5XNqkjDOzh0mafQg"></span><code data-page-node-id="gGRzBEib00IqiDGYoyuTKR">#262626</code></td><td data-page-node-id="y5Shtsceq9DtKdgfGdA4yy"><span class="sw" style="background:rgba(255, 255, 255, 0.92)" data-page-node-id="qXrxm2pAEqLJMicGPqckJ5"></span><code data-page-node-id="ruCcsAndoTCbVmZoDaMvdH">rgba(255, 255, 255, 0.92)</code></td><td data-page-node-id="EdlTjLbSAiSZWSP4ifiLwt"><span class="sw" style="background:#4a3b42" data-page-node-id="QEWPlT6QgXzNoQmCTPs63B"></span><code data-page-node-id="fkYPkkOwDjowgdy2Ei3mEl">#4a3b42</code></td></tr>
+<tr class="" data-page-node-id="UyvHDnmYaL4WVd0M82SycA"><th data-page-node-id="DCvAnlfblWTdF9EN4DLj29"><code data-page-node-id="Irp3HuSRy2JC93ZNIjmF9X">--text-secondary</code></th><td data-page-node-id="LTutu6P9pytrmlMx06lg5T"><span class="sw" style="background:#595959" data-page-node-id="E8j8FTQ5RyOmF6ufHJqdEc"></span><code data-page-node-id="9gPA2sfrrmpihjwirSQmb2">#595959</code></td><td data-page-node-id="QmIE9vQoYNX3VBw4BdYMKk"><span class="sw" style="background:rgba(255, 255, 255, 0.65)" data-page-node-id="fNgO2VCA6qlpR7ujfYBESk"></span><code data-page-node-id="D0E7eVox94zKzTB9rztY3H">rgba(255, 255, 255, 0.65)</code></td><td data-page-node-id="sGtMtjMFFTydLCmzy1wM6W"><span class="sw" style="background:#7d6a72" data-page-node-id="Htu9Cmds1c12aDyTuNdpSD"></span><code data-page-node-id="tmbNbxeEjaZyKkTQG0KkU2">#7d6a72</code></td></tr>
+<tr class="" data-page-node-id="bo85zNg055iCWipwb6pFwp"><th data-page-node-id="Zc5uwbQaPRnNaG0f7XxStO"><code data-page-node-id="XhMTypcdVivjKsUJ9R8O0j">--text-tertiary</code></th><td data-page-node-id="whc7Oky1gM0PuXhet5NDAZ"><span class="sw" style="background:#8c8c8c" data-page-node-id="8UBO9VPg3ROAKg3I6POKDQ"></span><code data-page-node-id="TUi9zxsSIcBAjWNjvoEpxQ">#8c8c8c</code></td><td data-page-node-id="VAIBEhHsWXCWhqTC7h1Eof"><span class="sw" style="background:rgba(255, 255, 255, 0.45)" data-page-node-id="OK4WtH29SnTTBXz07trwlN"></span><code data-page-node-id="apenflJypa9mJszTBMQ5xi">rgba(255, 255, 255, 0.45)</code></td><td data-page-node-id="xFsoHvHqJsAjYI41PpC3rS"><span class="sw" style="background:#a8949c" data-page-node-id="ePmG5lk84JOIQwSfzRAIR1"></span><code data-page-node-id="0hs1mG6OI7sbFDbNbrYAMP">#a8949c</code></td></tr>
+<tr class="" data-page-node-id="qCwB4rGGJB6vXMzebzZxDw"><th data-page-node-id="ULz1irwEIZilIAwIH3PHu4"><code data-page-node-id="FYAZH5N7wVvbgqaDKQGeyB">--text-disabled</code></th><td data-page-node-id="WxKFuC2HrmMTY9RoEjqNTy"><span class="sw" style="background:#bfbfbf" data-page-node-id="qzTRCj9ZcCC0rZgT0bjH4K"></span><code data-page-node-id="GNqqhcBdhlbehIme1FBiPx">#bfbfbf</code></td><td data-page-node-id="vlF5HsR02GzOfiaaAXFHAT"><span class="sw" style="background:rgba(255, 255, 255, 0.25)" data-page-node-id="riGbCF9KqCC4rOppeoXFaG"></span><code data-page-node-id="p8H4Ry5IUrXbTC0arUF9k0">rgba(255, 255, 255, 0.25)</code></td><td data-page-node-id="JqLP78AlkqiqnR5cRzwTSX"><span class="sw" style="background:#cfc0c6" data-page-node-id="4e5uMg2M8BZ1h50R9AU5ga"></span><code data-page-node-id="5doAQ07SiL672JsSmq6sMV">#cfc0c6</code></td></tr></tbody>
+<tbody data-page-node-id="dCVk7C5FCB9QKO2pTvZ5mW"><tr class="grp" data-page-node-id="1VTsw0B9UmlJCJPwDlyRgT"><td colspan="4" data-page-node-id="co2lOeZ9LagKZsk0heCmBY">主色 / 强调</td></tr>
+<tr class="" data-page-node-id="qM76KWQksASxWBKGZeUGLW"><th data-page-node-id="QHCFwPpxRjucOnaQy5UG7l"><code data-page-node-id="rRHJR2NM8Bn1OeYkYhQa3U">--primary</code></th><td data-page-node-id="pYY4ZzIykQezBW0ZU3L57h"><span class="sw" style="background:#1890ff" data-page-node-id="nsnOuLQqArEQu3EORF3ilR"></span><code data-page-node-id="oYF8eZSIGiAGcpszURgmZb">#1890ff</code></td><td data-page-node-id="IOPYs5EyDo6KD8ntp7l1r4"><span class="sw" style="background:#177ddc" data-page-node-id="5aaKpao0YhHh9qjHS7T0A5"></span><code data-page-node-id="rrM43PYxCFtcFy5j8QydyS">#177ddc</code></td><td data-page-node-id="KWKY7ILIELKeetmNApGkbd"><span class="sw" style="background:#c33a76" data-page-node-id="vPzDFFHmGLppSR2iVFq9E6"></span><code data-page-node-id="OtBWrIUH5trhC8BmrHAwFK">#c33a76</code></td></tr>
+<tr class="" data-page-node-id="VNKyTdH81A7lD1OESWHb4Q"><th data-page-node-id="Buo3qWDUMFPpo1vJEXGyP3"><code data-page-node-id="07MGf1mpMtDTYRHe8VQ3U1">--primary-hover</code></th><td data-page-node-id="zxuFNWQMEFqVGNvdVUU7xU"><span class="sw" style="background:#40a9ff" data-page-node-id="rF2vGgAFgK5K3dS3ptsiGN"></span><code data-page-node-id="LmYGDsrXFHeo215wrZ4XK6">#40a9ff</code></td><td data-page-node-id="TJhdzjkLi8HvpUmByRwX8M"><span class="sw" style="background:#3d9be6" data-page-node-id="DEGDQGZEPBikpOEwqi6uE6"></span><code data-page-node-id="iiIa6Y7ue7XejOkN0Pa0wH">#3d9be6</code></td><td data-page-node-id="PkVTDMjs1vzRvGCanDnGNF"><span class="sw" style="background:#d85f91" data-page-node-id="TQHd1ltu1DDSRmFyr3iDDq"></span><code data-page-node-id="YRpmp82t7JviqWaNqtlivH">#d85f91</code></td></tr>
+<tr class="" data-page-node-id="NSTpRmL90zV7w6Pl0mFdoI"><th data-page-node-id="M9oMhlW8OTLk3FJNCjvYl4"><code data-page-node-id="10btpHaFVU1X0hRCd53Wd0">--primary-strong</code></th><td data-page-node-id="d479ASHnivYYuEgzLaW6X2"><span class="sw" style="background:#0958d9" data-page-node-id="24BxfLW73SxnGwr6Z7rQhb"></span><code data-page-node-id="CpfDYQOHe2LQA5nqlcjc6V">#0958d9</code></td><td data-page-node-id="MmH67RWxWQAmDGlgpdh3pg"><span class="sw" style="background:#3d9be6" data-page-node-id="jzX6VpJpqeerTcV4NWZJ0a"></span><code data-page-node-id="jEbZqSu237TlDuZTGdG2Yp">#3d9be6</code></td><td data-page-node-id="0VvRXa7AJcRDNJYaxSCEl3"><span class="sw" style="background:#0958d9" data-page-node-id="eAJVGMNNKGLabgM6VPfCcg"></span><code data-page-node-id="mW3K4H036VYEPcclJkTLAa">#0958d9</code></td></tr>
+<tr class="" data-page-node-id="fuhUpDFxM8gdFB2VAfgDny"><th data-page-node-id="fsylzpO4iHWzgfkMfuTwqQ"><code data-page-node-id="iMK6zKhQtf0Xwhtklv2vva">--accent-pink</code></th><td data-page-node-id="UcaikGMGP6RaUCxpjoxFhs"><span class="sw" style="background:#f5576c" data-page-node-id="vhXMZCBvKMMKQB3SBuXwqX"></span><code data-page-node-id="EuIvO7L7QWcI14c2LEWjwm">#f5576c</code></td><td data-page-node-id="20i5zwB3DizVDF853kMeAu"><span class="sw" style="background:#ff7a90" data-page-node-id="XLxKdZGhzQaPyjE88xzcBd"></span><code data-page-node-id="tcBB6pFy1uCFN4HyQW7Jdr">#ff7a90</code></td><td data-page-node-id="a6WO9wrgw11zSDaW3i837i"><span class="sw" style="background:#e86a9a" data-page-node-id="llY1LcAMH2uWGw7evCVKix"></span><code data-page-node-id="6BSAcAbxapz7LSVHUUg9wm">#e86a9a</code></td></tr>
+<tr class="" data-page-node-id="ga4rBRzglQIPA2K2qFkit7"><th data-page-node-id="e9ayzZnIb2Cv7JZ99byw9I"><code data-page-node-id="2Bin5RKHVbkdxe8Qkn5TYc">--accent-pink-2</code></th><td data-page-node-id="CxIQag7etR3W0qO4lbe7k0"><span class="sw" style="background:#f093fb" data-page-node-id="fT7ByZMOzd6GapEH3Yab6n"></span><code data-page-node-id="qoSxrYQC2xFJTa6tSCSbel">#f093fb</code></td><td data-page-node-id="tSDcBZYpW0kFRJ57flv4Gv"><span class="sw" style="background:#f093fb" data-page-node-id="wrQmQQf4g70EcKNuR6f8Pf"></span><code data-page-node-id="GvCIyFOSuzG5NHgNYaf2jy">#f093fb</code></td><td data-page-node-id="GteyzG0uohAloK4CBy5f1w"><span class="sw" style="background:#c9a7f0" data-page-node-id="zd4lg75kR3gPqfOQIeM1cl"></span><code data-page-node-id="GY0isDuJCD1zY8cFQdCOAF">#c9a7f0</code></td></tr>
+<tr class="" data-page-node-id="aNre0kKko7J8Ec2J7Zwztn"><th data-page-node-id="7AofhkcIWVlc0pcBA7XHTu"><code data-page-node-id="5DfHPqsC0faU5D0iglmTiM">--success</code></th><td data-page-node-id="KmmxvOplPtZYApGcugX7SN"><span class="sw" style="background:#389e0d" data-page-node-id="aaPnKDh56oIjjeBeCZzHAU"></span><code data-page-node-id="bHRtPZMERmtDpVviloGD81">#389e0d</code></td><td data-page-node-id="5lMBUHq72sNAQsOTP1VLKX"><span class="sw" style="background:#73d13d" data-page-node-id="0J4iEZlT7ClcEtnZuT0skZ"></span><code data-page-node-id="94T3W1agqynTBlzpFh10r3">#73d13d</code></td><td data-page-node-id="NdFssQHEffGA2veFV7rUtm"><span class="sw" style="background:#389e0d" data-page-node-id="ujbdTu8fejnHKT7macPQSH"></span><code data-page-node-id="OtLmjAdZZ1JuUjRZ4fAEPt">#389e0d</code></td></tr>
+<tr class="" data-page-node-id="MpxFtaeFuqd34vKw87r6gO"><th data-page-node-id="teGa7xx4IIQBWh9DPkAvBf"><code data-page-node-id="yHkf27UwnYtZZ9DMQloiBD">--warning</code></th><td data-page-node-id="DHIqHE9jgpk5pw77lkNwTf"><span class="sw" style="background:#ad6800" data-page-node-id="2O2xmNaeRryyAPwEfTsFPM"></span><code data-page-node-id="3Gy9EymCVV0FNRT1WGp86X">#ad6800</code></td><td data-page-node-id="OQ6OWEPV08sMD2H4lVa5Q2"><span class="sw" style="background:#ffc53d" data-page-node-id="ZqsXUv7wMl27D78kqDxSvp"></span><code data-page-node-id="0dVauxwfgI6FBxUBWhCQKv">#ffc53d</code></td><td data-page-node-id="42m3JpZz1BGrgwHTdJIEe1"><span class="sw" style="background:#ad6800" data-page-node-id="hJ3dIFEynLmxjqFBSBVdFz"></span><code data-page-node-id="YB0Y2ZOf16QatI16M0oIKG">#ad6800</code></td></tr>
+<tr class="" data-page-node-id="Exx80sK6H3voCVaRtsE5In"><th data-page-node-id="7n87l8vHEXQQjUYtnm6TpV"><code data-page-node-id="ou3Wj03wADhYMCppMRfup4">--danger</code></th><td data-page-node-id="jWPhfN4JLjCcME0TS2cGT7"><span class="sw" style="background:#ff4d4f" data-page-node-id="7oJMiEEHokQ9uL28b4UXdC"></span><code data-page-node-id="FszvIGh3LY8uJIgl8PO2qo">#ff4d4f</code></td><td data-page-node-id="MoSsXZrOOLhFbSAaaRqFq4"><span class="sw" style="background:#ff7875" data-page-node-id="qylWwhUsD1okFmsegg6Xfg"></span><code data-page-node-id="KbNNB6t9N9FiPYQpT3b5i8">#ff7875</code></td><td data-page-node-id="dlmIx1j7tnIpFLGjLTtfsF"><span class="sw" style="background:#ff4d4f" data-page-node-id="rQY4sQorpCGYwQb0o6ZTxM"></span><code data-page-node-id="HeFVkyrtavycJAYVdBsKyc">#ff4d4f</code></td></tr>
+<tr class="" data-page-node-id="0rGB2YzvJWkTBBG6xBhwIt"><th data-page-node-id="FrHb4F5VEHkATO0Jfgkto8"><code data-page-node-id="nxhegtp19lo2r9FYRiYJ9y">--purple</code></th><td data-page-node-id="cN8igFy88xeKBnoQruMb8R"><span class="sw" style="background:#722ed1" data-page-node-id="qIMSeS7pv9coUDr48ixvAb"></span><code data-page-node-id="FVSv8Ab0ujSrjuRLTDavNH">#722ed1</code></td><td data-page-node-id="VOi0u2PvK029H5oxDDJ9dE"><span class="sw" style="background:#b37feb" data-page-node-id="JCpEgemv3gfabznzScGS8Z"></span><code data-page-node-id="v3kbAmeZMahy7eVJZsO6ip">#b37feb</code></td><td data-page-node-id="fN22iyGrlR0RFUxlg5vx0Y"><span class="sw" style="background:#722ed1" data-page-node-id="qY7mG61xsFl78RtWw7E781"></span><code data-page-node-id="3yxeB68kPmdmY5DbR25zvA">#722ed1</code></td></tr>
+<tr class="" data-page-node-id="d9QVCWRhTmnhg6d89ySVZN"><th data-page-node-id="gthKFtKCMfLV5ZMadw3jHV"><code data-page-node-id="vRkZMLDy7Ixq8kUeE6KbMS">--cyan</code></th><td data-page-node-id="nk6SNP9qq1iyMarRvpnPfh"><span class="sw" style="background:#08979c" data-page-node-id="YYpSJo0UBzLJpnZLThARYj"></span><code data-page-node-id="vfqzhyA1GpSudGNmlxWkqC">#08979c</code></td><td data-page-node-id="srEaInF2IdJccGizATATdo"><span class="sw" style="background:#5cdbd3" data-page-node-id="TkERE7Zu5J76PRcP9gsmtl"></span><code data-page-node-id="NVhW6CH6ADROvDzIkcZjVJ">#5cdbd3</code></td><td data-page-node-id="vEuVwstXFT4MXl2cdeDUEB"><span class="sw" style="background:#08979c" data-page-node-id="vdxT22Ekrgp9HmBz0wmzw8"></span><code data-page-node-id="R1rRJFBzTTORdAv4l5tV3L">#08979c</code></td></tr>
+<tr class="" data-page-node-id="Pxy63Dgp5IgVrG5MTRGhpi"><th data-page-node-id="uh1uusmrHKN6c92jntl8cI"><code data-page-node-id="wXED3fYSRnb37a6nPSaSZI">--gold</code></th><td data-page-node-id="Mxs2hk7dk0kKeqTm6bZz8B"><span class="sw" style="background:#d48806" data-page-node-id="CSyEgQTzKQWhoW1J3Vr2wC"></span><code data-page-node-id="IEbWDpnMDzA6MQwOtNDCPi">#d48806</code></td><td data-page-node-id="PWbGssE2LR8qUuQ4ugV32A"><span class="sw" style="background:#ffc53d" data-page-node-id="FTGgSvgmRFHyAugb3HRHZq"></span><code data-page-node-id="5ikvoFd30ybs91l9jjjiwI">#ffc53d</code></td><td data-page-node-id="xd6Ic1bwGGezjuli06i3tT"><span class="sw" style="background:#d48806" data-page-node-id="ZNu9eahEBSxKERvIeDEj1k"></span><code data-page-node-id="9UWqu2IkPcASFfHq45gdIu">#d48806</code></td></tr>
+<tr class="" data-page-node-id="XXsk6P33fj5uEH6kD4rBvC"><th data-page-node-id="TnnxeMxQ8UwqrKPlZGYJC1"><code data-page-node-id="ZaqPTpFWvvVrcYzjKjjEUr">--geekblue</code></th><td data-page-node-id="UrIRkRqaAFRuCfSSsLPBwT"><span class="sw" style="background:#1d39c4" data-page-node-id="xTyiSm3Dw0gBEJvhsznGIo"></span><code data-page-node-id="oAX6mW0xhuaFomW5L403cS">#1d39c4</code></td><td data-page-node-id="mFkqGZC2UVCF7crAKxhuAw"><span class="sw" style="background:#85a5ff" data-page-node-id="2xRWxZMZWJ3BEwoihMhcrw"></span><code data-page-node-id="lm1M8lw3OkRQgHvQHEViEp">#85a5ff</code></td><td data-page-node-id="2yRNJAo0s9FitA4Nl6KwsJ"><span class="sw" style="background:#1d39c4" data-page-node-id="WDGowfjtUfNEZJZHIiPSSB"></span><code data-page-node-id="kT4wjFKchMW5RRbD9RxLxs">#1d39c4</code></td></tr></tbody>
+<tbody data-page-node-id="umrGzVIlfTipkmzHoPSyEQ"><tr class="grp" data-page-node-id="nEmFZvjIsKDh2IfrOxasr5"><td colspan="4" data-page-node-id="sG7uv1kBM6R5ATdm3kO6LQ">状态底 / 边框</td></tr>
+<tr class="" data-page-node-id="o0dC92hAxA6YYw3EZupGl6"><th data-page-node-id="KBS3D8t0A1zWCTE9xBH8XY"><code data-page-node-id="zgwigqHm51McuQ4QISQRlP">--success-bg</code></th><td data-page-node-id="XmTCstnJCTlOXnjaUOroXL"><span class="sw" style="background:#f6ffed" data-page-node-id="7YS6736vyZRmFTij2JtDhn"></span><code data-page-node-id="XQAySnayCHBb9I0Rm3GdpM">#f6ffed</code></td><td data-page-node-id="dIr146S06mlxCMHFf7VaDB"><span class="sw" style="background:rgba(82, 196, 26, 0.12)" data-page-node-id="yMM6hLsrxwPHQH6u8MRLzB"></span><code data-page-node-id="FiWzlCLw9iTfsUqyD7oLDj">rgba(82, 196, 26, 0.12)</code></td><td data-page-node-id="AQll1WWO82yFHLwClJCy7E"><span class="sw" style="background:#eefaf1" data-page-node-id="lPirycb8XS1wgrv4ZhB5A2"></span><code data-page-node-id="1g3aKrGhR6FSlK5HhceIF5">#eefaf1</code></td></tr>
+<tr class="" data-page-node-id="qbO2DgtJkNpEaZyXMJCNjo"><th data-page-node-id="QzqSkgqKD8qhnErcCd4kVo"><code data-page-node-id="0YEp0AQJR0nyaoceATSeqy">--success-border</code></th><td data-page-node-id="8iwHnYAyWDh8bHOMPZibLI"><span class="sw" style="background:#b7eb8f" data-page-node-id="iWw2FDFLoEPOPLaZpnnrUM"></span><code data-page-node-id="6lCFRjsSMNdUVGYGX0g8x5">#b7eb8f</code></td><td data-page-node-id="HTh2xRfCIqv4FPOy9kUVCr"><span class="sw" style="background:rgba(82, 196, 26, 0.4)" data-page-node-id="3GmtwYNjIAayLu0fkLOuE7"></span><code data-page-node-id="IA8IjbRsTSt1mSu5rdjSkM">rgba(82, 196, 26, 0.4)</code></td><td data-page-node-id="QBWHEuEptD2QJHdNUd4p22"><span class="sw" style="background:#bfe6c8" data-page-node-id="VUHscWdfEBXxu5kpZdbgVG"></span><code data-page-node-id="Hm7wdEqAozlwDJ4CZgHCMm">#bfe6c8</code></td></tr>
+<tr class="" data-page-node-id="moUVs6eKq9PY4Cz7hm9Uxm"><th data-page-node-id="cqqzEUYuEn9uXHq2eyHHqB"><code data-page-node-id="7313Z9uCpmYuCjvS1qq3H7">--info-bg</code></th><td data-page-node-id="mEzHImpxNS0Z0i2KoSS6YD"><span class="sw" style="background:#e6f7ff" data-page-node-id="8jjWVl8ENf5Xe41H8FbHUX"></span><code data-page-node-id="B8jiZrmvEwpEkGNeGqSUCT">#e6f7ff</code></td><td data-page-node-id="5kAMgEdboqlYMPbnYanprF"><span class="sw" style="background:rgba(24, 144, 255, 0.12)" data-page-node-id="8apqL016H21vMgY70PuzvK"></span><code data-page-node-id="eEAcBVGUdH73AWpCxLAjmF">rgba(24, 144, 255, 0.12)</code></td><td data-page-node-id="Wsav6tNY4vjuqLPxC00dh6"><span class="sw" style="background:#eef3fd" data-page-node-id="pBS5z13CfkOnKIxubjlGS7"></span><code data-page-node-id="Dxfi9DZWisvuw5cxVnPJOP">#eef3fd</code></td></tr>
+<tr class="" data-page-node-id="KqOLVtdFKGGn6qpqQZUYSK"><th data-page-node-id="yo3cdjVqYN61Zp5ahyWiGx"><code data-page-node-id="KGH8BE9UDhqFdnSjHXtFBD">--info-border</code></th><td data-page-node-id="BzSHLd9inuTiW9rODpZmSV"><span class="sw" style="background:#91d5ff" data-page-node-id="IveIaaYuIIYD1lF4i8rs77"></span><code data-page-node-id="vgGTFCwcqSxqMLKnr4j9h3">#91d5ff</code></td><td data-page-node-id="9qUOlx4m54KRiHqEDJNNMI"><span class="sw" style="background:rgba(24, 144, 255, 0.4)" data-page-node-id="B2OcWXG74IhT28Q5vKlmGD"></span><code data-page-node-id="wTxmjre0amLDl1m8hUSFES">rgba(24, 144, 255, 0.4)</code></td><td data-page-node-id="p2UoMxFnkWatynOsGGfntk"><span class="sw" style="background:#c9d4f5" data-page-node-id="uN4D0AiQNTFpJPXxeLaHAa"></span><code data-page-node-id="fDu1dR1EccE8Z41FGzXW2B">#c9d4f5</code></td></tr>
+<tr class="" data-page-node-id="5iiV3cAtqneIWuFfymYIFz"><th data-page-node-id="mSyiEDHdKbJYRzAhqjP61f"><code data-page-node-id="3kUhWqBcJWCSpTy4P50b26">--warning-bg</code></th><td data-page-node-id="LmehDI007Uk9IppekZEpDn"><span class="sw" style="background:#fffbe6" data-page-node-id="m7sLkYJSI2UlDDFVsXn2x5"></span><code data-page-node-id="KHb2lMfCIJ4vjgFXEVJKMv">#fffbe6</code></td><td data-page-node-id="oeQyV7AHyE8i8n8wuYS3AV"><span class="sw" style="background:rgba(250, 173, 20, 0.12)" data-page-node-id="MFPi45Vyy1Blgh0PpaSdNT"></span><code data-page-node-id="7zF1dP49ANhLWjgYOC5Oa9">rgba(250, 173, 20, 0.12)</code></td><td data-page-node-id="0wcO5SS114tAEi1Qij0lNN"><span class="sw" style="background:#fff9ea" data-page-node-id="iWzNjG99N8Lw5OrmK5fnhJ"></span><code data-page-node-id="Ts7BB9OCXw0my5AY3Q5BOh">#fff9ea</code></td></tr>
+<tr class="" data-page-node-id="VUDPC9KsBXtC0fLWFQqu1v"><th data-page-node-id="lfnKuh6yoflI7TPzBh2eLl"><code data-page-node-id="QgpJlsYwYH0TDCIj25SdVi">--warning-border</code></th><td data-page-node-id="3f9aACCsbgtSfDxxpgF281"><span class="sw" style="background:#ffe58f" data-page-node-id="2BzR1fX9BaV0qUkITRRbSd"></span><code data-page-node-id="3bd6acJH3f33VEclvyrcz4">#ffe58f</code></td><td data-page-node-id="up2ivYA7k1DpLnN6cZHaLD"><span class="sw" style="background:rgba(250, 173, 20, 0.4)" data-page-node-id="yamnQZAu0MgUWGFFOkhSmx"></span><code data-page-node-id="uEf8PJ7x3wHV4KYqDNUb1c">rgba(250, 173, 20, 0.4)</code></td><td data-page-node-id="MzqBNa3Hzmk97fO0qJvxSQ"><span class="sw" style="background:#ffe3a8" data-page-node-id="hP2icavwc5lnz7xCqcLh55"></span><code data-page-node-id="LzaDaK2fo6S4PbQ0DWnQq7">#ffe3a8</code></td></tr>
+<tr class="" data-page-node-id="yLbhVkvizhP3cgvN7rXAcw"><th data-page-node-id="g6pAZVoR2s9Nqa445csDib"><code data-page-node-id="baMvnWadzjRbxf61Pe9TOx">--danger-bg</code></th><td data-page-node-id="SMxkUR8mgYQ0tWyclBtsRk"><span class="sw" style="background:#fff1f0" data-page-node-id="tkV1X0QPJFzFGgADQrMbys"></span><code data-page-node-id="Eu1oVliu3v8pnqKcJEIfft">#fff1f0</code></td><td data-page-node-id="6dUNYkC08mzMCe1aEqBeQ6"><span class="sw" style="background:rgba(255, 77, 79, 0.12)" data-page-node-id="n4wku5Wdtu2fEQGANAft4x"></span><code data-page-node-id="T4Sethxja4p6NddCUq9bw1">rgba(255, 77, 79, 0.12)</code></td><td data-page-node-id="kNyJmZdemofpF1Tshgb6yz"><span class="sw" style="background:#fdeef2" data-page-node-id="qBREJvCyY1JLHndEer3Rwx"></span><code data-page-node-id="nffWNKtW9qHwmBClDpXegT">#fdeef2</code></td></tr>
+<tr class="" data-page-node-id="N4YyuBzmVWD4vaKdYKrWJo"><th data-page-node-id="GfGbG7gjsGzAOrgSKOiXnw"><code data-page-node-id="hvu7FCSZLfiJfY5tabeeOE">--danger-border</code></th><td data-page-node-id="r4qZM7GgiXlYMC4UiCFNrB"><span class="sw" style="background:#ffccc7" data-page-node-id="QeS3MsqFojcxFSAynfkygx"></span><code data-page-node-id="Y3TUMMEOKoBQCyap6koEXW">#ffccc7</code></td><td data-page-node-id="9MYn1Qk9eflfL9vHS45KpK"><span class="sw" style="background:rgba(255, 77, 79, 0.4)" data-page-node-id="JRMkrlwmeFuPMhb2r7ZjTs"></span><code data-page-node-id="ClT5KD1U7YPiMpz8dn753q">rgba(255, 77, 79, 0.4)</code></td><td data-page-node-id="3djxl3iCKvI51DBx3A1JdI"><span class="sw" style="background:#f7c7d4" data-page-node-id="9rIUkZkC9EOZFvufG38cHu"></span><code data-page-node-id="Rhd15G7UvQXRSOuN5zYIuN">#f7c7d4</code></td></tr>
+<tr class="" data-page-node-id="TENzPlJlDOlN5sIf55cR19"><th data-page-node-id="ls5RokyUVrskRL7jr1H76o"><code data-page-node-id="eF6cPytbqpT8lsycpRAdSM">--orange-bg</code></th><td data-page-node-id="YxNMB8DFf3dEXw5gps561M"><span class="sw" style="background:#fff7e6" data-page-node-id="81DOLRVJylnbopACxHjPMb"></span><code data-page-node-id="5kllEB5zGkuIbceo3Ztn7f">#fff7e6</code></td><td data-page-node-id="L9It65BZIJDAkrHtL9MDDY"><span class="sw" style="background:rgba(250, 173, 20, 0.16)" data-page-node-id="M96EPtgSoROAUv4HBCvGMN"></span><code data-page-node-id="FvVvKLpNZJelRhkfxxEnpW">rgba(250, 173, 20, 0.16)</code></td><td data-page-node-id="uharzqnG8347kRq7iAgsPA"><span class="sw" style="background:#fff6ee" data-page-node-id="xSUovOwQA8eprqYDuQUd2z"></span><code data-page-node-id="FR5b4CiGGd59MJTfZgx8fN">#fff6ee</code></td></tr>
+<tr class="" data-page-node-id="ZAknbGRtABFQzeZAAW49zs"><th data-page-node-id="1ukI3dGPPcAeREuvgFp8YB"><code data-page-node-id="h4GHk4nagLmbMfLseP0hMc">--orange-border</code></th><td data-page-node-id="iguKhLgDVl870oK42HAPew"><span class="sw" style="background:#ffd591" data-page-node-id="b3uNoI1C3w9XG3SQwUl72Q"></span><code data-page-node-id="LSGLf8bimt2uCfri28XYY7">#ffd591</code></td><td data-page-node-id="Lp7O3e6htOzpHSxjlRhDZq"><span class="sw" style="background:rgba(250, 173, 20, 0.4)" data-page-node-id="s1B4Mkh55sUOYgjEgURzxX"></span><code data-page-node-id="WHLUCJANYjRFdI5iczrjmW">rgba(250, 173, 20, 0.4)</code></td><td data-page-node-id="fWeNg5ghmVGXn5TfmJxeFr"><span class="sw" style="background:#ffd2ab" data-page-node-id="QrX4V74TuDphHnvZrjwchv"></span><code data-page-node-id="Jpk9sYXBcgb7fY8JmoIV5A">#ffd2ab</code></td></tr>
+<tr class="" data-page-node-id="hptXG4dOPPopagDVKGqE60"><th data-page-node-id="9Tkf6vnpEmyUI0oJqECP5v"><code data-page-node-id="qVmfDDPFoC6SnKigJyzraX">--purple-bg</code></th><td data-page-node-id="srs7bl3XE9k9jmVzir0AWn"><span class="sw" style="background:#f9f0ff" data-page-node-id="rGcO0uqNZLpDfaOYKnZJbF"></span><code data-page-node-id="sHPwllUelgyxCMB6Vn5jfn">#f9f0ff</code></td><td data-page-node-id="kgpuSA3nPqlKMytNrphmG6"><span class="sw" style="background:rgba(114, 46, 209, 0.12)" data-page-node-id="PnUEYgBSXyu7QNci8UjfIE"></span><code data-page-node-id="oSnoMnBa6fDJbZj1A3fXMd">rgba(114, 46, 209, 0.12)</code></td><td data-page-node-id="CAfVXBb0zF09MdREHba3ZF"><span class="sw" style="background:#f5eefd" data-page-node-id="5uQ4wC33I6t7ZZTaUZlTME"></span><code data-page-node-id="BAgFdVxXfzLM3qOePCiCBI">#f5eefd</code></td></tr>
+<tr class="" data-page-node-id="LoyQqbIcCtYkESFo1kCOCK"><th data-page-node-id="lgbLsC7ylNJ5sAEf02dcid"><code data-page-node-id="zWVGpHoSj1zbAGksPfU1Hg">--purple-border</code></th><td data-page-node-id="4VY1HHrJBB90edFfmi1dkf"><span class="sw" style="background:#efdbff" data-page-node-id="GX8PXwIUaLrIjSd0JZ0BjL"></span><code data-page-node-id="35JuLNo8OqAwFLyG39RCta">#efdbff</code></td><td data-page-node-id="vuLIHQQ6UuKkAwseTxR6qs"><span class="sw" style="background:rgba(114, 46, 209, 0.4)" data-page-node-id="Vr6sLnVPww0nsZC81YSEoM"></span><code data-page-node-id="GOI2nQA4hEovLJN96Ufmc1">rgba(114, 46, 209, 0.4)</code></td><td data-page-node-id="nIGZa0ThqB2bFiJ9u5ppXu"><span class="sw" style="background:#dcc7f5" data-page-node-id="MSIeeEYHPQF8iD8DA71sqA"></span><code data-page-node-id="DozwUa6LOjxRp15WRZ2KB3">#dcc7f5</code></td></tr>
+<tr class="" data-page-node-id="OjmBPnZmwfZA2vjDQFtdJi"><th data-page-node-id="Xeg2SZeuQM4ibv2fPrRMXT"><code data-page-node-id="AajM1EfGK2Y8cvS0yP4q1s">--cyan-bg</code></th><td data-page-node-id="MD9tbc9YZciXbozj22klIZ"><span class="sw" style="background:#e6fffb" data-page-node-id="JREYK6rZGObO7VEqMqHpNh"></span><code data-page-node-id="A6Io8MS7RZBxGAsUSb1ZAM">#e6fffb</code></td><td data-page-node-id="LLcXJ02k9mcYCZDHquH0fS"><span class="sw" style="background:rgba(19, 194, 194, 0.12)" data-page-node-id="BoyX0wFcqPQ7iHWwGMdoy4"></span><code data-page-node-id="9ToxSd7buiEt9J1QFPGlj2">rgba(19, 194, 194, 0.12)</code></td><td data-page-node-id="h9918v9HYrbWqpKblYeSoG"><span class="sw" style="background:#eafaf8" data-page-node-id="LGiUBe8Tnvyr2eWX0m2ro2"></span><code data-page-node-id="xp6gQv4rYNC9CoNicwcDmt">#eafaf8</code></td></tr>
+<tr class="" data-page-node-id="Lu1nIQkuZrBSiwJjKE3pKH"><th data-page-node-id="9mYjxgImEDAKMIHc6IosPJ"><code data-page-node-id="it0LBpkk1N8H198oxwnPy5">--cyan-border</code></th><td data-page-node-id="AQDgNhzH9NgWSwkra4hTsk"><span class="sw" style="background:#87e8de" data-page-node-id="3jpR9DTCOVh6PGjljMPScH"></span><code data-page-node-id="Eo82KCiOE77ZAWRTJ27JlD">#87e8de</code></td><td data-page-node-id="6bL0KMPJijoZnUI8ZzaQH7"><span class="sw" style="background:rgba(19, 194, 194, 0.4)" data-page-node-id="VugdknlhL8lYgJTmJeLmBj"></span><code data-page-node-id="6TO41vJwKeePYwnaOUC6aI">rgba(19, 194, 194, 0.4)</code></td><td data-page-node-id="gsDTFZhJfouENHTsjukFVp"><span class="sw" style="background:#b3e4de" data-page-node-id="nZe4QGYIUfv9z7kuR33OHw"></span><code data-page-node-id="LqMEOSg4ht39zfzJjkkNmO">#b3e4de</code></td></tr>
+<tr class="" data-page-node-id="F0GTpJIeqc6gKET8v4nLcv"><th data-page-node-id="QpdsphhAg2ACKPgUEsj3wc"><code data-page-node-id="Cz886L1mcUidoioAzuZ9Lb">--geekblue-bg</code></th><td data-page-node-id="IpuewdIkAuIKLrUSqH3ksU"><span class="sw" style="background:#f0f5ff" data-page-node-id="x5CO4TPQP4IVmG4UhSleyr"></span><code data-page-node-id="Y4xUqxBFklaoLy8D6f0biz">#f0f5ff</code></td><td data-page-node-id="oKoU4a8hOZDU3tO5IkfGV2"><span class="sw" style="background:rgba(29, 57, 196, 0.12)" data-page-node-id="WuZS3kecjQxNSrvVuUjP10"></span><code data-page-node-id="lcjGEmiUIUAqsLgH8Tf2kD">rgba(29, 57, 196, 0.12)</code></td><td data-page-node-id="M1El1Jl8tSmF4dtj0bDZB9"><span class="sw" style="background:#eff0fd" data-page-node-id="HoldwSXNsSKM2P9XFS8ukI"></span><code data-page-node-id="HgkEUXlOQoZdQ7gh39Cpsg">#eff0fd</code></td></tr>
+<tr class="" data-page-node-id="yhyGpYcx2if5HjDH1wAsZk"><th data-page-node-id="dJtDiqzBDbf163pLEA2ZA6"><code data-page-node-id="bp1hjtn3rKJLx3DwXhGXBY">--geekblue-border</code></th><td data-page-node-id="ZWN54KnONVhZUzgZGGoGri"><span class="sw" style="background:#adc6ff" data-page-node-id="lbYe2Hc8G0uGMQSoBaLNMr"></span><code data-page-node-id="cq1IYAlUURWbVvZsZybUqV">#adc6ff</code></td><td data-page-node-id="62F9yhh5L8hBXJXDY65tFo"><span class="sw" style="background:rgba(29, 57, 196, 0.4)" data-page-node-id="V623Ha1CfobMCYisS64M9i"></span><code data-page-node-id="IttD71HgBZZxwmBtNBBUKZ">rgba(29, 57, 196, 0.4)</code></td><td data-page-node-id="AfvpdCFcwfMN6MX7rYh2KL"><span class="sw" style="background:#c6cbf0" data-page-node-id="U2q7XlBXhCv5qy0KvzZPmF"></span><code data-page-node-id="R48XyaNspL7DWA7glAcmpB">#c6cbf0</code></td></tr></tbody>
+<tbody data-page-node-id="M5aZ8rqVjaJQJM4rvZRQ5G"><tr class="grp" data-page-node-id="9b5ioe9G4Bt5usT9uqXpEo"><td colspan="4" data-page-node-id="APcEnYbQAGkjOForwkAslf">图表 8 色</td></tr>
+<tr class="" data-page-node-id="wa23elCw2G6wdLHTBVRsMR"><th data-page-node-id="Kk1x5Es6XDZIzIkD5ivSNg"><code data-page-node-id="kG2UfxsyDSOHicH28kY13b">--chart-1</code></th><td data-page-node-id="MuF8is8uduAXqdv8YP2cpo"><span class="sw" style="background:#5b8ff9" data-page-node-id="SEt1pootJHwjTBZmXME9EV"></span><code data-page-node-id="2U75BWfObtXhkJJq4dvyFO">#5b8ff9</code></td><td data-page-node-id="908nhyD4184jQrqJtl1M0K"><span class="sw" style="background:#7db3ff" data-page-node-id="MFqbTxHuVPZu8oHEnvDkbw"></span><code data-page-node-id="IY4uu4vy5Ijr8wMSvkY7tZ">#7db3ff</code></td><td data-page-node-id="k5CDy5XKQtDA1txAGORo4R"><span class="sw" style="background:#7ba7f7" data-page-node-id="gNKCN6F9VPODULypprbqPq"></span><code data-page-node-id="QfPx8rK30LE6uRGAZVd1qs">#7ba7f7</code></td></tr>
+<tr class="" data-page-node-id="qsldJsm1tU7vsMAKHVVBhl"><th data-page-node-id="od8MRWz6th8GAvH8ZsSXCD"><code data-page-node-id="gJ0uqwBJ89JH4FdW5d8GDS">--chart-2</code></th><td data-page-node-id="er6GbjUCZj438ANtfXjAZd"><span class="sw" style="background:#5ad8a6" data-page-node-id="NtHgEvQGv7Y9t5lV69xpoq"></span><code data-page-node-id="5dSw9PY2KEBEmQyqstlbeg">#5ad8a6</code></td><td data-page-node-id="TnwlfdXjRdmGvNHuzmjNEd"><span class="sw" style="background:#7ee0c0" data-page-node-id="rsS0G3SqmN0x4xWAYR96VF"></span><code data-page-node-id="V3TqDPXbIwKhBHwoBmy0mR">#7ee0c0</code></td><td data-page-node-id="KpQUirpZURrLE0MdDnNo6x"><span class="sw" style="background:#7ed6a5" data-page-node-id="su2sTymxtu3Ib2cjnzBEtW"></span><code data-page-node-id="IkMP0G6XOV0ylqoQge5mzs">#7ed6a5</code></td></tr>
+<tr class="" data-page-node-id="4g3a7Ef8P5QRDvvr2W8Sr4"><th data-page-node-id="mfjcYthwvIbkmnFRR4iFCg"><code data-page-node-id="UTcX31Q1Qn6NwlFB7o7amT">--chart-3</code></th><td data-page-node-id="pYaGcGSuV20j3Uys9ktVgr"><span class="sw" style="background:#f6bd16" data-page-node-id="20qiUBfY4E2ecTtPGo0qNt"></span><code data-page-node-id="HagHBZJnicNi9eAAjhi2Nu">#f6bd16</code></td><td data-page-node-id="iy2L7rGxuk3Hp85GSscKzT"><span class="sw" style="background:#ffd666" data-page-node-id="zl9bFk7ADuaxzwJaM04GW5"></span><code data-page-node-id="KAMWKgpAW5s3xr5Vqqy6cY">#ffd666</code></td><td data-page-node-id="yoBkq7whzidWvxTs8RXZPA"><span class="sw" style="background:#f5c95c" data-page-node-id="kzIjmEeA2IXJZLrZbPxS28"></span><code data-page-node-id="CnTf0Q04fu8aEnTB0Tpn9C">#f5c95c</code></td></tr>
+<tr class="" data-page-node-id="73gxvJEJz7dwQz1J5OXG5J"><th data-page-node-id="2iAF6MpeIEHVhscbwYaBoq"><code data-page-node-id="sB5J8qdzYHiFZrrZCZLkGv">--chart-4</code></th><td data-page-node-id="4QS5YKsK56GIbePQBbcq9M"><span class="sw" style="background:#e8684a" data-page-node-id="ShRG4qWJ8qVqGnyD00caQP"></span><code data-page-node-id="WwQNLe8TWjFh6FC0SdFtoU">#e8684a</code></td><td data-page-node-id="D4WB3inOdEbqOrntzv0dOp"><span class="sw" style="background:#ff9d7a" data-page-node-id="OWOoUYRpxqiNuM6G5fCHbt"></span><code data-page-node-id="MqsDQVmRSZwhnDMyu5f00L">#ff9d7a</code></td><td data-page-node-id="nGu50hESZC8PSerARYhJpk"><span class="sw" style="background:#f79a86" data-page-node-id="aII6kfGGAs8IE2roV2TiRz"></span><code data-page-node-id="FmtDaibN5nRyR7TXsP2NGY">#f79a86</code></td></tr>
+<tr class="" data-page-node-id="ALugQlpxnSo1wAIDHeLCs8"><th data-page-node-id="8kFHk7ATE2j0HAZNF8GW7N"><code data-page-node-id="p74WFW6CZc3BdJTXcyUc45">--chart-5</code></th><td data-page-node-id="es24xElvH4YRdK7QVYUQa3"><span class="sw" style="background:#9270ca" data-page-node-id="XwkK6CzOW4OeNFJgszmONN"></span><code data-page-node-id="XYa0Ws9ZUyy2fJvi8aVtni">#9270ca</code></td><td data-page-node-id="vQfGVxOXsaVKvWYzdCYZYC"><span class="sw" style="background:#b79bf0" data-page-node-id="D4SF605R4IASx6EhBFX1G7"></span><code data-page-node-id="jK682CGLOK8NVaGWDhA4xZ">#b79bf0</code></td><td data-page-node-id="Dn6dUCnxnKM6h6dJ6IGTa6"><span class="sw" style="background:#a78bda" data-page-node-id="8qwvxrJLPoVofitgMBnOSJ"></span><code data-page-node-id="DnjWmaZRDOMNjIsSxMGWnS">#a78bda</code></td></tr>
+<tr class="" data-page-node-id="IPdlZSvcFjmwOL3DRkIcPZ"><th data-page-node-id="JJKbADFxtDEqz5Ovzlz1F9"><code data-page-node-id="GAlbQRcPz6FLWtYthFyo5D">--chart-6</code></th><td data-page-node-id="XT2lWlAaD8lieTL8nZoh6Y"><span class="sw" style="background:#269a99" data-page-node-id="Y4MSF6qh8M3Bznt8Xr7UpM"></span><code data-page-node-id="6Lfepz0FnzLQPSv2Gcvln7">#269a99</code></td><td data-page-node-id="g32MBbAipcEslMKz7eBuQo"><span class="sw" style="background:#5cdbd3" data-page-node-id="lv0Ai8CCc3tnuNkEu8M0bB"></span><code data-page-node-id="2z78Ua3leRXFND0TGZMvS4">#5cdbd3</code></td><td data-page-node-id="hS0Zkpd3y3ZubwwYqCxyJF"><span class="sw" style="background:#6cc5c6" data-page-node-id="qGxH8Gfj5uaNkEmTWqb0fQ"></span><code data-page-node-id="MivIjlL7SRTyMNvhXlcuIs">#6cc5c6</code></td></tr>
+<tr class="" data-page-node-id="hXmWDVxy3Ng3npxBZKAQdi"><th data-page-node-id="IwineeSvvadKLO7jdAhcH3"><code data-page-node-id="5RHAxXHD2oNVGpI7bYtZ9w">--chart-7</code></th><td data-page-node-id="Va7g5uE2zzd5RYpcvqgliG"><span class="sw" style="background:#eb2f96" data-page-node-id="KSlE9M3ykLFdwIDc2hYLIi"></span><code data-page-node-id="23VmNweQIWMAYLeeQPtm2F">#eb2f96</code></td><td data-page-node-id="0tXb9EyzPGV6Gpi0JuRPWd"><span class="sw" style="background:#ff85c0" data-page-node-id="5RSxb3oqRYhLz2DZG8txYo"></span><code data-page-node-id="CRWsL9FE7tRYHsXwUIpyH3">#ff85c0</code></td><td data-page-node-id="6GyVhDBMecJs67HVEJs2AU"><span class="sw" style="background:#ef8cba" data-page-node-id="jUmCQuoSCB4HEJAqg6GaSb"></span><code data-page-node-id="ynKqNl2pPrKPQ25m0AZGFq">#ef8cba</code></td></tr>
+<tr class="" data-page-node-id="BkRUmtYGLyW3lA0oK5T9bu"><th data-page-node-id="rzVAgyxs9ixebPJcY5CpU3"><code data-page-node-id="TczwSfau4AVonbdTqrV3UA">--chart-8</code></th><td data-page-node-id="pzuKiNKDTGmRCX6LJ7WTa6"><span class="sw" style="background:#fa8c16" data-page-node-id="rQ0FG0I8wLxOoWSgelyV7M"></span><code data-page-node-id="zOHqlTEkNhBvthPYCEgaYN">#fa8c16</code></td><td data-page-node-id="vkRUsyhArHDeMRlX7teaP6"><span class="sw" style="background:#ffb066" data-page-node-id="ANuHZJOLxFPGZW63zz2Yqm"></span><code data-page-node-id="yOBxD7SFRgnpYmhVjQ9Bgx">#ffb066</code></td><td data-page-node-id="bNq89svcc9uJFI83i1ktYd"><span class="sw" style="background:#f7b26a" data-page-node-id="zjH2ZBq0IZWeJWLUTwAP1T"></span><code data-page-node-id="vANzQ17CiiKTX0FlyQTFqo">#f7b26a</code></td></tr></tbody>
+<tbody data-page-node-id="7KdtNI9bB7ei9KUwgrEHcP"><tr class="grp" data-page-node-id="pEnZFbHEnF2xF2S9NlM7t3"><td colspan="4" data-page-node-id="cIGVCrEiNtle0rUM95hBe7">排名 / 奖牌</td></tr>
+<tr class="" data-page-node-id="KT71N6Yr9If7A0QdXVlkDa"><th data-page-node-id="S5KbSBd8qOPsNGs2XJCG6m"><code data-page-node-id="UbuUogdptF5Z8Hh8ci5Gw7">--rank-1</code></th><td data-page-node-id="1PQyFNCGiFEwwVWgB5iZZk"><span class="sw" style="background:#faad14" data-page-node-id="XVN6NsHHc7aJoeuJDvg2Kl"></span><code data-page-node-id="ZMaqwfFXkwh3aE15WLsBzj">#faad14</code></td><td data-page-node-id="veV0QML3ovdycVGE90yvrS"><span class="sw" style="background:#ffc53d" data-page-node-id="3u7l1AZ9RnTwE1rRQu5g8x"></span><code data-page-node-id="3LFLHeFnuKLTbU36SwiVqR">#ffc53d</code></td><td data-page-node-id="3O24ISSEU5fIISjvGJyyyf"><span class="sw" style="background:#faad14" data-page-node-id="2l6SAc5PVvdSvkD09CemHx"></span><code data-page-node-id="Cb3RlTgSa2zG5Cjv5HXrXD">#faad14</code></td></tr>
+<tr class="same" data-page-node-id="l4eDd1Vmd5a7WrFxCc7ZSk"><th data-page-node-id="7xFaOGnHpP2cLETC0mg4Oh"><code data-page-node-id="mDLVzTESevAC6Qi7AAytvu">--rank-2</code></th><td data-page-node-id="CoNFXhYigezQUM1v5eSFg2"><span class="sw" style="background:#d9d9d9" data-page-node-id="KHwRBAOldeSA8aOR4lOiJQ"></span><code data-page-node-id="pFlLzwiLz6PSevVePLwelr">#d9d9d9</code></td><td data-page-node-id="uyESFNFKHLPZnSMRWGE8Xi"><span class="sw" style="background:#d9d9d9" data-page-node-id="AbIE6hHJOB4aEDDkYbyvD6"></span><code data-page-node-id="cKUIbfYHfmz6FjhUFnCIO4">#d9d9d9</code></td><td data-page-node-id="xXAoCs4XZZIfBudwtN1tj4"><span class="sw" style="background:#d9d9d9" data-page-node-id="DhArcfjrdkLSsE9lxaqVgb"></span><code data-page-node-id="u9ZtixIe60kiryKFof31fr">#d9d9d9</code></td></tr>
+<tr class="same" data-page-node-id="khwqU0IDEd86AA35CBqimA"><th data-page-node-id="W2dbFGQxGMh2zFMBi20D4c"><code data-page-node-id="8EHcl4ClcpKmttTGHtrkp9">--rank-3</code></th><td data-page-node-id="yBw7Q4676g2gFkUhC2Pwla"><span class="sw" style="background:#cd7f32" data-page-node-id="AbTnRXzkI70hTD0tGBitxX"></span><code data-page-node-id="nmmFXScWfpVZJIqtQiD0DA">#cd7f32</code></td><td data-page-node-id="d3WKDAzSgvrgIGPEI7pSG8"><span class="sw" style="background:#cd7f32" data-page-node-id="UdesFAwp0RRQbe5Mo9gSfd"></span><code data-page-node-id="JPJFu6GZHtuzzArz9Uo4bf">#cd7f32</code></td><td data-page-node-id="hhdrfm2B2Az5b1qJLergu0"><span class="sw" style="background:#cd7f32" data-page-node-id="HQmSrD4DYfW5q9f2G7pNTT"></span><code data-page-node-id="m0dOeEALbeEHymqD8Z3uYa">#cd7f32</code></td></tr></tbody>
+<tbody data-page-node-id="bptBxpe1yI9kGmK5RLJjoH"><tr class="grp" data-page-node-id="pBqGMl4TlSJGpsUF78RbCU"><td colspan="4" data-page-node-id="ixcBLwZdKYpz56Y4jy4dJO">阴影 / 其它</td></tr>
+<tr class="" data-page-node-id="6THGY3o2J42W2XHo5t2b5i"><th data-page-node-id="aVQ2VctwJhSnvmzZXJBtOC"><code data-page-node-id="DmrqFKRGuLZi5mJBdCxroD">--shadow-overlay</code></th><td data-page-node-id="0t6acDNqOkXYBzcngQgeIC"><code data-page-node-id="zQYeMrAWohRJsCVYqCoUii">0 8px 28px rgba(0, 0, 0, 0.14)</code></td><td data-page-node-id="gGQ7RdAWdKo4frh0RHF6F2"><code data-page-node-id="2yQTgHFpTLHf4r96ImpaNN">0 8px 28px rgba(0, 0, 0, 0.5)</code></td><td data-page-node-id="qQx77RqvOVUMJTmRVjrQDS"><code data-page-node-id="cwKX0ipVuDsaPNMHBMWA54">0 8px 28px rgba(186, 106, 145, 0.18)</code></td></tr>
+<tr class="" data-page-node-id="dE7MfCFiahGbJU6uQCIp93"><th data-page-node-id="4G5ZFTRYHjt2qsbr8HepZI"><code data-page-node-id="6BcnKR8DSpMkBkqROMtQg7">--bo-header-bg</code></th><td data-page-node-id="C3hRDt9X2SXr7kpHFhERMz"><code data-page-node-id="naZJGCI6JgtvA1jJbKInj8">linear-gradient(135deg, #667eea 0%, #764ba2 100%)</code></td><td data-page-node-id="vOEU5jJnw3Xh4MzHEPe0Vc"><code data-page-node-id="RmTH4C4Xgns8CtcmixbFDm">linear-gradient(135deg, #4338a6 0%, #6b21a8 50%, #7c3aed 100%)</code></td><td data-page-node-id="xiPCrPZQ5WAs58gMk3eBfx"><code data-page-node-id="rJBSE8xN25rLqypzX6TTER">linear-gradient(135deg, #f5a3c7 0%, #b58ce0 100%)</code></td></tr>
+<tr class="" data-page-node-id="RKDDDGkAEXdqa2T9LdrztU"><th data-page-node-id="rcxbGjxDUFDTBYL72nmjux"><code data-page-node-id="IXMINq9AunYN2X74GMBCzV">--accent-pink-soft</code></th><td data-page-node-id="97brFnhllf2lgVwtcjQnxk"><span class="sw" style="background:rgba(245, 87, 108, 0.1)" data-page-node-id="18CeQIcau9H1zGFA7UQB7C"></span><code data-page-node-id="euTWv808A9ivVD4DN6P6LG">rgba(245, 87, 108, 0.1)</code></td><td data-page-node-id="M1IhFTSjfJLTaK8fSfcRsW"><span class="sw" style="background:rgba(245, 87, 108, 0.18)" data-page-node-id="wNig6zdJTMLoevWVMM41Rl"></span><code data-page-node-id="tn6W3js8yFSpiGCBrk0bVA">rgba(245, 87, 108, 0.18)</code></td><td data-page-node-id="VZrFNk7bVBFcXy16dVhxGT"><span class="sw" style="background:rgba(232, 106, 154, 0.12)" data-page-node-id="nHLQu2dgAopW6NvCqIMQGH"></span><code data-page-node-id="6BDaHfXon0kwejYpRXdcHb">rgba(232, 106, 154, 0.12)</code></td></tr>
+<tr class="" data-page-node-id="t7TdKTIFuG7pnIpcL3B8dd"><th data-page-node-id="Dt5v7tHNnVQt8dZiZ1hXc0"><code data-page-node-id="ihf4VfOhYK0hXXODCHh9Us">--stat-bar-opacity</code></th><td data-page-node-id="J7r08N9npdwwucizQEC9w7"><code data-page-node-id="Apy3DXwCIcvbnZAbeCEh64">0</code></td><td data-page-node-id="grOfAr7NUzwmF4QyOP1JME"><code data-page-node-id="pBZCwkq7GOFhyvx0ba8f3d">1</code></td><td data-page-node-id="ezCgTxFNdAii7uf3uC3tmt"><code data-page-node-id="FxLcwSrl6q93CbkABX8Dfx">0</code></td></tr>
+<tr class="" data-page-node-id="GBkiQEfr18Xh9XyTGZTCve"><th data-page-node-id="Q0oQMRouDWBScPatfHo3c0"><code data-page-node-id="7yCjA5caQtBg64fKbIjDfL">--surface-ring</code></th><td data-page-node-id="WyKXwmDdD2nPOxEYq0J57o"><code data-page-node-id="vfMa5kMOA7nYDkwOKg17Nr">none</code></td><td data-page-node-id="4dWcaTqZnncEhfslNGZCV4"><code data-page-node-id="0a6EneTSXh2rYCOMgtouwD">inset 0 0 0 1px rgba(255, 255, 255, 0.04)</code></td><td data-page-node-id="EFgd7XXX6XhgBD9Edpl4kE"><code data-page-node-id="faGzye8VEeNZTpibaolYPK">none</code></td></tr></tbody>
+<tbody data-page-node-id="ZsdO7jBBklHMz0O3a4UfNC"><tr class="grp" data-page-node-id="Z4y0BNTlx83OFU7yQRbOkd"><td colspan="4" data-page-node-id="OBHo5bccDUFO8tjwxjoRln">其它（深浅同值 / 深色语境）</td></tr>
+<tr class="same" data-page-node-id="bcpUnFkAOoRvBJlhWQntZX"><th data-page-node-id="gzXL34FjrBimlA3ZprBUvZ"><code data-page-node-id="0XF0ZhuGKPSqkhvpyXW7y4">--bg-hover-dark</code></th><td data-page-node-id="gdeB30THyHJVAP2lBa3Cqu"><span class="sw" style="background:rgba(255, 255, 255, 0.06)" data-page-node-id="pFtKdxgqZ9gj6umVtGVPyK"></span><code data-page-node-id="3hqi1ppX29p7sMchPV2E7H">rgba(255, 255, 255, 0.06)</code></td><td data-page-node-id="NGy1TtQRbE5vbXyxzx1L6M"><span class="sw" style="background:rgba(255, 255, 255, 0.06)" data-page-node-id="c2gKByMLSPDkF30AyH7uTu"></span><code data-page-node-id="ynfKEq0EqUZuVH8c74bSU7">rgba(255, 255, 255, 0.06)</code></td><td data-page-node-id="L3EYmHY9i3ECA0K8Z7GgTE"><span class="sw" style="background:rgba(255, 255, 255, 0.06)" data-page-node-id="GGUQVIzY0LHhWHEwoBUjw0"></span><code data-page-node-id="3GckRiLOvV3xWMQbGE6mFH">rgba(255, 255, 255, 0.06)</code></td></tr>
+<tr class="same" data-page-node-id="1xApUDYvj2yuQSGoURSAAs"><th data-page-node-id="1FEYzHrn0c2XDRplEBEJV2"><code data-page-node-id="ft3dN5Cun8fSqfhddjROzw">--bg-active-dark</code></th><td data-page-node-id="5IBQo5vbRIKEaombHqeBD0"><span class="sw" style="background:rgba(22, 119, 255, 0.18)" data-page-node-id="fiLGF5aCbj8n6NXJ0aEnFJ"></span><code data-page-node-id="HqWBAiy8VPjU2J7kAAiHgB">rgba(22, 119, 255, 0.18)</code></td><td data-page-node-id="8mOQyTk4XE9oomBJ60iGF7"><span class="sw" style="background:rgba(22, 119, 255, 0.18)" data-page-node-id="Yjs9gBIzbeZ7XZRkpqzZ6W"></span><code data-page-node-id="WO0HaOaHK4GxjeRwPf4uCL">rgba(22, 119, 255, 0.18)</code></td><td data-page-node-id="DzTrL9MuSG5mZnlZzLR3uL"><span class="sw" style="background:rgba(22, 119, 255, 0.18)" data-page-node-id="Sw9DsIaLtbLmfZKbxTNtrF"></span><code data-page-node-id="uDOfXEmzfbEQ8Zt0w43CUT">rgba(22, 119, 255, 0.18)</code></td></tr>
+<tr class="" data-page-node-id="vhehkFDUWHDaFOZFiDjBK5"><th data-page-node-id="tUhS1RHU3r8gsU05zapXkX"><code data-page-node-id="ATBt3jZUzP7HpcDU8eBD4d">--text-inverse</code></th><td data-page-node-id="h8tgSxUn21sQNhQrCMI8n3"><span class="sw" style="background:#ffffff" data-page-node-id="D7zdwpqMfUeJ91WffEsBAE"></span><code data-page-node-id="al8ynTkOwoX8z1wKkTN2lO">#ffffff</code></td><td data-page-node-id="sBVfcRVs1AbElNnemnUBbA"><span class="sw" style="background:#1f1f1f" data-page-node-id="zLELRXUi1gLglMuxAUWIyT"></span><code data-page-node-id="gijo0E0pM4LOjK6ybuu9CT">#1f1f1f</code></td><td data-page-node-id="IWBSoBeE7cNiASVIBdPxyW"><span class="sw" style="background:#ffffff" data-page-node-id="NkLxRb4LRDWYLBOlAm6HRX"></span><code data-page-node-id="vKvaAXoQoXSuqyJeX3k3jM">#ffffff</code></td></tr>
+<tr class="" data-page-node-id="DD0oKhjtdYF0dXLBEqVbDm"><th data-page-node-id="BY2pwpdIBWpWdXldZHFh7u"><code data-page-node-id="g0wUQCGJ4RpmfDATsu9MHJ">--warning-strong</code></th><td data-page-node-id="3GhpoGovkqv7llAvCCqyD4"><span class="sw" style="background:#d48806" data-page-node-id="wqHzcn5wl7KSO9szCkBZ0j"></span><code data-page-node-id="LoG7eLHeJNeh7XfeF2vntO">#d48806</code></td><td data-page-node-id="aOE85kWvaG2LQpsHSyR0Ya"><span class="sw" style="background:#ffc53d" data-page-node-id="twRlj5cWpI68keTUbXMBDz"></span><code data-page-node-id="lHkHKA8T04zYtxw4Hn6m01">#ffc53d</code></td><td data-page-node-id="phfhugQBkOqX5S2lPuLSGZ"><span class="sw" style="background:#d48806" data-page-node-id="ktBMzvNeIlRocf28LVthTO"></span><code data-page-node-id="5TejQs1rXhdx28Lu8pxwb1">#d48806</code></td></tr>
+<tr class="" data-page-node-id="69hMB4K4GLw58zpV7a8mFs"><th data-page-node-id="w7xo2pxcCCi7HjQP8cmTqU"><code data-page-node-id="QnS1YEyNLGQynLVje9MiJl">--danger-strong</code></th><td data-page-node-id="VyGaQckfD4FcE8qvyjx3ks"><span class="sw" style="background:#cf1322" data-page-node-id="ggdbW2hkYkfw80P4hr9zjs"></span><code data-page-node-id="7XjaQaKyeA2yTNkEhKYnV2">#cf1322</code></td><td data-page-node-id="Tp9OMVXFEfpdTHAc3wTMft"><span class="sw" style="background:#ff7875" data-page-node-id="5vEXChmM8lIUGRPMs7RgRd"></span><code data-page-node-id="OQqWeNTYxoEOK47v8FKlXC">#ff7875</code></td><td data-page-node-id="iesS1PWS9Lk8dstgGmwL7Q"><span class="sw" style="background:#cf1322" data-page-node-id="KNDbWtvObYnfDfGQHwwITp"></span><code data-page-node-id="P7NnnjPqBeWpHYPkNfda3c">#cf1322</code></td></tr>
+<tr class="" data-page-node-id="NcPOTDntjoT4aHDowLlOg3"><th data-page-node-id="uYXzEDEw7hltzc3mHIPddz"><code data-page-node-id="CKGfMSe8P0WmsGnX7iUNsY">--danger-border-strong</code></th><td data-page-node-id="sPlONX6MCpQW0QT714VNzf"><span class="sw" style="background:#ffa39e" data-page-node-id="juBjNHk56VQse2s8nQpcnG"></span><code data-page-node-id="fdD1kBe6WPoHohr6hRFZI5">#ffa39e</code></td><td data-page-node-id="3lLy2Ys8Ac6LSMZj2vFmgy"><span class="sw" style="background:rgba(255, 77, 79, 0.45)" data-page-node-id="pBVBqJ6iTKK7JHefSZOE13"></span><code data-page-node-id="FQYh579h9QbkQfVtn06uQx">rgba(255, 77, 79, 0.45)</code></td><td data-page-node-id="0OeiQ3G2ThoIEBva6Nkz1t"><span class="sw" style="background:#ffa39e" data-page-node-id="hKtb5n0IUDqxKWdDHdTGgJ"></span><code data-page-node-id="OPwFfBUalFs7KNjdZmJKeB">#ffa39e</code></td></tr>
+<tr class="" data-page-node-id="uAAn5nmuKn8nnFzzUbVtJG"><th data-page-node-id="HP7iG4yFhBpk0UnSLQOSDe"><code data-page-node-id="D84tqRNCfwry7VF5HhVprT">--orange-bg-2</code></th><td data-page-node-id="sIt0kTb9CoGKyUnDqHX0sP"><span class="sw" style="background:#ffe7ba" data-page-node-id="EUyYSOFYinzPy6vooOLJda"></span><code data-page-node-id="H2rFAPdTDAfZTXwiQMPDTD">#ffe7ba</code></td><td data-page-node-id="vnGLJ4EhVrZ7DknLiS7DBY"><span class="sw" style="background:rgba(250, 173, 20, 0.05)" data-page-node-id="BgAL01th9VbiXTzHzJfTVZ"></span><code data-page-node-id="jHNefLSRsyB4Yi8TPcnJJS">rgba(250, 173, 20, 0.05)</code></td><td data-page-node-id="zQhOl0fkUx77jwGom5tU9c"><span class="sw" style="background:#ffe5d1" data-page-node-id="9TRmeqV5OECXCAiXYYEsUT"></span><code data-page-node-id="1eTGD9rAQO5QbhdLD4BmWO">#ffe5d1</code></td></tr>
+<tr class="" data-page-node-id="OoVp9ygeKzfU5MkqYHJ6Wi"><th data-page-node-id="Aj8LPYAGVXnpD67LhjEbNX"><code data-page-node-id="yEgREZieEYL8ZUCypOsAEB">--orange-strong</code></th><td data-page-node-id="88l9TPZSDxlLBmm8F2KagL"><span class="sw" style="background:#d46b08" data-page-node-id="QYkfGq4LQSUSG7kgDuGRb4"></span><code data-page-node-id="8Lax359kNbYjiTR9s0dJuA">#d46b08</code></td><td data-page-node-id="O3LJTqC18j2ztCepVlzIGB"><span class="sw" style="background:#ffa940" data-page-node-id="PvoGLi3vVzBQEo7idTxxSg"></span><code data-page-node-id="uaHnBUaxLHMrCF8MEuc9ED">#ffa940</code></td><td data-page-node-id="AyJP8zoN1uUhbBCdi1nlo2"><span class="sw" style="background:#d46b08" data-page-node-id="ZEeq2JzRrbVwnprirPBZAo"></span><code data-page-node-id="ODZnQc76BXTwDOrFlTGokO">#d46b08</code></td></tr>
+<tr class="" data-page-node-id="UejfGPeXd3CtsLi5fMI9LP"><th data-page-node-id="tVApGtXvUYudvWdEp7KwDX"><code data-page-node-id="UjkNUfeKRFdbbPme2dMYCG">--info-bg-2</code></th><td data-page-node-id="JTQpekbGiToKUdfo9yxSwd"><span class="sw" style="background:#d6e4ff" data-page-node-id="0AULmwhd6lF7uUA78iE4xu"></span><code data-page-node-id="zH3E6P5UsZ5zjA1qWE3Z0v">#d6e4ff</code></td><td data-page-node-id="SPWDgvOuGE9nRnCBSiHAJW"><span class="sw" style="background:rgba(24, 144, 255, 0.05)" data-page-node-id="zurBJGqB9k46VQayvUp4XS"></span><code data-page-node-id="I2uE4YzXnRsDjLCDeHGHid">rgba(24, 144, 255, 0.05)</code></td><td data-page-node-id="wzAwo7IpLoNEQfEVBvGkNT"><span class="sw" style="background:#dde5fa" data-page-node-id="qDiPGw6NTTE6KwvBPBCWhd"></span><code data-page-node-id="vYvGcBnHyLmunFkYHoBsHr">#dde5fa</code></td></tr>
+<tr class="" data-page-node-id="6BnYHuBHsmhNTsymZPFKEU"><th data-page-node-id="LW0q39gHciGmuVkmufojz8"><code data-page-node-id="UxNJADIF3uTVxJBHt3I73D">--success-bg-2</code></th><td data-page-node-id="juOGSt5C8gbzaKpCsTipmu"><span class="sw" style="background:#d9f7be" data-page-node-id="xFJyC6C5xdU0Kt2dKVkH0Z"></span><code data-page-node-id="r6GGhCemnGaAJGqZNLOVC9">#d9f7be</code></td><td data-page-node-id="9FpCGkhCb8PGwVfESfVxUB"><span class="sw" style="background:rgba(82, 196, 26, 0.05)" data-page-node-id="91HSnOxTiaChUonQlLKxe6"></span><code data-page-node-id="MFX8AcauuWCwSJKGYgQw2h">rgba(82, 196, 26, 0.05)</code></td><td data-page-node-id="Nk3b3qJJOv3ZWW8wqWI4OR"><span class="sw" style="background:#d6f2de" data-page-node-id="9b4vYA90XQXI3iOhhyzooz"></span><code data-page-node-id="GfOSjzLw3d4sNSyTJ553L8">#d6f2de</code></td></tr>
+<tr class="" data-page-node-id="Vyn6c3CfRcNSbYcaUaufyu"><th data-page-node-id="e3AODSCc0iuJG0XSHQXAxA"><code data-page-node-id="3ld14HYCbC6o1blknQkmuk">--shadow-card</code></th><td data-page-node-id="zFXMUJO2mW29iuo3vob3i2"><code data-page-node-id="Vm9ARFycmuNhd50BOqZ4Zg">none</code></td><td data-page-node-id="TcRZoRStlPGGSc6H7J6j80"><code data-page-node-id="l5J8wzA7zrXbmQ9tXBcYue">0 4px 16px rgba(0, 0, 0, 0.5)</code></td><td data-page-node-id="XSdInqLJRQGxtUCMjJ4NSE"><code data-page-node-id="5ZAfSSEZZy54z7JZct4ALI">none</code></td></tr>
+<tr class="" data-page-node-id="JZmnOpE1Z1nW0Bo8G2w10k"><th data-page-node-id="FadTpON1O1x3ujypeC9nvg"><code data-page-node-id="jWl4rHO93BLyrbcdT2rzhU">--danger-hover-bg</code></th><td data-page-node-id="0NpSPhZ40H8eayTkujVJMP"><span class="sw" style="background:rgba(255, 77, 79, 0.08)" data-page-node-id="5J85bRe5YMXY7W3U0JgGWW"></span><code data-page-node-id="WNNd9L5DQ9O2YQqWeGEDm8">rgba(255, 77, 79, 0.08)</code></td><td data-page-node-id="Y9PtRWXEIcCCygEUDunNfS"><span class="sw" style="background:rgba(255, 77, 79, 0.18)" data-page-node-id="55X77iN5jchhrhVsbg1Ysx"></span><code data-page-node-id="Rs6HyFb9Zk3oyxzdUOKr5U">rgba(255, 77, 79, 0.18)</code></td><td data-page-node-id="o5p35BgQCiojmK4uxczhPV"><span class="sw" style="background:rgba(255, 77, 79, 0.08)" data-page-node-id="kBNInR35su5pozev6wSwEb"></span><code data-page-node-id="CuOdMcunEmzjr5zfYWMmkL">rgba(255, 77, 79, 0.08)</code></td></tr>
+<tr class="" data-page-node-id="MWBAXxlYP1TFeXASoXhQry"><th data-page-node-id="6uHOsSRf9JAd18rSf3I8Np"><code data-page-node-id="sKEuwt9x1tqbNQSk5vor1a">--bo-header-shadow</code></th><td data-page-node-id="wBWth2SJa8CibCaI1nJrH7"><code data-page-node-id="oCOojrFOZ923qqmDU75wdG">none</code></td><td data-page-node-id="FqVzO3LmNTlUY94odjp2eL"><code data-page-node-id="P8u3RzbnDmxPHNkXRGNnZF">0 2px 12px rgba(124, 58, 237, 0.25)</code></td><td data-page-node-id="s9i919BE2VtN8ZxwCwKcNP"><code data-page-node-id="6zq8gnRUa6vXDCkJiUqVWy">none</code></td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.bar button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var t = b.dataset.t
+      document.documentElement.setAttribute('data-theme', t)
+      document.querySelectorAll('.bar button').forEach(function (x) { x.classList.toggle('on', x === b) })
+    })
+  })
+</script>
+</body>
+</html>

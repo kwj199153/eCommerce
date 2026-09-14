@@ -18,7 +18,7 @@
           placeholder="搜索商品名称或 ASIN..."
           size="small"
           allow-clear
-          style="margin-bottom: 8px"
+          style="margin-bottom: var(--space-8)"
         >
           <template #prefix><SearchOutlined style="color: var(--text-disabled)" /></template>
         </a-input>
@@ -282,18 +282,18 @@ function onImgError(e: Event) {
 
 <style scoped>
 .loader-btn {
-  border-radius: 14px;
-  font-size: 11px;
-  margin-left: 10px;
+  border-radius: var(--radius-14);
+  font-size: var(--font-size-11);
+  margin-left: var(--space-10);
   flex-shrink: 0;
   height: 26px;
   line-height: 24px;
-  padding: 0 10px;
+  padding: 0 var(--space-10);
 }
 
 .loader-btn.loaded {
-  background: #52c41a;
-  border-color: #52c41a;
+  background: var(--success);
+  border-color: var(--success);
 }
 
 .product-loader {
@@ -301,46 +301,46 @@ function onImgError(e: Event) {
 }
 
 .loader-header {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
 }
 
 .loader-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .loader-desc {
   display: block;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--text-tertiary);
-  margin-top: 2px;
+  margin-top: var(--space-2);
 }
 
 /* 当前已选 */
 .current-selected {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
 }
 
 .current-label {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--text-tertiary);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
 }
 
 .current-card {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-8);
   background: linear-gradient(135deg, var(--success-bg) 0%, var(--info-bg) 100%);
   border: 1px solid var(--success-border, #b7eb8f);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   cursor: pointer;
 }
 
 .current-title {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 500;
   color: var(--text-primary);
   overflow: hidden;
@@ -350,7 +350,7 @@ function onImgError(e: Event) {
 }
 
 .current-asin {
-  font-size: 9px;
+  font-size: var(--font-size-9);
   color: var(--text-tertiary);
   font-family: 'SF Mono', Monaco, monospace;
 }
@@ -365,22 +365,22 @@ function onImgError(e: Event) {
 .group-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+  padding-bottom: var(--space-8);
   border-bottom: 1px dashed var(--border-base);
 }
 
 .group-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  font-size: 11px;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-8);
+  font-size: var(--font-size-11);
   color: var(--text-secondary);
   background: var(--bg-base);
   border: 1px solid var(--border-base);
-  border-radius: 10px;
+  border-radius: var(--radius-10);
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
@@ -392,7 +392,7 @@ function onImgError(e: Event) {
 }
 
 .group-chip.active {
-  color: #1890ff;
+  color: var(--primary);
   background: var(--info-bg, #e6f7ff);
   border-color: var(--info-border, #91d5ff);
 }
@@ -401,13 +401,13 @@ function onImgError(e: Event) {
   display: inline-block;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   flex-shrink: 0;
 }
 
 /* 全部视图下的分组段落 */
 .group-section {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
 }
 
 .group-section:last-child {
@@ -417,14 +417,14 @@ function onImgError(e: Event) {
 .group-section-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  font-size: 11px;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--font-size-11);
   color: var(--text-secondary);
   font-weight: 600;
   background: var(--bg-base);
-  border-radius: 4px;
-  margin-bottom: 4px;
+  border-radius: var(--radius-4);
+  margin-bottom: var(--space-4);
 }
 
 .group-section-name {
@@ -432,14 +432,14 @@ function onImgError(e: Event) {
 }
 
 .group-section-count {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--text-tertiary);
   font-weight: normal;
 }
 
 .product-item {
-  padding: 8px 6px;
-  border-radius: 6px;
+  padding: var(--space-8) var(--space-6);
+  border-radius: var(--radius-6);
   cursor: pointer;
   transition: background 0.15s;
   border: 1px solid transparent;
@@ -458,15 +458,15 @@ function onImgError(e: Event) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 2px;
+  gap: var(--space-8);
+  margin-bottom: var(--space-2);
 }
 
 .item-thumb {
   width: 36px;
   height: 36px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   border: 1px solid var(--border-base);
   flex-shrink: 0;
   background: var(--bg-base);
@@ -479,8 +479,8 @@ function onImgError(e: Event) {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  border-radius: 4px;
+  font-size: var(--font-size-16);
+  border-radius: var(--radius-4);
   background: var(--bg-base);
   border: 1px solid var(--border-base);
 }
@@ -490,11 +490,11 @@ function onImgError(e: Event) {
   width: 240px;
   height: 240px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
 }
 
 .item-title {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -503,19 +503,19 @@ function onImgError(e: Event) {
 }
 
 .item-var {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   font-weight: 600;
   color: var(--purple);
   background: var(--purple-bg);
   border: 1px solid var(--purple-border);
-  border-radius: 4px;
-  padding: 0 4px;
+  border-radius: var(--radius-4);
+  padding: 0 var(--space-4);
   flex-shrink: 0;
-  margin-right: 4px;
+  margin-right: var(--space-4);
 }
 
 .item-price {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   font-weight: 600;
   color: var(--primary);
   flex-shrink: 0;
@@ -528,20 +528,20 @@ function onImgError(e: Event) {
 }
 
 .item-asin {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--text-tertiary);
   font-family: 'SF Mono', Monaco, monospace;
 }
 
 .item-check {
   color: var(--success);
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 .empty-hint {
   text-align: center;
-  padding: 20px 0;
+  padding: var(--space-20) 0;
   color: var(--text-disabled);
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 </style>

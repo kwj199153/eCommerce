@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="awlYuOBiPheTX5WYZ5tfok">
+<head data-page-node-id="clZRIm2Z1yH03y52NsION2">
+<meta charset="utf-8" data-page-node-id="gBgkQQAFAlKYuwqzRAp3Ta">
+<meta name="viewport" content="width=device-width,initial-scale=1" data-page-node-id="ZDlwK4YHffTW4XLvjV9Dpx">
+<title>P8 评分分档口径收敛 · 交付报告</title>
+<style>
+  :root { --ink:#1f2328; --muted:#656d76; --line:#d8dee4; --bg:#fff; --soft:#f6f8fa;
+          --ok:#1a7f37; --warn:#9a6700; --bad:#cf222e; --blue:#0969da; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.7 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+         color:var(--ink); background:var(--bg); }
+  .wrap { max-width:1080px; margin:0 auto; padding:40px 28px 90px; }
+  h1 { font-size:26px; margin:0 0 6px; letter-spacing:-.3px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:28px; }
+  h2 { font-size:19px; margin:42px 0 14px; padding-bottom:8px; border-bottom:2px solid var(--line); }
+  h3 { font-size:15px; margin:24px 0 8px; }
+  p { margin:8px 0; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:20px 0 8px; }
+  .kpi { background:var(--soft); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .kpi .v { font-size:23px; font-weight:700; letter-spacing:-.5px; }
+  .kpi .l { font-size:12px; color:var(--muted); margin-top:2px; }
+  .kpi.ok .v { color:var(--ok); }
+  .kpi.b .v { color:var(--blue); }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px; }
+  th,td { border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--soft); font-weight:600; }
+  td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; }
+  code { background:var(--soft); border:1px solid var(--line); border-radius:4px; padding:1px 5px;
+         font:12.5px/1.5 "SFMono-Regular",Consolas,monospace; }
+  pre { background:var(--soft); border:1px solid var(--line); border-radius:8px; padding:12px 14px;
+        overflow-x:auto; font:12.5px/1.6 "SFMono-Regular",Consolas,monospace; margin:10px 0; }
+  .note { background:#fff8e5; border-left:3px solid #d4a72c; padding:10px 14px; border-radius:0 6px 6px 0; margin:12px 0; }
+  .good { background:#eaf7ee; border-left:3px solid var(--ok); padding:10px 14px; border-radius:0 6px 6px 0; margin:12px 0; }
+  .bad  { background:#fdf0ef; border-left:3px solid var(--bad); padding:10px 14px; border-radius:0 6px 6px 0; margin:12px 0; }
+  .tag { display:inline-block; font-size:11.5px; border-radius:4px; padding:1px 7px; border:1px solid; margin-right:5px; white-space:nowrap; }
+  .tag.done { color:var(--ok); border-color:#a3d3b0; background:#eaf7ee; }
+  .tag.ask  { color:var(--warn); border-color:#e0c66b; background:#fff8e5; }
+  .tag.rev  { color:#8250df; border-color:#d8c4f5; background:#f6f0ff; }
+  .sw { display:inline-block; width:13px; height:13px; border-radius:3px; vertical-align:-2px; margin-right:4px; border:1px solid rgba(0,0,0,.12); }
+  ul,ol { margin:8px 0; padding-left:22px; } li { margin:4px 0; }
+  .lead { font-size:15px; }
+  .small { font-size:12.5px; color:var(--muted); }
+  footer { margin-top:56px; padding-top:14px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); }
+</style>
+</head>
+<body data-page-node-id="7YrjPTcrEc9wLxurmDwMD3">
+<div class="wrap" data-page-node-id="1VVs1GWiRz3LQ8DDHXfIo6">
+
+  <h1 data-page-node-id="W1fhBfteHUYCi6Zakpb2Od">P8 评分分档口径收敛 · 交付报告</h1>
+  <div class="sub" data-page-node-id="daRUateO3HhbxKCsznGzBm">
+    真源 <code data-page-node-id="E9WAezQPHYxo9KOSWlrz8F">frontend/src/theme/bands.ts</code>（新建 307 行）·
+    范围：18 套具名口径 / 30 处替换 / 35 个调用点 / 23 个引用文件 ·
+    完成时间 2026-09-13
+  </div>
+
+  <div class="kpis" data-page-node-id="rrwKK9VqQIuJxqoB4HRpJQ">
+    <div class="kpi b" data-page-node-id="fozcArMDJbO4lqa8BB4GL0"><div class="v" data-page-node-id="r4sp1SPFjdZ6ur6WEXhi0M">18</div><div class="l" data-page-node-id="EfSJf5e3MiclFqTi8wV3QF">具名口径（含 5 套反向 / 4 套异量纲）</div></div>
+    <div class="kpi b" data-page-node-id="3X39hhCGuHnR7PnZ6V7Ixj"><div class="v" data-page-node-id="69egE9WdgncYwlh3QxxMkB">35</div><div class="l" data-page-node-id="68rnHyeTJbVpWG6DAs9YPM">band* 调用点（原为散落阈值）</div></div>
+    <div class="kpi b" data-page-node-id="Tl5VKJCCQFRug8x9Kg9gNO"><div class="v" data-page-node-id="CzBqOuBRD1PLxoGvd2qNrJ">23</div><div class="l" data-page-node-id="exAbGf7lsT6SF0JYDsJEPD">引用文件（真源 + 22 业务文件）</div></div>
+    <div class="kpi ok" data-page-node-id="fce5KD2qZoH12QVmA7XqXr"><div class="v" data-page-node-id="yWUn8EpEjP3D4h8A0uBhH6">0</div><div class="l" data-page-node-id="kDxqwzhN48iem8KnLrm4Md">A 类残留（口径自查 --strict）</div></div>
+    <div class="kpi ok" data-page-node-id="xQdxKLZvJBa4tnF9KCob5G"><div class="v" data-page-node-id="c9OmaJxmlHa8vP6GRJFE6g">171</div><div class="l" data-page-node-id="NXgePzcShk2btpI4VWHl2W">等价性探测点，仅 3 处有意差异</div></div>
+    <div class="kpi ok" data-page-node-id="1Ms3h31tpXp4s0vFCwKwvu"><div class="v" data-page-node-id="VCEUdHhRMqFHeRiYj6fLHe">0.0016%</div><div class="l" data-page-node-id="jYSTjlhb8gxVEKT2WTRW4F">像素差异（127 px，全为时间戳）</div></div>
+  </div>
+
+  <div class="good" data-page-node-id="BhNaSdySX3KgOSUBQRvfJF">
+    <b data-page-node-id="ScUPHHKP1NIAaG4jv4J7yu">一句话结论：</b>机制已统一到单一真源、数值除「两处产品行为变化」外<strong data-page-node-id="3FL3lvWMTrVzKIBsPQg4bc">逐值逐色零变化</strong>；
+    原有 7 种阈值<strong data-page-node-id="dzM4VPhr1GBU5lDal0o5hw">不是被并成 1 套</strong>，而是被拆成 18 套<strong data-page-node-id="Ff4eqa0d2hti2Y9p99szUO">具名口径</strong>，
+    每套带 <code data-page-node-id="1zUYAqpkdF47yIMdo3A91j">note</code> 写明用途与后端真源出处 —— 以后没人能再把「广告健康」和「商品监控健康」误并。
+  </div>
+
+  <h2 data-page-node-id="HDhMb3WDdVJ4vIJKdXM5Lr">1. 为什么「阈值不统一」是缺陷，而不是风格差异</h2>
+
+  <p class="lead" data-page-node-id="bWbRQKdAai8jvnJGXrriAi">最毒的不是阈值多，而是<strong data-page-node-id="9orBNYck7jdbgoNTAyUlK2">同名不同阈值</strong>与<strong data-page-node-id="j1hLVu9qz1TXmPTCJlXfy0">跨端分叉</strong>这两件事。</p>
+
+  <h3 data-page-node-id="lxrVaC9QXhtdaFGr3L1tf3">1.1 同名不同阈值 —— 改一处以为改了全部</h3>
+  <p data-page-node-id="EGuUpdaDV1B63VEF5aQGiG">改造前全库散落着多组互不相同的阈值，其中同名函数 <code data-page-node-id="g2GEV8NopXBB8YIFM0MXVK">getScoreColor</code> 在 4 个文件里用了 <b data-page-node-id="61KqGqSNdmp3PrRL0fMANV">3 套</b>阈值：
+     <code data-page-node-id="FYLZ2tX7Bvxjrc1t5IDIQS">70/40</code>（蓝海结果 / 蓝海抽屉 / 选品库）、<code data-page-node-id="gAJPXNda72lCePEvvDunUQ">80/60</code>（SEO 诊断）、<code data-page-node-id="TLYyMVI9lPdewB1d9ORkys">75/50</code>（行内版）。
+     维护者调「评分配色」，实际只改了 1/3。另有同名不同值的长尾：<code data-page-node-id="XoGP2T8dIjZegs6TIflc1j">relevance</code> 在关键词挖掘是 <code data-page-node-id="uOebRunjQrxpCA9YEVgRNe">90/75</code>、
+     在列表配置里是 <code data-page-node-id="3uEuqNDe2fEtF4L4rrDZnR">90/80</code>；<code data-page-node-id="9Zb8q9mGbNCfcEXCoIrfZH">acos</code> 在广告看板是 <code data-page-node-id="G5JWGPx5FmvL5F7p0ulHXl">35/25</code>、在评论配置里是 <code data-page-node-id="Dm6WVdnuvRMYtJG13v0956">33/25</code>。</p>
+
+  <h3 data-page-node-id="nd4CauXS1rMgCQvHbpDtCt">1.2 跨端分叉 —— 后端报问题，前端显绿 <span class="tag ask" data-page-node-id="jbDyiZ1qI0WB6FD2n4zl0X">已修</span></h3>
+  <div class="bad" data-page-node-id="oRG5dLJc0pb2dDc033TIp2">
+    <b data-page-node-id="PMR61QTtOtHbUSkFDGQC7r">真实缺陷：</b>后端 <code data-page-node-id="QDHJkwumSXGqSB54sEm7m5">ad_analysis/agent_ad.py:902</code> 用 <code data-page-node-id="wkFAF3QKONmUG7bu6ltfhG">worst_campaign.health_score &lt; 50</code>
+    生成「Campaign 表现差」告警、并建议暂停；前端 <code data-page-node-id="SDxuJUSZG1nCnVn2PJviNi">AdDiagnosisResult</code> 却用 <code data-page-node-id="Yglb8K6Y9PRyc1CcsvAmw9">80/60</code> 上色。
+    → <b data-page-node-id="UNHslgvC2yx3i3AlDcJGAe">health_score = 55 的 Campaign 后端判定为「有问题」，前端仍显示橙色/绿色。</b>
+    这是跨端语义分叉，不是配色偏好。
+  </div>
+
+  <h3 data-page-node-id="v1ueXFAPvEByVdE5bkNbNl">1.3 为什么不能「统一成一套阈值」</h3>
+  <p data-page-node-id="bOF2BH3jafyCKzErmHqX6K"><strong data-page-node-id="xj3aiPKcsaK7UI7LfwU5K0">阈值不只管颜色。</strong>后端 <code data-page-node-id="G9ytms2pHIJECLqdlrCjJL">blue_ocean &gt;= 70</code> 决定 premium 计数、<code data-page-node-id="dGwg2WaUHElVpz8cJ48dVk">&gt;= 50</code> 是过滤线、
+     <code data-page-node-id="RIqovOuPUpkx0qshpsOqJi">health_score &lt; 50</code> 触发告警；前端 <code data-page-node-id="m3WXmbazplpCyYHcA971lJ">relevance &gt;= 90</code> 决定「推荐词」标记。
+     所以<b data-page-node-id="BOsmh9byQalVXoxSnv61cl">改阈值 = 改业务判定 = 改告警灵敏度 = 产品决策</b>。
+     把 4 套不同的阈值硬并成一套，会让 72 分的「良」变成「中」—— 那是产品改版，不是重构。</p>
+
+  <div class="note" data-page-node-id="rsfkATP9qq76R3OCNuK87D">
+    <b data-page-node-id="TJENuVYOUdIG3Mvn6BgP4B">本轮采取的口径（也是老板拍板的口径）：</b><br data-page-node-id="IHp19JCcKLnfrSo9kjAl9o">
+    ① <b data-page-node-id="SdbrtsumLI63VFm0RMmJO8">机制统一</b>：阈值 / 档位名 / 档位色只在一处出现，调用点显式声明「我用哪套口径」；<br data-page-node-id="KJSydFPeEb7H37ugFpvQUZ">
+    ② <b data-page-node-id="Ik2KLKtQdFjIVeFVr6Bb9V">数值不乱动</b>：A 类（后端为真源）保持原值，C 类（反向 / 异量纲）各建一套；<br data-page-node-id="pgsaFUVhuojd1ErwypB0XD">
+    ③ <b data-page-node-id="Gx6BQKVZCItYhmF5MKi78F">仅两类必须动</b>：跨端分叉（对齐后端真源）+ 同名不同值（统一为一个值）—— 这两类<b data-page-node-id="33DLzHSGwH6MtLJaTHqDlk">单独列出来待老板确认</b>。
+  </div>
+
+  <h2 data-page-node-id="TQ3CAW9atleBKCZGema5zn">2. 三类划分与处置</h2>
+
+  <table data-page-node-id="GFtxol1PCTlj5xs2WUwkAR">
+    <thead data-page-node-id="m7Ic6k6klHt7mck6DhGunf"><tr data-page-node-id="YEACFge4EX1foyyR4p7HED"><th style="width:110px" data-page-node-id="P6Bapd35LKik7nCdrHLfWj">类别</th><th data-page-node-id="9vBEGAo5UjP6EKSDH8nTpe">特征</th><th data-page-node-id="kugsX2XfJySF4546kaorCH">本轮处置</th></tr></thead>
+    <tbody data-page-node-id="miWiNXrI5eTQaG9ArbRW7P">
+      <tr data-page-node-id="i9P0LGgvGoIbqM2XlRnWoq">
+        <td data-page-node-id="H4gcM2KtEIzmvJlwffoIwZ"><b data-page-node-id="vNxE8f54PBw3hL0ela3Yi5">A 已跨端对齐</b><br data-page-node-id="Cn5ItVLFhCKPNJvbZvzAFu"><span class="small" data-page-node-id="jkR89f7s1uJR7ZRBcTS6h6">后端为真源</span></td>
+        <td data-page-node-id="IRVxZvQ1J7AAX3hHvqv9YZ">蓝海 <code data-page-node-id="XrzqniWgV1Gd1TWIXyW4gO">70/40</code>（后端 <code data-page-node-id="4IDoiADVAHiPHBPyoYh4nD">product_research/service.py:62-64</code>）；
+            等级 <code data-page-node-id="eAntW29q62FDuLWcM85kpb">90/80/70/60 → A–F</code>（后端 <code data-page-node-id="QYo30Oiyd9W93XVu9qnmbp">ad_analysis</code> / <code data-page-node-id="4L2JE829dNt4M6ICchV9A0">listing_generator</code> 两处实现一致）</td>
+        <td data-page-node-id="mrDNnDA5d6rDHIkrdQYVFi"><b data-page-node-id="kEfCD1pXlPOFFbwbGD2aGV">数值零改动</b>，仅改为具名引用；
+            等级改 <code data-page-node-id="gst5L34gkuKkUgibwR2q7o">bandOf('grade', …)</code> —— 后端已把 <code data-page-node-id="fK53xjsAIRPDTCBxTjR2vn">grade</code> 放进返回体（<code data-page-node-id="7eHDi0I12KtJAxsYGjtrXr">schemas.py:122</code>），
+            前端重算属重复实现，保留作回退</td>
+      </tr>
+      <tr data-page-node-id="62HQS6fbbt7AChUH8Ja4kk">
+        <td data-page-node-id="vwOR7Gj4VepFBiooP7Sep0"><b data-page-node-id="wXjlT73lCngnVCTpUtM6kT">B 真该收敛</b><br data-page-node-id="JbBP2t2dqhBJ6eENEvdoY8"><span class="small" data-page-node-id="W8NhvY52Lx6vCE5HXjEQFB">无共同真源</span></td>
+        <td data-page-node-id="Ig9U0ZvstgtGWSYIdLMsGA">正向 0–100 三分档：<code data-page-node-id="PWLa66aPALgv0umiFGGDjd">80/60</code>、<code data-page-node-id="JwjWfN8Wdukp70SGwi6RPa">75/50</code>、<code data-page-node-id="GXM6GBs4IG9xmSVEPhSxXK">90/75</code>、<code data-page-node-id="DJZAEDXHGRr6HaQuCpC2ye">90/80</code>、<code data-page-node-id="4W3LOIblH3upJYTYZkbN1c">35/25</code>、<code data-page-node-id="CC0lrqTZHNoAzC448rnyJY">33/25</code></td>
+        <td data-page-node-id="TVBB5yfken0EhXMDAZvjBC">收敛为具名口径 <code data-page-node-id="oR4tmJqMNcRmgrlIPAlr9a">score</code> / <code data-page-node-id="S62KRgm5E6s79UOwCP4RcL">competitiveness</code> / <code data-page-node-id="4kIyfsCBaPm5n3naEBlKh0">relevance</code> / <code data-page-node-id="Q3LYVXjfkwKI8R1GPmcf9D">campaignHealth</code> / <code data-page-node-id="xUNd88hlVqFEWTvOwPLBM9">acos</code>；
+            <b data-page-node-id="jBLmLL8Z94GJHJjBdrFtEZ">同名不同值的 2 组统一为一个值</b>（见 §8）</td>
+      </tr>
+      <tr data-page-node-id="ImmMToUBOpE0v5Md0BseyT">
+        <td data-page-node-id="mdWnWDTzhaZxgzlvjQ9IUE"><b data-page-node-id="nkeq50hwYpPmA8X7Ix0NJy">C 不该统一</b><br data-page-node-id="S91dUk1A2WnbfP4lNXejFx"><span class="small" data-page-node-id="ChTvqANsonN1HvgUTuXUAd">量纲/方向不同</span></td>
+        <td data-page-node-id="A6rqT5jTS9aTOYeiZuezsB">反向：用量 <code data-page-node-id="Zgff1gBp6mkCMlaS3rJxDA">90/70</code>、份额 <code data-page-node-id="A2Ny4ExgHZsErufOXCHPPQ">30/15/5</code>、CR4 <code data-page-node-id="4TD7dinja2GDzkpwQQydM3">75/50</code>、ACoS <code data-page-node-id="ou9evYaLTj6wZ39VuazHJF">25/35</code>、可售天数 <code>14/30</code>；
+            比率：情感 <code data-page-node-id="S8fQbTaEQ3LxrdYpfRcZLq">0.7/0.45</code>（0–1）；星级 <code data-page-node-id="ky5r0EDtcAfiLlA7U93xdG">4/3</code>（0–5）、ROAS <code data-page-node-id="XGeLdcu6psUQloXAO4qH6Q">4/2.5</code>；
+            量纲：可读性 <code data-page-node-id="qpA95RE5zZP4uNMiZQVKDg">8/6/4</code>（0–10）、可售天数 <code data-page-node-id="xlrc4MY5rzQyx2bOMIF3iU">14/30</code>（天）</td>
+        <td data-page-node-id="RiejpwPIexZNQ9HYnZfd6r"><b data-page-node-id="1SJ2gEx3kQyc3GCs7UX5Pd">各建一套具名口径</b>，<code data-page-node-id="7E5gS6DmFw5ebk7s4qypXF">note</code> 写明量纲与方向 —— 这就是「防以后有人误并」的物理隔离</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 data-page-node-id="y5vrr1DvuFjKXODEibtUYy">3. 真源设计：<code data-page-node-id="Y790e3nvHCKjbVbnQUGSbc">theme/bands.ts</code></h2>
+
+  <h3 data-page-node-id="G0wl8Skv1BxW9UObP6IUgP">3.1 <code data-page-node-id="3OZl44ziEmxLzwXZHWLC8d">BandDef</code> 字段</h3>
+  <pre data-page-node-id="Y27nfDG8gplCrmJvY4apYk">type BandDef = {
+  scale: readonly [number, number]   // 量纲区间，仅作文档与防误并用；不参与计算
+  dir:   'higher' | 'lower'          // higher=越大越好；lower=越大越危险（反向指标）
+  cmp?:  '&gt;=' | '&lt;='                 // 阈值比较方向，决定 cuts 排列方向与边界归属（见 §4）
+  cuts:  readonly number[]           // 分界阈值 -> 共 cuts.length + 1 档
+  keys:  readonly string[]           // 档位名，与 cuts 一一对应（higher 天然「最好→最差」）
+  colors:readonly string[]           // 档位色，与 keys 等长同序（CSS 变量表达式）
+  note:  string                      // 用途 + 真源出处 —— 防误并的最后一道闸，必填
+}</pre>
+
+  <h3 data-page-node-id="YxhCp62PZYjMFFBkTI66xh">3.2 三个出口</h3>
+  <table data-page-node-id="71MxDPp2bGw4dFNXxXnhHA">
+    <thead data-page-node-id="GgV5rhqkAf4fa2fb9BJazn"><tr data-page-node-id="h6e95JEK1svA5CJTvjR7ZM"><th style="width:210px" data-page-node-id="CO4masOjgyz9shkDQDimwa">出口</th><th data-page-node-id="fL5KXmFG7OftJUdwCdxNLN">返回</th><th data-page-node-id="VRZma3rY6bNC8XJ05LnSyw">典型用法</th></tr></thead>
+    <tbody data-page-node-id="pIadGJi5tDUUaKyatUWiaV">
+      <tr data-page-node-id="7Xfixo3yNw1Aj1qOhGZEei"><td data-page-node-id="O9gGJPEBq71YDqjVN5d3II"><code data-page-node-id="bkC9ZAGaCFMwY0XaCaImFK">bandColor(name, v)</code></td><td data-page-node-id="5vPEF4O9TmASUxA4apAMvM">档位色（CSS 变量表达式）</td><td data-page-node-id="XJNLHkG1JBKrMvp0MY3N2k"><code data-page-node-id="aW7rtmti3QATC8pSFAMvHE">:stroke-color="bandColor('score', r)"</code></td></tr>
+      <tr data-page-node-id="zNrCU719TpLgJb5aBw8gXx"><td data-page-node-id="xJmqBR4vD6neCZAN6igPYN"><code data-page-node-id="8HIGFlLVrTF1liDKmD1OZc">bandOf(name, v)</code></td><td data-page-node-id="a96k6iZ8tbX8QyYD0v5exA">档位名（字符串）</td><td data-page-node-id="OJWUmYUY3QJBSXl7OtQZBz"><code data-page-node-id="qeepHdPcMRZMJmAvDTFzZV">bandOf('acos', g.acos)</code> → <code data-page-node-id="hCkVrUSQf9DQA06l5MFOXJ">'ok' | 'warn' | 'bad'</code></td></tr>
+      <tr data-page-node-id="k9PABxvjMWzXpCcapbHDdX"><td data-page-node-id="kqCM89wCfSIbuMZuN4Vtsr"><code data-page-node-id="EXB8QJOLFTXZXst2gZXG3c">bandIndex(name, v)</code></td><td data-page-node-id="4gBW9dQZkcuWLmVgjs35jf">档序号（0 起，可数组查表）</td><td data-page-node-id="4xyWsQeGvkO1uicwqhKvLv"><code data-page-node-id="mghF8WCRn4KoSPAzVZ90Kl">ROI_TAGS[bandIndex('roi', r)]</code></td></tr>
+    </tbody>
+  </table>
+
+  <pre data-page-node-id="lD7zJ3qrSfPj81lDzuc3HP">export function bandIndex(name: BandName, value: number): number {
+  const b = BANDS[name]
+  const v = Number(value)
+  // NaN 兜底按方向分：higher 落末档（最差）、lower 落首档（最危险）—— 都落「最差」侧，宁误报不漏报
+  if (!Number.isFinite(v)) return b.dir === 'higher' ? b.cuts.length : 0
+  const cuts = b.cuts as readonly number[]
+  const ge = (b.cmp ?? '&gt;=') === '&gt;='
+  for (let i = 0; i &lt; cuts.length; i++) {
+    if (ge ? v &gt;= cuts[i] : v &lt;= cuts[i]) return i
+  }
+  return cuts.length
+}</pre>
+
+  <h2 data-page-node-id="ym5EquespTnzbzTIIdmJua">4. 两个必须讲清的实现细节</h2>
+
+  <h3 data-page-node-id="0pTj0sKerLX6pQDw1HCsRY">4.1 ★ <code data-page-node-id="glKcEYFdBYbcTO93wfLHhW">cmp</code> 字段是必需项，不是洁癖</h3>
+  <div class="note" data-page-node-id="4w9cacHVa2RZwhG2ObYEcn">
+    <b data-page-node-id="XGFJTaY376xcCY2Rv7Vyjj">边界等号的归属是会变的。</b>原写法 <code data-page-node-id="AgVAjMxNiLpAcOeM3W5GdY">acos &lt;= 25 ? 'ok' : …</code>（升序、含等号）与
+    「降序 <code data-page-node-id="M2FUnyb9ZEyqk0iRDAHliE">&gt;=</code>」写法在 <code data-page-node-id="XyinyIWTt3EVhU2H0tKtfh">acos = 25</code> 时给出<strong data-page-node-id="eQAUTOpa63I4Nvm7Mld2G7">不同档位</strong>。
+    我在第一轮改造时用了降序写法，等价性探针立刻报出 <code data-page-node-id="UGRhHQu9RMKLPyawgWJDs5">acos@25: success→warning</code>、
+    <code data-page-node-id="VbmvjUPrl1Y5bavyqnJzBj">acos@35: warning→danger</code> 两处串档。
+    <br data-page-node-id="CBrsJpLq3kxuRDROSiDyqi">→ 解法：<code data-page-node-id="0WepSY993OoArmNIItGgpG">cmp:'&lt;='</code> 时 <code data-page-node-id="Vqa3fxz5sHJCcySQVcICRW">cuts</code> 必须<b data-page-node-id="WS7Dl0VBDZIcc8i1oUKXCE">升序</b>、比较用 <code data-page-node-id="CFvLFFQJRL4A5Fr4I0MRzB">v &lt;= cuts[i]</code>。
+    <b data-page-node-id="5i8zyxJW877ny8GoVrW3kp">不要靠改写不等式糊过去</b> —— 那会静默改变边界归属。修复后边界精确：
+    <code data-page-node-id="zncurecNQkKLOuRQDk8ae9">0:ok 24:ok 25:ok 26:warn 34:warn 35:warn 36:danger 100:danger</code>。
+  </div>
+
+  <h3 data-page-node-id="UATBHNV88AZ0UrOCiUxpJi">4.2 ★ 防误并三条铁律（写进每套 <code data-page-node-id="5i14s8O7FdQB2u8UVzGgjc">note</code>）</h3>
+  <ol data-page-node-id="kFQslOxYH3FuWFF8SJH5KG">
+    <li data-page-node-id="tB1haqJLavdW37kr6v1HHC"><b data-page-node-id="lviQh5jJsTp8cDtq5qqY4X">同名 ≠ 同指标。</b><code data-page-node-id="Y1w2g9irQpY3p5ptriBHJz">campaignHealth</code>（广告 Campaign 健康）与 <code data-page-node-id="C6TwebdnSlyIYoFEHQubrm">monitorHealth</code>（商品监控健康度）
+        区间相同但语义无关 → <b data-page-node-id="9HIUsD384e7COCrqD8wyPC">不可合并</b>。UI 文案也必须区分，否则用户以为是同一个分。</li>
+    <li data-page-node-id="B3SupemCunQnYKAyiuls2H"><b data-page-node-id="OFiGMjfIptC7EUgOBSj2Fh">量纲不同不可并。</b>0–100 / 0–1 / 0–5 / 0–10 各自成套。把 <code data-page-node-id="uolTyBGFzOGtqngtbrJYHB">sentiment</code>（0–1）并进
+        <code data-page-node-id="YOjpvus65DnhN71GJV1WvH">score</code>（0–100），会让「0.8 分的情感」被当成差评。</li>
+    <li data-page-node-id="jdbno4Szbzlly6G2WMqeji"><b data-page-node-id="KACMTgKeMcBEiFpIlC3Az1">方向不同不可并。</b><code data-page-node-id="OPAyYjAQkpvyhMAcFp1wfA">usage</code> / <code data-page-node-id="LjnkSHILojzMUVPbujAg8v">share</code> / <code data-page-node-id="K2sriPz5H8agfZfAIaiXVK">cr4</code> / <code data-page-node-id="m53J2fqYGeNWER7AtPhmpU">acos</code> 是<b data-page-node-id="bHjQH82RQ6pu4VmRDLwVKY">反向</b>
+        （越大越危险）。并进正向档会把「风险高=红」和「机会大=绿」缝在一起，出来的颜色是反的。</li>
+  </ol>
+
+  <h2 data-page-node-id="GsxeWh25gzaxB18zaA6BmS">5. 18 套具名口径全表</h2>
+
+  <table data-page-node-id="at4BQlAbQppOL6IJ1NQC2u">
+    <thead data-page-node-id="XBLnBYJUAGlaREVermDfZH"><tr data-page-node-id="AEORGGwVTdEttk0LgHK2Ni"><th style="width:170px" data-page-node-id="fjN2XeWPBllNpAFc3sqRuC">口径</th><th style="width:130px" data-page-node-id="VRBvL0fgq7guRDAaxtU1g0">阈值</th><th style="width:120px" data-page-node-id="CHEkzEC2M45xamDeR6dTzo">量纲 / 方向</th><th data-page-node-id="9gUP2kYa5tpvLfqiAw5mLV">语义与真源</th></tr></thead>
+    <tbody data-page-node-id="72PE9H8GVxJmbsPqwlCg5g">
+      <tr data-page-node-id="h4xloeYrDMnrVnyaOEKaFM"><td data-page-node-id="uX8Xqm1X09BZgmFfcvZ6Sr"><code data-page-node-id="8aTxk8E9GRMsqk1QnAz2Ew">score</code></td><td data-page-node-id="kxgv11Y5fep1sRLuEUde6v">80 / 60</td><td data-page-node-id="g6xWBNwkabLExuCFYFbt1F">0–100 正向</td><td data-page-node-id="oK1ZRRYNPTlCF3wuQrFWGX">通用综合分（SEO 总分与各维度分、标题分、Listing 质量分、排名潜力）</td></tr>
+      <tr data-page-node-id="rVJYjz8CQY9ADdGFNcn8s9"><td data-page-node-id="A3JVY6j0gxhPcaEAvt9fQi"><code data-page-node-id="q9XqvRaGZQCun9lAgONjYw">ocean</code></td><td data-page-node-id="YTj7UsBKFVHdzA4gODneMp">70 / 40</td><td data-page-node-id="r5TxjgrNkQuJ04ojfNDKBB">0–100 正向</td><td data-page-node-id="v27QDHd93RY4c8RU3tIK47">蓝海分 · <b data-page-node-id="eHa7ClD6NrufxWOXCIAnzf">后端 <code data-page-node-id="DN048Of6kmOy6NMuIjSZmZ">product_research/service.py:62-64</code> 为真源</b></td></tr>
+      <tr data-page-node-id="HFv0M3WlfzCj7mVT5MGw72"><td data-page-node-id="0ImqE6Ngzxie7B1cuLhh7D"><code data-page-node-id="elsw1xkLWYVogXAdsIWJC7">campaignHealth</code></td><td data-page-node-id="uetw8hss3AWf4XbJQC5w3Z">80 / <b data-page-node-id="ThGowEvry86mxji98eBqwY">50</b></td><td data-page-node-id="IKK2qqDeff0XFl7U9leUJS">0–100 正向</td><td data-page-node-id="lgAWOC8wsE8FHEb0Atx8cC">广告 Campaign 健康分 · 红界对齐后端 <code data-page-node-id="auFNBHe6rdCOvMmckASEre">agent_ad.py:902</code> 的 <code data-page-node-id="k5EljrMuSPG0DbH8cxjGzm">&lt; 50</code> 告警 <span class="tag ask" data-page-node-id="6J3LVSgyibTa23ZbEe2qev">见 §8</span></td></tr>
+      <tr data-page-node-id="otkbTjmY2uYNHdeP27iEfY"><td data-page-node-id="4x428rHaKoIvp8b1pHCEOH"><code data-page-node-id="w6gQXhiknXmdke4m4UGcvL">competitiveness</code></td><td data-page-node-id="cuzo1jTOoISiqNmHXaj2Hs">75 / 50</td><td data-page-node-id="PyMkVgEoNx4edCSXEajI2e">0–100 正向</td><td data-page-node-id="2z9HKNGZljSQuFOfEQVl2g">竞争力评分（BuyBox 赢家评分、价格追踪竞争力）</td></tr>
+      <tr data-page-node-id="I1P6SKrMrKYl9ZpwzXYOqA"><td data-page-node-id="dTPRYExG7CzqZqbeiamRu6"><code data-page-node-id="sbutCd9qnXeR5RKMo2ZZC2">relevance</code></td><td data-page-node-id="fLXC24fpsgHBcQQstDa9Vd">90 / 75</td><td data-page-node-id="gPR0pF8yWitL0zg35wE5Jd">0–100 正向</td><td data-page-node-id="EmH2DQBXDppe0HcXGov4zr">关键词相关性（列表配置侧原为 90/80 <span class="tag ask" data-page-node-id="pKAjrbCrUhzB6nXXVipQ1T">见 §8</span>）</td></tr>
+      <tr data-page-node-id="ikuLa8NotET6cIVargS2Jj"><td data-page-node-id="XAnBBUuIYL7nFLqnXJPQMz"><code data-page-node-id="KjDqBXUZAqx2BxK3CzKpO0">monitorHealth</code></td><td data-page-node-id="NTB5qpSuolIcKYFsMwCyul">80 / 60 / 40</td><td data-page-node-id="i802M5DliHPGk2BvEljC8K">0–100 正向 · 四档</td><td data-page-node-id="KbFLIa2RspWqqK7TpZ2RQJ">商品监控健康度 · <b data-page-node-id="wQqYf8utdOvCIDW5CEA62t">≠ <code data-page-node-id="duGOF7ZIthtajUzLphohkr">campaignHealth</code></b></td></tr>
+      <tr data-page-node-id="HuYEmweTNkGD3WI7oK5pII"><td data-page-node-id="XpAosqlKn5ckKaQwfYHzWq"><code data-page-node-id="abWvHj2iibmRd7tSJUuvGk">grade</code></td><td data-page-node-id="DBFG5TccEDccVMpSUjrrzp">90/80/70/60</td><td data-page-node-id="Yp9ueNJ7ISPUvH98aGcRdp">0–100 正向</td><td data-page-node-id="4O6R5n3dNcHbK4zjDzxetQ">等级 <code data-page-node-id="xq4GIGvUwZqGeoOL3hEpnm">A/B/C/D/F</code> · 与后端 <code data-page-node-id="aRdryosJHUONgICrMEpx8H">_score_to_grade</code> / <code data-page-node-id="29KCTR3eP1dMV4ViATsKnj">_calculate_grade</code> 同源</td></tr>
+      <tr data-page-node-id="3wlV7fTKYtiwObBNgdcW0J"><td data-page-node-id="Tifi4LCEqCHcOhHANEx4IO"><code data-page-node-id="fGgcKkmSVlodXMWl63G0Nv">readability</code></td><td data-page-node-id="ed6WWIyBULDxPtmIEhCBjY">8 / 6 / 4</td><td data-page-node-id="O6BOm5dtBUyPS8GMCt2bIN"><b data-page-node-id="qiJIXM6aCQ69yTEoVGOvo9">0–10</b> 正向</td><td data-page-node-id="1hmBSmZQgXrm6ABfy1AAio">标题可读性 · 与 0–100 分<b data-page-node-id="0ipItGyBL57I9sFkwHDrUd">不是同一量纲</b></td></tr>
+      <tr data-page-node-id="lvXp3HEmsYrleggLlhlxv3"><td data-page-node-id="i7Jp2935xNEVUoCxnteJ9O"><code data-page-node-id="i5GPk5jnhHuW9iq0o0EOLJ">rating</code></td><td data-page-node-id="6TmQGcJeXDDlxkQrJ8BybB">4 / 3</td><td data-page-node-id="qD5CDTos0TLD5sIvp12OfN"><b data-page-node-id="Eamxm3FwF2CChVJTdsGsQK">0–5</b> 正向</td><td data-page-node-id="YNdK7u1pmtyP8YqSDDP1FK">星级（AB 测试指标、竞品情报证据强度、对话卡评分）</td></tr>
+      <tr data-page-node-id="hsCXkAAehco1KVLKBJQB6s"><td data-page-node-id="Q3aJ1HtSW39izc7kifn3gM"><code data-page-node-id="ToDbOPkd9ZGl87XoBQJHiH">sentiment</code></td><td data-page-node-id="Iw8mtEklTiFWR7PYyVIYjf">0.7 / 0.45</td><td data-page-node-id="XDGFQEHxQvdSiWBFi33G5E"><b data-page-node-id="DHAfhwmH2wX7cpn0dJdzyL">0–1</b> 正向</td><td data-page-node-id="GPCZ2QTI5Zvean2BUxG6VV">评论情感比率 · 并进 0–100 会误判</td></tr>
+      <tr data-page-node-id="26O9h3oHRRAlTH3cEUsBUa"><td data-page-node-id="jFC0q1gup2SF5U6nwfFlVw"><code data-page-node-id="o0NU5lmOl14zJbl3qLiKtr">margin</code></td><td data-page-node-id="damNjeQUWA9XxhBNZFDt05">60 / 30</td><td data-page-node-id="0Tj3bUfUsmN3Kof5LpiwZP">0–100 正向</td><td data-page-node-id="MvNqu4OvGP90z8wBSSECrx">毛利率（产品库卡片 / SPU / 表格 / 详情四处）</td></tr>
+      <tr data-page-node-id="sEENFgkpH4L03cUcbCIW35"><td data-page-node-id="uBUpJocjDxF5AqdGfsABmL"><code data-page-node-id="ngj7EgBkYy3Bg2v9oSmXDI">roi</code></td><td data-page-node-id="zuEg7XDtDpRLRH1OoHKu9s">25 / 15</td><td data-page-node-id="TLdRpvT72W6znVJ9SBAMif">0–100 正向</td><td data-page-node-id="hwJN1M5P0lh5JrytFHjAWA">ROI 标签（利润结果卡）</td></tr>
+      <tr data-page-node-id="FK0QSaIK0TLtZXAFvNQ3oa"><td data-page-node-id="eADUKv7QUkKMkzKEUPzBIu"><code data-page-node-id="YWtS6h3XX2rF2mH0sq26Dg">acos</code></td><td data-page-node-id="RykvjqDIVukQnQTnbpi1wx"><code data-page-node-id="pIL11OYdJWwkNizBicSrZY">cmp:'&lt;='</code> [25, 35]</td><td data-page-node-id="HVPU17eyTyePQHciaMjw8i">0–100 <b data-page-node-id="7IHPbxxh7ZIzFl9W6kIyrc">反向</b></td><td data-page-node-id="UyQjrBaiTyfDKCVhaFdzTn">广告花费销售比 · <b data-page-node-id="yk493PIBAhINLqrrGF6JZN">越低越好</b>（广告看板类名/标签 + 评论配置 <span class="tag ask" data-page-node-id="AAY573PNHHsRRVD8n9x8Ew">见 §8</span>）</td></tr>
+      <tr data-page-node-id="pQVJnCtOSVt2iT66bs51Mv"><td data-page-node-id="CgQ72mGa4kZiFzJxdGT0ql"><code data-page-node-id="G5ar3D7sqfWu7nLMwJiowh">roas</code></td><td data-page-node-id="kXSuEz90KA73DGbQT8Vqu5">4 / 2.5</td><td data-page-node-id="IO2YA5VWFp6R4CThcMX1gG">倍数 正向</td><td data-page-node-id="PmiHRvfPfdsXHi3EvCqCUA">投入产出比</td></tr>
+      <tr data-page-node-id="i8vPEwzxqfxnSzRthlADOb"><td data-page-node-id="gORgPT1g7IZraS88aVvogI"><code data-page-node-id="J58C8Og1DgYY8rKtahmIof">restockDays</code></td><td data-page-node-id="u6cCnGjhqTRhQLjtgDLrfW"><code data-page-node-id="SZ96QT2dBdWTyeaj1pey6L">cmp:'&lt;='</code> [14, 30]</td><td data-page-node-id="mLLCwLrJqHrnworeZVt4bZ"><b data-page-node-id="imhQaVBBa5fyM5zWxkgBhg">天</b> 反向</td><td data-page-node-id="gcXlTwoha0XiJ0AymacYcD">预计可售天数 · 天数越少越紧急</td></tr>
+      <tr data-page-node-id="DDlGY9H715g0gZ0DOY2Ox8"><td data-page-node-id="5696f8Obn6vc7uSANXZa0h"><code data-page-node-id="KB0s3BqfzdZWQedlpe0KSA">usage</code></td><td data-page-node-id="HnkRbDcww5mk2T3xbXhWp4">90 / 70</td><td data-page-node-id="BRzK7OSwIhe5QPM7K4zB6E">0–100 <b data-page-node-id="c2WTwn65kkmaEPrMYbSozZ">反向</b></td><td data-page-node-id="TYFmuebkt54wUyZPWKeud5">套餐用量占比（订阅页）· 越大越危险</td></tr>
+      <tr data-page-node-id="RWTOkuBCC4kOZnQYu7TVhH"><td data-page-node-id="71IEMYjVK6q80rKLuZp4dL"><code data-page-node-id="D2D32TAzKvWzuhSARDbHGT">cr4</code></td><td data-page-node-id="Fm17C3e88mjrc6b1u6qlVu">75 / 50</td><td data-page-node-id="R560dpijXAXEewfFwWkY0V">0–100 <b data-page-node-id="TOfMFi6Gayf8qqHKuuBu1j">反向</b></td><td data-page-node-id="IufbbbNRy3enqwpTFkvq8I">市场集中度 CR4 · 越大越垄断</td></tr>
+      <tr data-page-node-id="ONTE7MxxMjfrWAT2xVQq8f"><td data-page-node-id="UdXwNzZQAG0Jnhjjm2X8s8"><code data-page-node-id="h5Dd4s0rLSPHEew5mjfDTb">share</code></td><td data-page-node-id="aLZAV13unDMr6xIOqLcmFr">30 / 15 / 5</td><td data-page-node-id="S4sLtyhazKx7IHCFe3w05s">0–100 <b data-page-node-id="2r71iShPMqqjzkpEJcGRfP">反向</b> · 四档</td><td data-page-node-id="mMkUoI4UsHcymEOXwfLfcn">市场份额 · 越大越「dominated」</td></tr>
+    </tbody>
+  </table>
+  <p class="small" data-page-node-id="qb8vmjYjONtrMSFg7djvY1">注：<code data-page-node-id="Ani8aKO88rdqErBYjVeLj8">monitorHealth</code> / <code data-page-node-id="Flr5XWbr1jYppgAil7juR9">share</code> 为四档（3 个分界），其余为三档；<code data-page-node-id="Wmhlg2QN9Z70GHUr2R2pdX">grade</code> 为五档（4 个分界）。</p>
+
+  <h2 data-page-node-id="NBCjB3Yd4DDdyIjrNLFWXp">6. 改动清单（30 处替换 / 35 个调用点）</h2>
+
+  <h3 data-page-node-id="W1WP0kzTiJWp0t4rdWcSbI">6.1 函数型分档（颜色 / 标签由函数产出）</h3>
+  <table data-page-node-id="gIxV124yFrNXUmKuosKrEH">
+    <thead data-page-node-id="vC2Ha4a8jTuULydboL8wHQ"><tr data-page-node-id="zaZt8CxoiP6mPOiLPi4EaS"><th style="width:330px" data-page-node-id="dVcUmtWurYcRORXD8koEE3">文件</th><th data-page-node-id="9pNKpwtGcfD5RLEEWgIlnC">替换为</th></tr></thead>
+    <tbody data-page-node-id="FbA9zcvz0GM0swI1gjFhaA">
+      <tr data-page-node-id="nJwDqCSI6xE7rPOedDUHME"><td data-page-node-id="CaHAeAl21wKmJgHQhQBTcY"><code data-page-node-id="kH7iF2E5l2G9XdI4U07wN3">results/AdDiagnosisResult.vue</code></td><td data-page-node-id="scCEIZ66hpvvmUqEoEpvMX"><code data-page-node-id="4D0AlQNtlpJYqhgIOIYvSC">bandColor('campaignHealth', score)</code> — 红界 50 对齐后端告警</td></tr>
+      <tr data-page-node-id="m206JOVtdlMXCFmY3DW0iS"><td data-page-node-id="2kOlAwD0eQstSraWJl0K9s"><code data-page-node-id="Aq6nTHZDdy2lMdIamoR5qo">results/SEODiagnostic.vue</code></td><td data-page-node-id="mYNdoNbbx2xjlj1vpkYVDN"><code data-page-node-id="u59C8ajb4eMo6gfBTk0TKo">bandColor('score')</code> / <code data-page-node-id="MPj6reWssuTsq1Dc1cgEa8">bandOf('grade')</code> / <code data-page-node-id="UAIGfD9qLxA1BxAnr1V2I5">GRADE_CLASSES[bandIndex('score')]</code></td></tr>
+      <tr data-page-node-id="tcHhydR1Gg3EwEcAieGnaW"><td data-page-node-id="f16tkCvJz83pmMCG2yEAwU"><code data-page-node-id="ypDYykoE6aznEhNInvM7Qv">results/TitleGenerator.vue</code></td><td data-page-node-id="N2pOMAoXqyeWvdWzRNt0FF"><code data-page-node-id="XPoHcGy8nqw0FYLG00dTpJ">bandColor('score')</code> / <code data-page-node-id="DGeAS0DwYy199HM2pFGMGj">bandOf('readability')</code> / <code data-page-node-id="17OftW2AMH6B4cW6HZd8JM">RANK_LABELS[bandIndex('score')]</code> + 模板 a-badge</td></tr>
+      <tr data-page-node-id="3AOgii9VeBrApFIXGndcpw"><td data-page-node-id="tutbi9yWIOoieb6Heyvm4G"><code data-page-node-id="7qjpTOQ5ekdbyBvleyMfpU">results/CompetitorResult.vue</code></td><td data-page-node-id="k61SmLbnYX4HAWs53G7jZ3"><code data-page-node-id="2y6pp6C8kWZPGmD5XQMJ22">bandColor('score', record.listing_quality_score)</code></td></tr>
+      <tr data-page-node-id="CjeTQGDe5UF2ZZBZAp0SOo"><td data-page-node-id="ScWcMBBfexU70bMtYEjtCx"><code data-page-node-id="AI5Tt9hwwCKbprzQVOVroo">results/MonitorDashboardResult.vue</code></td><td data-page-node-id="PrIr2e829nkDW53S9ImsKi"><code data-page-node-id="USXEyuyF7zVnvoBcGf2MVM">bandColor('monitorHealth')</code> — 注释标明与 campaignHealth 非同指标</td></tr>
+      <tr data-page-node-id="iBWJ2oboGhi3sZGwTRlAK2"><td data-page-node-id="x2CVCxeYi8G7cHi4cRCiwx"><code data-page-node-id="IeCCJdC2T6PqHd2qUdYEq9">results/BuyBoxAnalysisResult.vue</code></td><td data-page-node-id="nW9mCWKvHWkeK5p8l70Pwq"><code data-page-node-id="UGBzltAUXm5mcGdwMtnBrq">bandColor('competitiveness')</code></td></tr>
+      <tr data-page-node-id="NVeAaFAFLACbUCNFb81vPt"><td data-page-node-id="X6M4jqE2gzd60HAnmxvp2t"><code data-page-node-id="QftLqOu5i9dux56HlAo3Tt">results/PriceTrackResult.vue</code></td><td data-page-node-id="2twvipunN8HxDDrdLDEtVi"><code data-page-node-id="3OEqHYiSxaS8tqQHkbyrdu">bandColor('competitiveness', … || 60)</code></td></tr>
+      <tr data-page-node-id="2r7mC6tECmelDczsFy00ja"><td data-page-node-id="nn2QS1EzLRXWzlBhVBvk6F"><code data-page-node-id="MHXzXVEOU8sWWpFb2HR1YX">results/KeywordMinerResult.vue</code></td><td data-page-node-id="gFIpdezigESXQ3klgBJzw0"><code data-page-node-id="xDqEcf98CoF2CMXI0lj4Wv">bandColor('relevance', r)</code></td></tr>
+      <tr data-page-node-id="t9gJkywKj5rzMMD4Ftd541"><td data-page-node-id="I6X4ZCtCVhUeJoGFu6upqL"><code data-page-node-id="9FIZ5aB6feARjAgbKiW837">results/BlueOceanResult.vue</code></td><td data-page-node-id="qcGblmnYHbpLHBSyguYWOu"><code data-page-node-id="WOy5yjvr14NOJhO5V3Rrbg">bandColor('ocean')</code></td></tr>
+      <tr data-page-node-id="SMmYNHNJwW4MjSZFmU0BvH"><td data-page-node-id="QdKjTJGlWVsz22IGuWJIFE"><code data-page-node-id="EbdJkxiHZ9kAENqCA7kI0c">results/BlueOceanDetailDrawer.vue</code></td><td data-page-node-id="gcC4IUwB545yuH6VXEXCHP"><code data-page-node-id="FIfFkPG7IToSD3F17bLkYb">bandColor('ocean')</code></td></tr>
+      <tr data-page-node-id="tCCXxaUNyOWDA6i7vG9o79"><td data-page-node-id="Nf7s47vXF00H51OuyzjLKt"><code data-page-node-id="F2saHtKjGdDacqRseXBwin">KnowledgeBase/CandidateLibrary.vue</code></td><td data-page-node-id="gQcdosfUFCQdIt24j6pIR3"><code data-page-node-id="3kngZnTcZifVxaqmw67qxf">bandColor('ocean')</code></td></tr>
+      <tr data-page-node-id="Wj521g09IGkkOuEwUGV2X6"><td data-page-node-id="CXPTH3gdnR1AI0V0NXfrZB"><code data-page-node-id="KwyNBx845KFtzerN0ezhhS">results/ReviewSpyResult.vue</code></td><td data-page-node-id="rdDzCTWY1KHPQGqEdwYRBu"><code data-page-node-id="KplD5EUz9QSAF3YXBzqfRB">bandColor('sentiment')</code> / <code data-page-node-id="uUNH3754GicNuTGICqWlaR">bandOf('sentiment')</code></td></tr>
+      <tr data-page-node-id="jfqwjN3TPHxhOyYYYr5JGC"><td data-page-node-id="aHsHHpBn9mX1hr3Usyp461"><code data-page-node-id="50DSCjdwYHPnNvTIwP19DS">results/MarketShareResult.vue</code></td><td data-page-node-id="e38QZGnZXw7H0vZkUF7RuR"><code data-page-node-id="DgEHRdD4g6r40KQefGio0o">bandColor('share')</code></td></tr>
+      <tr data-page-node-id="cCduLzStROT4Cwh3p9jL4N"><td data-page-node-id="5KxLQH7Ns4N0mlCbiODJaw"><code data-page-node-id="bnXhifl8fSLEssg0p0Q6xS">views/Subscription.vue</code></td><td data-page-node-id="Et3R5pTngKIjfH79BxyDrc"><code data-page-node-id="rYAcFoJkYXb8ZSFJGXDx2p">bandColor('usage', usagePct(type))</code></td></tr>
+      <tr data-page-node-id="mlKJ5HaQz6fc0bEhpbEFY5"><td data-page-node-id="Exb2mBUPhOnbZxYHDVHRwT"><code data-page-node-id="a7C2dSW6yTbcolRX8EZObj">results/ABTestGenerator.vue</code></td><td data-page-node-id="vmGigyBOfsSkBQTkNd1X6i"><code data-page-node-id="Lrq0ci5gMMboqF6zQ2lGUv">bandColor('rating', value)</code></td></tr>
+      <tr data-page-node-id="HFna1JIs1AddTUkE7lECC4"><td data-page-node-id="FcMPGLR9E4vEnwjgDHBMv5"><code data-page-node-id="f3Xq3LiynMrNlm7AvpyNwL">results/CompetitorIntelEvidence.vue</code></td><td data-page-node-id="9VOGtQgnfrgQ3YPl96ay6l">新增 <code data-page-node-id="GDIUcuYcNsL0g4wjIMMHj5">rateClass(n)</code> → <code data-page-node-id="EDv1KeQeUkWUAjLWTHeWCJ">bandIndex('rating', …) === 0</code></td></tr>
+      <tr data-page-node-id="DGWDgiuB7HVGhVt1uG4kAq"><td data-page-node-id="3PaRU9Lymdjf4DTHJdjju0"><code data-page-node-id="3xbNiVwJPqfvrN4jSpF30t">results/conversation/CompetitorAnalysisCard.vue</code></td><td data-page-node-id="RfYWua0AANaUmZg3rY7ZAk"><code data-page-node-id="1T85Dff960V9drKfdGdKbH">ratingClass</code> → <code data-page-node-id="AoA2JWOOfszPBrM8T2g996">bandIndex('rating', …)</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3 data-page-node-id="52clNKfPJ3iz4WHCRVJMfs">6.2 类名 / 常量表型分档（数组查表）</h3>
+  <table data-page-node-id="5Cv4AvYQuIpom1wqG7mmjt">
+    <thead data-page-node-id="8byXWcCa4dMq7rLaV1ISWe"><tr data-page-node-id="YY0tMru44O0tOzPBC33tof"><th style="width:330px" data-page-node-id="oFl9ZKYEUKJA8j18V4sLnl">文件</th><th data-page-node-id="wfK1T98vldkPra9r0Vx4hV">替换为</th></tr></thead>
+    <tbody data-page-node-id="Hp2GNkKHsKFVd0DVi7JXxR">
+      <tr data-page-node-id="rGEUbuX8zOrsGal1C1gaTE"><td data-page-node-id="wmSyNru5AuSTR3chxP15UH"><code data-page-node-id="AgWp6hDOcFQG4hnNyjI3qg">results/ProfitResult.vue</code></td><td data-page-node-id="Inn1oGY5tABHO1JB2thGZ8"><code data-page-node-id="WM3fCVTMRds0bRSwR1QA83">ROI_TAGS[bandIndex('roi', …)]</code></td></tr>
+      <tr data-page-node-id="tOKyG2hAdsgLfiEVA1vB1L"><td data-page-node-id="GP4LKTpGl2AfTk3BZWEqtB"><code data-page-node-id="Dwxn3IGVFnNGZBAbplSrYz">TaskConfigPanel/configs/AdDashboardConfig.vue</code></td><td data-page-node-id="Pt65Wj9wExVZQGVObIRGqo"><code data-page-node-id="Z4FNsEbnzS8eND2MuP4N45">bandOf('acos')</code> / <code data-page-node-id="pbuCRBJB3ylL9J7mWZEbbz">bandOf('roas')</code> + <code data-page-node-id="RcAtxJYbDCDyVIEQlahFp6">ACOS_TAG</code> / <code data-page-node-id="GUGlfgFKAqakjUeT2jYHwG">ACOS_LABEL</code> 常量表</td></tr>
+      <tr data-page-node-id="udLhpJisvUiB8KlkBoibkC"><td data-page-node-id="MoJ5Q8tu5CwCbBlG3gHost"><code data-page-node-id="iPBMOL63VBQCtvTzbmvIKu">KnowledgeBase/ProductLibrary.vue</code></td><td data-page-node-id="4s8oz1KNdIOc1NT9wHUz8R">4 处 margin（卡片 / SPU / 表格 / 详情）→ <code data-page-node-id="HeaKlHxxpTS7C4qsE09wdU">bandOf('margin', …)</code></td></tr>
+      <tr data-page-node-id="PDEyEmTjyqATryW5xRvPmE"><td data-page-node-id="QUiqbYBYTDracS9lAQmZo5"><code data-page-node-id="fTFyI17LOfbC8PKU0emhmQ">configs/listingSections/KeywordsSection.vue</code></td><td data-page-node-id="v9ETVuNFFoQ6KDoTGSWNRR"><code data-page-node-id="8egleizDO9rEhwsgwvGvHK">REL_CLASS[bandOf('relevance', r)]</code> — 原 90/80 统一到 90/75</td></tr>
+      <tr data-page-node-id="JhDwOwAF6ZJSGbBjENTBiy"><td data-page-node-id="ItjtgfcwdDrRI8KR9G4BZc"><code data-page-node-id="ARNIuX9Ub2EEptN0x7BQeu">composables/useChatOrchestrator.ts</code></td><td data-page-node-id="lkfDF9nx4d3sJGQNPKWafI">CR4 → <code data-page-node-id="PSvmL0A4pbqQqgJ5kEHRs3">CR4_LABEL[bandOf('cr4', …)]</code></td></tr>
+      <tr data-page-node-id="ZcfWm2aiayZgECpAcWUKDL"><td data-page-node-id="0O9WJ6SqJftmAZ6UK6yeUL"><code data-page-node-id="dw2iTLHmMdkD2EQeJCqeew">configs/ReviewConfig.vue</code></td><td data-page-node-id="6E5tUDREJhwWBS9UEfmz56"><code data-page-node-id="R791vX1gRxf6qr3mjF1GJx">bandOf('acos', g.acos)</code>（原 33/25 → 25/35）+ <code data-page-node-id="6x2o3GBxlrHkhBEq61lq2L">bandOf('restockDays', it.days)</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2 data-page-node-id="zgFYuiuEv2kNRanUZ7vlGb">7. 验证证据（四件）</h2>
+
+  <h3 data-page-node-id="xXm3XWMUsAeVqcgF446O9m">7.1 构造性等价探针 —— 证明「只换机制，没换数值」</h3>
+  <p data-page-node-id="JkLmJSQrrre9AnBsdCxf1A">把改造<strong data-page-node-id="LPtuJn0zvaZryJZVn9JGp3">前的旧阈值逐字抄进</strong>探针的 <code data-page-node-id="gbWMuU5SQu6ReTLS7lu0PS">LEGACY</code> 表，在 171 个探测点上与
+     <code data-page-node-id="lkoYbqPoQDPJNwmyABbFiU">bands.ts</code> 的 <code data-page-node-id="scj3rpvTGXidV8UttP5R3R">bandIndex/bandOf/bandColor</code> <strong data-page-node-id="INAE2vmMGUNOjKiS5J8ECq">逐值逐色</strong>对照，浅色/深色两态各跑一次。</p>
+  <pre data-page-node-id="HkbmSzh8LnjKmi64JkO9QD">浅色态: total=171  mismatch=3  nanBad=[]
+  campaignHealth@50: var(--danger) -&gt; var(--warning)     ← 有意（§8-①）
+  campaignHealth@51: var(--danger) -&gt; var(--warning)     ← 有意
+  campaignHealth@59: var(--danger) -&gt; var(--warning)     ← 有意
+深色态: total=171  mismatch=3  nanBad=[]
+acos 边界: 0:ok 24:ok 25:ok 26:warn 34:warn 35:warn 36:danger 100:danger   ← 精确</pre>
+  <div class="good" data-page-node-id="fS6kHxM6sUahcWH7NB9umh">除 3 处<strong data-page-node-id="af2B7VRAE1CWQHCXF72OGp">有意</strong>的红界调整外，其余 <b data-page-node-id="FMNwHFCrUmKhopcEADnQa7">168 点逐值逐色完全一致</b> → 重构未改变任何既有配色/档位判定。</div>
+
+  <h3 data-page-node-id="5A5F5oMG9q6oc6PP5mhldG">7.2 像素回归 —— 证明没有样式连带损伤</h3>
+  <p data-page-node-id="XdqIYGyGDDqrOXk2FeVDpI">与 P7 同名的 11 张真实结果卡、同尺寸深色截图做逐像素 diff：</p>
+  <pre data-page-node-id="Gp1l8dfeLl3fBsfNmRfb0R">P7-cards-dark.png vs P8-cards-dark.png  ->  差异 127 px / 8,060,000 px = 0.0016%
+定位: 卡 5 上的实时时间戳 "11:47:05" -> "12:22:05"（非样式变化）</pre>
+  <div class="good" data-page-node-id="WCPD0fpuwvriyTxaGFCC6B">差异可 100% 归因到页面上的<strong data-page-node-id="4klSsdbURniMO1X2JkjeEF">动态时间戳</strong> → <b data-page-node-id="EY9wLbNPGyQiQTeHDpJfi1">零样式回归</b>。</div>
+
+  <h3 data-page-node-id="lLbJvkCUgLOf7tE9oEXEJ5">7.3 口径自查门禁 —— 证明没有漏网</h3>
+  <p data-page-node-id="NHGjYCQWvaw6VtdAKNh7hr"><code data-page-node-id="Bxj348XyLiSOLBYCUhic3d">check_bands.py</code> 扫描全库「数值比较 + 档位输出」组合（<code data-page-node-id="Ppen0SzLs2iGpb3640yqxz">--strict</code> 退出码可进 CI）：</p>
+  <pre data-page-node-id="CnN10XJamBto8M35hKECHn">A. 疑似分档残留（应 == 0）: 0          <- PASS
+B. 零轴 / 符号判定（正常，不该并进分档表）: 48
+白名单命中（有意留在外面）: 45（每条都写明理由）</pre>
+  <p class="small" data-page-node-id="IEPRzxc0qlseL3KpLia9Yx">白名单类目：计数/存在性判定、时间窗、领域单点规则（CVR&lt;5、标题长度平台规范）、双向零轴（BSR 趋势 ±100 死区）、ACoS 溢出显示 ∞、后端已算的 grade。</p>
+
+  <h3 data-page-node-id="0tFFI6F2NdcxNgUbMXIjTl">7.4 类型检查与构建</h3>
+  <table data-page-node-id="KSaz35w7jmiolVFY608l6F">
+    <thead data-page-node-id="tO1rXeAGtJ0GDyaclgITc7"><tr data-page-node-id="jLoWu5MhEe6l6nLeOc8USP"><th data-page-node-id="rsNAhNQObAIe1d3Vn69trh">检查</th><th style="width:150px" data-page-node-id="79J5xl9rMGwNxYXVD2aN6i">结果</th><th data-page-node-id="N7APGsvhEUyLBCnkkBqYMr">说明</th></tr></thead>
+    <tbody data-page-node-id="syQKuGuy7idooH52yvPZDb">
+      <tr data-page-node-id="kC5CtDCBU9eaBoxzfAmxv9"><td data-page-node-id="K1l6bl5UYGUZDB38oCpxp3"><code data-page-node-id="RM8Z11meAD4YDvJnjHby3f">npx vue-tsc --noEmit</code></td><td data-page-node-id="yiMBqVFpFdFNWYHsgq7aid"><span class="tag done" data-page-node-id="o241M2ncteDPWGDbg2CvFr">EXIT=0</span></td><td data-page-node-id="NiiKaj5rl6FXL3oyyMHxNy">三个阶段（第一批 18 / 第二批 12 / 第三批 2 处）后均为 0</td></tr>
+      <tr data-page-node-id="efALCm8hgwMUzNKW9X9Ewg"><td data-page-node-id="QZLdzhomSfipLrCvNfe34b"><code data-page-node-id="ZeEJYw6FXlxt8dZo94RvS7">npm run build</code></td><td data-page-node-id="WTZoZu8SH7PZyDtfwz77Rl"><span class="tag done" data-page-node-id="jLGQqmJQrxm1uF3UlHQDbj">EXIT=0</span></td><td data-page-node-id="CxZB1XON6lR1dFn8Mj4Mky">19.41s，3659 modules transformed</td></tr>
+    </tbody>
+  </table>
+  <table data-page-node-id="jX3puTmFBaOrUhcABlk1OM">
+    <thead data-page-node-id="H65AJxvV8ZMQYKX91kBmkg"><tr data-page-node-id="xyuMAPDDMtzeylGjUkE9FE"><th data-page-node-id="D6z7SH6M7VHgfdoxtC5ZGW">产物</th><th class="n" data-page-node-id="sCccvMWHe3RaneUw2WdMQA">P7 收尾</th><th class="n" data-page-node-id="QION3T3Ayng3meYWnLVuB0">P8</th><th class="n" data-page-node-id="bk6w00yfWBgFQ1tBRFEi3Z">Δ</th></tr></thead>
+    <tbody data-page-node-id="ohGdmbMX3cFTy1FDGEaDCd">
+      <tr data-page-node-id="Y5UnEilB6YEgTDkxNXj9T9"><td data-page-node-id="VIv5OozcW5piAOs620VcjC"><code data-page-node-id="qkxApTKHWp4SKhE200m6H2">bands-*.js</code>（新共享 chunk）</td><td class="n" data-page-node-id="VKqGjgKPOZ3CVOEGaRJrBJ">—</td><td class="n" data-page-node-id="A71ZtDerOYnl0VqiVjwhQX">6.17 kB</td><td class="n" data-page-node-id="yjPCB9zRrNL56QGlntVTsG">+6.17</td></tr>
+      <tr data-page-node-id="wr8QktsA48DmvUGMWPaGel"><td data-page-node-id="DOXKwf8kgpDHvDlHV6By7B"><code data-page-node-id="UTnipDEHgem0kzXULI2Yd4">Workspace-*.js</code></td><td class="n" data-page-node-id="BICdEyMuDPjgnffTTXKWWf">975.93 kB</td><td class="n" data-page-node-id="TtMThlL0ZlTjLju3sdsoh6">975.13 kB</td><td class="n" data-page-node-id="I5RUVAmAWGg2SYnbes8PxG">−0.80</td></tr>
+      <tr data-page-node-id="xRSgAqbRT8pGLar4PuzOvs"><td data-page-node-id="EEGhHlvzOn1EZXL3H6XWrq"><code data-page-node-id="DcOY5DwtUCEtaNPyEBVZWL">Workspace-*.css</code></td><td class="n" data-page-node-id="6fAiPTvxFgsgKceuryiS0U">288.19 kB</td><td class="n" data-page-node-id="bzzBZGHJOHg3zdeintLEth">288.19 kB</td><td class="n" data-page-node-id="AlseHvhrFr6Ujbaa9A8CdF">0</td></tr>
+      <tr data-page-node-id="UXhLmuUrPIITMq77Uz7vP8"><td data-page-node-id="kIXeZoP6j1OpsMtNVVFjw7"><code data-page-node-id="ZDESfErxbQUW3TTSj6hCSr">index-*.js</code></td><td class="n" data-page-node-id="WmAAgWFTUXOHpMpc4TAKX4">1543.92 kB</td><td class="n" data-page-node-id="l2dmmmWNQXp9lY91IzoxsL">1543.91 kB</td><td class="n" data-page-node-id="Xnln5VddOe32p5BX6NeOPz">−0.01</td></tr>
+    </tbody>
+  </table>
+  <p class="small" data-page-node-id="dF6hQAp8F88qLrSnem3POz">gzip 口径净增 ≈ <b data-page-node-id="CrmqnqHS0HgYsaA8ClFXVR">3.8 kB</b>（真源被抽成共享 chunk，同时 22 个文件里重复的阈值表达式被折叠 → Workspace 反降 0.8 kB）。这是把口径收敛到单一真源的代价与收益。</p>
+
+  <h2 data-page-node-id="G3UAW08cW5SZlxNLgM6vht">8. ⚠️ 需要老板确认的两类「产品行为变化」</h2>
+  <div class="bad" data-page-node-id="3y7PeOIbheTC2xzmK6oslR">
+    以下改动<strong data-page-node-id="WJqVrPZu8pLD2GckbrjtPH">不是零变化</strong>。它们改变了阈值，因此改变了产品行为。我按「跨端必须一致 / 同名必须同值」的原则做了收敛，<b data-page-node-id="o1iG9sIWyXnxxjBQBLywDo">请你确认是否接受</b>。
+  </div>
+  <table data-page-node-id="4HuizEhcjOQVD5fqS1bPc7">
+    <thead data-page-node-id="oZEuZ2b1ZT359Oj4R0uOFC"><tr data-page-node-id="P2Pjy61djKMeyLCtqefCzO"><th style="width:230px" data-page-node-id="2i2N8Lswql1GLiP352He5Q">改动</th><th style="width:130px" data-page-node-id="bGMFot6tukXwPGMmznvLYC">原 → 新</th><th data-page-node-id="ENpiwHCKJD3EC1c8v63FO4">行为影响</th><th style="width:90px" data-page-node-id="OARP5kRXAE1qEqVOYXh5lO">状态</th></tr></thead>
+    <tbody data-page-node-id="oHz8mVzDpMerkC1fEa33sF">
+      <tr data-page-node-id="qg8vmF1AsIvIH1kLr5V1ux">
+        <td data-page-node-id="JzrfCdxO3uYWHG9XoSX1NN"><b data-page-node-id="CD28fWnZHijMer8TPa0Ov1">① <code data-page-node-id="8V1H6iHwHmR9JBpiSYI2AY">campaignHealth</code> 红界</b><br data-page-node-id="XW2DbhuWiS6GfIeC4pv5lK"><span class="small" data-page-node-id="kl1iaiGQpdhDpA07rQZTsF">跨端对齐（后端为真源）</span></td>
+        <td data-page-node-id="1XHWBLfBUWBcnsqxY1tBTQ">60 → <b data-page-node-id="joqdEptevKx9OKsOLMNbeU">50</b></td>
+        <td data-page-node-id="ir0YaTzDAlCnIljWgDQh8B">健康分 <b data-page-node-id="BmjneE91lKVkzkJBJFm4zy">50–59</b> 的 Campaign 由<span class="sw" style="background:#cf222e" data-page-node-id="9HJG3x0JBBKuJ96D3Nt0T3"></span>红 变<span class="sw" style="background:#9a6700" data-page-node-id="kBpHLJBW8SOztOJc8ZO4PB"></span>橙。
+            换来「前端标红 == 后端报问题」的一致：后端 <code data-page-node-id="flYebVeRNzONUbAOHXpOaj">agent_ad.py:902</code> 用 <code data-page-node-id="cHUqVoUIPnPCPED77LFTXG">&lt; 50</code> 生成「表现差 / 建议暂停」告警，
+            之前前端可能仍显橙/绿。本质是<b data-page-node-id="2NmyfXa9rqLt0eQUHk12sl">前端告警灵敏度提高</b>。</td>
+        <td data-page-node-id="ra9n9uj5r6DC0cADHZX8by"><span class="tag ask" data-page-node-id="3IYtcmjObEmJAC0Q4SJEVc">待确认</span></td>
+      </tr>
+      <tr data-page-node-id="PvAEbl71u2eTtpAtEbAAm9">
+        <td data-page-node-id="uyqH1GnmXpotGY61ekzgB8"><b data-page-node-id="qMXuQPv94ZVKCThTd4Zgbi">② <code data-page-node-id="E9E3wQJbdBlWfxic1KiTrq">relevance</code> 阈值</b><br data-page-node-id="ps3FSJwjsAo7Yxedo8CGP3"><span class="small" data-page-node-id="nIIwsATQCbNCgOeKhIBOs2">同名不同值统一</span></td>
+        <td data-page-node-id="A98Y3a3bm25GM9xRR4IMUI">90/80 → <b data-page-node-id="Zw3tlKw3RSBGuJ9pWLx2AN">90/75</b><br data-page-node-id="nmhWhCpi9naKhWQ7OLrtyI"><span class="small" data-page-node-id="B284B8Rz9rTcAibFO1ODbw">（列表配置侧）</span></td>
+        <td data-page-node-id="DArsvmkL0VONsqmkkrX6Sf">关键词相关性 75–79 分由「待观察」升为「推荐」。关键词挖掘侧本来就是 90/75，统一后同名同值。</td>
+        <td data-page-node-id="VqxvIhDgqPXCBln4WgB7r9"><span class="tag ask" data-page-node-id="Nr6BdDVBNVIh5uyMIL3aah">待确认</span></td>
+      </tr>
+      <tr data-page-node-id="cXytLiPGa0B5MsKc46cdPH">
+        <td data-page-node-id="XhCTUqmZBbAP3MVFUflZ94"><b data-page-node-id="ifgVHrNBDMlKoih50Xsng4">③ <code data-page-node-id="zS433HsQxb10BRcoJybwOY">acos</code> 阈值</b><br data-page-node-id="wukrwSLBLIm2hqB3fsgUGu"><span class="small" data-page-node-id="nmyY5d8LrUZiaEooYMnTCj">同名不同值统一</span></td>
+        <td data-page-node-id="WjO3QByb2tdtBeIq91GPls">33/25 → <b data-page-node-id="WjX2BZTrna7NQNdmKNrtKA">25/35</b></td>
+        <td data-page-node-id="COrDZKssYygC1rFALBDlkz">评论配置里 ACoS 的「低 / 中 / 高」分界改为与广告看板一致：≤25 优、≤35 中、&gt;35 差。
+            原 33/25 是孤本，几乎肯定是复制后手改的漂移。</td>
+        <td data-page-node-id="QI6ghiGNb4wOLPHTWFKLbt"><span class="tag ask" data-page-node-id="lmoxbtBFu3ffbaPFKUEar3">待确认</span></td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="small" data-page-node-id="sQxLObKEZCGQpxxUQl3vAc">如果你希望「零行为变化」，②③ 可以按原值各建两套口径（放弃「同名同值」），① 则必须二选一：
+  要么前端对齐后端（本轮做法），要么把后端告警线从 50 改成 60。<b data-page-node-id="rk2ACmtIuoqWuVGuGN3Zi9">建议维持本轮做法</b> —— 跨端分叉是缺陷，同名不同值迟早还会再被改错一次。</p>
+
+  <h2 data-page-node-id="dMftXZLUscZ8EC4DOSn0Tm">9. 交付物与后续</h2>
+  <ul data-page-node-id="Gg4cYeqHGjb1xJ59Zp1mQc">
+    <li data-page-node-id="jT1A0NAUsZLGaIvBfAOHMZ"><b data-page-node-id="6eqgkZnMi5dhB1OAOrurYa">新增真源</b>：<code data-page-node-id="iQVSCWoYUdHUFOEQSKt82H">frontend/src/theme/bands.ts</code>（307 行，18 套口径 + 3 个出口 + <code data-page-node-id="C0Vou9tKZhgADo9Vkdi88p">BandDef</code> 类型 + 防误并文档头）</li>
+    <li data-page-node-id="GqZKnucTfuwTphgCFRI8AZ"><b data-page-node-id="PwBRRCENYQWRLKCh3osFTz">改造文件</b>：23 个业务文件（见 §6），30 处替换 / 35 个调用点</li>
+    <li data-page-node-id="N28h499cS7UPMamjZWhhNo"><b data-page-node-id="bEb3r4r9wl1g5HnF3stgyz">门禁工具</b>：<code data-page-node-id="qWqmpplAnpBYoIE6bE6kIk">check_bands.py</code>（<code data-page-node-id="eAhU04orMTRDfw3CIxStlT">--strict</code> 可进 CI；<code data-page-node-id="sTs2bFU80v7jmRq15EC94V">ALLOW</code> 白名单每条带理由）</li>
+    <li data-page-node-id="9Td4YM0Nrsubkv0POalGmo"><b data-page-node-id="ajXiGcH5L8rnAhkGn18gig">可复用技能</b>：已归档为 skill <code data-page-node-id="7mqCBDK4Ggray8cjn2nXFT">score-band-convergence</code>（含真源模板、块级替换脚本、等价性探针、自查门禁）</li>
+    <li data-page-node-id="vxsty6xFQrYHTQbDvEYJrv"><b data-page-node-id="4RYubtCZqV4J2Zo0Ss0l8n">可选后续</b>：
+      <ul data-page-node-id="HVY0FDNbrWiFCNRe1Ivtyv">
+        <li data-page-node-id="tQOPQhhZi2oIjxxBmrrzM2">把后端的 <code data-page-node-id="3pQfwD1cKfD51klYfMcgJK">blue_ocean</code> / <code data-page-node-id="8dTgvlJ9AeE7GzbTQb6bSp">grade</code> 阈值也抽成后端侧具名常量（目前散在 <code data-page-node-id="JdiUAM9Hb9uALRkHDBgBC0">service.py</code>、<code data-page-node-id="9BkAt09Ec6KwqZd54YPkhR">agent_ad.py</code>、<code data-page-node-id="vbsUrRo6Nq0YNJxNlP7EJk">listing_generator</code>）—— 前后端共用一套文档化口径；</li>
+        <li data-page-node-id="eRdVG41TMHg4CuDASHhJlr">前端 <code data-page-node-id="r37KWBBKUsW65iEYwnBO82">SEODiagnostic.getGrade</code> 直接消费后端返回的 <code data-page-node-id="0nLb0qOexjiemhFQIec7qo">grade</code> 字段（<code data-page-node-id="jaozk5zNCIddIwtbdXucFb">schemas.py:122</code>），删掉重算实现；</li>
+        <li data-page-node-id="phS5GZTpmpzMPCB5mfs2IP">把 <code data-page-node-id="vMA7LcxGqe1vVHrnKTjFC1">utils/colorSemantics.ts</code> 的 54 处裸色名（<code data-page-node-id="CXyn5XF6fxpkumLpgFK1sQ">color="blue|green|red"</code>）继续收敛到语义变量。</li>
+      </ul>
+    </li>
+  </ul>
+
+  <footer data-page-node-id="Yg4VZ22ItsgtLDg85CDJAB">
+    P8 评分分档口径收敛 · 2026-09-13 · 真源 <code data-page-node-id="y2N6eOl3ISaZB0CJvIZGjt">frontend/src/theme/bands.ts</code> ·
+    验证：等价性 171 点 / 像素 diff 0.0016% / 自查 --strict PASS / vue-tsc EXIT=0 / build EXIT=0
+  </footer>
+
+</div>
+</body>
+</html>

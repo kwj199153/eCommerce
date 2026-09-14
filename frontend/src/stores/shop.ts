@@ -96,6 +96,41 @@ export const useShopStore = defineStore('shop', () => {
   }
 
   /**
+   * 确保店铺列表已加载（幂等）。
+   *
+   * ★★ 为什么需要这个：`shops` 的唯一填充点曾是 `ShopPopoverContent.vue` 的
+   *    `onMounted` —— 而该组件挂在左上角「店铺群」弹层的 `#content` slot 里，
+   *    **只有用户点开弹层才会挂载**。后果：
+   *      1. 刷新页面后不点弹层 → `shops` 恒为 `[]` → 左上角店铺名不显示
+   *         （`currentShop = shops.find(...)` 算不出）
+   *      2. AI 说「切换到虾皮2」时 `switch_shop` 找不到目标 → 动作被丢弃
+   *    ⇒ 店铺列表属于**应用级基础数据**，必须在入口处主动拉，不能寄生在弹层里。
+   *
+   * 幂等：已加载过就不再重复请求（除非 `force`）。并发安全：用 `_loadPromise`
+   * 去重，避免启动期 Workspace / 弹层 / 动作分发同时触发三个请求。
+   */
+  let _loadPromise: Promise<void> | null = null
+  async function ensureShopsLoaded(force = false): Promise<void> {
+    if (!force && shops.value.length > 0) return
+    if (_loadPromise) return _loadPromise
+    _loadPromise = (async () => {
+      try {
+        const response = await get<{ stores: Store[]; total: number }>('/stores')
+        // 复用 setShopList（其参数就是后端 Store[]）：它内含「未选店铺则自动
+        // 选中第一个」的兜底，且内部做 `Store[] → Shop[]` 的断言转换。
+        // ⚠️ 别在这里自己 `as Shop[]` 再传 —— setShopList 的形参是 Store[]，
+        //    传 Shop[] 会被 tsc 拒绝（Shop 缺 status / connection_status）。
+        setShopList(response?.stores || [])
+      } catch (error) {
+        console.error('加载店铺列表失败:', error)
+      } finally {
+        _loadPromise = null
+      }
+    })()
+    return _loadPromise
+  }
+
+  /**
    * 设置当前选中店铺（接受 Shop 对象或 ID 字符串）
    */
   function setCurrentShop(shopOrId: Shop | string) {
@@ -112,6 +147,13 @@ export const useShopStore = defineStore('shop', () => {
    */
   function setShopList(newShops: Store[]) {
     shops.value = newShops as unknown as Shop[]
+    // 数据层隔离：未选店铺时后端一律返回空列表。真实加载路径是
+    // `ShopPopoverContent` / `ShopList` 调 `fetchStores()` → 本方法，
+    // 而 `fetchShops()`（曾内置这段兜底）其实从未被调用 —— 兜底一度是死代码，
+    // 导致新用户（localStorage 无 current_shop_id）进去「一打开全空」。
+    if (!currentShopId.value && shops.value.length > 0) {
+      setCurrentShop(shops.value[0])
+    }
   }
 
   /**
@@ -240,6 +282,7 @@ export const useShopStore = defineStore('shop', () => {
 
     // Actions
     fetchShops,
+    ensureShopsLoaded,
     setCurrentShop,
     setShopList,
     createNewShop,

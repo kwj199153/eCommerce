@@ -140,6 +140,7 @@
 </template>
 
 <script setup lang="ts">
+import { bandColor } from '@/theme/bands'
 import { CloseOutlined, DownloadOutlined, DiffOutlined, ExperimentOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 
@@ -210,11 +211,8 @@ const resultData = props.data || {
   recommended_test: '主图类型（白底 vs 场景 vs 人物使用）',
 }
 
-const getMetricColor = (value: number) => {
-  if (value >= 4) return '#52c41a'
-  if (value >= 3) return '#1890ff'
-  return '#faad14'
-}
+/** 0–5 星级 / 倍数（量纲不同，见 bands.ts `rating`） */
+const getMetricColor = (value: number) => bandColor('rating', value)
 
 const applyVariant = (idx: number) => {
   message.success(`已应用版本 ${idx === 0 ? 'A（对照）' : String.fromCharCode(65 + idx)}`)
@@ -228,7 +226,7 @@ const exportVariant = (idx: number) => {
 <style scoped>
 .ab-test-result {
   background: var(--bg-elevated);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   overflow: hidden;
 }
 
@@ -236,8 +234,8 @@ const exportVariant = (idx: number) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-bottom: 1px solid var(--border-base);
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #fff;
 }
@@ -245,31 +243,31 @@ const exportVariant = (idx: number) => {
 .header-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-12);
 }
-.result-icon { font-size: 28px; }
-.header-info h3 { margin: 0; font-size: 16px; font-weight: 600; }
-.subtitle { margin: 2px 0 0; font-size: 12px; opacity: 0.85; }
+.result-icon { font-size: var(--font-size-28); }
+.header-info h3 { margin: 0; font-size: var(--font-size-16); font-weight: 600; }
+.subtitle { margin: var(--space-2) 0 0; font-size: var(--font-size-12); opacity: 0.85; }
 
 /* 变体卡片 */
 .variants-comparison {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  padding: 20px;
+  gap: var(--space-16);
+  padding: var(--space-20);
   background: var(--bg-base);
 }
 
 .variant-card {
   background: var(--bg-elevated);
-  border-radius: 8px;
-  border: 2px solid #f0f0f0;
+  border-radius: var(--radius-8);
+  border: 2px solid var(--border-base);
   overflow: hidden;
   transition: border-color 0.2s;
 }
 
 .variant-card:hover {
-  border-color: #1890ff;
+  border-color: var(--primary);
 }
 
 .variant-card.is-control {
@@ -284,35 +282,35 @@ const exportVariant = (idx: number) => {
   right: -24px;
   background: var(--bg-hover-light);
   color: #fff;
-  font-size: 10px;
-  padding: 2px 8px;
+  font-size: var(--font-size-10);
+  padding: var(--space-2) var(--space-8);
   transform: rotate(45deg);
 }
 
 .variant-badge {
   text-align: center;
-  padding: 8px;
-  font-size: 13px;
+  padding: var(--space-8);
+  font-size: var(--font-size-13);
   font-weight: 600;
   background: var(--bg-base);
   color: var(--text-secondary);
 }
 
 .compare-section {
-  padding: 12px 14px;
-  border-bottom: 1px dashed #f0f0f0;
+  padding: var(--space-12) var(--space-14);
+  border-bottom: 1px dashed var(--border-base);
 }
 
 .section-label {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-6);
   text-transform: uppercase;
 }
 
 .content-text {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   line-height: 1.55;
   color: var(--text-secondary);
   max-height: 60px;
@@ -324,26 +322,26 @@ const exportVariant = (idx: number) => {
 
 .char-badge {
   display: inline-block;
-  margin-top: 4px;
-  font-size: 10px;
-  padding: 1px 6px;
+  margin-top: var(--space-4);
+  font-size: var(--font-size-10);
+  padding: var(--space-1) var(--space-6);
   background: var(--bg-hover-light);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   color: var(--text-tertiary);
 }
 
 .bullets-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .mini-bullet {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   line-height: 1.5;
   color: var(--text-secondary);
   display: flex;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .b-num {
@@ -351,26 +349,26 @@ const exportVariant = (idx: number) => {
   height: 16px;
   line-height: 16px;
   text-align: center;
-  background: #e6f7ff;
-  color: #1890ff;
-  border-radius: 4px;
-  font-size: 10px;
+  background: var(--info-bg);
+  color: var(--primary);
+  border-radius: var(--radius-4);
+  font-size: var(--font-size-10);
   font-weight: 600;
   flex-shrink: 0;
 }
 
 .price-display {
-  font-size: 22px;
+  font-size: var(--font-size-22);
   font-weight: 700;
-  color: #1890ff;
+  color: var(--primary);
 }
 
 .variant-metrics {
   display: flex;
   justify-content: space-around;
-  padding: 12px;
+  padding: var(--space-12);
   background: var(--bg-base);
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--border-base);
 }
 
 .metric {
@@ -379,55 +377,55 @@ const exportVariant = (idx: number) => {
 
 .m-label {
   display: block;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--text-disabled);
-  margin-bottom: 2px;
+  margin-bottom: var(--space-2);
 }
 
 .m-value {
-  font-size: 16px;
+  font-size: var(--font-size-16);
   font-weight: 700;
 }
 
 .variant-actions {
   display: flex;
-  gap: 6px;
-  padding: 10px 14px;
+  gap: var(--space-6);
+  padding: var(--space-10) var(--space-14);
   justify-content: center;
 }
 
 /* 差异表格 */
 .diff-highlight {
-  padding: 16px 20px;
-  border-top: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-top: 1px solid var(--border-base);
 }
 
 .highlight-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .diff-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 .diff-table th {
   background: var(--bg-base);
-  padding: 8px;
+  padding: var(--space-8);
   text-align: left;
   font-weight: 600;
   color: var(--text-secondary);
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 2px solid var(--border-base);
 }
 
 .diff-table td {
-  padding: 8px;
-  border-bottom: 1px solid #f0f0f0;
-  font-size: 11px;
+  padding: var(--space-8);
+  border-bottom: 1px solid var(--border-base);
+  font-size: var(--font-size-11);
 }
 
 .dim-label {
@@ -436,22 +434,22 @@ const exportVariant = (idx: number) => {
 }
 
 .changed-cell {
-  background: var(--bg-elevated)be6;
-  color: #d48806;
+  background: var(--warning-bg);
+  color: var(--warning-strong);
   font-weight: 500;
 }
 
 /* 测试建议 */
 .test-recommendation {
-  padding: 16px 20px;
+  padding: var(--space-16) var(--space-20);
   background: var(--bg-base);
 }
 
 .rec-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .rec-content {

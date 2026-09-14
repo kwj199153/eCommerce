@@ -28,55 +28,15 @@ from sqlalchemy import select
 from core.database import async_session_factory
 from core.tenant.middleware import get_current_shop_id
 from modules.candidates.db_model import CandidateRecord, CandidateGroupRecord
+from modules.candidates.service import create_candidate, record_to_dict as _record_to_dict
 from modules.products.db_model import SpuRecord
 
 router = APIRouter(prefix="/api/v1", tags=["候选选品库"])
 
 
 # ====== 转换工具 ======
-
-def _record_to_dict(r: CandidateRecord) -> dict:
-    """ORM → dict（字段名与前端 CandidateItem 对齐）"""
-    return {
-        "id": r.id,
-        "asin": r.asin,
-        "sku": r.sku,
-        "title": r.title,
-        "brand": r.brand,
-        "category": r.category,
-        "sub_category": r.sub_category,
-        "price": r.price,
-        "currency": r.currency,
-        "site": r.site,
-        "estimated_monthly_sales": r.estimated_monthly_sales,
-        "review_count": r.review_count,
-        "rating": r.rating,
-        "bsr": r.bsr,
-        "bsr_category": r.bsr_category,
-        "listed_date": r.listed_date,
-        "roi_estimated": r.roi_estimated,
-        "margin": r.margin,
-        "blue_ocean_score": r.blue_ocean_score,
-        "overall_listing_score": r.overall_listing_score,
-        "keywords": r.keywords or [],
-        "competitor_asins": r.competitor_asins or [],
-        "selling_points": r.selling_points,
-        "main_image": r.main_image,
-        "images": r.images or [],
-        "source": r.source,
-        "review_status": r.review_status,
-        "review_notes": r.review_notes,
-        "reviewed_at": r.reviewed_at,
-        "reviewed_by": r.reviewed_by,
-        "monitor_data": r.monitor_data,
-        "last_monitored_at": r.last_monitored_at,
-        "shop_id": r.shop_id,
-        "tags": r.tags or [],
-        "notes": r.notes,
-        "groups": r.groups or [],
-        "created_at": r.created_at,
-        "updated_at": r.updated_at,
-    }
+# 注：`_record_to_dict` 已下沉到 modules/candidates/service.py，
+# 供 REST 路由与选品 Agent 的 save_candidate 工具共用（此处以别名导入）。
 
 
 def _group_to_dict(g: CandidateGroupRecord) -> dict:
@@ -118,54 +78,9 @@ async def get_candidate(candidate_id: str, shop_id: Optional[str] = Depends(get_
 
 
 @router.post("/candidates", status_code=201)
-async def create_candidate(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
-    now = datetime.utcnow().isoformat()
-    cid = payload.get("id") or f"cand-{int(datetime.utcnow().timestamp() * 1000)}"
-    record = CandidateRecord(
-        id=cid,
-        asin=payload.get("asin") or "",
-        sku=payload.get("sku") or f"SKU-CAND-{cid}",
-        title=payload.get("title") or "未命名候选",
-        brand=payload.get("brand") or "",
-        category=payload.get("category") or "other",
-        sub_category=payload.get("sub_category") or "",
-        price=payload.get("price") or 0,
-        currency=payload.get("currency") or "USD",
-        site=payload.get("site"),
-        estimated_monthly_sales=payload.get("estimated_monthly_sales") or 0,
-        review_count=payload.get("review_count") or 0,
-        rating=payload.get("rating") or 0,
-        bsr=payload.get("bsr"),
-        bsr_category=payload.get("bsr_category"),
-        listed_date=payload.get("listed_date"),
-        roi_estimated=payload.get("roi_estimated") or 0,
-        margin=payload.get("margin") or 0,
-        blue_ocean_score=payload.get("blue_ocean_score") or 0,
-        overall_listing_score=payload.get("overall_listing_score"),
-        keywords=payload.get("keywords") or [],
-        competitor_asins=payload.get("competitor_asins") or [],
-        selling_points=payload.get("selling_points"),
-        main_image=payload.get("main_image") or "",
-        images=payload.get("images") or [],
-        source=payload.get("source") or "blue_ocean",
-        review_status=payload.get("review_status") or "pending",
-        review_notes=payload.get("review_notes") or "",
-        reviewed_at=payload.get("reviewed_at"),
-        reviewed_by=payload.get("reviewed_by"),
-        monitor_data=payload.get("monitor_data"),
-        last_monitored_at=payload.get("last_monitored_at"),
-        shop_id=shop_id or payload.get("shop_id") or "",
-        tags=payload.get("tags") or [],
-        notes=payload.get("notes") or "",
-        groups=payload.get("groups") or [],
-        created_at=payload.get("created_at") or now,
-        updated_at=now,
-    )
-    async with async_session_factory() as session:
-        session.add(record)
-        await session.commit()
-        await session.refresh(record)
-    return _record_to_dict(record)
+async def create_candidate_endpoint(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
+    """新增候选（选品分析师产出）。写逻辑在 modules/candidates/service.create_candidate。"""
+    return await create_candidate(payload, shop_id=shop_id)
 
 
 @router.put("/candidates/{candidate_id}")

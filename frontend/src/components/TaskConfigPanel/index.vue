@@ -26,10 +26,26 @@
       </div>
     </div>
 
+    <!-- ====== AIGC 大屏模式：顶部工具 Tab 栏（对齐复盘师大屏 rv-tabs） ======
+         对话模式由 Workspace 顶部工具栏 6 个工具按钮承担切换；
+         大屏模式下顶部工具按钮已隐藏，改由这里的 Tab 栏切换三个工具。 -->
+    <div v-if="isAigcAgent && isDataMode" class="aigc-tool-tabs">
+      <button
+        v-for="tab in aigcTabs"
+        :key="tab.id"
+        class="aigc-tool-tab"
+        :class="{ active: currentTool?.id === tab.id }"
+        @click="setSelectedTool(tab)"
+      >
+        <span class="tab-icon">{{ tab.icon }}</span>
+        <span>{{ tab.name }}</span>
+      </button>
+    </div>
+
     <!-- 面板内容 -->
     <div class="panel-body">
-      <!-- 竞品监控员：右侧常驻「竞品选择」（推理走输入框上方 chip） -->
-      <IntelCompetitorPick v-if="!currentTool && isCompetitorIntel" />
+      <!-- 竞品监控员：右侧常驻「竞品监控大屏」（圈选入口已收到顶部按钮，推理走输入框上方 chip） -->
+      <IntelBoardConfig v-if="!currentTool && isCompetitorIntel" />
 
       <!-- 运营复盘师：未选工具时默认展示「经营概览」数据看板（对话/数据模式一致） -->
       <ReviewConfig
@@ -51,7 +67,7 @@
 
       <!-- 无工具选中（其它 Agent） -->
       <div v-else-if="!currentTool" class="empty-hint">
-        <SettingOutlined style="font-size: 32px; color: var(--text-tertiary); margin-bottom: 12px" />
+        <SettingOutlined style="font-size: var(--font-size-32); color: var(--text-tertiary); margin-bottom: var(--space-12)" />
         <p>选择工具后</p>
         <p>在此配置任务参数</p>
       </div>
@@ -166,10 +182,11 @@
         @startAnalysis="handleStartAnalysis"
       />
 
-      <!-- 监控仪表盘配置 -->
-      <MonitorDashboardConfig
+      <!-- 监控仪表盘：与大屏是同一件事，落点直接给大屏（原表单已被大屏覆盖） -->
+      <IntelBoardConfig
         v-else-if="currentTool.id === 'monitor-dashboard'"
-        @startAnalysis="handleStartAnalysis"
+        :key="'intel-board-' + currentTool.id"
+        :current-tool-id="currentTool.id"
       />
 
       <!-- 价格追踪配置 -->
@@ -208,21 +225,17 @@
         @startAnalysis="handleStartAnalysis"
       />
 
-      <!-- ====== AIGC 媒体生成器 ====== -->
-
-      <!-- 静态素材生成（白底三视图/细节图/场景图/分镜首帧） -->
+      <!-- ====== AIGC 媒体生成器（3 工具各自独立配置面板） ======
+           大屏/对话切换走 Workspace 顶栏 mode-switch（reviewMode），
+           三个 config 通过 inject('reviewMode') 读 isDataMode 渲染「预览窗口 / 表单」。 -->
       <StaticAssetConfig
         v-else-if="currentTool.id === 'static-asset-gen'"
         @startAnalysis="handleStartAnalysis"
       />
-
-      <!-- 短视频带货脚本 + 分镜表 -->
       <VideoScriptConfig
         v-else-if="currentTool.id === 'video-script-gen'"
         @startAnalysis="handleStartAnalysis"
       />
-
-      <!-- AI 短视频生成（基于分镜首帧+运镜指令） -->
       <VideoGeneratorConfig
         v-else-if="currentTool.id === 'ai-video-generator'"
         @startAnalysis="handleStartAnalysis"
@@ -238,7 +251,7 @@
 
       <!-- 通用占位（兜底） -->
       <div v-else class="empty-hint">
-        <ToolOutlined style="font-size: 32px; color: var(--text-tertiary); margin-bottom: 12px" />
+        <ToolOutlined style="font-size: var(--font-size-32); color: var(--text-tertiary); margin-bottom: var(--space-12)" />
         <p>{{ currentTool.name }}</p>
         <p class="hint">配置面板开发中</p>
       </div>
@@ -255,6 +268,7 @@ import {
   ToolOutlined,
 } from '@ant-design/icons-vue'
 import type { ToolDefinition } from '../ChatPanel/tools/toolDefinitions'
+import { getAgentTools } from '../ChatPanel/tools/toolDefinitions'
 import { useAgentStore } from '@/stores/agent'
 import BlueOceanConfig from './configs/BlueOceanConfig.vue'
 import PainPointConfig from './configs/PainPointConfig.vue'
@@ -272,7 +286,6 @@ import CompetitorAdConfig from './configs/CompetitorAdConfig.vue'
 import BudgetAllocConfig from './configs/BudgetAllocConfig.vue'
 import OrderTrackConfig from './configs/OrderTrackConfig.vue'
 import TicketCreateConfig from './configs/TicketCreateConfig.vue'
-import MonitorDashboardConfig from './configs/MonitorDashboardConfig.vue'
 import PriceTrackConfig from './configs/PriceTrackConfig.vue'
 import MarketShareConfig from './configs/MarketShareConfig.vue'
 import PricingAnalysisConfig from './configs/PricingAnalysisConfig.vue'
@@ -291,7 +304,7 @@ import ListingBoard from './configs/ListingBoard.vue'
 // Listing 优化师：这些工具不再各自开配置面板，统一落到商品详情页的对应模块
 const LISTING_TOOL_IDS = ['keyword-miner', 'title-gen', 'bullet-gen', 'desc-gen']
 import IntelAnalysisConfig from './configs/IntelAnalysisConfig.vue'
-import IntelCompetitorPick from './configs/IntelCompetitorPick.vue'
+import IntelBoardConfig from './configs/IntelBoardConfig.vue'
 
 const props = defineProps<{
   currentTool: ToolDefinition | null
@@ -304,7 +317,7 @@ const emit = defineEmits<{
 
 // 内核级防护：直接监听 Agent 变化，确保切换时清空工具选择
 const agentStore = useAgentStore()
-// 竞品监控员：无工具时右侧默认显示「竞品选择」面板
+// 竞品监控员：无工具时右侧默认显示「竞品监控大屏」
 const isCompetitorIntel = computed(() => agentStore.currentAgent?.id === 'competitor-intel')
 // 运营复盘师：无工具时右侧默认显示「经营概览」数据看板
 const isReviewAgent = computed(() => agentStore.currentAgent?.id === 'review-analyst')
@@ -314,12 +327,15 @@ const isListingAgent = computed(() => agentStore.currentAgent?.id === 'listing-g
 // 广告分析师：右侧为「广告大屏看板」，6 Tab 数据面板
 const isAdAnalyst = computed(() => agentStore.currentAgent?.id === 'ad-analysis')
 
+// AIGC 媒体生成器：大屏模式顶部提供「工具 Tab 栏」切换三个工具（对齐复盘师大屏 rv-tabs）
+const isAigcAgent = computed(() => agentStore.currentAgent?.id === 'aigc-media')
+
 // 面板图标/标题（拆成 computed 避免模板内嵌套三元过长导致 Vite 解析失败）
 const panelIcon = computed(() =>
   props.currentTool?.icon || (isCompetitorIntel.value ? '🎯' : isReviewAgent.value ? '📊' : isListingAgent.value ? '🧩' : isAdAnalyst.value ? '📈' : '⚙️')
 )
 const panelTitle = computed(() =>
-  props.currentTool?.name || (isCompetitorIntel.value ? '竞品选择' : isReviewAgent.value ? '经营概览' : isListingAgent.value ? '商品详情页' : isAdAnalyst.value ? '账户总览' : '任务配置')
+  props.currentTool?.name || (isCompetitorIntel.value ? '竞品监控' : isReviewAgent.value ? '经营概览' : isListingAgent.value ? '商品详情页' : isAdAnalyst.value ? '账户总览' : '任务配置')
 )
 watch(() => agentStore.currentAgent, (newAgent) => {
   if (newAgent && props.currentTool) {
@@ -338,6 +354,15 @@ const workingProduct = inject<Ref<any>>('workingProduct', ref(null))
 
 // 从 Workspace 注入当前「对话/文案(数据)」模式（Listing 工作区据此切换单模块/完整视图）
 const reviewMode = inject<Ref<'chat' | 'data'>>('reviewMode', ref('chat') as Ref<'chat' | 'data'>)
+
+// AIGC 大屏模式：读 reviewMode 判断是否 data 模式
+const isDataMode = computed(() => reviewMode.value === 'data')
+
+// 从 Workspace 注入「设置当前工具」（AIGC 大屏工具 Tab 栏切换工具用）
+const setSelectedTool = inject<(tool: ToolDefinition | null) => void>('setSelectedTool', () => {})
+
+// AIGC 三个工具（大屏 Tab 栏数据源，直接读 toolDefinitions 保证与顶部工具栏一致）
+const aigcTabs = computed(() => getAgentTools('aigc-media'))
 
 // 透传给所有子组件（确保孙组件 inject 能稳定获取响应式值）
 // 必须提供默认值 ref(null)，防止上游 provide 失败时子组件 inject 崩溃
@@ -374,7 +399,7 @@ const handleStartAnalysis = (params: any) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: var(--space-12) var(--space-16);
   border-bottom: 1px solid var(--border-base);
   background-color: var(--bg-elevated);
   min-height: 52px;
@@ -384,7 +409,7 @@ const handleStartAnalysis = (params: any) => {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
   overflow: hidden;
   min-width: 0;
 }
@@ -392,22 +417,22 @@ const handleStartAnalysis = (params: any) => {
 /* 工作商品标签 */
 .working-product-tag {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   max-width: 140px;
-  border-radius: 10px;
+  border-radius: var(--radius-10);
 }
 .working-product-tag :deep(.ant-tag-close-icon) {
-  font-size: 10px;
-  margin-left: 4px;
+  font-size: var(--font-size-10);
+  margin-left: var(--space-4);
 }
 
 .panel-icon {
-  font-size: 18px;
+  font-size: var(--font-size-18);
   flex-shrink: 0;
 }
 
 .panel-title {
-  font-size: 14px;
+  font-size: var(--font-size-14);
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -417,7 +442,7 @@ const handleStartAnalysis = (params: any) => {
 
 .header-actions {
   display: flex;
-  gap: 4px;
+  gap: var(--space-4);
   flex-shrink: 0;
 }
 
@@ -431,10 +456,10 @@ const handleStartAnalysis = (params: any) => {
   border: none;
   background: transparent;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   color: var(--text-tertiary);
   transition: all 0.2s ease;
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 .collapse-trigger:hover {
@@ -446,7 +471,45 @@ const handleStartAnalysis = (params: any) => {
 .panel-body {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 16px;
+  padding: var(--space-12) var(--space-16);
+}
+
+/* ====== AIGC 大屏工具 Tab 栏（对齐复盘师 rv-tabs 样式） ====== */
+.aigc-tool-tabs {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-12);
+  border-bottom: 1px solid var(--border-base);
+  background-color: var(--bg-elevated);
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+.aigc-tool-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-12);
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.aigc-tool-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover, rgba(0, 0, 0, 0.04));
+}
+.aigc-tool-tab.active {
+  color: var(--primary);
+  background: var(--primary-soft, rgba(24, 144, 255, 0.1));
+  border-color: var(--primary);
+  font-weight: 600;
+}
+.aigc-tool-tab .tab-icon {
+  font-size: var(--font-size-14);
 }
 
 /* 空状态提示 */
@@ -458,17 +521,18 @@ const handleStartAnalysis = (params: any) => {
   height: 100%;
   color: var(--text-tertiary);
   text-align: center;
-  padding: 24px;
+  padding: var(--space-24);
 }
 
 .empty-hint p {
-  margin: 4px 0;
-  font-size: 13px;
+  margin: var(--space-4) 0;
+  font-size: var(--font-size-13);
 }
 
 .empty-hint .hint {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-disabled);
-  margin-top: 4px;
+  margin-top: var(--space-4);
 }
+
 </style>

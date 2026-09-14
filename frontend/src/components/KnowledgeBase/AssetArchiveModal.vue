@@ -13,7 +13,7 @@
       type="info"
       show-icon
       message="确认后素材将保存到「资料库 → 营销素材库」，可在素材库中统一分组管理"
-      style="margin-bottom: 12px"
+      style="margin-bottom: var(--space-12)"
     />
 
     <div v-if="candidates.length" class="amc-body">
@@ -285,22 +285,22 @@ function onImgError(e: Event) {
 .amc-body {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .amc-section {
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
 }
 
 .amc-section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-8);
 }
 
 .amc-section-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -308,16 +308,16 @@ function onImgError(e: Event) {
 .amc-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-  gap: 8px;
+  gap: var(--space-8);
   max-height: 240px;
   overflow-y: auto;
-  padding: 2px;
+  padding: var(--space-2);
 }
 
 .amc-item {
   position: relative;
   aspect-ratio: 1;
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   overflow: hidden;
   border: 2px solid transparent;
   cursor: pointer;
@@ -353,7 +353,7 @@ function onImgError(e: Event) {
   justify-content: center;
   background: rgba(24, 144, 255, 0.25);
   color: #fff;
-  font-size: 22px;
+  font-size: var(--font-size-22);
   opacity: 0;
   transition: opacity 0.15s;
 }
@@ -364,9 +364,9 @@ function onImgError(e: Event) {
 
 .archived-icon {
   color: var(--success);
-  font-size: 26px;
+  font-size: var(--font-size-26);
   background: rgba(255, 255, 255, 0.8);
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
 }
 
 .amc-item.archived .amc-item-overlay {
@@ -378,7 +378,7 @@ function onImgError(e: Event) {
   position: absolute;
   top: 4px;
   right: 4px;
-  font-size: 14px;
+  font-size: var(--font-size-14);
 }
 
 .amc-item-label {
@@ -386,8 +386,8 @@ function onImgError(e: Event) {
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 2px 6px;
-  font-size: 10px;
+  padding: var(--space-2) var(--space-6);
+  font-size: var(--font-size-10);
   color: #fff;
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
   white-space: nowrap;
@@ -396,12 +396,12 @@ function onImgError(e: Event) {
 }
 
 .amc-form {
-  margin-top: 6px;
+  margin-top: var(--space-6);
 }
 
 .amc-form-row {
   display: flex;
-  gap: 12px;
+  gap: var(--space-12);
 }
 
 .flex-1 {
@@ -410,35 +410,35 @@ function onImgError(e: Event) {
 
 /* 内联新建分组 */
 .amc-add-group {
-  margin-top: 2px;
+  margin-top: var(--space-2);
 }
 
 .amc-add-group :deep(.ant-btn) {
   padding-left: 0;
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 .amc-inline-create {
-  margin-top: 6px;
-  padding: 8px 10px;
+  margin-top: var(--space-6);
+  padding: var(--space-8) var(--space-10);
   border: 1px dashed var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--bg-sidebar);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 .amc-color-row {
   display: flex;
-  gap: 6px;
+  gap: var(--space-6);
   flex-wrap: wrap;
 }
 
 .amc-color-swatch {
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   cursor: pointer;
   border: 2px solid transparent;
   transition: all 0.15s;

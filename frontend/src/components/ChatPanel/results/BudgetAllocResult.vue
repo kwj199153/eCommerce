@@ -102,54 +102,56 @@ const riskLevel = computed(() => {
 
 <style scoped>
 .budget-alloc-result {
-  padding: 16px;
-  background: var(--bg-elevated);
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
+  padding: var(--space-16);
+  /* --bg-raised / --shadow-card 替代原 styles/dark-overrides.css 的深色补丁 */
+  background: var(--bg-raised);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-8);
+  box-shadow: var(--shadow-card);
 }
 
 .budget-overview {
-  display: flex; align-items: center; justify-content: center; gap: 20px;
-  padding: 20px; background: linear-gradient(135deg, #f6ffed, #e6fffb);
-  border-radius: 12px; margin-bottom: 16px;
+  display: flex; align-items: center; justify-content: center; gap: var(--space-20);
+  padding: var(--space-20); background: linear-gradient(135deg, var(--success-bg), var(--info-bg));
+  border-radius: var(--radius-12); margin-bottom: var(--space-16);
 }
 .budget-card { text-align: center; }
-.budget-card .label { display: block; font-size: 11.5px; color: var(--text-tertiary); margin-bottom: 4px; }
-.budget-card .value { display: block; font-size: 28px; font-weight: 800; color: var(--text-primary); }
-.budget-card.suggested .value { color: #52c41a; }
-.arrow { font-size: 24px; color: var(--text-disabled); }
-.change { display: inline-block; font-size: 13px; font-weight: 600; margin-top: 2px; padding: 1px 8px; border-radius: 10px; }
-.change.up { background: #f6ffed; color: #52c41a; }
-.change.down { background: var(--bg-elevated)1f0; color: #ff4d4f; }
+.budget-card .label { display: block; font-size: var(--font-size-11-5); color: var(--text-tertiary); margin-bottom: var(--space-4); }
+.budget-card .value { display: block; font-size: var(--font-size-28); font-weight: 800; color: var(--text-primary); }
+.budget-card.suggested .value { color: var(--success); }
+.arrow { font-size: var(--font-size-24); color: var(--text-disabled); }
+.change { display: inline-block; font-size: var(--font-size-13); font-weight: 600; margin-top: var(--space-2); padding: var(--space-1) var(--space-8); border-radius: var(--radius-10); }
+.change.up { background: var(--success-bg); color: var(--success); }
+.change.down { background: var(--danger-bg); color: var(--danger); }
 
-.section-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border-base); }
+.section-title { font-size: var(--font-size-14); font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-10); padding-bottom: var(--space-6); border-bottom: 1px solid var(--border-base); }
 
-.change-up { color: #52c41a; font-weight: 600; }
-.change-down { color: #ff4d4f; font-weight: 600; }
+.change-up { color: var(--success); font-weight: 600; }
+.change-down { color: var(--danger); font-weight: 600; }
 
-.improvement-grid { margin-top: 14px; padding: 14px; background: #e6f7ff; border-radius: 8px; border: 1px solid #91d5ff; }
-.improvement-grid h4 { margin: 0 0 10px; font-size: 13px; color: #0958d9; }
-.improvement-items { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.imp-item { text-align: center; padding: 8px; background: var(--bg-elevated); border-radius: 6px; }
-.imp-label { display: block; font-size: 11px; color: var(--text-tertiary); }
-.imp-value { display: block; font-size: 18px; font-weight: 700; color: #1890ff; margin-top: 2px; }
+.improvement-grid { margin-top: var(--space-14); padding: var(--space-14); background: var(--info-bg); border-radius: var(--radius-8); border: 1px solid var(--info-border); }
+.improvement-grid h4 { margin: 0 0 var(--space-10); font-size: var(--font-size-13); color: var(--primary-strong); }
+.improvement-items { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-10); }
+.imp-item { text-align: center; padding: var(--space-8); background: var(--bg-raised); border-radius: var(--radius-6); }
+.imp-label { display: block; font-size: var(--font-size-11); color: var(--text-tertiary); }
+.imp-value { display: block; font-size: var(--font-size-18); font-weight: 700; color: var(--primary); margin-top: var(--space-2); }
 
-.risk-box { margin-top: 14px; padding: 12px 16px; border-radius: 8px; }
-.risk-low { background: #f6ffed; border: 1px solid #b7eb8f; }
-.risk-medium { background: var(--bg-elevated)be6; border: 1px solid #ffe58f; }
-.risk-high { background: var(--bg-elevated)1f0; border: 1px solid #ffa39e; }
-.risk-box h4 { margin: 0 0 6px; font-size: 13px; }
-.risk-low h4 { color: #389e0d; }
-.risk-medium h4 { color: #d48806; }
-.risk-high h4 { color: #cf1322; }
-.risk-box p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+.risk-box { margin-top: var(--space-14); padding: var(--space-12) var(--space-16); border-radius: var(--radius-8); }
+.risk-low { background: var(--success-bg); border: 1px solid var(--success-border); }
+.risk-medium { background: var(--warning-bg); border: 1px solid var(--warning-border); }
+.risk-high { background: var(--danger-bg); border: 1px solid var(--danger-border-strong); }
+.risk-box h4 { margin: 0 0 var(--space-6); font-size: var(--font-size-13); }
+.risk-low h4 { color: var(--success); }
+.risk-medium h4 { color: var(--warning-strong); }
+.risk-high h4 { color: var(--danger-strong); }
+.risk-box p { margin: 0; font-size: var(--font-size-12-5); line-height: 1.5; color: var(--text-secondary); }
 
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid var(--border-base); }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); }
 
 :deep(.ant-table) { background: transparent; }
 :deep(.ant-table-thead > tr > th) { background: var(--bg-base); color: var(--text-secondary); border-bottom-color: var(--border-base); }
 :deep(.ant-table-tbody > tr > td) { border-bottom-color: var(--border-base); }
-:deep(.change-up) { color: #52c41a; font-weight: 600; }
-:deep(.change-down) { color: #ff4d4f; font-weight: 600; }
+:deep(.change-up) { color: var(--success); font-weight: 600; }
+:deep(.change-down) { color: var(--danger); font-weight: 600; }
 
 </style>

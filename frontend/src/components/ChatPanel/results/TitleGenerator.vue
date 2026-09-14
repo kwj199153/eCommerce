@@ -155,7 +155,7 @@
         </div>
         <a-progress
           :percent="resultData.keyword_coverage"
-          :stroke-color="'#52c41a'"
+          :stroke-color="SEM.success"
           :show-info="false"
         />
       </div>
@@ -174,8 +174,8 @@
         </div>
         <div class="card-detail">基于竞品对比分析</div>
         <a-badge
-          :status="resultData.rank_potential >= 80 ? 'success' : resultData.rank_potential >= 60 ? 'warning' : 'error'"
-          :text="resultData.rank_potential >= 80 ? '强' : resultData.rank_potential >= 60 ? '中' : '弱'"
+          :status="RANK_STATUS[bandIndex('score', resultData.rank_potential)]"
+          :text="getRankLabel(resultData.rank_potential)"
         />
       </div>
 
@@ -255,6 +255,8 @@
 </template>
 
 <script setup lang="ts">
+import { SEM } from '@/theme/semantic'
+import { bandColor, bandIndex, bandOf } from '@/theme/bands'
 import { ref, computed, watch } from 'vue'
 import {
   CloseOutlined, CopyOutlined, ReloadOutlined,
@@ -468,24 +470,15 @@ const regenerateTitle = () => {
   message.info('正在重新生成...')
 }
 
-const getScoreColor = (score: number) => {
-  if (score >= 80) return '#52c41a'
-  if (score >= 60) return '#faad14'
-  return '#ff4d4f'
-}
+const getScoreColor = (score: number) => bandColor('score', score)
 
-const getReadabilityLabel = (score: number) => {
-  if (score >= 8) return '优秀'
-  if (score >= 6) return '良好'
-  if (score >= 4) return '一般'
-  return '需优化'
-}
+/** 可读性 0–10 —— 与 0–100 评分**不是同一量纲**，见 bands.ts `readability` */
+const getReadabilityLabel = (score: number) => bandOf('readability', score)
 
-const getRankLabel = (potential: number) => {
-  if (potential >= 80) return '强'
-  if (potential >= 60) return '中'
-  return '弱'
-}
+/** 排名潜力 0–100（与 `score` 同档，仅文案 / 状态名不同） */
+const RANK_LABELS = ['强', '中', '弱']
+const RANK_STATUS = ['success', 'warning', 'error']
+const getRankLabel = (potential: number) => RANK_LABELS[bandIndex('score', potential)]
 
 const getBulletEmoji = (idx: number) => {
   const emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
@@ -496,7 +489,7 @@ const getBulletEmoji = (idx: number) => {
 <style scoped>
 .title-generator-result {
   background: var(--bg-elevated);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   overflow: hidden;
 }
 
@@ -504,8 +497,8 @@ const getBulletEmoji = (idx: number) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-bottom: 1px solid var(--border-base);
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #fff;
 }
@@ -513,118 +506,118 @@ const getBulletEmoji = (idx: number) => {
 .header-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-12);
 }
 
 .result-icon {
-  font-size: 28px;
+  font-size: var(--font-size-28);
 }
 
 .header-info h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-size-16);
   font-weight: 600;
 }
 
 .subtitle {
-  margin: 2px 0 0;
-  font-size: 12px;
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-12);
   opacity: 0.85;
 }
 
 .header-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .main-title-section {
-  padding: 20px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: var(--space-20);
+  border-bottom: 1px solid var(--border-base);
 }
 
 .section-label {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: var(--space-6);
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .title-display {
   background: var(--bg-base);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 12px;
+  border-radius: var(--radius-8);
+  padding: var(--space-16);
+  margin-bottom: var(--space-12);
 }
 
 /* 主标题可编辑 textarea：白底+蓝边，与背景区分 */
 .title-editor {
   background: var(--bg-elevated);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   border: 1px solid #d9e3f0;
-  font-size: 15px;
+  font-size: var(--font-size-15);
   line-height: 1.6;
-  color: #1a1a1a;
+  color: var(--text-primary);
   font-weight: 500;
-  padding: 4px 0;
+  padding: var(--space-4) 0;
 }
 .title-editor:focus-within {
-  border-color: #1890ff;
+  border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.15);
 }
 
 .title-meta {
   display: flex;
-  gap: 16px;
-  margin-top: 10px;
-  font-size: 12px;
+  gap: var(--space-16);
+  margin-top: var(--space-10);
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
 }
 
-.char-count.ok { color: #52c41a; }
-.char-count.warning { color: #faad14; }
+.char-count.ok { color: var(--success); }
+.char-count.warning { color: var(--warning); }
 
 .title-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 /* 五点描述 */
 .bullets-section {
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-bottom: 1px solid var(--border-base);
 }
 
 /* 商品详情（Temu/Shopee 简化模式） */
 .detail-desc-section {
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-bottom: 1px solid var(--border-base);
 }
 
 .detail-desc-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .detail-desc-item {
-  padding: 10px 12px;
+  padding: var(--space-10) var(--space-12);
   background: var(--bg-base);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   border-left: 3px solid #fa8c16;
 }
 
 .detail-desc-heading {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-primary);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
 }
 
 .detail-desc-content {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
   line-height: 1.6;
   white-space: pre-wrap;
@@ -633,81 +626,81 @@ const getBulletEmoji = (idx: number) => {
 .bullets-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .bullet-item {
   display: flex;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: var(--space-10);
+  padding: var(--space-10) var(--space-12);
   background: var(--bg-base);
-  border-radius: 6px;
-  border-left: 3px solid #1890ff;
+  border-radius: var(--radius-6);
+  border-left: 3px solid var(--primary);
 }
 
 .bullet-emoji {
-  font-size: 16px;
+  font-size: var(--font-size-16);
   flex-shrink: 0;
 }
 
 .bullet-title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-primary);
-  margin-bottom: 2px;
+  margin-bottom: var(--space-2);
 }
 
 .bullet-text {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
   line-height: 1.5;
 }
 
 /* A+ Content */
 .aplus-section {
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-bottom: 1px solid var(--border-base);
 }
 
 .aplus-preview {
   background: linear-gradient(135deg, #fef6e4 0%, #ffecd2 100%);
-  border-radius: 8px;
-  padding: 16px;
-  border: 1px solid #ffe58f;
+  border-radius: var(--radius-8);
+  padding: var(--space-16);
+  border: 1px solid var(--warning-border);
 }
 
 .aplus-header {
-  font-size: 15px;
+  font-size: var(--font-size-15);
   font-weight: 600;
-  color: #d48806;
-  margin-bottom: 8px;
+  color: var(--warning-strong);
+  margin-bottom: var(--space-8);
 }
 
 .aplus-body {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-secondary);
   line-height: 1.6;
 }
 
 /* 变体列表 */
 .variants-section {
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-bottom: 1px solid var(--border-base);
 }
 
 .variant-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .variant-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid #f0f0f0;
-  border-radius: 6px;
+  gap: var(--space-12);
+  padding: var(--space-10) var(--space-12);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-6);
   transition: border-color 0.2s;
 }
 /* 备选区不再可点击切换 selected，仅浅灰边不再加 hover 蓝边避免暗示可点 */
@@ -724,15 +717,15 @@ const getBulletEmoji = (idx: number) => {
   align-items: center;
   justify-content: center;
   background: var(--bg-hover-light);
-  border-radius: 50%;
-  font-size: 12px;
+  border-radius: var(--radius-circle);
+  font-size: var(--font-size-12);
   font-weight: 600;
   flex-shrink: 0;
 }
 
 .variant-text {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -742,16 +735,16 @@ const getBulletEmoji = (idx: number) => {
 .variant-score {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
   min-width: 100px;
-  font-size: 12px;
+  font-size: var(--font-size-12);
   font-weight: 600;
 }
 
 .variants-hint {
-  margin-left: 4px;
+  margin-left: var(--space-4);
   color: var(--text-tertiary);
-  font-size: 13px;
+  font-size: var(--font-size-13);
   cursor: help;
 }
 
@@ -759,47 +752,47 @@ const getBulletEmoji = (idx: number) => {
 .seo-analysis-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  gap: var(--space-12);
+  padding: var(--space-16) var(--space-20);
+  border-bottom: 1px solid var(--border-base);
 }
 
 .analysis-card {
   background: var(--bg-base);
-  border-radius: 8px;
-  padding: 14px;
+  border-radius: var(--radius-8);
+  padding: var(--space-14);
   text-align: center;
 }
 
 .card-title {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-8);
 }
 
 .card-value {
-  font-size: 20px;
+  font-size: var(--font-size-20);
   font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
 }
 
 .card-detail {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-disabled);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-8);
 }
 
 /* 关键词标签 */
 .keywords-section {
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-bottom: 1px solid var(--border-base);
 }
 
 .keyword-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 .keyword-tags .ant-tag {
@@ -813,17 +806,17 @@ const getBulletEmoji = (idx: number) => {
 }
 
 .check-icon {
-  margin-left: 4px;
-  color: #52c41a;
+  margin-left: var(--space-4);
+  color: var(--success);
 }
 
 /* 建议区 */
 .suggestions-section {
-  padding: 16px 20px;
+  padding: var(--space-16) var(--space-20);
 }
 
 /* 保存成功弹窗 */
 .save-success-content {
-  padding: 16px 0;
+  padding: var(--space-16) 0;
 }
 </style>

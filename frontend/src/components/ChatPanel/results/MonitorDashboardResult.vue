@@ -24,10 +24,10 @@
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'price'">
-          <span :style="{ color: record.price_change < -3 ? '#cf1322' : record.price_change > 3 ? '#389e0d' : undefined, fontWeight: record.price_change !== 0 ? 600 : 400 }">
+          <span :style="{ color: record.price_change < -3 ? 'var(--danger-strong)' : record.price_change > 3 ? 'var(--success)' : undefined, fontWeight: record.price_change !== 0 ? 600 : 400 }">
             ${{ record.price?.toFixed(2) }}
           </span>
-          <span v-if="record.price_change !== 0" style="font-size: 11px; margin-left: 4px;" :class="record.price_change < 0 ? 'down' : 'up'">
+          <span v-if="record.price_change !== 0" style="font-size: var(--font-size-11); margin-left: var(--space-4);" :class="record.price_change < 0 ? 'down' : 'up'">
             {{ record.price_change > 0 ? '+' : '' }}{{ record.price_change?.toFixed(1) }}%
           </span>
         </template>
@@ -73,6 +73,7 @@
 </template>
 
 <script setup lang="ts">
+import { bandColor } from '@/theme/bands'
 defineProps<{ data: any }>()
 defineEmits<{ (e: 'close'): void }>()
 
@@ -94,12 +95,8 @@ const stockStatusMap: Record<string, { status: string }> = {
   'Low Stock': { status: 'warning' },
 }
 
-const healthColor = (score: number) => {
-  if (score >= 80) return '#52c41a'
-  if (score >= 60) return '#faad14'
-  if (score >= 40) return '#fa8c16'
-  return '#ff4d4f'
-}
+/** 商品监控健康度 四档（与广告 Campaign 健康分是不同指标，见 bands.ts `monitorHealth`） */
+const healthColor = (score: number) => bandColor('monitorHealth', score)
 
 const severityColor = (s: string) => ({ critical: 'red', warning: 'orange', info: 'blue' }[s] || 'gray')
 
@@ -107,14 +104,14 @@ const formatBSR = (rank: number) => rank ? `#${rank.toLocaleString()}` : '-'
 </script>
 
 <style scoped>
-.monitor-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
-.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.result-header h3 { margin: 0; font-size: 16px; }
-.summary-card { background: var(--bg-base); padding: 12px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; line-height: 1.6; }
-.alert-section { margin-top: 16px; padding: 12px; background: var(--bg-elevated)be6; border-radius: 8px; border: 1px solid #ffe58f; }
-.alert-section h4 { margin: 0 0 10px; font-size: 13px; color: #d46b08; }
-.up { color: #cf1322; }
-.down { color: #389e0d; }
-:deep(.alert-row) { background-color: #fff1f0; }
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; margin-top: 12px; }
+.monitor-result { padding: var(--space-16); background: var(--bg-elevated); border-radius: var(--radius-8); }
+.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-12); }
+.result-header h3 { margin: 0; font-size: var(--font-size-16); }
+.summary-card { background: var(--bg-base); padding: var(--space-12); border-radius: var(--radius-8); margin-bottom: var(--space-14); font-size: var(--font-size-13); line-height: 1.6; }
+.alert-section { margin-top: var(--space-16); padding: var(--space-12); background: var(--warning-bg); border-radius: var(--radius-8); border: 1px solid var(--warning-border); }
+.alert-section h4 { margin: 0 0 var(--space-10); font-size: var(--font-size-13); color: var(--orange-strong); }
+.up { color: var(--danger-strong); }
+.down { color: var(--success); }
+:deep(.alert-row) { background-color: var(--danger-bg); }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); margin-top: var(--space-12); }
 </style>

@@ -25,10 +25,19 @@ import { useChatStore } from '@/stores/chat'
 import { useShopStore } from '@/stores/shop'
 import { useListingDraftStore } from '@/stores/listingDraft'
 import { useProductLibraryStore } from '@/stores/productLibrary'
+import { useRecentResultStore } from '@/stores/recentResult'
+import { useVoiceTtsStore } from '@/stores/voiceTts'
 
 import { ToolDefinition, getAgentTools } from '@/components/ChatPanel/tools/toolDefinitions'
 import { toolExecutors, getParamSummary } from '@/mock/toolExecutors'
 import { renderClarification, extractProductName } from '@/utils/clarification'
+import { bandOf } from '@/theme/bands'
+
+/** AIGC 三个工具：orchestrator 派发 aigc-result-ready 给右栏预览时用（与 ChatPanel AIGC_TOOLS 对齐）。 */
+const AIGC_TOOL_IDS = new Set(['static-asset-gen', 'video-script-gen', 'ai-video-generator'])
+/** CR4 市场集中度档位 → 中文标签（阈值见 bands.ts `cr4`） */
+const CR4_LABEL: Record<string, string> = { high: '高度集中', medium: '中度集中', low: '充分竞争' }
+
 
 export interface ChatOrchestratorOptions {
   /** 输入框内容：v-model 绑在组件模板上，须由组件持有 */
@@ -50,8 +59,106 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
   const candStore = useCandidateLibraryStore()
   const shopStore = useShopStore()
   const productLibraryStore = useProductLibraryStore()
+  const recentResultStore = useRecentResultStore()
 
   const { inputMessage, messageListRef, mainContentRef, intelDays, loadedCandidate } = opts
+
+  // ===== 语音播报：边生成边念（首期只服务店秘书） =====
+  //
+  // 为什么放在编排层、而不是去每个 Agent 的回复分支里各加一行：
+  // 「扩展到其他 Agent」应该是**改白名单**，而不是回头改 6 个分支。
+  // 所以这里统一监听「当前对话区最后一条 assistant 消息」，把它渐进喂给播报队列。
+  //
+  // ★★ 已废弃的旧做法（P0+P1，2026-09-14）：`SPEAK_SETTLE_MS = 700` 防抖。
+  //    它的语义是「每个 delta 都重置计时器」⇒ 等价于「等整段说完，再等 700ms 才
+  //    开始合成」⇒ 首声实测 8.7s（正文 7.6s 与合成 5.2s 串起来）。
+  //    现在改成**分句流水线**：每个 delta 都把「目前为止的正文」交给 store，
+  //    由它调后端 /speak-plan 算出**已定型**的段，边生成边合成、边合成边播 ⇒
+  //    首声只等第一段（实测 ~1.1s）。
+  //
+  // 仍然必须处理的时序问题（都不是理论问题）：
+  // 1. **认本轮**：`runKey` = `agentId#timestamp`，变了就是新回复 → store 重置游标。
+  //    ★ runKey **不能带正文长度** —— 长度随每个 delta 变，含进去等于每次增量都
+  //    开新一轮、从头重念。长度只用于**触发** watch（见下面的 getter）。
+  // 2. **交接**：店秘书回复后 ~700ms 会切到子 Agent，对话区随之切换 ——
+  //    所以每次都从**当前快照**取正文，不缓存旧引用。
+  // 3. **收尾**：正文停止增长后再喂一次 `streaming=false`，让 store 念掉结尾那段
+  //    尚未定型的碎片（否则最后半句永远不念）。这个 300ms 只影响**尾巴**，
+  //    不影响首声 —— 首声由流式期间**已定型**的段决定。
+  const voiceTts = useVoiceTtsStore()
+  const SPEAK_TAIL_MS = 300
+  let speakTailTimer: ReturnType<typeof setTimeout> | null = null
+
+  /**
+   * 取「当前对话区最后一条 assistant 消息」。
+   *
+   * 用 `chatStore.activeAgentId`（而不是 `agentStore.currentAgent`）判归属：
+   * `chatStore.messages` 就是按 activeAgentId 切的，两者必须同源，
+   * 否则会拿 A 的回复去套 B 的白名单。
+   */
+  function lastAssistantSnapshot(): { agentId: string; text: string; runKey: string } | null {
+    const list = chatStore.messages
+    const last = list[list.length - 1]
+    if (!last || last.role !== 'assistant') return null
+    const text = (last.content || '').trim()
+    if (!text) return null
+    const agentId = chatStore.activeAgentId
+    return { agentId, text, runKey: `${agentId}#${last.timestamp}` }
+  }
+
+  watch(
+    () => {
+      const snap = lastAssistantSnapshot()
+      // ★ 触发源必须含正文长度：`appendToLastMessage` 只改 content，
+      //   不含长度的话 watch 在流式期间根本不会触发。
+      return snap ? `${snap.runKey}#${snap.text.length}` : ''
+    },
+    () => {
+      const snap = lastAssistantSnapshot()
+      if (!snap) return
+      // 白名单判定只认 store（唯一真源），这里不重复写 Agent id
+      if (!voiceTts.supports(snap.agentId)) return
+      if (!voiceTts.enabled) return
+      // ★★ 「本轮」闸门：只念**刚刚被提问的那个对话区**的回复。
+      //   没有这道闸，下面两种情况会凭空开口：
+      //   ① 开屏欢迎语 —— 它也是 assistant 消息，于是每次刷新都念一遍；
+      //   ② 切面板回来 —— activeAgentId 一变 watch 就触发，读到的是历史回复，
+      //      而此时 runKey 没见过 ⇒ setupRun 重置游标 ⇒ 从头再念一遍。
+      //   判据来自 chatStore.lastUserMessage（唯一写入点在 chatStore.addMessage）。
+      if (chatStore.lastUserMessage?.agentId !== snap.agentId) return
+
+      // ① 立刻喂：已定型的段马上开始合成 ⇒ 首声不必等正文说完
+      voiceTts.feed(snap.text, { runKey: snap.runKey, streaming: true })
+
+      // ② 尾部兜底：正文停 300ms 没再长 ⇒ 认为说完了，把结尾碎片也念掉
+      if (speakTailTimer) clearTimeout(speakTailTimer)
+      speakTailTimer = setTimeout(() => {
+        speakTailTimer = null
+        if (!voiceTts.enabled) return
+        voiceTts.feed(snap.text, { runKey: snap.runKey, streaming: false })
+      }, SPEAK_TAIL_MS)
+    }
+  )
+
+  /**
+   * 会话结论入库（SSE meta 事件）。
+   *
+   * 一处分发、两处落点：
+   * - chatStore：回填最后一条消息的 displayType/data → 消息流里渲染「结论卡」
+   * - recentResultStore：按 agentId 存「最近结果」→ 清空对话后仍可从顶部找回
+   *
+   * 注意 meta 只是**增强**：正文（content）已自带完整结论清单，
+   * 后端未下发 meta 时对话照常可读，只是少了卡片承托。
+   */
+  function handleAgentMeta(meta: { display_type?: string; data?: any }) {
+    if (!meta?.display_type) return
+    chatStore.setLastMessageResult(meta.display_type, meta.data)
+    recentResultStore.setRecent(agentStore.currentAgent?.id || 'default', {
+      displayType: meta.display_type,
+      data: meta.data,
+      summary: meta.data?.summary || '',
+    })
+  }
 
   // ===== 竞品监控员·统一动作条状态 =====
   const isCompetitorIntelAgent = computed(() => agentStore.currentAgent?.id === 'competitor-intel')
@@ -205,6 +312,8 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
     activeIntelChip.value = c.id
     setLoading(true, 'intel-chip')
     const { analyzeCompetitorIntel } = await import('@/mock/competitorIntel')
+    // 监控池是后端权威源：推理读的是 store 快照，先确保已加载（否则会把"未加载"当成"池是空的"）
+    await pool.ensureLoaded()
     try {
       const out = analyzeCompetitorIntel(c.question, {
         forceIntent: c.intent as any,
@@ -250,6 +359,26 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
   // 加载状态
   const isLoading = ref(false)
 
+  // 长任务反馈：阶段进度文案（后端 progress 事件驱动）+ 已用秒数（前端计时）
+  // 背景：结构化分析（蓝海/竞品/广告诊断等）后端需 15-25s 才能吐出结果，
+  // 期间零输出，只显示「AI 正在思考…」会让用户以为卡死。
+  const loadingStatus = ref('')
+  const elapsedSec = ref(0)
+  let elapsedTimer: ReturnType<typeof setInterval> | null = null
+  const startElapsedTimer = () => {
+    elapsedSec.value = 0
+    if (elapsedTimer) clearInterval(elapsedTimer)
+    elapsedTimer = setInterval(() => { elapsedSec.value += 1 }, 1000)
+  }
+  const stopElapsedTimer = () => {
+    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null }
+  }
+  /** 加载提示文案：默认「AI 正在思考...」，有阶段进度则用之；超过 3s 追加已用时长 */
+  const loadingTip = computed(() => {
+    const base = loadingStatus.value || 'AI 正在思考...'
+    return isLoading.value && elapsedSec.value >= 3 ? `${base}（已用 ${elapsedSec.value}s）` : base
+  })
+
   // 看门狗：兜底"AI 正在思考…"卡死
   // 任何路径把 isLoading=true 后若 60s 内未释放（流式网络挂起、同步函数异常吞掉等），
   // 强制置 false 并插入一条错误消息，避免用户面对永久 spinner 无可操作。
@@ -258,11 +387,13 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
   const setLoading = (on: boolean, source: string) => {
     isLoading.value = on
     if (on) {
+      startElapsedTimer()
       if (loadingWatchdogTimer) clearTimeout(loadingWatchdogTimer)
       loadingWatchdogTimer = setTimeout(() => {
         if (isLoading.value) {
           isLoading.value = false
           loadingWatchdogTimer = null
+          stopElapsedTimer()
           console.warn(`[isLoading 看门狗] 60s 未释放（来源：${source}），强制重置`)
           try {
             chatStore.addMessage({
@@ -273,6 +404,8 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         }
       }, LOADING_WATCHDOG_MS)
     } else {
+      stopElapsedTimer()
+      loadingStatus.value = ''
       if (loadingWatchdogTimer) {
         clearTimeout(loadingWatchdogTimer)
         loadingWatchdogTimer = null
@@ -300,11 +433,16 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
   onMounted(() => {
     window.addEventListener('tool-analysis', handleToolAnalysisEvent as unknown as EventListener)
     window.addEventListener('secretary-handoff', handleSecretaryHandoff as unknown as EventListener)
+    window.addEventListener('agent-auto-task', handleAgentAutoTask as unknown as EventListener)
   })
 
   onUnmounted(() => {
     window.removeEventListener('tool-analysis', handleToolAnalysisEvent as unknown as EventListener)
     window.removeEventListener('secretary-handoff', handleSecretaryHandoff as unknown as EventListener)
+    window.removeEventListener('agent-auto-task', handleAgentAutoTask as unknown as EventListener)
+    // 对话区销毁（离开对话视图）→ 立刻停声，别再触发播报
+    if (speakTailTimer) clearTimeout(speakTailTimer)
+    voiceTts.stop()
   })
 
   // 处理主 Agent 交接：切到子 Agent 后，由子 Agent「接管」并逐项追问缺失字段
@@ -342,21 +480,59 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
     scrollToBottom()
   }
 
+  // 处理主 Agent「路由带参」：切到子 Agent 后，把老板原话注入它的对话区并自动续跑。
+  // 触发方：dispatchAppAction（switch_agent 带 query）→ agent-auto-task 事件。
+  const handleAgentAutoTask = async (event: CustomEvent) => {
+    const { agentId, query } = event.detail || {}
+    if (!agentId || !query) return
+
+    // 确保对话区路由到目标 Agent（switch_agent 已切过，这里幂等兜底）
+    chatStore.setActiveAgent(agentId)
+
+    // 回显老板原话（标注来源，便于追溯），再让子 Agent 接着执行
+    chatStore.addMessage({ role: 'user', content: `（店秘书转达）${query}` }, agentId)
+    await scrollToBottom()
+
+    setLoading(true, 'agent-auto-task')
+    try {
+      // 此时 agentStore.currentAgent 已是子 Agent，simulateAgentResponse 会分流到它自己的链路
+      await simulateAgentResponse(query)
+    } catch (e) {
+      console.error('[路由续跑] 子 Agent 执行失败:', e)
+      chatStore.addMessage({ role: 'assistant', content: '（子 Agent 执行失败，请稍后重试）' }, agentId)
+    } finally {
+      setLoading(false, 'agent-auto-task-finally')
+      await scrollToBottom()
+    }
+  }
+
   // 处理来自右侧面板的分析请求
   const handleToolAnalysisEvent = async (event: CustomEvent) => {
-    const { tool, params } = event.detail
+    const { tool, params, mode } = event.detail
 
     if (!tool) return
+
+    // AIGC 大屏模式：结果只在右侧预览区显示，不进对话流（避免对话区和大屏结果冗余）
+    const skipChatStream = mode === 'data' && AIGC_TOOL_IDS.has(tool.id)
 
     // 设置当前工具状态
     selectedTool.value = { ...tool }
     currentMode.value = 'tool'
-    setLoading(true, 'tool-click')
+    // AIGC 大屏模式：loading 交给右栏预览区展示。
+    // 结果不进对话流，若仍在对话区转圈，用户会以为卡在了一个没有输出的地方。
+    if (skipChatStream) {
+      window.dispatchEvent(new CustomEvent('aigc-generating', {
+        detail: { toolId: tool.id, generating: true }
+      }))
+    } else {
+      setLoading(true, 'tool-click')
+    }
 
     // ===== 竞品监控员·智能推理工具（读监控池 → 解读+证据，不走 form 结果表）=====
     if (['intel-chat', 'intel-weekly', 'intel-anomaly', 'intel-strategy'].includes(tool.id)) {
       try {
         const { analyzeCompetitorIntel } = await import('@/mock/competitorIntel')
+        await pool.ensureLoaded()
         const q = params?.question || ''
         const out = analyzeCompetitorIntel(q)
         // 用户消息（问题）
@@ -379,21 +555,31 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
     }
 
     // ===== 步骤1：添加用户消息（独立 try-catch）=====
-    try {
-      const paramSummary = getParamSummary(tool.id, params || {})
-      chatStore.addMessage({ role: 'user', content: `📋 **${tool.name}** 参数：\n${paramSummary}` })
-    } catch (msgError) {
-      console.warn('参数摘要生成失败（使用 fallback）:', msgError)
-      chatStore.addMessage({ role: 'user', content: `📋 **${tool.name}** 参数：\n${JSON.stringify(params || {}, null, 2)}` })
+    // AIGC 大屏模式：跳过对话流，结果直接展示在右侧预览区
+    if (!skipChatStream) {
+      try {
+        const paramSummary = getParamSummary(tool.id, params || {})
+        chatStore.addMessage({ role: 'user', content: `📋 **${tool.name}** 参数：\n${paramSummary}` })
+      } catch (msgError) {
+        console.warn('参数摘要生成失败（使用 fallback）:', msgError)
+        chatStore.addMessage({ role: 'user', content: `📋 **${tool.name}** 参数：\n${JSON.stringify(params || {}, null, 2)}` })
+      }
     }
 
     // ===== 步骤2：执行分析（主 try-catch）=====
     try {
-      const executor = toolExecutors[tool.id]
-      if (!executor) {
-        throw new Error(`未知工具: ${tool.id}`)
+      // 利润测算：与右栏面板同源。面板已经调后端算过一份就原样沿用，
+      // 绝不在前端用另一套公式复算 —— 「一个表单两个结果」就是这么来的。
+      let result: any
+      if (tool.id === 'profit-calc') {
+        result = await resolveProfitResult(params)
+      } else {
+        const executor = toolExecutors[tool.id]
+        if (!executor) {
+          throw new Error(`未知工具: ${tool.id}`)
+        }
+        result = await executor(params)
       }
-      const result: any = await executor(params)
 
       // 视频脚本同步到共享 store（供 AI 短视频生成「分镜脚本专业模式」复用）
       if (tool.id === 'video-script-gen') {
@@ -403,23 +589,30 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
       // Listing 工具结果同步到「Listing 工作区」草稿（右侧面板可直接接着编辑/保存）
       syncListingDraft(tool.id, params, result)
 
-      // ===== 步骤3：将结果插入对话流 =====
-      chatStore.addMessage({
-        role: 'assistant',
-        content: '',
-        displayType: 'tool_result',
-        data: {
-          toolId: tool.id,
-          toolName: tool.name,
-          resultData: result,
-        },
-      })
+      // ===== 步骤3：将结果插入对话流（或大屏下直接派发给右栏预览）=====
+      if (skipChatStream) {
+        // AIGC 大屏模式：直接广播给右栏预览，不经对话流（避免对话区与大屏结果冗余）
+        window.dispatchEvent(new CustomEvent('aigc-result-ready', {
+          detail: { toolId: tool.id, result }
+        }))
+      } else {
+        chatStore.addMessage({
+          role: 'assistant',
+          content: '',
+          displayType: 'tool_result',
+          data: {
+            toolId: tool.id,
+            toolName: tool.name,
+            resultData: result,
+          },
+        })
 
-      // 摘要消息（独立 try-catch，防止摘要生成错误导致主流程报错）
-      try {
-        addResultSummaryToChat(tool.id, result)
-      } catch (summaryError) {
-        console.warn('结果摘要生成失败（不影响主结果）:', summaryError)
+        // 摘要消息（独立 try-catch，防止摘要生成错误导致主流程报错）
+        try {
+          addResultSummaryToChat(tool.id, result)
+        } catch (summaryError) {
+          console.warn('结果摘要生成失败（不影响主结果）:', summaryError)
+        }
       }
 
     } catch (error: unknown) {
@@ -431,14 +624,37 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
       console.error('接收到的 params:', JSON.stringify(params || {}))
       console.error('错误堆栈:', err?.stack)
       console.error('========================')
-      chatStore.addMessage({
-        role: 'assistant',
-        content: `❌ 分析执行失败，请检查参数后重试。\n\n\`${err?.message || '未知错误'}\``,
-      })
+      if (skipChatStream) {
+        // AIGC 大屏模式：失败提示走顶部 toast，不污染对话流
+        message.error(`❌ ${tool.name} 执行失败：${err?.message || '未知错误'}`)
+      } else {
+        chatStore.addMessage({
+          role: 'assistant',
+          content: `❌ 分析执行失败，请检查参数后重试。\n\n\`${err?.message || '未知错误'}\``,
+        })
+      }
     } finally {
+      // AIGC 大屏模式：收掉预览区 loading（setLoading(false) 此时幂等无害，保留兜底）
+      if (skipChatStream) {
+        window.dispatchEvent(new CustomEvent('aigc-generating', {
+          detail: { toolId: tool.id, generating: false }
+        }))
+      }
       setLoading(false, 'tool-click-finally2')
       await scrollToBottom()
     }
+  }
+
+  /**
+   * 利润测算结果：以后端 /stores/profit/calculate 为唯一计算源。
+   * 面板带过来的 _preview 就是后端响应，直接沿用；没有（从对话侧触发）才自己调一次。
+   */
+  const resolveProfitResult = async (params: any) => {
+    const { calculateProfit, toProfitRequest } = await import('@/api/stores')
+    if (params?._preview) return params._preview
+    const shopId = shopStore.currentShopId
+    if (!shopId) throw new Error('未选择店铺，无法获取费率模板')
+    return await calculateProfit(toProfitRequest(params), shopId)
   }
 
   // 将最近生成的脚本写入共享 store，供 AI 短视频生成「分镜脚本专业模式」导入
@@ -614,7 +830,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         content = `🌍 **市场份额分析完成** — ${result.category}\n\n` +
           `- 预估市场规模：$${(result.total_market_estimate / 1000).toFixed(0)}K/月\n` +
           `- 竞争品牌数：${result.competitors?.length || 0}\n` +
-          `- CR4集中度：${result.concentration_ratio?.cr4?.toFixed(1)}%（${({ high: '高度集中', medium: '中度集中', low: '充分竞争' } as Record<string, string>)[(result.concentration_ratio?.cr4 || 0) >= 75 ? 'high' : (result.concentration_ratio?.cr4 || 0) >= 50 ? 'medium' : 'low'] || '-'}）\n\n` +
+          `- CR4集中度：${result.concentration_ratio?.cr4?.toFixed(1)}%（${CR4_LABEL[bandOf('cr4', result.concentration_ratio?.cr4 || 0)] || '-'}）\n\n` +
           `市场格局详情已展示在上方。`
         break
       case 'pricing-analysis':
@@ -734,20 +950,6 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
           `\n\n---\n\n### 💡 最终建议\n\n${sm.verdict}`
         break
       // ===== AIGC 媒体生成器 =====
-      case 'static-asset-gen': {
-        const typeLabels: Record<string, string> = {
-          'three-view': '白底三视图', 'detail': '细节特写', 'scene': '场景图',
-          'lifestyle': '生活方式图', 'character': '人物场景图', 'storyboard-frame': '分镜首帧图',
-        }
-        const types = (result.generated_assets || []).map((a: any) => typeLabels[a.type] || a.type)
-        content = `🎨 **静态素材生成完成** — 「**${result.product_name || '-'}**」\n\n` +
-          `- 生成素材：**${result.generated_assets?.length || 0}** 张\n` +
-          `- 素材类型：${types.length > 0 ? [...new Set(types)].join('、') : (result.params?.imageTypes || []).join('、')}\n` +
-          `- 生成模式：图生图（${result.params?.source_image_name || '已上传原图'}）\n` +
-          `- 风格：${result.params?.style || '专业棚拍'}\n\n` +
-          `> 素材生成完毕，可点上方结果卡片的「归档到素材库」手动保存；归档后可分组管理、并在「AI 短视频生成」中选作首帧。`
-        break
-      }
       case 'video-script-gen': {
         const platformLabel: Record<string, string> = { tiktok: 'TikTok', reels: 'Reels', 'youtube-shorts': 'Shorts', 'amazon-post': 'Amazon Post' }
         const styleLabelMap: Record<string, string> = { 'problem-solution': '痛点驱动', 'product-showcase': '产品展示' }
@@ -914,11 +1116,36 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
 
         const hasHandoff = actionList.some((a: any) => a?.action === 'handoff')
 
+        // ★ 店铺切换必须**同步**落地并检查结果：
+        //   它是「环境切换」而非异步副作用 —— 用户说完就该看到左上角变了。
+        //   若只把它塞进下面的 setTimeout 里、又不看返回值，就会出现
+        //   「回复说已切换、左上角却没换」——用户读到的是 AI 撒谎，实际是动作被静默丢弃。
+        //   所以：先同步执行 → 拿到成败 → 再决定回复文案。
+        //   注：`switch_shop` 本身只依赖 id（无前置依赖），正常恒成功；
+        //   失败路径仅兜底「后端给了空 id」这种畸形数据。
+        const shopAction: any = actionList.find((a: any) => a?.action === 'switch_shop' && a?.shop?.id)
+        let shopSwitchFailed = false
+        let shopSwitchName = ''
+        if (shopAction) {
+          shopSwitchName = shopAction.shop?.name || ''
+          shopSwitchFailed = !dispatchAppAction({
+            type: 'switch_shop',
+            shopId: shopAction.shop.id,
+            shopName: shopAction.shop?.name,
+            platform: shopAction.shop?.platform,
+          })
+        }
+
         // 渲染回复文本
         // 若有 handoff 动作：LLM 的 reply 通常会复述字段名/工具名，对用户不友好，
         // 这里覆盖为简洁的"已交接"模板，详细追问交给子 Agent 对话区渲染。
         let displayReply = res.reply || '处理完成'
-        if (hasHandoff) {
+        if (shopSwitchFailed) {
+          // 显式降级 + 给原因（项目铁律：禁止静默假装成功）
+          displayReply = shopSwitchName
+            ? `> ⚠️ 没能切换到「${shopSwitchName}」——后端未给出有效的店铺标识。请在左上角「店铺群」里手动选择。`
+            : '> ⚠️ 没能切换店铺——后端未给出有效的店铺标识，请在左上角「店铺群」里手动选择。'
+        } else if (hasHandoff) {
           const handoffAct: any = actionList.find((a: any) => a?.action === 'handoff')
           const targetAgent = agentStore.agentList.find(a => a.id === handoffAct?.agentId)
           const agentLabel = targetAgent?.name || '专业助手'
@@ -930,9 +1157,11 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         actionList.forEach((act, i) => {
           // 每个动作稍作错开（700ms + 序号），让前一个动作先落地
           setTimeout(() => {
-            const { action, agentId, view, product, drawer, target, intent, missing_fields, mode, shop } = act as any
+            const { action, agentId, view, product, drawer, target, intent, missing_fields, mode, shop, query } = act as any
             if (action === 'switch_agent' && agentId) {
-              dispatchAppAction({ type: 'switch_agent', agentId })
+              // query 非空 → 路由带参：dispatchAppAction 会派发 agent-auto-task 事件，
+              // 由 handleAgentAutoTask 把老板原话注入子 Agent 对话区并自动续跑。
+              dispatchAppAction({ type: 'switch_agent', agentId, query })
             } else if (action === 'navigate' && view) {
               dispatchAppAction({ type: 'navigate', view })
             } else if (action === 'select_product' && product?.id) {
@@ -943,8 +1172,8 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
               dispatchAppAction({ type: 'account_menu', target })
             } else if (action === 'set_theme' && mode) {
               dispatchAppAction({ type: 'set_theme', mode })
-            } else if (action === 'switch_shop' && shop?.id) {
-              dispatchAppAction({ type: 'switch_shop', shopId: shop.id })
+            } else if (action === 'switch_shop') {
+              // 已在上方同步执行（含失败回报），此处跳过，避免重复 dispatch。
             } else if (action === 'handoff' && agentId) {
               dispatchAppAction({
                 type: 'handoff',
@@ -965,7 +1194,12 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
       try {
         const { recognizeSecretaryIntent } = await import('@/mock/secretaryBrain')
         const out = recognizeSecretaryIntent(userMessage)
-        chatStore.addMessage({ role: 'assistant', content: out.reply })
+        // 显式提示降级原因：静默降级会让用户误以为「AI 变笨了 / React 没做好」，
+        // 实际是后端服务不可用（未启动 / 500）。提示后用户能自行判断是否需要排查服务。
+        chatStore.addMessage({
+          role: 'assistant',
+          content: `> ⚠️ 后端服务暂时不可用，已切换到本地简易识别（能力有限）\n\n${out.reply}`,
+        })
         await scrollToBottom()
         const fallbackAction = out.action
         if (fallbackAction) {
@@ -987,7 +1221,16 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         // 文本对话：优先 SSE 流式渲染，失败降级到非流式
         chatStore.addMessage({ role: 'assistant', content: '' })
         let streamed = false
-        await streamSSE('/product-research/chat/stream', { message: userMessage }, {
+        // 会话 ID 必须带上：后端「入库待补槽位」「上一轮蓝海结果」都按会话隔离，
+        // 不带就退化成全局共享（多会话串数据），而且「追问 → 补充 → 入库」
+        // 这种多轮补齐也无从进行。
+        const contextId = chatStore.ensureSessionId('product-research')
+        await streamSSE(
+          '/product-research/chat/stream',
+          { message: userMessage, context_id: contextId },
+          {
+          onProgress: (text) => { loadingStatus.value = text },
+          onMeta: handleAgentMeta,
           onDelta: (text) => {
             streamed = true
             setLoading(false, 'sse-delta-product')
@@ -1003,7 +1246,10 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
             // 流式失败（如鉴权 401）→ 回退到非流式对话
             if (streamed) return  // 已输出部分内容，不再追加全文避免重复
             try {
-              const response = await chatWithProductResearcher({ message: userMessage })
+              const response = await chatWithProductResearcher({
+                message: userMessage,
+                context_id: contextId,
+              })
               chatStore.appendToLastMessage(response.reply || '分析完成')
             } catch (e2) {
               if (!chatStore.messages[chatStore.messages.length - 1]?.content) {
@@ -1011,7 +1257,8 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
               }
             }
           },
-        })
+          },
+        )
         return
       } catch (error) {
         console.error('选品 API 失败:', error)
@@ -1047,6 +1294,8 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         // 文本类对话：SSE 流式渲染（打字机效果）
         chatStore.addMessage({ role: 'assistant', content: '' })
         await streamSSE('/listing/chat/stream', { message: userMessage }, {
+          onProgress: (text) => { loadingStatus.value = text },
+          onMeta: handleAgentMeta,
           onDelta: (text) => {
             setLoading(false, 'sse-delta-listing')  // 首 token 到达即隐藏"思考中"spinner
             chatStore.appendToLastMessage(text)
@@ -1116,6 +1365,8 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         // 纯文本对话：SSE 流式渲染
         chatStore.addMessage({ role: 'assistant', content: '' })
         await streamSSE('/ad-analysis/chat/stream', { message: userMessage }, {
+          onProgress: (text) => { loadingStatus.value = text },
+          onMeta: handleAgentMeta,
           onDelta: (text) => {
             setLoading(false, 'sse-delta-ad')
             chatStore.appendToLastMessage(text)
@@ -1174,6 +1425,8 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
         // 纯文本对话：SSE 流式渲染
         chatStore.addMessage({ role: 'assistant', content: '' })
         await streamSSE('/customer-service/chat/stream', { message: userMessage }, {
+          onProgress: (text) => { loadingStatus.value = text },
+          onMeta: handleAgentMeta,
           onDelta: (text) => {
             setLoading(false, 'sse-delta-cs')
             chatStore.appendToLastMessage(text)
@@ -1194,6 +1447,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
     if (agentStore.currentAgent?.id === 'competitor-intel') {
       try {
         const m = await import('@/mock/competitorIntel')
+        await pool.ensureLoaded()
         const out = m.analyzeCompetitorIntel(userMessage)
         chatStore.addMessage({
           role: 'assistant',
@@ -1274,6 +1528,7 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
     // 状态
     messages,
     isLoading,
+    loadingTip,
     inputPlaceholder,
     // Agent 判定
     isCompetitorIntelAgent,

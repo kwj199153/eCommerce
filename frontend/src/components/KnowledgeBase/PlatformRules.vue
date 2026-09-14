@@ -65,7 +65,7 @@
                 <RobotOutlined /> AI 拆分
               </a-button>
             </a-tooltip>
-            <a-popconfirm title="删除此文档？" @confirm="store.deleteDoc(doc.id)">
+            <a-popconfirm title="删除此文档？" @confirm="handleDeleteDoc(doc)">
               <a-button type="text" size="small" danger><DeleteOutlined /></a-button>
             </a-popconfirm>
           </a-space>
@@ -416,7 +416,7 @@
                   <p><strong>⚠ 与已有规则相似</strong></p>
                   <p>相似度：{{ ((rule._similarityScore || 0) * 100).toFixed(0) }}%</p>
                   <p>匹配规则：{{ getMatchedRuleTitle(rule._matchedRuleId) }}</p>
-                  <p style="margin-top:6px">
+                  <p style="margin-top:var(--space-6)">
                     <a-button type="link" size="small" @click="viewMatchedRule(rule._matchedRuleId!)">查看原规则 →</a-button>
                   </p>
                 </div>
@@ -424,7 +424,7 @@
                   <p><strong>🔄 检测到版本更新</strong></p>
                   <p>{{ rule._diffSummary }}</p>
                   <p>旧规则：{{ getMatchedRuleTitle(rule._matchedRuleId) }}</p>
-                  <p style="margin-top:6px">
+                  <p style="margin-top:var(--space-6)">
                     <a-button type="link" size="small" @click="replaceThisRule(rule)">覆盖旧版 →</a-button>
                   </p>
                 </div>
@@ -654,7 +654,8 @@
             <span class="source-doc-toggle">{{ contentExpanded ? '收起 ▲' : '展开全文 ▼' }}</span>
           </div>
           <div v-show="contentExpanded" class="source-doc-content-body">
-            <pre v-if="sourceDocItem.content" class="source-doc-text">{{ sourceDocItem.content }}</pre>
+            <a-spin v-if="sourceDocLoading" size="small" />
+            <pre v-else-if="sourceDocItem.content" class="source-doc-text">{{ sourceDocItem.content }}</pre>
             <a-empty v-else description="暂无原文内容（上传时未提取文本）" :image-style="{ height: '60px' }" />
           </div>
         </div>
@@ -755,7 +756,12 @@ function handleDocUpload(file: File) {
 async function confirmDocUpload() {
   if (!docUploadForm.pendingFile) return
   const f = docUploadForm.pendingFile
-  await store.uploadDoc(f, docUploadForm.platform, docUploadForm.description)
+  try {
+    await store.uploadDoc(f, docUploadForm.platform, docUploadForm.description)
+  } catch (e) {
+    message.error(`上传失败：${e instanceof Error ? e.message : '未知错误'}`)
+    return
+  }
   message.success(`文档「${f.name}」已上传（${platformMeta(docUploadForm.platform).label}）`)
   docUploadModalVisible.value = false
   docUploadForm.pendingFile = null
@@ -1134,8 +1140,17 @@ function openEditModal(record: PlatformRule) {
 function onSaved() {}
 
 function handleDelete(record: PlatformRule) {
+  // 后端删除成功才从列表移除（失败时 store 会抛出，列表保持原样，避免"看着删了其实没删"）
   store.deleteItem(record.id)
-  message.success('规则已删除')
+    .then(() => message.success('规则已删除'))
+    .catch((e: unknown) => message.error(`删除失败：${e instanceof Error ? e.message : '未知错误'}`))
+}
+
+/** 删除来源文档素材（后端不级联删除已提取的规则） */
+function handleDeleteDoc(doc: PlatformRuleDoc) {
+  store.deleteDoc(doc.id)
+    .then(() => message.success('文档已删除'))
+    .catch((e: unknown) => message.error(`删除失败：${e instanceof Error ? e.message : '未知错误'}`))
 }
 
 // ====== 详情 ======
@@ -1149,15 +1164,26 @@ function openDetail(record: PlatformRule) {
 // ====== 来源文档预览 ======
 const sourceDocVisible = ref(false)
 const sourceDocItem = ref<PlatformRuleDoc | null>(null)
+/** 正文按需拉取中（避免把「正在拉」误显示成「无正文」） */
+const sourceDocLoading = ref(false)
 const contentExpanded = ref(true)
 
-/** 打开某条规则关联的来源文档预览 */
-function openSourceDoc(docId: string) {
+/** 打开某条规则关联的来源文档预览（正文按需拉取，列表接口不含 content） */
+async function openSourceDoc(docId: string) {
   const doc = store.getDocById(docId)
-  if (doc) {
-    sourceDocItem.value = doc
-    contentExpanded.value = true
-    sourceDocVisible.value = true
+  if (!doc) return
+  sourceDocItem.value = doc
+  contentExpanded.value = true
+  sourceDocVisible.value = true
+  // 正文可能还没拉过 → 拉回来回填；失败就停在「暂无原文内容」空状态
+  if (doc.content === undefined) {
+    sourceDocLoading.value = true
+    try {
+      const full = await store.loadDocContent(docId)
+      if (full) sourceDocItem.value = full
+    } finally {
+      sourceDocLoading.value = false
+    }
   }
 }
 
@@ -1179,13 +1205,14 @@ function viewLinkedRule(rule: PlatformRule) {
 }
 
 onMounted(() => {
-  store.fetchItems()
+  // 拉取兜底：正常由 Workspace 的 watch(currentShopId) 触发，这里防「直接进入库页」的空白
+  store.ensureLoaded()
 })
 </script>
 
 <style scoped>
 .pr-page {
-  padding: 20px;
+  padding: var(--space-20);
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -1196,20 +1223,20 @@ onMounted(() => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-16);
   flex-shrink: 0;
 }
 
 .pr-title {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--font-size-18);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .pr-subtitle {
-  margin: 4px 0 0;
-  font-size: 13px;
+  margin: var(--space-4) 0 0;
+  font-size: var(--font-size-13);
   color: var(--text-tertiary);
 }
 
@@ -1220,29 +1247,29 @@ onMounted(() => {
 /* 统计卡片 */
 .stat-cards {
   display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: var(--space-12);
+  margin-bottom: var(--space-16);
   flex-shrink: 0;
 }
 
 .stat-card {
   flex: 1;
-  padding: 14px 16px;
+  padding: var(--space-14) var(--space-16);
   background: var(--bg-sidebar);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   border: 1px solid var(--border-base);
 }
 
 .stat-value {
-  font-size: 22px;
+  font-size: var(--font-size-22);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-top: 2px;
+  margin-top: var(--space-2);
 }
 
 /* 工具栏 */
@@ -1250,14 +1277,14 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-16);
   flex-shrink: 0;
 }
 
 .toolbar-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 /* 过滤 chip 行 */
@@ -1265,35 +1292,35 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin: -8px 0 16px 0;
-  padding: 10px 12px;
+  gap: var(--space-8);
+  margin: -8px 0 var(--space-16) 0;
+  padding: var(--space-10) var(--space-12);
   background: var(--bg-sidebar);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   border: 1px dashed var(--border-strong);
 }
 
 .af-label {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-right: 4px;
+  margin-right: var(--space-4);
 }
 
 .af-chip {
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 /* 表格单元格 */
 .title-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .title-text-wrap {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
   min-width: 0;
 }
 
@@ -1306,13 +1333,13 @@ onMounted(() => {
 .title-sub {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-4);
   flex-wrap: wrap;
 }
 
 .content-preview {
   color: var(--text-tertiary);
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
 /* 手动覆盖状态徽标 */
@@ -1322,57 +1349,57 @@ onMounted(() => {
   justify-content: center;
   width: 16px;
   height: 16px;
-  font-size: 11px;
-  margin-left: 4px;
+  font-size: var(--font-size-11);
+  margin-left: var(--space-4);
   cursor: default;
 }
 
 /* 详情弹窗 */
 .detail-body {
-  padding: 4px 0;
+  padding: var(--space-4) 0;
 }
 
 .detail-meta {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
   flex-wrap: wrap;
-  margin-bottom: 14px;
+  margin-bottom: var(--space-14);
 }
 
 .detail-date {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-left: 4px;
+  margin-left: var(--space-4);
 }
 
 .detail-content {
-  font-size: 14px;
+  font-size: var(--font-size-14);
   line-height: 1.7;
   color: var(--text-primary);
   white-space: pre-wrap;
-  margin-bottom: 14px;
+  margin-bottom: var(--space-14);
 }
 
 .detail-tags {
   display: flex;
-  gap: 6px;
+  gap: var(--space-6);
   flex-wrap: wrap;
-  margin-bottom: 14px;
+  margin-bottom: var(--space-14);
 }
 
 .detail-source {
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
 /* ====== 文档面板 ====== */
 .doc-panel {
-  margin-bottom: 16px;
-  padding: 12px 16px;
+  margin-bottom: var(--space-16);
+  padding: var(--space-12) var(--space-16);
   background: var(--bg-sidebar);
   border: 1px solid var(--border-base);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   flex-shrink: 0;
 }
 
@@ -1380,11 +1407,11 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
 }
 
 .doc-panel-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -1392,32 +1419,32 @@ onMounted(() => {
 .doc-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 .doc-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 8px;
+  padding: var(--space-6) var(--space-8);
   background: var(--bg-elevated);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   border: 1px solid var(--border-base);
 }
 
 .doc-info {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
   min-width: 0;
 }
 
 .doc-icon {
-  font-size: 16px;
+  font-size: var(--font-size-16);
 }
 
 .doc-name {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1425,13 +1452,13 @@ onMounted(() => {
 }
 
 .doc-size {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
   flex-shrink: 0;
 }
 
 .doc-desc {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1440,34 +1467,34 @@ onMounted(() => {
 
 /* ====== 导入弹窗 ====== */
 .import-area {
-  padding: 4px 0;
+  padding: var(--space-4) 0;
 }
 
 .import-result {
-  margin-top: 16px;
+  margin-top: var(--space-16);
 }
 
 .error-list {
-  margin: 4px 0 0;
-  padding-left: 18px;
+  margin: var(--space-4) 0 0;
+  padding-left: var(--space-18);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 /* 来源文档关联 */
 .detail-source-doc {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  margin-bottom: 14px;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  margin-bottom: var(--space-14);
   background: var(--bg-hover-light);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   border-left: 3px solid var(--primary);
 }
 
 .detail-source-doc-label {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
   font-weight: 500;
 }
@@ -1480,30 +1507,30 @@ onMounted(() => {
 .source-doc-meta-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
   flex-wrap: wrap;
-  padding: 12px 16px;
+  padding: var(--space-12) var(--space-16);
   background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border-base);
 }
 
 .source-doc-size {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
 }
 
 .source-doc-date {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
   margin-left: auto;
 }
 
 .source-doc-desc {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-secondary);
   line-height: 1.6;
   margin: 0;
-  padding: 10px 16px;
+  padding: var(--space-10) var(--space-16);
   background: var(--bg-elevated);
 }
 
@@ -1516,7 +1543,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding: var(--space-10) var(--space-16);
   cursor: pointer;
   user-select: none;
   background: var(--bg-sidebar);
@@ -1528,19 +1555,19 @@ onMounted(() => {
 }
 
 .source-doc-section-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .source-doc-toggle {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--primary);
   cursor: pointer;
 }
 
 .source-doc-content-body {
-  padding: 12px 16px;
+  padding: var(--space-12) var(--space-16);
   max-height: 400px;
   overflow-y: auto;
   background: var(--bg-elevated);
@@ -1549,7 +1576,7 @@ onMounted(() => {
 .source-doc-text {
   margin: 0;
   font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Consolas', monospace;
-  font-size: 12.5px;
+  font-size: var(--font-size-12-5);
   line-height: 1.75;
   color: var(--text-primary);
   white-space: pre-wrap;
@@ -1558,35 +1585,35 @@ onMounted(() => {
 }
 
 .source-doc-desc {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-secondary);
   line-height: 1.6;
   margin: 0;
-  padding: 10px 16px;
+  padding: var(--space-10) var(--space-16);
   background: var(--bg-elevated);
 }
 
 /* 关联规则列表 */
 
 .source-doc-rules-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--space-8) 0;
 }
 
 .source-doc-rules-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .source-doc-rule-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 4px;
+  gap: var(--space-8);
+  padding: var(--space-6) var(--space-10);
+  border-radius: var(--radius-4);
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -1596,7 +1623,7 @@ onMounted(() => {
 }
 
 .source-doc-rule-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--text-primary);
   flex: 1;
@@ -1606,62 +1633,62 @@ onMounted(() => {
 }
 
 .source-doc-rule-cat {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
 }
 
 .source-doc-arrow {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
   margin-left: auto;
 }
 
 /* ====== 文档上传弹窗 ====== */
 .doc-upload-preview {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .doc-upload-file {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
   background: var(--bg-sidebar);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   border: 1px solid var(--border-base);
 }
 
 .doc-upload-icon {
-  font-size: 20px;
+  font-size: var(--font-size-20);
 }
 
 .doc-upload-name {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--text-primary);
 }
 
 .doc-upload-size {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
   margin-left: auto;
 }
 
 /* ====== AI 拆分确认弹窗 ====== */
 .ai-confirm-header {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .ai-confirm-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
 }
 
 .ai-confirm-count {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-secondary);
   margin-right: auto;
 }
@@ -1671,15 +1698,15 @@ onMounted(() => {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .ai-confirm-item {
   display: flex;
-  gap: 10px;
-  padding: 12px;
+  gap: var(--space-10);
+  padding: var(--space-12);
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   background: var(--bg-sidebar);
   transition: all 0.2s;
 }
@@ -1695,7 +1722,7 @@ onMounted(() => {
 }
 
 .ai-confirm-check {
-  padding-top: 4px;
+  padding-top: var(--space-4);
 }
 
 .ai-confirm-body {
@@ -1706,68 +1733,68 @@ onMounted(() => {
 .ai-confirm-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .ai-confirm-meta {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 6px;
+  gap: var(--space-6);
+  margin-top: var(--space-6);
   flex-wrap: wrap;
 }
 
 /* AI 拆分——高级设置面板 */
 .ai-confirm-advance {
-  margin-top: 8px;
-  padding: 8px 10px;
+  margin-top: var(--space-8);
+  padding: var(--space-8) var(--space-10);
   background: var(--bg-sidebar);
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
 }
 .ai-adv-label {
   display: block;
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-bottom: 2px;
+  margin-bottom: var(--space-2);
 }
 .ai-adv-quick {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 6px;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
   flex-wrap: wrap;
-  padding: 4px 0;
+  padding: var(--space-4) 0;
 }
 
 /* AI 拆分——顶部统一设置日期栏 */
 .ai-batch-date {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
   flex-wrap: wrap;
-  padding: 8px 12px;
-  margin-bottom: 12px;
+  padding: var(--space-8) var(--space-12);
+  margin-bottom: var(--space-12);
   background: var(--info-bg);
   border: 1px solid var(--info-border);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
 }
 .ai-batch-title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--primary);
-  margin-right: 4px;
+  margin-right: var(--space-4);
   white-space: nowrap;
 }
 .ai-batch-label {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
   white-space: nowrap;
 }
 .ai-batch-sync {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-left: 4px;
+  margin-left: var(--space-4);
 }
 
 /* ====== 去重状态样式 ====== */
@@ -1775,15 +1802,15 @@ onMounted(() => {
 /* 统计摘要 */
 .ai-confirm-summary {
   display: flex;
-  gap: 16px;
-  margin-bottom: 12px;
-  padding: 8px 12px;
+  gap: var(--space-16);
+  margin-bottom: var(--space-12);
+  padding: var(--space-8) var(--space-12);
   background: var(--bg-sidebar);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
 }
 
 .ai-stat {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
 }
 
@@ -1792,17 +1819,17 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 /* 去重状态徽标 */
 .ai-dup-badge {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 1px 8px;
-  border-radius: 10px;
-  font-size: 11px;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-8);
+  border-radius: var(--radius-10);
+  font-size: var(--font-size-11);
   font-weight: 600;
   cursor: default;
   white-space: nowrap;
@@ -1854,35 +1881,35 @@ onMounted(() => {
 }
 
 .ai-diff-hint {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--primary);
   background: var(--info-bg);
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: var(--space-1) var(--space-6);
+  border-radius: var(--radius-4);
 }
 
 /* Layer 3 强制确认弹窗 */
 .ai-force-list {
   max-height: 200px;
   overflow-y: auto;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .ai-force-item {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-10);
+  margin-bottom: var(--space-6);
   background: var(--warning-bg);
   border: 1px solid var(--warning-border);
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: var(--radius-6);
+  font-size: var(--font-size-13);
   line-height: 1.5;
 }
 
 .ai-force-note {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
   margin: 0;
 }

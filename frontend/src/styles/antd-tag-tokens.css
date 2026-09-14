@@ -1,0 +1,97 @@
+/**
+ * antd Tag 的「预设色名」→ 本项目语义 token 的映射层
+ *
+ * ★ 为什么需要它
+ *   `<a-tag color="blue">` 走的是 antd 内置预设调色板，源码规则是
+ *   （ant-design-vue/es/tag/style/index.js 的 genPresetStyle）：
+ *       .ant-tag-blue { color: token['blue-7']; background: token['blue-1']; border-color: token['blue-3'] }
+ *   而 antd 这套色板**只随自己的算法走、与项目的主题变量无关**，于是：
+ *     · 换主题色（换 brand 主色 / 加第三套主题）时，这些标签纹丝不动；
+ *     · 深色下 antd 会用 darkAlgorithm 重算出**另一套**不透明深色
+ *       （如 blue-1 → #111a2c），与本项目自己的 `--*-bg`（半透明品牌色）
+ *       是**两套并存的体系** —— 同屏出现两种「淡蓝底」。
+ *   props 侧逐个改成自定 class 代价过大（实测 **52 处、35 个文件**），故从 CSS 侧接一层。
+ *
+ * ★ 为什么不能直接 `:color="'var(--primary)'"`
+ *   antd 对**非预设色名**的处理是 `style.backgroundColor = color` + 挂 `-has-color` 类
+ *   （该类把文字强制成 #fff）—— 传 var() 会渲染成**实心蓝底白字**，而不是「浅底深字」。
+ *   所以这件事只能由 CSS 覆盖完成，改 props 是走不通的。
+ *
+ * ★ 特异性（关键）
+ *   antd v5 的样式由 CSS-in-JS 运行时注入到 <head> **末尾**，本文件是静态 CSS、一定在它之前，
+ *   单靠顺序会输。故统一加 `:root` 前缀把特异性抬到 (0,2,0)，压过 antd 的 (0,1,0)，
+ *   与两边加载顺序无关。
+ *
+ * ★ 实测差异（浅色 4/24 项微变；深色全换档）—— agent-browser 开关对照实测
+ *
+ *   浅色：8 个色名 × 3 属性 = 24 项中 **20 项逐字相同**，4 项不同：
+ *     blue 的 bg/border、purple 的 color/border。
+ *     根因：antd 现用色板与项目 presets.ts 抄的那版**不是同一版本**。
+ *     （测得：blue-1 现为 #e6f4ff 而非旧版 #e6f7ff；blue-3 现为 #91caff 而非 #91d5ff；
+ *      purple-7 现为 #531dab 而非 #722ed1；purple-3 现为 #d3adf7 而非 #efdbff）。
+ *     本层把 tag 收敛到**项目真源**，所以 tag 与全站其他「蓝 / 紫」终于一致。
+ *
+ *   深色：8 色全部换档。底色由 antd 的不透明深色（如 #111a2c）
+ *     改为项目 `--*-bg` 的**半透明品牌色**（rgba(...,0.12)），文字取项目深色档（整体略提亮）。
+ *     收益不止外观：**底色 / 文字从此跟系变量走** —— 换主题时 tag 会跟着变，
+ *     这才是本层的核心价值（浅色那 4 项微变也是同一个收敛方向）。
+ *
+ * ⚠️ `default`（中性）与 status 系色名（success / processing / error / warning）**不在本层**：
+ *    前者由 antd 算法派生、本身随主题变；后者走 genTagStatusStyle 读 color{Type}Bg/Border token，
+ *    与预设色名是两条链路，另行处理。
+ * ⚠️ 项目里传 hex 的自定义色（如分组色板 `currentGroupColor`）**不受本层影响** —— 那是数据色，
+ *    按设计不随主题变（见 presets.ts 关于「持久化色板 ≠ 展示色板」的说明）。
+ * ⚠️ **覆盖边界**：本层覆盖 8 个色名（blue / green / red / orange / gold / purple / cyan / geekblue）。
+ *    其中前 7 个是项目当前真实在用的，geekblue 属防御性覆盖。antd 另外还认
+ *    magenta / pink / yellow / volcano / lime 这 5 个名字，项目当前零使用 ——
+ *    一旦将来有人写 `color="magenta"`，它会**静默落回 antd 色板**（不报错、也不跟主题变）。
+ *    所以新增色名时请二选一：在本文件补一条映射，或直接改用项目语义色。
+ */
+
+:root .ant-tag-blue {
+  color: var(--primary-strong);
+  background: var(--info-bg);
+  border-color: var(--info-border);
+}
+
+:root .ant-tag-green {
+  color: var(--success);
+  background: var(--success-bg);
+  border-color: var(--success-border);
+}
+
+:root .ant-tag-red {
+  color: var(--danger-strong);
+  background: var(--danger-bg);
+  border-color: var(--danger-border-strong);
+}
+
+:root .ant-tag-orange {
+  color: var(--orange-strong);
+  background: var(--orange-bg);
+  border-color: var(--orange-border);
+}
+
+:root .ant-tag-gold {
+  color: var(--gold);
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+}
+
+:root .ant-tag-purple {
+  color: var(--purple);
+  background: var(--purple-bg);
+  border-color: var(--purple-border);
+}
+
+:root .ant-tag-cyan {
+  color: var(--cyan);
+  background: var(--cyan-bg);
+  border-color: var(--cyan-border);
+}
+
+:root .ant-tag-geekblue {
+  color: var(--geekblue);
+  background: var(--geekblue-bg);
+  border-color: var(--geekblue-border);
+}

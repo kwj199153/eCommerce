@@ -169,6 +169,7 @@
 </template>
 
 <script setup lang="ts">
+import { bandColor } from '@/theme/bands'
 import { computed } from 'vue'
 import { FundOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
@@ -194,7 +195,7 @@ const isMonitored = computed(() =>
 )
 
 /** 切换游离监控：已入池则跳转竞品监控页定位；未入池则加入（无归属） */
-function onToggleMonitor() {
+async function onToggleMonitor() {
   const record = props.record
   if (!record?.asin) return
   if (isMonitored.value) {
@@ -205,7 +206,7 @@ function onToggleMonitor() {
     message.success(`已定位到 ${record.asin} 的竞品监控`)
     return
   }
-  const { added } = monitorStore.addFreeMonitor({
+  const { added } = await monitorStore.addFreeMonitor({
     asin: record.asin,
     title: record.title,
     brand: extractBrand(record.title),
@@ -239,11 +240,8 @@ function extractBrand(title: string): string {
 }
 
 // ====== 工具函数 ======
-const getScoreColor = (score: number): string => {
-  if (score >= 70) return '#52c41a'
-  if (score >= 40) return '#faad14'
-  return '#ff4d4f'
-}
+/** 蓝海评分（阈值真源在后端 product_research，见 bands.ts `ocean`） */
+const getScoreColor = (score: number): string => bandColor('ocean', score)
 
 /** 金额格式化：保留 2 位小数，去掉多余 0 尾 */
 const money = (v: any): string => {

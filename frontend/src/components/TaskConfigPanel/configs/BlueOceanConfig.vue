@@ -241,32 +241,32 @@ const handleReset = () => {
 .blue-ocean-config {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-12);
 }
 
 .form-group {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
 }
 
 .form-group > label {
   display: block;
-  font-size: 12px;
-  color: #595959;
-  margin-bottom: 4px;
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-4);
   font-weight: 500;
 }
 
 .form-hint {
   display: block;
-  font-size: 11px;
-  color: #8c8c8c;
-  margin-top: 2px;
+  font-size: var(--font-size-11);
+  color: var(--text-tertiary);
+  margin-top: var(--space-2);
 }
 
 .form-row {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .flex-1 {
@@ -274,33 +274,33 @@ const handleReset = () => {
 }
 
 .form-separator {
-  padding-top: 22px;
-  color: #8c8c8c;
+  padding-top: var(--space-22);
+  color: var(--text-tertiary);
 }
 
 .checkbox-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .action-bar {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #f0f0f0;
+  gap: var(--space-8);
+  margin-top: var(--space-12);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--border-base);
 }
 
 /* 覆盖 ant-design 样式 */
 :deep(.ant-collapse-header) {
-  font-size: 13px !important;
+  font-size: var(--font-size-13) !important;
   font-weight: 600 !important;
-  padding: 8px 0 !important;
+  padding: var(--space-8) 0 !important;
 }
 
 :deep(.ant-collapse-content-box) {
-  padding: 12px 0 !important;
+  padding: var(--space-12) 0 !important;
 }
 </style>

@@ -18,6 +18,24 @@ from sqlalchemy.orm import Mapped, mapped_column
 from core.database import Base
 
 
+# ★★ 店铺「序号」排序真源（唯一）—— 全项目禁止各自写 order_by
+#
+# 为什么必须集中：老板说「切到第 2 个店铺」时，**序号由两个不同链路各自数出来的**：
+#   - LLM 工具链路：`secretary/shop_tools._list_shops()` 查 PG
+#   - 界面展示链路：`GET /api/v1/stores` → `list(_store_db.values())`（内存 dict 顺序）
+# 两边顺序不一致 ⇒ AI 按 A 顺序数、界面按 B 顺序显示 ⇒ **切错店**（且不报错，静默错）。
+#
+# 排序键选 (created_at, id)：
+#   - created_at：与用户「添加顺序」直觉一致
+#   - id：created_at 相同（同批 seed）时的决定性 tie-breaker，保证全序、稳定
+#
+# 消费点（改这里必须同步核对）：
+#   1. `stores/router.py: load_stores_into_memory()` —— 决定内存 dict 插入顺序
+#   2. `stores/router.py: list_stores()` —— 显式排序（不依赖 dict 顺序，双重保险）
+#   3. `secretary/shop_tools.py: _list_shops()` —— LLM 侧序号来源
+SHOP_ORDER_BY = ("created_at", "id")
+
+
 class StoreRecord(Base):
     """店铺持久化表（/api/v1/stores 数据源）"""
     __tablename__ = "stores_store"

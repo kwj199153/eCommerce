@@ -31,7 +31,7 @@ from modules.product_research.schemas import (
     ChatResponse,
     ApiResponse,
 )
-from modules.product_research.service import ProductResearchService
+from modules.product_research.service import product_research_service
 
 
 # 创建路由器
@@ -40,8 +40,9 @@ router = APIRouter(
     tags=["选品分析"],
 )
 
-# 创建服务实例（全局复用）
-service = ProductResearchService()
+# 复用 service 层的**唯一**单例（与 tools.py 同源）——
+# 否则 router 与 tools 各持一个 Agent 实例，会话状态互不可见。
+service = product_research_service
 
 
 @router.post("/blue-ocean", response_model=ApiResponse)
@@ -209,7 +210,10 @@ async def chat_stream(
 
     async def _wrapped():
         try:
-            async for event in sse_event_stream(service.stream_chat(request.message)):
+            # context_id 必须传下去：入库待补槽位与「上一轮蓝海结果」都按会话隔离
+            async for event in sse_event_stream(
+                service.stream_chat(request.message, context_id=request.context_id)
+            ):
                 yield event
         except Exception as e:
             yield f"event: error\ndata: {_json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"

@@ -354,71 +354,71 @@ const onCompetitorSelect = (product: any) => {
 /* 平台提示条 */
 .platform-banner {
   flex-shrink: 0;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .platform-banner-text {
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 .platform-mode-hint {
-  margin-left: 8px;
-  color: #8c8c8c;
-  font-size: 11px;
+  margin-left: var(--space-8);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-11);
 }
 
 /* 表单区域 */
 .optim-form {
   flex: 1;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: var(--space-4);
 }
 
 .option-section {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .section-title {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   font-weight: 600;
-  color: #595959;
-  margin-bottom: 6px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-6);
 }
 
 /* 生成内容作用域提示（本工具只出标题，替代原无效的多选勾选组） */
 .scope-hint {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-10);
   border: 1px dashed var(--border-base, #d9d9d9);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--bg-hover-light, #fafafa);
 }
 
 .scope-tag {
   align-self: flex-start;
-  font-size: 12px;
+  font-size: var(--font-size-12);
   font-weight: 600;
   color: var(--primary, #1890ff);
   background: rgba(24, 144, 255, 0.1);
-  border-radius: 10px;
-  padding: 1px 8px;
+  border-radius: var(--radius-10);
+  padding: var(--space-1) var(--space-8);
 }
 
 .scope-note {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   line-height: 1.6;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
 }
 
 /* 操作按钮 */
 .config-actions {
-  padding: 16px 0 0;
-  border-top: 1px solid #f0f0f0;
+  padding: var(--space-16) 0 0;
+  border-top: 1px solid var(--border-base);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-8);
   flex-shrink: 0;
 }
 
@@ -426,6 +426,6 @@ const onCompetitorSelect = (product: any) => {
 .input-with-picker {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-4);
 }
 </style>

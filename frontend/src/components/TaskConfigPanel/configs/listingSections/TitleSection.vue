@@ -60,33 +60,33 @@ function adoptVariant(v: string) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-8);
 }
-.sec-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-.sec-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
-.mini-tag { transform: scale(0.85); margin-left: 4px; }
+.sec-title { font-size: var(--font-size-13); font-weight: 600; color: var(--text-primary); }
+.sec-sub { font-size: var(--font-size-11); color: var(--text-tertiary); margin-top: var(--space-2); }
+.mini-tag { transform: scale(0.85); margin-left: var(--space-4); }
 
-.lb-title-input { font-size: 13px; margin-top: 10px; }
+.lb-title-input { font-size: var(--font-size-13); margin-top: var(--space-10); }
 .len-bar {
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-2);
   background: var(--bg-hover-light);
   overflow: hidden;
 }
 .len-fill { display: block; height: 100%; transition: width 0.2s ease; }
-.len-fill.ok { background: #52c41a; }
+.len-fill.ok { background: var(--success); }
 .len-fill.short { background: #fa8c16; }
-.len-fill.over { background: #ff4d4f; }
+.len-fill.over { background: var(--danger); }
 
-.variant-box { margin-top: 4px; }
-.variant-title { font-size: 11px; color: var(--text-tertiary); margin-bottom: 4px; }
+.variant-box { margin-top: var(--space-4); }
+.variant-title { font-size: var(--font-size-11); color: var(--text-tertiary); margin-bottom: var(--space-4); }
 .variant-row {
   display: flex;
-  gap: 6px;
-  padding: 5px 6px;
-  border-radius: 4px;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-4);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
 }
 .variant-row:hover { background: var(--bg-hover-light); color: var(--primary); }

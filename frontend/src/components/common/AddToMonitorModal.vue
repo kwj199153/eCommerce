@@ -102,34 +102,38 @@ watch(() => props.open, (v) => {
   if (v) {
     chosenGroupId.value = undefined
     newGroupName.value = ''
+    // 分组列表来自后端；弹窗打开时兜底拉一次，避免首屏直接开弹窗时分组为空
+    pool.ensureLoaded()
   }
 })
 
 function close() { emit('update:open', false) }
 
-function usePreset(p: { name: string; kind: 'custom' | 'product' | 'brand' }) {
+async function usePreset(p: { name: string; kind: 'custom' | 'product' | 'brand' }) {
   const g = pool.groups.find(x => x.name === p.name)
   if (g) { chosenGroupId.value = g.id; return }
-  const created = pool.createGroup({ name: p.name, kind: p.kind })
+  const created = await pool.createGroup({ name: p.name, kind: p.kind })
+  if (!created) return
   chosenGroupId.value = created.id
   message.success(`已创建分组「${p.name}」`)
 }
 
-function createNewGroup() {
+async function createNewGroup() {
   if (!newGroupName.value.trim()) return
-  const g = pool.createGroup({ name: newGroupName.value.trim(), kind: 'custom' })
+  const g = await pool.createGroup({ name: newGroupName.value.trim(), kind: 'custom' })
+  if (!g) return
   chosenGroupId.value = g.id
   newGroupName.value = ''
   message.success(`已创建分组「${g.name}」并选中`)
 }
 
-function confirm() {
+async function confirm() {
   const groupId = chosenGroupId.value
   submitting.value = true
   try {
-    // 注入当前选择的分组，逐个入池
+    // 注入当前选择的分组，批量入池（判重与计数由后端给出）
     const inputs = props.items.map(i => ({ ...i, groupId: groupId ?? null }))
-    const res = pool.addManyFromCandidates(inputs)
+    const res = await pool.addManyFromCandidates(inputs)
     emit('added', { added: res.added, existing: res.existing, groupId })
     close()
   } finally {
@@ -139,16 +143,16 @@ function confirm() {
 </script>
 
 <style scoped>
-.atm-summary, .atm-group { margin-bottom: 16px; }
-.atm-label { font-size: 12px; font-weight: 600; color: #262626; margin-bottom: 8px; }
-.atm-asins { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
-.atm-note { font-size: 11.5px; color: #8c8c8c; line-height: 1.6; background: #fafafa; border-radius: 6px; padding: 8px 10px; }
-.atm-note b { color: #595959; }
-.atm-quick { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-.atm-q-label { font-size: 12px; color: #8c8c8c; }
-.atm-select { margin-bottom: 8px; }
-.gdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-.atm-create { display: flex; gap: 8px; }
-.atm-quota { font-size: 12px; color: #ad6800; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; }
+.atm-summary, .atm-group { margin-bottom: var(--space-16); }
+.atm-label { font-size: var(--font-size-12); font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-8); }
+.atm-asins { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-bottom: var(--space-6); }
+.atm-note { font-size: var(--font-size-11-5); color: var(--text-tertiary); line-height: 1.6; background: var(--bg-sidebar); border-radius: var(--radius-6); padding: var(--space-8) var(--space-10); }
+.atm-note b { color: var(--text-secondary); }
+.atm-quick { display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap; margin-bottom: var(--space-8); }
+.atm-q-label { font-size: var(--font-size-12); color: var(--text-tertiary); }
+.atm-select { margin-bottom: var(--space-8); }
+.gdot { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-circle); margin-right: var(--space-6); }
+.atm-create { display: flex; gap: var(--space-8); }
+.atm-quota { font-size: var(--font-size-12); color: var(--warning); background: var(--warning-bg); border: 1px solid var(--warning-border); border-radius: var(--radius-6); padding: var(--space-8) var(--space-10); margin-bottom: var(--space-12); }
 .atm-footer { display: flex; justify-content: flex-end; }
 </style>

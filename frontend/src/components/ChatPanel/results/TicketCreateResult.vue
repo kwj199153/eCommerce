@@ -94,37 +94,37 @@ const formatTime = (t: string) => {
 </script>
 
 <style scoped>
-.ticket-create-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
+.ticket-create-result { padding: var(--space-16); background: var(--bg-elevated); border-radius: var(--radius-8); }
 
 .ticket-header {
-  display: flex; align-items: center; gap: 14px;
-  padding: 18px 20px; background: linear-gradient(135deg, #f6ffed, #e6fffb);
-  border-radius: 12px; margin-bottom: 14px;
+  display: flex; align-items: center; gap: var(--space-14);
+  padding: var(--space-18) var(--space-20); background: linear-gradient(135deg, #f6ffed, #e6fffb);
+  border-radius: var(--radius-12); margin-bottom: var(--space-14);
 }
-.ticket-icon { font-size: 36px; }
-.header-info h3 { margin: 0; font-size: 17px; color: var(--text-primary); }
+.ticket-icon { font-size: var(--font-size-36); }
+.header-info h3 { margin: 0; font-size: var(--font-size-17); color: var(--text-primary); }
 .ticket-id {
-  display: inline-block; margin-top: 4px; padding: 3px 10px;
-  background: var(--bg-elevated); border-radius: 6px; font-size: 13px;
-  color: #389e0d; font-family: monospace; font-weight: 600;
+  display: inline-block; margin-top: var(--space-4); padding: var(--space-3) var(--space-10);
+  background: var(--bg-elevated); border-radius: var(--radius-6); font-size: var(--font-size-13);
+  color: var(--success); font-family: monospace; font-weight: 600;
 }
 
 .ticket-info-card {
-  padding: 16px; border: 1px solid #f0f0f0; border-radius: 10px; margin-bottom: 14px;
+  padding: var(--space-16); border: 1px solid var(--border-base); border-radius: var(--radius-10); margin-bottom: var(--space-14);
 }
-.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.info-item { display: flex; flex-direction: column; gap: 3px; }
-.info-item .label { font-size: 11px; color: var(--text-tertiary); }
-.info-item .value { font-size: 13.5px; color: var(--text-primary); font-weight: 500; }
-.sla { color: #1890ff; font-weight: 600; }
-.create-time { margin-top: 12px; padding-top: 10px; border-top: 1px solid #f0f0f0; font-size: 11.5px; color: var(--text-disabled); text-align: right; }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-10); }
+.info-item { display: flex; flex-direction: column; gap: var(--space-3); }
+.info-item .label { font-size: var(--font-size-11); color: var(--text-tertiary); }
+.info-item .value { font-size: var(--font-size-13-5); color: var(--text-primary); font-weight: 500; }
+.sla { color: var(--primary); font-weight: 600; }
+.create-time { margin-top: var(--space-12); padding-top: var(--space-10); border-top: 1px solid var(--border-base); font-size: var(--font-size-11-5); color: var(--text-disabled); text-align: right; }
 
-.auto-replies { margin-bottom: 14px; padding: 12px 16px; background: var(--bg-elevated)7e6; border-radius: 8px; border: 1px solid #ffd591; }
-.auto-replies h4 { margin: 0 0 8px; font-size: 13px; color: #d46b08; }
-.auto-replies ul { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.8; color: var(--text-secondary); }
+.auto-replies { margin-bottom: var(--space-14); padding: var(--space-12) var(--space-16); background: var(--orange-bg); border-radius: var(--radius-8); border: 1px solid var(--orange-border); }
+.auto-replies h4 { margin: 0 0 var(--space-8); font-size: var(--font-size-13); color: var(--orange-strong); }
+.auto-replies ul { margin: 0; padding-left: var(--space-18); font-size: var(--font-size-12-5); line-height: 1.8; color: var(--text-secondary); }
 
-.sla-timeline { padding: 14px; background: var(--bg-base); border-radius: 8px; }
-.sla-timeline h4 { margin: 0 0 12px; font-size: 13px; color: var(--text-secondary); }
+.sla-timeline { padding: var(--space-14); background: var(--bg-base); border-radius: var(--radius-8); }
+.sla-timeline h4 { margin: 0 0 var(--space-12); font-size: var(--font-size-13); color: var(--text-secondary); }
 
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); }
 </style>

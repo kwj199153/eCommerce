@@ -19,6 +19,12 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      // 后端把 uploads 挂到 /static（AIGC 素材图：万相临时链接 24h 过期，故出图后转存本地）。
+      // 不代理的话，前端 <img src="/static/..."> 会打到 5173 上 404。
+      '/static': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

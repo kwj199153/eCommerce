@@ -17,9 +17,13 @@ from langchain_core.tools import StructuredTool
 
 from .service import ListingGeneratorService
 from .schemas import (
+    GenerateListingRequest,
+    OptimizeListingRequest,
     TitleOptimizationRequest,
     BulletPointsRequest,
     DescriptionRequest,
+    SEOAnalysisRequest,
+    ABTestRequest,
 )
 
 # 单例 service（与 router 同源）
@@ -100,9 +104,114 @@ async def _generate_search_terms_tool(
     return resp.model_dump_json()
 
 
+async def _generate_complete_listing_tool(
+    product_name: str,
+    brand: str = "",
+    category: str = "",
+    features: list[str] | None = None,
+    price: float | None = None,
+    generate_ab_variants: bool = False,
+) -> str:
+    """从零生成完整 Listing（标题 + 五点 + 描述 + 关键词 + SEO 评分）。
+
+    Args:
+        product_name: 产品名称（必填）。
+        brand: 品牌名称（可选）。
+        category: 产品类目（可选）。
+        features: 产品特性列表（可选）。
+        price: 产品售价，单位美元（可选）。
+        generate_ab_variants: 是否同时生成 A/B 测试变体（默认 False）。
+    """
+    req = GenerateListingRequest(
+        product_name=product_name,
+        brand=brand or None,
+        category=category or None,
+        features=features,
+        price=price,
+        generate_ab_variants=generate_ab_variants,
+    )
+    resp = await _service.generate_complete_listing(req)
+    return resp.model_dump_json()
+
+
+async def _optimize_listing_tool(
+    current_title: str = "",
+    current_bullets: list[str] | None = None,
+    current_description: str = "",
+    current_search_terms: str = "",
+) -> str:
+    """优化现有 Listing，返回逐项优化建议（按优先级排序）。
+
+    Args:
+        current_title: 当前标题原文（可选）。
+        current_bullets: 当前五点描述列表（可选）。
+        current_description: 当前产品描述（可选）。
+        current_search_terms: 当前后台搜索词（可选）。
+    """
+    current_listing = {
+        "title": current_title,
+        "bullets": current_bullets or [],
+        "description": current_description,
+        "search_terms": current_search_terms,
+    }
+    req = OptimizeListingRequest(current_listing=current_listing)
+    resp = await _service.optimize_listing(req)
+    return resp.model_dump_json()
+
+
+async def _analyze_seo_tool(
+    title: str,
+    bullets: list[str],
+    description: str,
+    search_terms: str = "",
+    main_keyword: str = "",
+) -> str:
+    """对现有 Listing 做 SEO 诊断评分（标题/五点/描述/关键词多维打分 + 等级）。
+
+    Args:
+        title: 当前标题（必填）。
+        bullets: 当前五点描述列表（必填）。
+        description: 当前产品描述（必填）。
+        search_terms: 当前后台搜索词（可选）。
+        main_keyword: 主关键词（可选）。
+    """
+    req = SEOAnalysisRequest(
+        title=title,
+        bullets=bullets,
+        description=description,
+        search_terms=search_terms,
+        main_keyword=main_keyword or None,
+    )
+    resp = await _service.analyze_seo(req)
+    return resp.model_dump_json()
+
+
+async def _ab_test_tool(
+    base_title: str,
+    base_bullets: list[str] | None = None,
+    base_description: str = "",
+) -> str:
+    """基于基础 Listing 生成多个 A/B 测试变体。
+
+    Args:
+        base_title: 基础标题（必填）。
+        base_bullets: 基础五点描述列表（可选）。
+        base_description: 基础产品描述（可选）。
+    """
+    base_listing = {
+        "title": base_title,
+        "bullets": base_bullets or [],
+        "description": base_description,
+    }
+    req = ABTestRequest(base_listing=base_listing)
+    resp = await _service.generate_ab_test_variants(req)
+    return resp.model_dump_json()
+
+
 # ====== 工具注册表 ======
 
-listing_tools = [
+# 细粒度工具（原有 4 个）
+_fine_grained_tools = [
     StructuredTool.from_function(
         coroutine=_optimize_title_tool,
         name="optimize_listing_title",
@@ -124,3 +233,29 @@ listing_tools = [
         description="基于标题生成后台搜索词（Search Terms）。当用户想生成/补充关键词时使用。",
     ),
 ]
+
+# 粗粒度工具（本次补齐 4 个，供子 Agent 内部自主路由）
+_coarse_grained_tools = [
+    StructuredTool.from_function(
+        coroutine=_generate_complete_listing_tool,
+        name="generate_complete_listing",
+        description="从零生成一套完整 Listing（标题+五点+描述+关键词+SEO评分）。当用户要「生成/写一套完整 listing」且没有指定只做标题/五点等单一部件时使用。",
+    ),
+    StructuredTool.from_function(
+        coroutine=_optimize_listing_tool,
+        name="optimize_listing",
+        description="分析现有 Listing 并给出逐项优化建议。当用户要「优化/改进现有 listing」而非只改标题时使用。",
+    ),
+    StructuredTool.from_function(
+        coroutine=_analyze_seo_tool,
+        name="analyze_listing_seo",
+        description="对现有 Listing 做 SEO 诊断评分。当用户要「诊断/评分/检查 SEO」时使用。",
+    ),
+    StructuredTool.from_function(
+        coroutine=_ab_test_tool,
+        name="generate_ab_test_variants",
+        description="生成多个 A/B 测试变体。当用户要「A/B 测试/变体/多个版本」时使用。",
+    ),
+]
+
+listing_tools = _fine_grained_tools + _coarse_grained_tools

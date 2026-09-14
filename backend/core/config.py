@@ -111,6 +111,48 @@ class Settings(BaseSettings):
         default=["pdf", "csv", "xlsx", "txt", "json", "jpg", "png"],
         description="允许上传的文件类型"
     )
+    # 对外可访问的站点根地址（形如 https://api.example.com）。
+    # 用途：声音复刻（CosyVoice）只接受「公网可访问的音频 URL」，不接受本地上传流，
+    # 所以样本落盘后必须拼成公网地址。留空 = 未配置 → 语音克隆会显式报错并说明原因，
+    # **不会**静默退回 localhost（那样服务端根本取不到文件）。
+    public_base_url: str = Field(
+        default="",
+        description="对外可访问的站点根地址，用于生成第三方可回源的资源 URL（如声音复刻样本）",
+    )
+
+    # ====== 样本公网镜像（本地开发用，见 docs/voice-sample-mirror.md）======
+    # 问题：CosyVoice 只收【公网可访问】的音频 URL，且是【服务端主动来拉】。
+    #       本地开发的 localhost 它够不着 ⇒ 不解决就永远跑不通。
+    # 方案：样本落盘后【额外推一份】到云端静态目录，public_base_url 指向云端。
+    #       判据：本机没公网入口，但云端有 ⇒ 让云端只当"文件柜"，业务逻辑全在本地。
+    # ⚠️ 与 PUBLIC_BASE_URL 的分工：
+    #       PUBLIC_BASE_URL          = 拼给 DashScope 的地址前缀（指向【云端】）
+    #       VOICE_SAMPLE_MIRROR_*    = 怎么把文件【送上去】（ssh/scp 凭据）
+    #    ⚠️ 未配置 ssh_host 时，同步静默跳过（本地仍可用，只是克隆会失败——
+    #       失败原因由 sample_public_url 的显式报错给出，不在这里制造第二个错误）。
+    voice_sample_mirror_ssh_host: str = Field(
+        default="",
+        description="样本镜像目标主机（形如 root@1.2.3.4）。留空 = 不做镜像同步",
+    )
+    voice_sample_mirror_ssh_port: int = Field(
+        default=22, description="样本镜像 SSH 端口"
+    )
+    voice_sample_mirror_remote_dir: str = Field(
+        default="/www/wwwroot/voice-samples",
+        description="样本镜像的远端目录（需与 nginx 站点根目录一致）",
+    )
+    voice_sample_mirror_ssh_key: str = Field(
+        default="",
+        description="样本镜像用的 SSH 私钥路径（留空 = 用默认 ssh-agent / ~/.ssh/id_*）",
+    )
+
+    # ====== 附加模块总开关 ======
+    # 语音克隆（客服音色）属于**附加模块**：装了也不生效，必须显式打开。
+    # 关闭时：前端入口直接隐藏 + 后端路由不注册（404 语义）；数据表保留，不做破坏性迁移。
+    voice_clone_enabled: bool = Field(
+        default=False,
+        description="是否启用语音克隆附加模块（默认关闭）",
+    )
 
     # ====== Amazon SP-API ======
     spapi_lwa_client_id: str = Field(default="", description="LWA Client ID")

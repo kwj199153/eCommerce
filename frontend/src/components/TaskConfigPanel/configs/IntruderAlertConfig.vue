@@ -15,7 +15,7 @@
       <!-- 回溯天数 -->
       <a-form-item label="回溯天数">
         <a-slider v-model:value="formState.lookbackDays" :min="7" :max="90" :step="7" />
-        <div style="text-align: center; font-size: 12px; color: #8c8c8c;">{{ formState.lookbackDays }} 天</div>
+        <div style="text-align: center; font-size: var(--font-size-12); color: #8c8c8c;">{{ formState.lookbackDays }} 天</div>
       </a-form-item>
 
       <!-- 评论阈值 -->
@@ -94,12 +94,12 @@ const handleStart = () => {
 </script>
 
 <style scoped>
-.intruder-config { padding: 4px 0; }
-.config-form :deep(.ant-form-item) { margin-bottom: 14px; }
-.config-form :deep(.ant-form-item-label) { font-size: 13px; font-weight: 500; }
-.form-hint { font-size: 11px; color: #8c8c8c; margin-top: 4px; }
-.action-bar { margin-top: 16px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
-.quick-tips { margin-top: 16px; padding: 12px; background: #fff1f0; border-radius: 8px; border: 1px solid #ffa39e; }
-.tips-title { font-size: 12px; font-weight: 600; color: #cf1322; margin-bottom: 6px; }
-.quick-tips ul { margin: 0; padding-left: 18px; font-size: 11.5px; color: #595959; line-height: 1.7; }
+.intruder-config { padding: var(--space-4) 0; }
+.config-form :deep(.ant-form-item) { margin-bottom: var(--space-14); }
+.config-form :deep(.ant-form-item-label) { font-size: var(--font-size-13); font-weight: 500; }
+.form-hint { font-size: var(--font-size-11); color: var(--text-tertiary); margin-top: var(--space-4); }
+.action-bar { margin-top: var(--space-16); padding-top: var(--space-12); border-top: 1px solid var(--border-base); }
+.quick-tips { margin-top: var(--space-16); padding: var(--space-12); background: var(--danger-bg); border-radius: var(--radius-8); border: 1px solid var(--danger-border-strong); }
+.tips-title { font-size: var(--font-size-12); font-weight: 600; color: var(--danger-strong); margin-bottom: var(--space-6); }
+.quick-tips ul { margin: 0; padding-left: var(--space-18); font-size: var(--font-size-11-5); color: var(--text-secondary); line-height: 1.7; }
 </style>

@@ -195,7 +195,7 @@
                   <div class="hp-stats">
                     <div class="hp-stat"><span class="hp-label">售价</span><strong>${{ record.price.toFixed(2) }}</strong></div>
                     <div class="hp-stat"><span class="hp-label">成本</span><strong>${{ record.cost.toFixed(2) }}</strong></div>
-                    <div class="hp-stat"><span class="hp-label">利润率</span><strong :class="'margin-' + (record.margin >= 60 ? 'high' : record.margin >= 30 ? 'mid' : 'low')">{{ record.margin }}%</strong></div>
+                    <div class="hp-stat"><span class="hp-label">利润率</span><strong :class="'margin-' + bandOf('margin', record.margin)">{{ record.margin }}%</strong></div>
                   </div>
                   <div class="hp-row">
                     <span class="hp-label">评分</span>
@@ -207,7 +207,7 @@
                   <div class="hp-row">
                     <span class="hp-label">库存</span>
                     <strong style="color: var(--primary);">FBA {{ record.fba_stock }}</strong>
-                    <span v-if="record.fbm_stock > 0" style="color: var(--text-tertiary); margin-left: 8px;">FBM {{ record.fbm_stock }}</span>
+                    <span v-if="record.fbm_stock > 0" style="color: var(--text-tertiary); margin-left: var(--space-8);">FBM {{ record.fbm_stock }}</span>
                     <span class="hp-sub" style="margin-left: auto;">日销 <strong>{{ record.daily_sales_avg }}/天</strong></span>
                   </div>
                   <div v-if="record.selling_points" class="hp-points">
@@ -225,7 +225,14 @@
               </div>
               <div class="product-cell-body">
                 <div class="product-title">
-                  {{ record.title }}
+                  <span class="pt-text">{{ record.title }}</span>
+                  <button
+                    class="title-translate-btn"
+                    type="button"
+                    title="翻译标题"
+                    data-stl-trigger=""
+                    @click.stop="translateFromEvent(record.title, $event)"
+                  >译</button>
                   <a-tag v-if="record.status === 'draft'" :color="productStatusColor(record.status)" size="small">草稿</a-tag>
                   <span v-if="record.is_spu" class="var-parent-badge">👪 SPU · {{ store.getChildren(record.id).length }} SKU</span>
                   <span v-else-if="record.spu_id" class="var-child-badge">
@@ -276,11 +283,11 @@
 
         <!-- 利润率 -->
         <template v-else-if="column.dataIndex === 'margin'">
-          <span v-if="isSingleSkuSpu(record)" :class="['margin-badge', 'projected', singleSkuOf(record)!.margin >= 60 ? 'high' : singleSkuOf(record)!.margin >= 30 ? 'mid' : 'low']">
+          <span v-if="isSingleSkuSpu(record)" :class="['margin-badge', 'projected', bandOf('margin', singleSkuOf(record)!.margin)]">
             {{ singleSkuOf(record)!.margin }}%
           </span>
           <span v-else-if="record.is_spu" class="cell-placeholder">—</span>
-          <span v-else :class="['margin-badge', record.margin >= 60 ? 'high' : record.margin >= 30 ? 'mid' : 'low']">
+          <span v-else :class="['margin-badge', bandOf('margin', record.margin)]">
             {{ record.margin }}%
           </span>
         </template>
@@ -485,7 +492,7 @@
         </div>
 
         <!-- 竞品管理入口（产品详情维护对标竞品；监控驱动统一在下方"关联竞品·定向监控"区） -->
-        <div style="margin-bottom: 12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+        <div style="margin-bottom: var(--space-12); display:flex; gap:var(--space-8); flex-wrap:wrap; align-items:center">
           <a-button type="primary" size="small" @click="openCompetitorManager">
             <TeamOutlined /> 对标竞品管理
           </a-button>
@@ -498,7 +505,7 @@
           <a-descriptions-item label="售价">${{ detailDisplay.price.toFixed(2) }}</a-descriptions-item>
           <a-descriptions-item label="成本">${{ detailDisplay.cost.toFixed(2) }}</a-descriptions-item>
           <a-descriptions-item label="利润率">
-            <span :class="['margin-badge', detailDisplay.margin >= 60 ? 'high' : detailDisplay.margin >= 30 ? 'mid' : 'low']">
+            <span :class="['margin-badge', bandOf('margin', detailDisplay.margin)]">
               {{ detailDisplay.margin }}%
             </span>
           </a-descriptions-item>
@@ -601,7 +608,7 @@
         </div>
 
         <!-- SKU 列表（SPU 详情） -->
-        <div v-if="currentDetail.is_spu && detailSkus.length" style="margin-top: 16px">
+        <div v-if="currentDetail.is_spu && detailSkus.length" style="margin-top: var(--space-16)">
           <h4>SKU ({{ currentDetail.spu_theme || '未设置规格主题' }})</h4>
           <a-table
             :columns="variationColumns"
@@ -739,6 +746,8 @@ import PromoteSkuModal from './ProductLibrary/PromoteSkuModal.vue'
 import { useCompetitorPoolStore } from '@/stores/competitorPool'
 import { useMonitorPoolStore } from '@/stores/monitorPool'
 import { productTagColor, productStatusColor } from '@/utils/colorSemantics'
+import { translateFromEvent } from '@/composables/useSelectionTranslate'
+import { bandOf } from '@/theme/bands'
 
 const store = useProductLibraryStore()
 const cpStore = useCompetitorPoolStore()
@@ -825,7 +834,7 @@ const unmonitoredCompetitorCount = computed(() => {
   return currentDetail.value.competitor_asins.filter(a => !mpStore.isAsinInPool(a)).length
 })
 /** 批量：把该产品 competitor_asins 里未监控的，纳入监控池并归属当前产品（定向监控） */
-function inheritMonitorFromCompetitors(p: ProductItem) {
+async function inheritMonitorFromCompetitors(p: ProductItem) {
   // 拉取已配置的对标竞品（含 main_image / brand / category），入池时一并带上主图，便于监控页直接看图
   const allOwned = cpStore.poolCompetitors('product', p.asin)
   const ownedByAsin = new Map(allOwned.map(c => [c.asin, c]))
@@ -833,7 +842,7 @@ function inheritMonitorFromCompetitors(p: ProductItem) {
   if (!list.length) { message.info('对标竞品已全部在监控池'); return }
   inheritingMonitor.value = true
   try {
-    const { added, existing } = mpStore.addManyFromCompetitors(list.map(asin => {
+    const { added, existing } = await mpStore.addManyFromCompetitors(list.map(asin => {
       const c = ownedByAsin.get(asin)
       return {
         asin,
@@ -850,12 +859,12 @@ function inheritMonitorFromCompetitors(p: ProductItem) {
 }
 
 /** 单个对标竞品 → 定向监控（归属当前产品） */
-function monitorOneCompetitor(asin: string) {
+async function monitorOneCompetitor(asin: string) {
   const p = currentDetail.value
   if (!p) return
   // 同样带上 main_image / brand / category，避免监控池列表显示空图
   const c = cpStore.poolCompetitors('product', p.asin).find(x => x.asin === asin)
-  mpStore.addFromCompetitor({
+  const { added } = await mpStore.addFromCompetitor({
     asin,
     title: c?.title,
     brand: c?.brand,
@@ -863,12 +872,16 @@ function monitorOneCompetitor(asin: string) {
     category: p.category,
     ownedBy: { type: 'product', asin: p.asin, title: p.title },
   })
-  message.success(`已开启 ${asin} 的监控（归属「${p.title}」）`)
+  if (added) {
+    message.success(`已开启 ${asin} 的监控（归属「${p.title}」）`)
+  } else {
+    message.info(`${asin} 已在监控池中，已补挂归属`)
+  }
 }
 
 /** 从监控池移除该竞品（停止定向监控，保留对标引用） */
-function removeMonitoredCompetitor(asin: string) {
-  mpStore.removeRecords([asin])
+async function removeMonitoredCompetitor(asin: string) {
+  await mpStore.removeRecords([asin])
   message.success(`已停止监控 ${asin}（对标引用保留）`)
 }
 
@@ -1175,11 +1188,11 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 16px 8px;
+  padding: var(--space-16) var(--space-16) var(--space-8);
 }
 
 .pl-sidebar-title {
-  font-size: 14px;
+  font-size: var(--font-size-14);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -1187,11 +1200,11 @@ onMounted(() => {
 .pl-group-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 16px;
+  gap: var(--space-8);
+  padding: 9px var(--space-16);
   cursor: pointer;
   transition: background 0.15s;
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
 .pl-group-item:hover {
@@ -1206,7 +1219,7 @@ onMounted(() => {
 .pl-color-dot {
   width: 10px;
   height: 10px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   flex-shrink: 0;
 }
 
@@ -1219,11 +1232,11 @@ onMounted(() => {
 }
 
 .pl-group-count {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
   background: var(--border-base);
-  border-radius: 10px;
-  padding: 0 8px;
+  border-radius: var(--radius-10);
+  padding: 0 var(--space-8);
 }
 
 .pl-group-more {
@@ -1236,16 +1249,16 @@ onMounted(() => {
 }
 
 .pl-group-empty {
-  padding: 16px;
-  font-size: 12px;
+  padding: var(--space-16);
+  font-size: var(--font-size-12);
   color: var(--text-disabled);
   line-height: 1.6;
 }
 
 .pl-group-item--ungrouped {
-  margin-top: 8px;
+  margin-top: var(--space-8);
   border-top: 1px dashed var(--border-strong);
-  padding-top: 10px;
+  padding-top: var(--space-10);
   opacity: 0.85;
 }
 
@@ -1255,14 +1268,14 @@ onMounted(() => {
 
 .pl-color-picker {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
   flex-wrap: wrap;
 }
 
 .pl-color-swatch {
   width: 24px;
   height: 24px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   cursor: pointer;
   border: 2px solid transparent;
   transition: all 0.2s;
@@ -1279,27 +1292,27 @@ onMounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: 16px 24px;
+  padding: var(--space-16) var(--space-24);
 }
 
 /* 统计卡片 */
 .stat-cards {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: var(--space-12);
+  margin-bottom: var(--space-14);
   flex-shrink: 0;
 }
 
 .stat-card {
   background: var(--bg-sidebar);
-  border-radius: 8px;
-  padding: 12px 16px;
+  border-radius: var(--radius-8);
+  padding: var(--space-12) var(--space-16);
   border: 1px solid var(--border-base);
 }
 
 .stat-value {
-  font-size: 22px;
+  font-size: var(--font-size-22);
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -1317,9 +1330,9 @@ onMounted(() => {
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-top: 2px;
+  margin-top: var(--space-2);
 }
 
 /* Listing 优化按钮 */
@@ -1351,14 +1364,14 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
   flex-shrink: 0;
 }
 
 .toolbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .view-switch {
@@ -1367,25 +1380,25 @@ onMounted(() => {
 
 .toolbar-right {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .cat-count {
   color: var(--text-tertiary);
-  font-size: 11px;
-  margin-left: 4px;
+  font-size: var(--font-size-11);
+  margin-left: var(--space-4);
 }
 
 /* 产品单元格 */
 .product-cell {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--space-3);
 }
 
 .product-cell-head {
   display: flex;
-  gap: 10px;
+  gap: var(--space-10);
   align-items: flex-start;
 }
 
@@ -1393,7 +1406,7 @@ onMounted(() => {
   width: 48px;
   height: 48px;
   flex-shrink: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   overflow: hidden;
   background: var(--bg-sidebar);
   border: 1px solid var(--border-base);
@@ -1412,7 +1425,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: var(--font-size-20);
   color: var(--text-disabled);
 }
 
@@ -1427,8 +1440,29 @@ onMounted(() => {
   line-height: 1.3;
 }
 
+.title-translate-btn {
+  display: inline-block;
+  height: 17px;
+  margin-left: var(--space-6);
+  padding: 0 var(--space-5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-11);
+  font-weight: 400;
+  line-height: 15px;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.title-translate-btn:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
 .product-meta {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
   display: flex;
   align-items: center;
@@ -1441,7 +1475,7 @@ onMounted(() => {
 
 .tags-row {
   display: flex;
-  gap: 3px;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
@@ -1457,16 +1491,16 @@ onMounted(() => {
 }
 
 .cost {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
 }
 
 /* 利润率 */
 .margin-badge {
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 13px;
+  padding: var(--space-2) var(--space-8);
+  border-radius: var(--radius-4);
+  font-size: var(--font-size-13);
 }
 .margin-badge.high { background: var(--success-bg); color: var(--success); }
 .margin-badge.mid { background: var(--warning-bg); color: var(--warning); }
@@ -1476,22 +1510,22 @@ onMounted(() => {
 .rating-cell {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .stars {
   color: var(--warning);
   letter-spacing: -1px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
 .rating-num {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
 .review-count {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
 }
 
@@ -1499,25 +1533,25 @@ onMounted(() => {
 .stock-cell {
   display: flex;
   flex-direction: column;
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 .fba-stock { color: var(--primary); }
 .fbm-stock { color: var(--text-tertiary); }
 
 .unit {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
 }
 
 .text-muted { color: var(--text-disabled); }
 
 /* 导入区域 */
-.import-area { padding: 8px 0; }
-.import-result { margin-top: 16px; }
+.import-area { padding: var(--space-8) 0; }
+.import-result { margin-top: var(--space-16); }
 .error-list {
-  margin: 4px 0 0; padding-left: 18px;
-  color: var(--danger); font-size: 12px;
+  margin: var(--space-4) 0 0; padding-left: var(--space-18);
+  color: var(--danger); font-size: var(--font-size-12);
 }
 
 :deep(.ant-table) { flex: 1; overflow: hidden; }
@@ -1585,12 +1619,12 @@ onMounted(() => {
 
 /* 详情抽屉主图 */
 .detail-main-image {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-16);
 }
 
 .detail-main-image > img {
   width: 100%;
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   border: 1px solid var(--border-base);
   display: block;
   object-fit: cover;
@@ -1605,13 +1639,13 @@ onMounted(() => {
   color: var(--text-disabled);
   background: var(--bg-sidebar);
   border: 1px dashed var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
 }
 
 .detail-thumbs {
   display: flex;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
   flex-wrap: wrap;
 }
 
@@ -1619,43 +1653,43 @@ onMounted(() => {
   width: 56px;
   height: 56px;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   border: 1px solid var(--border-base);
 }
 
 /* 详情 section 通用 */
 .detail-section {
-  margin-top: 20px;
-  padding-top: 16px;
+  margin-top: var(--space-20);
+  padding-top: var(--space-16);
   border-top: 1px dashed var(--border-base);
 }
 
 .detail-section h4 {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 12px 0;
+  margin: 0 0 var(--space-12) 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 /* 卖点关键词 */
 .selling-points {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 .selling-point-item {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: var(--space-8);
+  padding: var(--space-6) var(--space-10);
   background: linear-gradient(135deg, var(--warning-bg) 0%, var(--warning-bg) 100%);
   border-left: 3px solid var(--warning);
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--radius-4);
+  font-size: var(--font-size-12);
   line-height: 1.5;
   color: var(--warning);
 }
@@ -1663,13 +1697,13 @@ onMounted(() => {
 .sp-num {
   background: var(--warning);
   color: #fff;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   width: 18px;
   height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -1683,93 +1717,93 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  gap: var(--space-4);
+  font-size: var(--font-size-11);
 }
 
 .kw-label {
   color: var(--text-tertiary);
-  font-size: 11px;
-  margin-right: 4px;
+  font-size: var(--font-size-11);
+  margin-right: var(--space-4);
 }
 
 .kw-tag {
-  font-size: 10px;
-  margin: 2px !important;
+  font-size: var(--font-size-10);
+  margin: var(--space-2) !important;
 }
 
 /* Listing 信息 */
 .listing-block {
-  margin-bottom: 14px;
+  margin-bottom: var(--space-14);
 }
 
 .listing-label {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-6);
   font-weight: 600;
 }
 
 .listing-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--text-primary);
   line-height: 1.5;
-  padding: 8px 10px;
+  padding: var(--space-8) var(--space-10);
   background: var(--bg-sidebar);
   border-left: 3px solid var(--primary);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
 }
 
 .bullet-item {
-  margin-bottom: 8px;
-  padding: 8px 10px;
+  margin-bottom: var(--space-8);
+  padding: var(--space-8) var(--space-10);
   background: var(--bg-sidebar);
   border-left: 3px solid var(--success);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
 }
 
 .bullet-title {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   font-weight: 600;
   color: var(--success);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
   letter-spacing: 0.3px;
 }
 
 .bullet-content {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
   line-height: 1.6;
 }
 
 .listing-desc {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
   line-height: 1.6;
-  padding: 8px 10px;
+  padding: var(--space-8) var(--space-10);
   background: var(--bg-sidebar);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
 }
 
 .competitor-mon-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
 }
 /* 定向监控区块标题行：左侧 label，右侧批量开启 */
 .cm-section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: var(--space-8);
+  margin-bottom: var(--space-4);
 }
 .cm-section-head .cm-batch-btn {
-  font-size: 12px;
-  padding: 0 4px;
+  font-size: var(--font-size-12);
+  padding: 0 var(--space-4);
 }
 .cm-section-head .cm-batch-btn[disabled] {
   color: var(--text-tertiary) !important;
@@ -1777,16 +1811,16 @@ onMounted(() => {
 .competitor-mon-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 3px 6px;
+  gap: var(--space-8);
+  padding: var(--space-3) var(--space-6);
   background: var(--bg-sidebar);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
 }
-.cm-img { width: 22px; height: 22px; border-radius: 3px; object-fit: cover; border: 1px solid var(--border-base); background: var(--bg-elevated); flex-shrink: 0; }
-.cm-img-fb { width: 22px; height: 22px; border-radius: 3px; border: 1px solid var(--border-base); background: var(--bg-elevated); align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+.cm-img { width: 22px; height: 22px; border-radius: var(--radius-3); object-fit: cover; border: 1px solid var(--border-base); background: var(--bg-elevated); flex-shrink: 0; }
+.cm-img-fb { width: 22px; height: 22px; border-radius: var(--radius-3); border: 1px solid var(--border-base); background: var(--bg-elevated); align-items: center; justify-content: center; font-size: var(--font-size-12); flex-shrink: 0; }
 .cm-asin {
   font-family: 'SF Mono', Monaco, monospace;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -1794,8 +1828,8 @@ onMounted(() => {
   white-space: nowrap;
 }
 .cm-mon-act {
-  font-size: 11px;
-  padding: 0 2px;
+  font-size: var(--font-size-11);
+  padding: 0 var(--space-2);
   flex-shrink: 0;
 }
 
@@ -1803,14 +1837,14 @@ onMounted(() => {
 .hp-preview {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .hp-img {
   width: 100%;
   height: 170px;
   object-fit: cover;
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   border: 1px solid var(--border-base);
   background: var(--bg-sidebar);
 }
@@ -1818,11 +1852,11 @@ onMounted(() => {
 .hp-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 .hp-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.4;
@@ -1835,44 +1869,44 @@ onMounted(() => {
 .hp-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
   flex-wrap: wrap;
 }
 
-.hp-asin { font-family: 'SF Mono', Monaco, monospace; font-size: 11px; color: var(--text-secondary); }
-.hp-sku { font-size: 11px; color: var(--text-tertiary); }
-.hp-brand { font-size: 12px; color: var(--text-secondary); }
+.hp-asin { font-family: 'SF Mono', Monaco, monospace; font-size: var(--font-size-11); color: var(--text-secondary); }
+.hp-sku { font-size: var(--font-size-11); color: var(--text-tertiary); }
+.hp-brand { font-size: var(--font-size-12); color: var(--text-secondary); }
 
 .hp-stats {
   display: flex;
-  gap: 16px;
-  padding: 8px 10px;
+  gap: var(--space-16);
+  padding: var(--space-8) var(--space-10);
   background: var(--bg-sidebar);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
 }
 
 .hp-stat {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--space-1);
 }
 
 .hp-label {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
 }
 
 .hp-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
   flex-wrap: wrap;
 }
 
-.hp-sub { font-size: 11px; color: var(--text-tertiary); }
-.hp-bsr { font-size: 11px; color: var(--text-tertiary); margin-left: auto; }
+.hp-sub { font-size: var(--font-size-11); color: var(--text-tertiary); }
+.hp-bsr { font-size: var(--font-size-11); color: var(--text-tertiary); margin-left: auto; }
 
-.stars { color: var(--warning); letter-spacing: -1px; font-size: 13px; }
+.stars { color: var(--warning); letter-spacing: -1px; font-size: var(--font-size-13); }
 
 .margin-high { color: var(--success) !important; }
 .margin-mid { color: var(--warning) !important; }
@@ -1881,17 +1915,17 @@ onMounted(() => {
 .hp-points {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .hp-point {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-secondary);
   line-height: 1.4;
-  padding: 4px 8px;
+  padding: var(--space-4) var(--space-8);
   background: linear-gradient(135deg, var(--warning-bg), var(--warning-bg));
   border-left: 3px solid var(--warning);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1901,18 +1935,18 @@ onMounted(() => {
 .var-child-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: var(--space-6);
+  margin-bottom: var(--space-6);
 }
 
 /* ====== SPU / SKU 徽标 ====== */
 .var-parent-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 8px;
-  border-radius: 10px;
-  font-size: 11px;
+  gap: var(--space-4);
+  padding: var(--space-1) var(--space-8);
+  border-radius: var(--radius-10);
+  font-size: var(--font-size-11);
   font-weight: 600;
   color: var(--purple);
   background: var(--purple-bg);
@@ -1922,10 +1956,10 @@ onMounted(() => {
 .var-child-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 8px;
-  border-radius: 10px;
-  font-size: 11px;
+  gap: var(--space-4);
+  padding: var(--space-1) var(--space-8);
+  border-radius: var(--radius-10);
+  font-size: var(--font-size-11);
   font-weight: 600;
   color: var(--primary);
   background: var(--info-bg);
@@ -1936,7 +1970,7 @@ onMounted(() => {
 /* ====== SPU行灰色占位 ====== */
 .cell-placeholder {
   color: var(--text-disabled);
-  font-size: 13px;
+  font-size: var(--font-size-13);
   user-select: none;
 }
 
@@ -1956,7 +1990,7 @@ onMounted(() => {
 .spu-summary-cell {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
 }
 .spu-summary-cell .price {
   font-weight: 600;
@@ -1966,69 +2000,69 @@ onMounted(() => {
   color: var(--primary);
 }
 .spu-summary-cell .sku-count {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--purple);
 }
 
 /* ====== SPU hover 预览备注 ====== */
 .hp-parent-note {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
   background: var(--purple-bg);
   border: 1px solid var(--purple-border);
-  border-radius: 6px;
-  padding: 6px 10px;
-  margin-top: 8px;
+  border-radius: var(--radius-6);
+  padding: var(--space-6) var(--space-10);
+  margin-top: var(--space-8);
 }
 
 /* ====== SPU 展开面板 ====== */
 .var-children-panel {
-  padding: 12px 16px;
+  padding: var(--space-12) var(--space-16);
   background: var(--bg-base);
-  border-radius: 8px;
-  margin: 4px 0 8px 40px;
+  border-radius: var(--radius-8);
+  margin: var(--space-4) 0 var(--space-8) 40px;
 }
 .var-children-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
 }
 .var-children-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 /* ====== SPU公共文案 ====== */
 .parent-content-summary {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-8);
 }
 .pc-sp {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
   line-height: 1.5;
 }
 .pc-bullets, .pc-aplus {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
 }
 .pc-empty {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-disabled);
-  padding: 8px;
+  padding: var(--space-8);
   border: 1px dashed var(--border-base);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
 }
 .pc-bullet-row {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-8);
 }
 </style>

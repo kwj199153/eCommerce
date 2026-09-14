@@ -6,7 +6,7 @@
     <div v-if="subscription" class="current-plan-banner" :class="planStatusClass">
       <div class="banner-left">
         <div class="plan-badge">
-          <CrownFilled v-if="isPremiumPlan" style="color: #faad14" />
+          <CrownFilled v-if="isPremiumPlan" style="color: var(--gold)" />
           <CrownOutlined v-else />
           <span>{{ subscription.plan.display_name }}</span>
         </div>
@@ -48,7 +48,7 @@
       v-else
       title="尚未订阅任何套餐"
       sub-title="选择一个适合你的方案开始使用全部功能"
-      style="margin-bottom: 24px"
+      style="margin-bottom: var(--space-24)"
     >
       <template #extra>
         <a-button type="primary" size="large" @click="showUpgradeModal = true">
@@ -216,7 +216,7 @@
           :class="{ 'is-default': pm.is_default }"
         >
           <div class="pm-icon">
-            <CreditCardOutlined style="font-size: 24px; color: #1890ff" />
+            <CreditCardOutlined style="font-size: 24px; color: var(--primary)" />
           </div>
           <div class="pm-info">
             <strong>{{ pm.brand.toUpperCase() }} **** {{ pm.last4 }}</strong>
@@ -322,6 +322,7 @@
 </template>
 
 <script setup lang="ts">
+import { bandColor } from '@/theme/bands'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
@@ -416,12 +417,9 @@ function usagePct(type: string): number {
   return Math.min(Math.round((used / limit) * 100), 100)
 }
 
-/** 用量颜色 */
+/** 用量颜色 —— **反向口径**：用得越多越危险（见 bands.ts `usage`） */
 function usageColor(type: string): string {
-  const pct = usagePct(type)
-  if (pct >= 90) return '#ff4d4f'
-  if (pct >= 70) return '#faad14'
-  return '#52c41a'
+  return bandColor('usage', usagePct(type))
 }
 
 function used(type: string): number {
@@ -682,7 +680,7 @@ onMounted(async () => {
 .subscription-container {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 24px;
+  padding: var(--space-24);
 }
 
 /* ====== 当前套餐横幅 ====== */
@@ -690,121 +688,121 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px;
-  border-radius: 10px;
-  margin-bottom: 24px;
+  padding: var(--space-20) var(--space-24);
+  border-radius: var(--radius-10);
+  margin-bottom: var(--space-24);
 }
 
 .current-plan-banner.status-active {
   background: linear-gradient(135deg, #f6ffed 0%, #e6fffb 100%);
-  border: 1px solid #b7eb8f;
+  border: 1px solid var(--success-border);
 }
 
 .current-plan-banner.status-trialing {
-  background: linear-gradient(135deg, #f9f0ff 0%, #efdbff 100%);
+  background: linear-gradient(135deg, var(--purple-bg) 0%, var(--purple-border) 100%);
   border: 1px solid #d3adf7;
 }
 
 .current-plan-banner.status-expired {
-  background: linear-gradient(135deg, #fff2f0 0%, #ffccc7 100%);
-  border: 1px solid #ffa39e;
+  background: linear-gradient(135deg, var(--danger-bg) 0%, var(--danger-border) 100%);
+  border: 1px solid var(--danger-border-strong);
 }
 
 .banner-left .plan-badge {
-  font-size: 18px;
+  font-size: var(--font-size-18);
   font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: var(--space-8);
+  margin-bottom: var(--space-6);
 }
 
 .banner-left .plan-price {
-  font-size: 28px;
+  font-size: var(--font-size-28);
   font-weight: 800;
-  color: #262626;
+  color: var(--text-primary);
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .plan-price .period {
-  font-size: 14px;
+  font-size: var(--font-size-14);
   font-weight: 400;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
 }
 
 .period-text {
-  font-size: 13px;
-  color: #8c8c8c;
-  margin-top: 4px;
+  font-size: var(--font-size-13);
+  color: var(--text-tertiary);
+  margin-top: var(--space-4);
 }
 
 /* ====== 用量仪表盘 ====== */
 .usage-card {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-24);
 }
 
 .usage-metric {
   text-align: center;
-  padding: 12px 0;
+  padding: var(--space-12) 0;
 }
 
 .metric-label {
-  font-size: 13px;
-  color: #595959;
-  margin-bottom: 8px;
+  font-size: var(--font-size-13);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-8);
   font-weight: 500;
 }
 
 .simple-metric {
-  padding: 20px 0;
+  padding: var(--space-20) 0;
 }
 
 .big-num {
-  font-size: 32px;
+  font-size: var(--font-size-32);
   font-weight: 700;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .metric-limit {
-  font-size: 14px;
-  color: #8c8c8c;
+  font-size: var(--font-size-14);
+  color: var(--text-tertiary);
 }
 
 /* ====== 套餐网格 ====== */
 .plans-card {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-24);
 }
 
 .plans-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 20px;
-  padding: 8px 0;
+  gap: var(--space-20);
+  padding: var(--space-8) 0;
 }
 
 .plan-card {
-  border: 2px solid #f0f0f0;
-  border-radius: 12px;
-  padding: 24px 20px;
+  border: 2px solid var(--border-base);
+  border-radius: var(--radius-12);
+  padding: var(--space-24) var(--space-20);
   position: relative;
   transition: all 0.25s ease;
-  background: #fff;
+  background: var(--bg-elevated);
 }
 
 .plan-card:hover {
-  border-color: #1890ff;
+  border-color: var(--primary);
   box-shadow: 0 4px 16px rgba(24, 144, 255, 0.12);
 }
 
 .plan-card.is-current {
-  border-color: #52c41a;
-  background: #f6ffed;
+  border-color: var(--success);
+  background: var(--success-bg);
 }
 
 .plan-card.recommended {
-  border-color: #faad14;
+  border-color: var(--warning);
 }
 
 .plan-card .recommend-badge {
@@ -813,9 +811,9 @@ onMounted(async () => {
   right: 20px;
   background: linear-gradient(135deg, #faad14, #ff7a45);
   color: #fff;
-  padding: 3px 12px;
-  border-radius: 10px;
-  font-size: 11px;
+  padding: var(--space-3) var(--space-12);
+  border-radius: var(--radius-10);
+  font-size: var(--font-size-11);
   font-weight: 600;
 }
 
@@ -823,122 +821,122 @@ onMounted(async () => {
   position: absolute;
   top: -10px;
   right: 20px;
-  background: #52c41a;
+  background: var(--success);
   color: #fff;
-  padding: 3px 12px;
-  border-radius: 10px;
-  font-size: 11px;
+  padding: var(--space-3) var(--space-12);
+  border-radius: var(--radius-10);
+  font-size: var(--font-size-11);
   font-weight: 600;
 }
 
 .plan-name {
   text-align: center;
-  font-size: 18px;
+  font-size: var(--font-size-18);
   font-weight: 700;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .plan-pricing {
   text-align: center;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
 }
 
 .price-monthly {
-  font-size: 36px;
+  font-size: var(--font-size-36);
   font-weight: 800;
-  color: #262626;
+  color: var(--text-primary);
 }
 
 .price-unit {
-  font-size: 14px;
-  color: #8c8c8c;
+  font-size: var(--font-size-14);
+  color: var(--text-tertiary);
 }
 
 .plan-yearly-hint {
   text-align: center;
-  font-size: 12px;
-  color: #52c41a;
-  margin-bottom: 16px;
+  font-size: var(--font-size-12);
+  color: var(--success);
+  margin-bottom: var(--space-16);
 }
 
 .plan-features {
   list-style: none;
   padding: 0;
-  margin: 0 0 16px;
+  margin: 0 0 var(--space-16);
 }
 
 .plan-features li {
-  padding: 4px 0;
-  font-size: 13px;
+  padding: var(--space-4) 0;
+  font-size: var(--font-size-13);
   color: #434343;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 .feature-check {
-  color: #52c41a;
-  font-size: 13px;
+  color: var(--success);
+  font-size: var(--font-size-13);
 }
 
 .plan-limits {
   list-style: none;
-  padding: 12px;
-  margin: 0 0 20px;
-  background: #fafafa;
-  border-radius: 8px;
-  font-size: 12px;
-  color: #595959;
+  padding: var(--space-12);
+  margin: 0 0 var(--space-20);
+  background: var(--bg-sidebar);
+  border-radius: var(--radius-8);
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
 }
 
 .plan-limits li {
-  padding: 3px 0;
+  padding: var(--space-3) 0;
   display: flex;
   justify-content: space-between;
 }
 
 .plan-limits strong {
-  color: #262626;
+  color: var(--text-primary);
 }
 
 /* ====== 账单表格 ====== */
 .invoices-card {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-24);
 }
 
 .amount-negative {
-  color: #52c41a;
+  color: var(--success);
 }
 
 /* ====== 支付方式 ====== */
 .payment-card {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-24);
 }
 
 .payment-methods {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-12);
 }
 
 .payment-item {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  border: 1px solid #f0f0f0;
-  border-radius: 8px;
+  gap: var(--space-14);
+  padding: var(--space-14) var(--space-16);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-8);
   transition: all 0.2s;
 }
 
 .payment-item:hover {
-  border-color: #d9d9d9;
+  border-color: var(--border-strong);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .payment-item.is-default {
-  border-color: #91d5ff;
-  background: #e6f7ff;
+  border-color: var(--info-border);
+  background: var(--info-bg);
 }
 
 .pm-icon {
@@ -949,41 +947,41 @@ onMounted(async () => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
 }
 
 .pm-info span {
-  font-size: 12px;
-  color: #8c8c8c;
+  font-size: var(--font-size-12);
+  color: var(--text-tertiary);
 }
 
 .pm-actions {
   display: flex;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 /* ====== 危险区域 ====== */
 .danger-card {
-  margin-bottom: 24px;
-  border-color: #ffa39e;
+  margin-bottom: var(--space-24);
+  border-color: var(--danger-border-strong);
 }
 
 /* ====== 升级弹窗 - 计费周期选择 ====== */
 .upgrade-confirm {
-  padding: 12px 0;
+  padding: var(--space-12) 0;
 }
 
 .billing-cycle-options {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 24px;
+  gap: var(--space-16);
+  margin-bottom: var(--space-24);
 }
 
 .cycle-option {
-  border: 2px solid #f0f0f0;
-  border-radius: 10px;
-  padding: 20px;
+  border: 2px solid var(--border-base);
+  border-radius: var(--radius-10);
+  padding: var(--space-20);
   text-align: center;
   cursor: pointer;
   transition: all 0.2s;
@@ -991,17 +989,17 @@ onMounted(async () => {
 }
 
 .cycle-option:hover {
-  border-color: #1890ff;
+  border-color: var(--primary);
 }
 
 .cycle-option.active {
-  border-color: #1890ff;
-  background: #e6f7ff;
+  border-color: var(--primary);
+  background: var(--info-bg);
 }
 
 .cycle-option.recommended-cycle.active {
-  border-color: #faad14;
-  background: #fffbe6;
+  border-color: var(--warning);
+  background: var(--warning-bg);
 }
 
 .cycle-badge {
@@ -1009,23 +1007,23 @@ onMounted(async () => {
   top: -10px;
   left: 50%;
   transform: translateX(-50%);
-  background: #faad14;
+  background: var(--warning);
   color: #fff;
-  padding: 2px 10px;
-  border-radius: 8px;
-  font-size: 11px;
+  padding: var(--space-2) var(--space-10);
+  border-radius: var(--radius-8);
+  font-size: var(--font-size-11);
   font-weight: 600;
 }
 
 .cycle-price {
-  font-size: 28px;
+  font-size: var(--font-size-28);
   font-weight: 800;
-  color: #262626;
-  margin-bottom: 4px;
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
 }
 
 .cycle-period {
-  font-size: 13px;
-  color: #8c8c8c;
+  font-size: var(--font-size-13);
+  color: var(--text-tertiary);
 }
 </style>

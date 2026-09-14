@@ -41,6 +41,10 @@ class OrchestratorResponse(BaseModel):
         ),
     )
     tool_calls: list = Field(default=[], description="本次实际调用的工具名列表")
+    route_mode: str = Field(
+        "llm",
+        description="决策路径：shortcut=关键词短路（未调 LLM）/ llm=LLM 兜底",
+    )
     session_id: Optional[str] = Field(
         None, description="会话 ID（回显，未传时后端新建并返回，供前端持久化）"
     )
@@ -110,5 +114,6 @@ async def secretary_chat(
         actions=result.get("actions", []),
         action=result.get("action"),
         tool_calls=result.get("tool_calls", []),
+        route_mode=result.get("route_mode", "llm"),
         session_id=session_id,
     )

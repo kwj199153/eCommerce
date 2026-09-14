@@ -63,6 +63,7 @@
 </template>
 
 <script setup lang="ts">
+import { SEM } from '@/theme/semantic'
 import { CloseOutlined } from '@ant-design/icons-vue'
 
 defineProps<{ data: any }>()
@@ -78,9 +79,9 @@ const columns = [
 ]
 
 const getSeverityColor = (severity: string): string => {
-  if (severity === 'high') return '#ff4d4f'
-  if (severity === 'medium') return '#faad14'
-  return '#52c41a'
+  if (severity === 'high') return SEM.danger
+  if (severity === 'medium') return SEM.warning
+  return SEM.success
 }
 
 const getSeverityTagColor = (severity: string): string => {
@@ -93,51 +94,51 @@ const getSeverityTagColor = (severity: string): string => {
 <style scoped>
 .pain-point-result {
   background: var(--bg-elevated);
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-  margin: 12px 16px;
+  border-radius: var(--radius-8);
+  border: 1px solid var(--border-base);
+  margin: var(--space-12) var(--space-16);
 }
 
 .result-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 16px;
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  padding: var(--space-10) var(--space-16);
+  background: linear-gradient(135deg, var(--accent-pink-2) 0%, var(--accent-pink) 100%);
   color: #fff;
 }
-.header-left { display: flex; gap: 8px; align-items: center; }
-.result-icon { font-size: 18px; }
+.header-left { display: flex; gap: var(--space-8); align-items: center; }
+.result-icon { font-size: var(--font-size-18); }
 .result-title { font-weight: 600; }
 
 .overview-cards {
   display: flex;
-  gap: 1px;
+  gap: var(--space-1);
   background: var(--bg-hover-light);
 }
 .overview-card {
   flex: 1;
   text-align: center;
-  padding: 10px;
+  padding: var(--space-10);
   background: var(--bg-elevated);
 }
 .overview-card .card-value {
-  font-size: 18px;
+  font-size: var(--font-size-18);
   font-weight: 700;
   color: var(--text-primary);
 }
-.overview-card.negative .card-value { color: #ff4d4f; }
-.card-label { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+.overview-card.negative .card-value { color: var(--danger); }
+.card-label { font-size: var(--font-size-11); color: var(--text-tertiary); margin-top: var(--space-2); }
 
 .suggestions {
-  padding: 12px 16px;
-  border-top: 1px solid #f0f0f0;
+  padding: var(--space-12) var(--space-16);
+  border-top: 1px solid var(--border-base);
 }
-.section-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.section-title { font-size: var(--font-size-13); font-weight: 600; margin-bottom: var(--space-8); }
 .suggestion-list {
   margin: 0;
-  padding-left: 18px;
-  font-size: 12px;
+  padding-left: var(--space-18);
+  font-size: var(--font-size-12);
   line-height: 1.8;
   color: var(--text-secondary);
 }

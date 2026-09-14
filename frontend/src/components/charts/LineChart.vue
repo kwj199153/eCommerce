@@ -74,10 +74,18 @@ const props = withDefaults(defineProps<{
   labels?: string[]
   legend?: boolean
   title?: string
+  /**
+   * Y 轴下界。
+   * - `zero`（默认）：从 0 起算。适合销量 / 金额这类「零有意义的」指标。
+   * - `auto`：贴合数据上下各留 15% 余量。适合价格、BSR 排名这类**小幅波动**指标 ——
+   *   价格 $20→$22 在 0 起的轴上几乎是一条直线，看不出变化。
+   */
+  baseline?: 'zero' | 'auto'
 }>(), {
   labels: () => [],
   legend: true,
   title: '',
+  baseline: 'zero',
 })
 
 // 自适应：按容器实际像素绘制，避免在宽容器里被等比放大撑破布局
@@ -99,8 +107,20 @@ const allVals = computed<number[]>(() => {
   props.series.forEach((s) => s.data.forEach((d) => arr.push(d)))
   return arr
 })
-const min = computed(() => Math.min(0, ...allVals.value))
+/** 数据自身的上下界（baseline='auto' 时用它，并各留 15% 余量避免折线贴边） */
+const dataMin = computed(() => (allVals.value.length ? Math.min(...allVals.value) : 0))
+const dataMax = computed(() => (allVals.value.length ? Math.max(...allVals.value) : 0))
+/** 数据全平时 (max-min)=0，退化为按量级取 5%，再退化为 1，避免除零 */
+const autoPad = computed(() => {
+  const spread = dataMax.value - dataMin.value
+  return spread * 0.15 || Math.abs(dataMax.value) * 0.05 || 1
+})
+
+const min = computed(() =>
+  props.baseline === 'auto' ? dataMin.value - autoPad.value : Math.min(0, ...allVals.value)
+)
 const max = computed(() => {
+  if (props.baseline === 'auto') return dataMax.value + autoPad.value
   const m = Math.max(...allVals.value)
   return m === 0 ? 1 : m
 })
@@ -159,14 +179,14 @@ const renderedSeries = computed(() =>
 <style scoped>
 /* 填满父级给定空间（父级未给高度时退化为 130px 兜底，绝不撑大布局） */
 .lc-wrap { width: 100%; height: 100%; min-height: 130px; display: flex; flex-direction: column; }
-.lc-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 6px; flex-shrink: 0; }
-.lc-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary); }
-.lc-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.lc-legend { display: flex; flex-wrap: wrap; gap: var(--space-12); margin-bottom: var(--space-6); flex-shrink: 0; }
+.lc-legend-item { display: inline-flex; align-items: center; gap: var(--space-5); font-size: var(--font-size-11); color: var(--text-secondary); }
+.lc-dot { width: 8px; height: 8px; border-radius: var(--radius-circle); display: inline-block; }
 .lc-plot { position: relative; flex: 1; min-height: 0; }
 .lc-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .lc-grid { stroke: var(--border-base); stroke-width: 1; stroke-dasharray: 3 4; }
-.lc-y-label { font-size: 9px; fill: var(--text-tertiary); text-anchor: end; }
-.lc-x-label { font-size: 9px; fill: var(--text-tertiary); text-anchor: middle; }
+.lc-y-label { font-size: var(--font-size-9); fill: var(--text-tertiary); text-anchor: end; }
+.lc-x-label { font-size: var(--font-size-9); fill: var(--text-tertiary); text-anchor: middle; }
 .lc-point { opacity: 0; }
 .lc-wrap:hover .lc-point { opacity: 0.9; }
 </style>

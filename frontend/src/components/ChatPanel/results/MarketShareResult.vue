@@ -33,7 +33,7 @@
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'share'">
-          <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: var(--space-8);">
             <a-progress
               :percent="record.estimated_market_share"
               size="small"
@@ -45,7 +45,7 @@
           </div>
         </template>
         <template v-else-if="column.key === 'trend'">
-          <a-tag :color="trendColor(record.trend)" style="font-size: 11px;">
+          <a-tag :color="trendColor(record.trend)" style="font-size: var(--font-size-11);">
             {{ trendLabel(record.trend) }}
           </a-tag>
         </template>
@@ -86,6 +86,7 @@
 </template>
 
 <script setup lang="ts">
+import { bandColor } from '@/theme/bands'
 import { computed } from 'vue'
 
 const props = defineProps<{ data: any }>()
@@ -100,12 +101,8 @@ const shareColumns = [
   { title: '趋势', key: 'trend', width: 80 },
 ]
 
-const shareColor = (share: number) => {
-  if (share >= 30) return '#cf1322'
-  if (share >= 15) return '#fa8c16'
-  if (share >= 5) return '#1890ff'
-  return '#52c41a'
-}
+/** 份额配色 —— **反向口径**：份额越高 = 市场越拥挤（见 bands.ts `share`） */
+const shareColor = (share: number) => bandColor('share', share)
 
 const trendColor = (t: string) => ({ rising: 'red', stable: 'blue', declining: 'green' }[t] || 'default')
 const trendLabel = (t: string) => ({ rising: '上升 📈', stable: '稳定 ➡️', declining: '下降 📉' }[t] || t)
@@ -136,23 +133,23 @@ const formatNumber = (n: number | undefined) => n ? n.toLocaleString('en-US', { 
 </script>
 
 <style scoped>
-.market-share-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
-.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.result-header h3 { margin: 0; font-size: 16px; }
-.market-overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
-.overview-stat { background: var(--bg-base); padding: 12px; border-radius: 8px; text-align: center; }
-.stat-label { display: block; font-size: 11px; color: var(--text-tertiary); margin-bottom: 4px; }
-.stat-value { font-size: 20px; font-weight: 700; color: #1890ff; }
-.stat-unit { font-size: 11px; color: var(--text-tertiary); }
-.concentration-section { margin-top: 18px; padding: 14px; background: #f9f0ff; border-radius: 8px; }
-.concentration-section h4 { margin: 0 0 10px; font-size: 13px; }
-.conc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.market-share-result { padding: var(--space-16); background: var(--bg-elevated); border-radius: var(--radius-8); }
+.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-14); }
+.result-header h3 { margin: 0; font-size: var(--font-size-16); }
+.market-overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-12); margin-bottom: var(--space-14); }
+.overview-stat { background: var(--bg-base); padding: var(--space-12); border-radius: var(--radius-8); text-align: center; }
+.stat-label { display: block; font-size: var(--font-size-11); color: var(--text-tertiary); margin-bottom: var(--space-4); }
+.stat-value { font-size: var(--font-size-20); font-weight: 700; color: var(--primary); }
+.stat-unit { font-size: var(--font-size-11); color: var(--text-tertiary); }
+.concentration-section { margin-top: var(--space-18); padding: var(--space-14); background: var(--purple-bg); border-radius: var(--radius-8); }
+.concentration-section h4 { margin: 0 0 var(--space-10); font-size: var(--font-size-13); }
+.conc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-12); }
 .conc-item { text-align: center; }
-.conc-label { display: block; font-size: 11px; color: var(--text-tertiary); }
-.conc-value { font-size: 22px; font-weight: 700; color: #722ed1; }
-.conc-hint { font-size: 11px; color: var(--text-tertiary); }
-.insight-box { margin-top: 14px; padding: 12px; background: #f6ffed; border-radius: 8px; font-size: 12.5px; line-height: 1.7; }
-.insight-box p { margin: 0 0 6px; }
-.insight-box ul { margin: 0; padding-left: 18px; }
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; margin-top: 12px; }
+.conc-label { display: block; font-size: var(--font-size-11); color: var(--text-tertiary); }
+.conc-value { font-size: var(--font-size-22); font-weight: 700; color: var(--purple); }
+.conc-hint { font-size: var(--font-size-11); color: var(--text-tertiary); }
+.insight-box { margin-top: var(--space-14); padding: var(--space-12); background: var(--success-bg); border-radius: var(--radius-8); font-size: var(--font-size-12-5); line-height: 1.7; }
+.insight-box p { margin: 0 0 var(--space-6); }
+.insight-box ul { margin: 0; padding-left: var(--space-18); }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); margin-top: var(--space-12); }
 </style>

@@ -14,6 +14,27 @@ import { useUserStore } from '@/stores/user'
 import router from '@/router'
 import { isDemoToken } from '@/config/demoMode'
 
+/**
+ * 给 Axios 配置加一个 silent 开关。
+ *
+ * 划词翻译这类**高频**请求不该每选一次就弹一次「翻译完成」——
+ * 调用方传 `{ silent: true }` 即可跳过响应拦截器的成功提示。
+ */
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    silent?: boolean
+    /**
+     * `silentError: true` —— 连**错误提示**也交给调用方处理。
+     *
+     * 与上面的 `silent`（只压成功提示）分开命名，是因为两者语义真的不同：
+     * 语音播报这类**后台自动触发**的请求失败时，调用方自己会给出更精确的原因
+     * （「当前店铺还没有克隆音色，去设置里创建」）并顺手关掉开关；
+     * 若拦截器再按 `detail` 弹一次，用户就会看到两条重复提示。
+     */
+    silentError?: boolean
+  }
+}
+
 // 创建 Axios 实例
 const request: AxiosInstance = axios.create({
   baseURL: '/api/v1',  // 通过 Vite proxy 转发到后端
@@ -52,19 +73,21 @@ request.interceptors.response.use(
     // 统一处理成功响应
     const data = response.data
 
-    // 如果响应包含 message，显示提示
-    if (data?.message && response.config.method !== 'get') {
+    // 如果响应包含 message，显示提示（silent 请求跳过：高频调用弹提示会刷屏）
+    if (data?.message && response.config.method !== 'get' && !response.config.silent) {
       message.success(data.message)
     }
 
     return data
   },
   async (error) => {
-    const { response } = error
+    const { response, config } = error
+    // silentError：调用方自会给出更精确的原因（语音播报失败会连开关一起关掉）
+    const silentError = !!config?.silentError
 
     if (!response) {
       // 网络错误
-      message.error('网络连接失败，请检查网络')
+      if (!silentError) message.error('网络连接失败，请检查网络')
       return Promise.reject(error)
     }
 
@@ -97,7 +120,7 @@ request.interceptors.response.use(
         break
 
       case 403:
-        message.error(data?.detail || '没有权限执行此操作')
+        if (!silentError) message.error(data?.detail || '没有权限执行此操作')
         break
 
       case 404:
@@ -106,20 +129,20 @@ request.interceptors.response.use(
           console.warn('[Demo Mode] API 返回 404，使用 Mock 数据')
           return Promise.reject(error)
         }
-        message.error(data?.detail || '请求的资源不存在')
+        if (!silentError) message.error(data?.detail || '请求的资源不存在')
         break
 
       case 429:
         // 限流
-        message.warning(data?.detail || '操作过于频繁，请稍后再试')
+        if (!silentError) message.warning(data?.detail || '操作过于频繁，请稍后再试')
         break
 
       case 500:
-        message.error(data?.detail || '服务器内部错误')
+        if (!silentError) message.error(data?.detail || '服务器内部错误')
         break
 
       default:
-        message.error(data?.detail || `请求失败 (${status})`)
+        if (!silentError) message.error(data?.detail || `请求失败 (${status})`)
     }
 
     return Promise.reject(error)

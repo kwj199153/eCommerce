@@ -2,16 +2,39 @@
   <div class="chat-panel">
     <!-- ===== 主内容区域（对话 + 结果共存） ===== -->
     <div class="main-content" ref="mainContentRef">
+      <!-- 最近结果条：对话是线性流，结论会被后来的消息冲出视野、清空会话更会全丢；
+           这里按 agentId 存一份最近结论，随时可找回（展开即为结论卡） -->
+      <div v-if="recentForCurrentAgent" class="recent-result-bar">
+        <span class="rrb-label">📌 最近结果</span>
+        <span class="rrb-summary" :title="recentForCurrentAgent.summary">
+          {{ recentForCurrentAgent.summary || '（无摘要）' }}
+        </span>
+        <button
+          class="rrb-btn"
+          :disabled="!recentComponent"
+          @click="recentExpanded = !recentExpanded"
+        >
+          {{ recentExpanded ? '收起' : '查看' }}
+        </button>
+        <button class="rrb-btn rrb-close" title="清除最近结果" @click="clearRecentResult">×</button>
+      </div>
+      <div
+        v-if="recentForCurrentAgent && recentExpanded && recentComponent"
+        class="recent-result-body"
+      >
+        <component :is="recentComponent" :data="recentForCurrentAgent.data" />
+      </div>
+
       <!-- 对话消息区域（始终显示） -->
       <div class="message-list" ref="messageListRef">
           <div v-if="messages.length === 0 && !agentStore.currentAgent" class="empty-state">
-            <RobotOutlined style="font-size: 48px; color: var(--text-tertiary); margin-bottom: 16px" />
+            <RobotOutlined style="font-size: var(--font-size-48); color: var(--text-tertiary); margin-bottom: var(--space-16)" />
             <p>选择一个 Agent 开始对话</p>
             <p class="hint">或从顶部工具栏选择功能</p>
           </div>
 
           <div v-else-if="messages.length === 0 && agentStore.currentAgent" class="empty-state">
-            <span style="font-size: 48px">{{ agentStore.currentAgent.icon?.render?.() || '🤖' }}</span>
+            <span style="font-size: var(--font-size-48)">{{ agentStore.currentAgent.icon?.render?.() || '🤖' }}</span>
             <p>{{ agentStore.currentAgent.name }} 已就绪</p>
             <p v-if="isCompetitorIntelAgent" class="hint">在右侧圈选竞品后，点下方「竞品周报 / 异动洞察 / 策略推演」或直接提问</p>
             <p v-else-if="isProductResearchAgent" class="hint">先在顶部「载入选品」选定候选，再点下方「市场可行性 / 上架建议 / 痛点分析 / 选品避坑 / 竞品对比」任一评估</p>
@@ -25,7 +48,7 @@
           >
             <!-- ===== 工具结果消息（内联渲染，支持折叠/展开）===== -->
             <div v-if="msg.displayType === 'tool_result'" class="message-item tool-result-message">
-              <a-avatar style="background-color: #52c41a">AI</a-avatar>
+              <a-avatar style="background-color: var(--success)">AI</a-avatar>
               <div class="message-content tool-result-content">
                 <!-- 工具结果组件（各自带标题栏+关闭按钮） -->
                 <BlueOceanResult
@@ -199,7 +222,7 @@
                 />
                 <!-- 运营复盘师（周报/月度/广告/商品/库存/利润） -->
                 <div v-else-if="['weekly-report', 'monthly-review', 'ad-review', 'product-performance', 'inventory-health', 'profit-audit'].includes(msg.data?.toolId)" class="raw-result-fallback">
-                  <a-alert type="success" show-icon :message="`${msg.data?.toolName || '复盘'} 报告生成完成`" style="margin-bottom: 8px" />
+                  <a-alert type="success" show-icon :message="`${msg.data?.toolName || '复盘'} 报告生成完成`" style="margin-bottom: var(--space-8)" />
                   <pre class="result-json-preview">{{ JSON.stringify(msg.data?.resultData, null, 2) }}</pre>
                 </div>
                 <!-- 兜底 -->
@@ -212,15 +235,24 @@
             <!-- ===== 普通文本消息 ===== -->
             <div
               v-else
-              :class="['message-item', msg.role]"
+              :class="['message-item', msg.role, { 'has-conversation-result': !!resolveConversationResult(msg.displayType) }]"
             >
             <a-avatar
-              :style="{ backgroundColor: msg.role === 'user' ? '#1890ff' : '#52c41a' }"
+              :style="{ backgroundColor: msg.role === 'user' ? SEM.primary : SEM.success }"
             >
               {{ msg.role === 'user' ? 'U' : 'AI' }}
             </a-avatar>
             <div class="message-content">
               <div class="message-text" v-html="renderMarkdown(msg.content)"></div>
+
+              <!-- 会话结论卡：对话直接跑出的结构化结论（后端 SSE meta 下发），
+                   与工具结果卡**同区、同规则**——都在对话消息流里、都查表渲染，
+                   只是轻量只读。正文已自带清单，卡片是同一份结论的结构化承托。 -->
+              <component
+                v-if="resolveConversationResult(msg.displayType)"
+                :is="resolveConversationResult(msg.displayType)"
+                :data="msg.data"
+              />
 
               <!-- 竞品监控员：推理证据联动卡（数据底座背书 AI 解读） -->
               <CompetitorIntelEvidence
@@ -235,7 +267,7 @@
                   show-icon
                   message="需要人工审批"
                   :description="`操作：${msg.hitlToolName}`"
-                  style="margin-bottom: 12px"
+                  style="margin-bottom: var(--space-12)"
                 />
                 <a-space>
                   <a-button type="primary" size="small" @click="handleHitlAccept(msg)">批准执行</a-button>
@@ -246,11 +278,11 @@
           </div>
           </div>
 
-          <!-- 加载中 -->
+          <!-- 加载中：tip 显示后端阶段进度 + 已用时长，长任务期间不再是干转圈 -->
           <div v-if="isLoading" class="message-item assistant">
-            <a-avatar style="background-color: #52c41a">AI</a-avatar>
+            <a-avatar style="background-color: var(--success)">AI</a-avatar>
             <div class="message-content">
-              <a-spin tip="AI 正在思考..." />
+              <a-spin :tip="loadingTip" />
             </div>
           </div>
         </div>
@@ -384,16 +416,51 @@
             class="chat-textarea"
           />
           <div class="input-card-footer">
-            <span class="input-hint">Enter 发送 · Shift+Enter 换行</span>
-            <a-button
-              type="primary"
-              size="small"
-              :loading="isLoading"
-              :disabled="!inputMessage.trim()"
-              @click="handleSend"
-            >
-              <SendOutlined /> 发送
-            </a-button>
+            <span class="input-hint">{{ footerHint }}</span>
+            <div class="input-actions">
+              <!-- 增强提示词：把草稿扩写成更可执行的提示词 -->
+              <a-tooltip :title="enhanceTip">
+                <button
+                  class="input-action-btn"
+                  :disabled="enhancing || !inputMessage.trim()"
+                  @click="handleEnhance"
+                >
+                  <LoadingOutlined v-if="enhancing" />
+                  <svg v-else class="sparkle-icon" viewBox="0 0 22 22" width="16" height="16" aria-hidden="true">
+                    <path d="M9 3 C9.36 7.2 9.8 7.64 14 8 C9.8 8.36 9.36 8.8 9 13 C8.64 8.8 8.2 8.36 4 8 C8.2 7.64 8.64 7.2 9 3 Z" />
+                    <path d="M17 12.5 C17.2 14.8 17.45 15.05 19.75 15.25 C17.45 15.45 17.2 15.7 17 18 C16.8 15.7 16.55 15.45 14.25 15.25 C16.55 15.05 16.8 14.8 17 12.5 Z" />
+                  </svg>
+                </button>
+              </a-tooltip>
+              <!-- 语音输入：浏览器原生识别，不支持时点击给出原因（不静默失效） -->
+              <a-tooltip :title="speechTip">
+                <button
+                  class="input-action-btn"
+                  :class="{
+                    'is-listening': speechState.listening,
+                    'is-unsupported': !speechState.supported,
+                  }"
+                  @click="handleToggleSpeech"
+                >
+                  <AudioOutlined />
+                </button>
+              </a-tooltip>
+              <!-- 发送：Enter 亦可。圆形容器交给 antd —— 主色底上的前景色由算法决定，
+                   避免自己写死白字（presets 里 --text-inverse 深色下是深色，语义不符） -->
+              <a-button
+                class="input-send-btn"
+                type="primary"
+                shape="circle"
+                title="发送（Enter）"
+                :disabled="!inputMessage.trim() || isLoading"
+                @click="handleSend"
+              >
+                <template #icon>
+                  <LoadingOutlined v-if="isLoading" />
+                  <ArrowUpOutlined v-else />
+                </template>
+              </a-button>
+            </div>
           </div>
         </div>
       </div>
@@ -401,8 +468,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, inject, type Ref } from 'vue'
-import { SendOutlined, RobotOutlined } from '@ant-design/icons-vue'
+import { SEM } from '@/theme/semantic'
+import { ref, computed, watch, inject, type Ref } from 'vue'
+import { message } from 'ant-design-vue'
+import { RobotOutlined, AudioOutlined, ArrowUpOutlined, LoadingOutlined } from '@ant-design/icons-vue'
+
+// 输入框辅助：提示词增强（走后端 LLM）+ 语音输入（浏览器原生识别）
+import { enhancePrompt } from '@/api/aigcMedia'
+import {
+  speechState,
+  speechUnsupportedReason,
+  speechErrorText,
+  toggleSpeech,
+  stopSpeech,
+  clearSpeechError,
+} from '@/composables/useSpeechInput'
 
 import { useAgentStore } from '@/stores/agent'
 import { useMonitorPoolStore } from '@/stores/monitorPool'
@@ -438,6 +518,10 @@ import BuyBoxAnalysisResult from './results/BuyBoxAnalysisResult.vue'
 import CompareGridResult from './results/CompareGridResult.vue'
 import AIGCMediaResult from './results/AIGCMediaResult.vue'
 
+// 会话结论卡（display_type → 组件映射表）与「最近结果」槽
+import { resolveConversationResult } from './results/conversation/registry'
+import { useRecentResultStore } from '@/stores/recentResult'
+
 // 编排层：发送链路 / 工具分析 / 快捷 chip / HITL（S3 拆分）
 import { useChatOrchestrator } from '@/composables/useChatOrchestrator'
 
@@ -456,11 +540,33 @@ const mainContentRef = ref<HTMLElement>()
 // 3) inject 注入值 —— 只能在组件 setup 中 inject（选品分析师评估主角）
 const loadedCandidate = inject<Ref<any>>('workingCandidate', ref(null))
 
+// ===== 会话结论卡 + 最近结果：对话结果的「卡片承托」与「找回入口」=====
+// 结论卡渲染在消息流内（与工具结果卡同区）；最近结果按 agentId 独立存活，
+// 因此「清空对话」不会连带清掉结论，随时可从顶部条找回。
+const recentResultStore = useRecentResultStore()
+const currentAgentId = computed(() => agentStore.currentAgent?.id || 'default')
+const recentForCurrentAgent = computed(() => recentResultStore.getRecent(currentAgentId.value))
+const recentComponent = computed(() =>
+  resolveConversationResult(recentForCurrentAgent.value?.displayType),
+)
+const recentExpanded = ref(false)
+
+// 切换 Agent 时收起展开态，避免把 A 的结论当成 B 的展开着
+watch(currentAgentId, () => {
+  recentExpanded.value = false
+})
+
+function clearRecentResult() {
+  recentResultStore.clearRecent(currentAgentId.value)
+  recentExpanded.value = false
+}
+
 // 其余全部编排逻辑下沉到 composable，此处仅解构模板所需出口
 const {
   // 状态
   messages,
   isLoading,
+  loadingTip,
   inputPlaceholder,
   // Agent 判定
   isCompetitorIntelAgent,
@@ -501,6 +607,98 @@ const {
   intelDays,
   loadedCandidate,
 })
+
+// AIGC 工具结果（静态素材 / 短视频脚本 / AI 视频）新进入消息流时，
+// 广播 aigc-result-ready 给右栏 AIGCMediaWrapper —— 触发「自动切大屏模式 + 大屏显示本次结果」。
+// AIGCMediaWrapper 在 onBeforeUnmount 已移除监听，无需担心泄漏。
+const AIGC_TOOLS = ['static-asset-gen', 'video-script-gen', 'ai-video-generator']
+watch(messages, (newMsgs, oldMsgs) => {
+  const oldIds = new Set((oldMsgs || []).map((m: any) => m?.id).filter(Boolean))
+  for (const m of newMsgs) {
+    const mm = m as any
+    if (!mm?.id || oldIds.has(mm.id)) continue
+    const d = mm.data
+    if (!d?.toolId || !AIGC_TOOLS.includes(d.toolId)) continue
+    if (!d.resultData) continue
+    window.dispatchEvent(new CustomEvent('aigc-result-ready', {
+      detail: { toolId: d.toolId, result: d.resultData }
+    }))
+  }
+}, { deep: false })
+
+// ===== 输入框辅助：增强提示词 + 语音输入 =====
+// 两个入口的共同点是**不替用户做决定**：增强只补维度、不改原意，
+// 语音只做转写、不改字。所以它们都不自动发送，改完仍由用户按 Enter 决定。
+
+const enhancing = ref(false)
+
+/** 底部提示：收音中要让位给录音状态，否则用户不知道还在录 */
+const footerHint = computed(() =>
+  speechState.listening ? '正在听… 说完点麦克风结束' : 'Enter 发送 · Shift+Enter 换行',
+)
+
+const enhanceTip = computed(() => {
+  if (enhancing.value) return '正在增强…'
+  if (!inputMessage.value.trim()) return '先写一句需求，再点这里增强'
+  return '增强提示词：补齐任务目标 / 约束条件 / 输出形式'
+})
+
+const speechTip = computed(() => {
+  if (!speechState.supported) return speechUnsupportedReason.value
+  return speechState.listening ? '结束录音' : '语音输入（说话转文字）'
+})
+
+async function handleEnhance() {
+  const draft = inputMessage.value.trim()
+  if (!draft || enhancing.value) return
+  enhancing.value = true
+  try {
+    const res = await enhancePrompt({ draft })
+    const data = res?.response
+    // 后端 LLM 不可用时显式给 degraded —— 此时**保持用户输入原样**，不覆盖
+    if (data?.degraded || !data?.enhanced) {
+      message.warning('提示词增强暂不可用，请稍后重试')
+      return
+    }
+    inputMessage.value = data.enhanced
+    message.success('已增强，可直接发送或继续修改')
+  } catch (e) {
+    message.warning('提示词增强暂不可用，请稍后重试')
+  } finally {
+    enhancing.value = false
+  }
+}
+
+function handleToggleSpeech() {
+  if (!speechState.supported) {
+    // 不静默失效：明确告诉用户为什么不能用
+    message.warning(speechUnsupportedReason.value)
+    return
+  }
+  toggleSpeech({
+    base: inputMessage.value,
+    // 回填的是**完整文本**（既有内容 + 已确认 + 临时），直接赋给 v-model
+    onText: (text) => {
+      inputMessage.value = text
+    },
+  })
+}
+
+// 语音错误只提示一次，提示完清掉错误码，避免反复弹
+watch(
+  () => speechState.error,
+  (code) => {
+    if (!code) return
+    const text = speechErrorText.value
+    if (text) message.warning(text)
+    clearSpeechError()
+  },
+)
+
+// 切 Agent 时停掉录音：否则上一段话会被灌进新会话的输入框
+watch(currentAgentId, () => {
+  if (speechState.listening) stopSpeech()
+})
 </script>
 
 <style scoped>
@@ -521,31 +719,97 @@ const {
   min-height: 0; /* 关键：允许 flex 子项收缩 */
 }
 
+/* ===== 最近结果条（中列顶部）：结论被冲走 / 会话被清空后的找回入口 ===== */
+.recent-result-bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-6) var(--space-24);
+  background: var(--bg-toolbar);
+  border-bottom: 1px solid var(--border-base);
+  font-size: var(--font-size-12);
+}
+
+.rrb-label {
+  flex: none;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.rrb-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-tertiary);
+}
+
+.rrb-btn {
+  flex: none;
+  height: 22px;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: var(--primary);
+  font-size: var(--font-size-12);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.rrb-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+}
+
+.rrb-btn:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.rrb-close {
+  padding: 0 var(--space-6);
+  color: var(--text-tertiary);
+}
+
+.recent-result-body {
+  padding: 0 var(--space-24) var(--space-8);
+}
+
+/* 带会话结论卡的消息：放宽气泡宽度，给结构化卡片留出横向空间 */
+.message-item.has-conversation-result .message-content {
+  max-width: 100%;
+  flex: 1;
+}
+
 /* 工具结果消息（内联在对话流中） */
 .tool-result-message {
   flex-direction: column;
   gap: 0;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-16);
 }
 
 .tool-result-content {
   max-width: 100%;
   padding: 0;
   background: transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   overflow: hidden;
 }
 
 /* 兜底：无专用 Result 组件的工具显示 JSON */
 .raw-result-fallback {
-  padding: 12px 16px;
+  padding: var(--space-12) var(--space-16);
 }
 
 .result-json-preview {
   background: var(--bg-hover-light);
-  border-radius: 6px;
-  padding: 12px;
-  font-size: 12px;
+  border-radius: var(--radius-6);
+  padding: var(--space-12);
+  font-size: var(--font-size-12);
   line-height: 1.5;
   max-height: 300px;
   overflow: auto;
@@ -556,7 +820,7 @@ const {
 /* 消息列表（不再独立滚动，随 main-content 一起滚动） */
 .message-list {
   flex: 1;
-  padding: 16px 24px;
+  padding: var(--space-16) var(--space-24);
 }
 
 .empty-state {
@@ -570,16 +834,16 @@ const {
 }
 
 .empty-state .hint {
-  margin-top: 8px;
-  font-size: 13px;
+  margin-top: var(--space-8);
+  font-size: var(--font-size-13);
   color: var(--text-disabled);
 }
 
 /* 消息项 */
 .message-item {
   display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: var(--space-12);
+  margin-bottom: var(--space-20);
 }
 
 .message-item.user {
@@ -588,8 +852,8 @@ const {
 
 .message-content {
   max-width: 70%;
-  padding: 12px 16px;
-  border-radius: 12px;
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-12);
   background-color: var(--bg-hover-light);
 }
 
@@ -602,11 +866,36 @@ const {
   word-break: break-word;
 }
 
+/* markdown 渲染出的清单（v-html 内容不带 scoped 属性，必须走 :deep） */
+.message-text :deep(ol),
+.message-text :deep(ul) {
+  margin: var(--space-6) 0;
+  padding-left: var(--space-20);
+}
+.message-text :deep(li) {
+  margin: var(--space-4) 0;
+}
+.message-text :deep(ol li::marker) {
+  color: var(--text-secondary, #8c8c8c);
+  font-weight: 600;
+}
+.message-text :deep(li > ul) {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-16);
+}
+.message-text :deep(li > ul li) {
+  color: var(--text-secondary, #8c8c8c);
+  font-size: 0.92em;
+}
+.message-text :deep(strong) {
+  font-weight: 600;
+}
+
 .hitl-card {
-  margin-top: 12px;
-  padding: 12px;
+  margin-top: var(--space-12);
+  padding: var(--space-12);
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   background-color: var(--bg-hover-light);
 }
 
@@ -616,44 +905,44 @@ const {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-12);
   flex-wrap: wrap;
-  padding: 8px 24px;
+  padding: var(--space-8) var(--space-24);
   background: var(--bg-elevated);
   border-top: 1px solid var(--border-base);
 }
 .iab-label {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: var(--space-8);
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
 }
-.iab-scope { margin: 0; font-size: 11px; }
-.iab-scope-float { margin: 0; font-size: 11px; }
+.iab-scope { margin: 0; font-size: var(--font-size-11); }
+.iab-scope-float { margin: 0; font-size: var(--font-size-11); }
 .iab-controls {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-16);
   flex-wrap: wrap;
   justify-content: flex-end;
 }
-.iab-period { display: flex; align-items: center; gap: 6px; }
-.iab-period-label { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
-.iab-chips { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.iab-period { display: flex; align-items: center; gap: var(--space-6); }
+.iab-period-label { font-size: var(--font-size-12); color: var(--text-tertiary); white-space: nowrap; }
+.iab-chips { display: flex; gap: var(--space-8); align-items: center; flex-wrap: wrap; }
 .iab-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
   height: 28px;
-  padding: 0 14px;
-  border-radius: 15px;
+  padding: 0 var(--space-14);
+  border-radius: var(--radius-15);
   border: 1px solid var(--border-strong);
   background: var(--bg-elevated);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-13);
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.18s ease;
@@ -667,7 +956,7 @@ const {
   box-shadow: 0 2px 8px rgba(24, 144, 255, 0.25);
 }
 .iab-chip:disabled { opacity: 0.5; cursor: not-allowed; }
-.iab-chip-icon { font-size: 14px; line-height: 1; }
+.iab-chip-icon { font-size: var(--font-size-14); line-height: 1; }
 
 /* 运营复盘师·快捷 chip 正在执行时的脉冲提示（复用 iab-chip 布局） */
 .iab-chip.rqa-loading {
@@ -683,7 +972,7 @@ const {
 
 /* 输入区域（卡片式，冻结在底部） */
 .input-area {
-  padding: 10px 24px 14px;
+  padding: var(--space-10) var(--space-24) var(--space-14);
   flex-shrink: 0;
   border-top: 1px solid var(--border-base);
   background-color: var(--bg-elevated);
@@ -692,9 +981,9 @@ const {
 .input-card {
   background-color: var(--bg-elevated);
   border: 1px solid var(--border-base);
-  border-radius: 10px;
+  border-radius: var(--radius-10);
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
-  padding: 10px 14px;
+  padding: var(--space-10) var(--space-14);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
@@ -708,7 +997,7 @@ const {
   box-shadow: none !important;
   padding: 0 !important;
   resize: none;
-  font-size: 14px;
+  font-size: var(--font-size-14);
   line-height: 1.6;
 }
 
@@ -720,13 +1009,85 @@ const {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
 }
 
 .input-hint {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-disabled);
   user-select: none;
+}
+
+/* ===== 右下角动作区：增强提示词 / 语音输入 / 发送 ===== */
+.input-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+/* 图标按钮（增强 / 语音）：无边框圆形，hover 才出底色，保持输入区安静 */
+.input-action-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-circle);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-16);
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s, opacity 0.2s;
+}
+
+.input-action-btn:hover:not(:disabled) {
+  background: var(--bg-hover-light);
+  color: var(--primary);
+}
+
+.input-action-btn:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+/* 浏览器不支持语音时置灰，但仍可点击 —— 点击会说明原因，比静默失效好 */
+.input-action-btn.is-unsupported {
+  opacity: 0.4;
+}
+
+/* 收音中：用 danger 的浅底 + 前景色（两侧都是变量），不用实心红避免自己写死白字 */
+.input-action-btn.is-listening {
+  color: var(--danger);
+  background: var(--danger-bg);
+  animation: speech-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes speech-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .input-action-btn.is-listening {
+    animation: none;
+  }
+}
+
+/* 星芒图标：路径不填色，跟随 button 的 color */
+.sparkle-icon {
+  fill: currentColor;
+}
+
+/* 发送按钮由 antd 提供配色（主色底 + 算法决定的前景色），这里只协调布局 */
+.input-send-btn {
+  flex: none;
 }
 </style>

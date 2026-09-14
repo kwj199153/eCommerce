@@ -294,6 +294,7 @@
 </template>
 
 <script setup lang="ts">
+import { bandColor } from '@/theme/bands'
 import { ref, computed } from 'vue'
 import { CloseOutlined, SaveOutlined, ExportOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
@@ -587,11 +588,8 @@ function goToProductLibrary() {
 }
 
 // ====== 工具函数 ======
-const getScoreColor = (score: number): string => {
-  if (score >= 70) return '#52c41a'
-  if (score >= 40) return '#faad14'
-  return '#ff4d4f'
-}
+/** 蓝海评分（阈值真源在后端 product_research，见 bands.ts `ocean`） */
+const getScoreColor = (score: number): string => bandColor('ocean', score)
 
 /** 金额格式化：保留 2 位小数，去掉多余 0 尾 */
 const money = (v: any): string => {
@@ -669,9 +667,9 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 <style scoped>
 .blue-ocean-result {
   background: var(--bg-elevated);
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-  margin: 12px 16px;
+  border-radius: var(--radius-8);
+  border: 1px solid var(--border-base);
+  margin: var(--space-12) var(--space-16);
   overflow: hidden;
 }
 
@@ -679,74 +677,89 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  background: var(--bo-header-bg, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
+  padding: var(--space-12) var(--space-16);
+  /* --bo-header-bg / --bo-header-shadow：浅色紫蓝渐变、深色换深紫 + 光晕（原 dark-overrides.css） */
+  background: var(--bo-header-bg);
   color: #fff;
+  box-shadow: var(--bo-header-shadow);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .result-icon {
-  font-size: 18px;
+  font-size: var(--font-size-18);
 }
 
 .result-title {
-  font-size: 14px;
+  font-size: var(--font-size-14);
   font-weight: 600;
 }
 
 .stats-row {
   display: flex;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
   background: var(--bg-base);
-  border-bottom: 1px solid var(--border-light, #f0f0f0);
+  border-bottom: 1px solid var(--border-base);
 }
 
 .stat-card {
   flex: 1;
   text-align: center;
-  padding: 8px;
-  border-radius: 6px;
+  padding: var(--space-8);
+  border-radius: var(--radius-6);
+  position: relative;
+  overflow: hidden;
+}
+/* 左侧 3px 色条：浅色下 --stat-bar-opacity = 0（不显示），深色下 = 1（原补丁的强调条） */
+.stat-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: var(--radius-2) 0 0 var(--radius-2);
+  background: currentColor;
+  opacity: var(--stat-bar-opacity);
 }
 
 .stat-value {
-  font-size: 20px;
+  font-size: var(--font-size-20);
   font-weight: 700;
 }
 
 .stat-label {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
-  margin-top: 2px;
+  margin-top: var(--space-2);
 }
 
-.stat-excellent { background: rgba(82, 196, 26, 0.1); }
-.stat-excellent .stat-value { color: #52c41a; }
+/* 语义底色统一走 token（浅色 = 原 rgba 近似的 -bg 档，深色自动变半透明） */
+.stat-excellent { background: var(--success-bg); }
+.stat-excellent .stat-value { color: var(--success); }
 
-.stat-medium { background: rgba(250, 173, 20, 0.12); }
-.stat-medium .stat-value { color: #faad14; }
+.stat-medium { background: var(--warning-bg); }
+.stat-medium .stat-value { color: var(--warning); }
 
-.stat-poor { background: rgba(255, 77, 79, 0.08); }
-.stat-poor .stat-value { color: #ff4d4f; }
+.stat-poor { background: var(--danger-bg); }
+.stat-poor .stat-value { color: var(--danger); }
 
-.stat-saved { background: rgba(24, 144, 255, 0.1); }
-.stat-saved .stat-value { color: #1890ff; }
+.stat-saved { background: var(--info-bg); }
+.stat-saved .stat-value { color: var(--primary); }
 
 .score-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .score-cell .ant-progress {
@@ -761,15 +774,15 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 }
 
 .roi-high {
-  color: #52c41a;
+  color: var(--success);
   font-weight: 600;
 }
 .roi-mid {
-  color: #d48806;
+  color: var(--warning-strong);
   font-weight: 600;
 }
 .roi-low {
-  color: #cf1322;
+  color: var(--danger-strong);
   font-weight: 600;
 }
 .roi-val {
@@ -786,7 +799,7 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 
 /* 标题 / ASIN 超链接 */
 .title-link {
-  color: #1677ff;
+  color: var(--primary);
   text-decoration: none;
   cursor: pointer;
   line-height: 1.3;
@@ -794,27 +807,27 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   word-break: break-all;
 }
 .title-link:hover {
-  color: #0958d9;
+  color: var(--primary-strong);
   text-decoration: underline;
 }
 .title-asin {
-  color: #1677ff !important;
+  color: var(--primary) !important;
   text-decoration: none;
   cursor: pointer;
   display: block;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-family: monospace;
-  margin-top: 2px;
+  margin-top: var(--space-2);
 }
 .title-asin:hover {
-  color: #0958d9;
+  color: var(--primary-strong);
   text-decoration: underline;
 }
 
 .title-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 .title-main {
   min-width: 0;
@@ -824,8 +837,8 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   width: 40px;
   height: 40px;
   object-fit: cover;
-  border-radius: 4px;
-  border: 1px solid #f0f0f0;
+  border-radius: var(--radius-4);
+  border: 1px solid var(--border-base);
   flex-shrink: 0;
   background: var(--bg-base);
 }
@@ -837,10 +850,10 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
-  border-radius: 4px;
+  font-size: var(--font-size-18);
+  border-radius: var(--radius-4);
   background: var(--bg-base);
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--border-base);
 }
 
 /* 类目（一级 / 二级） */
@@ -850,49 +863,49 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   line-height: 1.3;
 }
 .cat-l1 {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-primary);
 }
 .cat-l2 {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
 }
 
 /* 星级 */
 .rating-star {
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 .rating-star.good {
-  color: #389e0d;
+  color: var(--success);
 }
 .rating-star.warn {
-  color: #fa541c;
+  color: var(--orange-strong);
 }
 
 /* 变体数 */
 .variation-cell {
   display: inline-block;
   min-width: 24px;
-  padding: 1px 6px;
-  border-radius: 10px;
-  font-size: 12px;
+  padding: var(--space-1) var(--space-6);
+  border-radius: var(--radius-10);
+  font-size: var(--font-size-12);
   font-weight: 600;
   text-align: center;
 }
 .variation-cell.few {
-  color: #389e0d;
+  color: var(--success);
   background: rgba(82, 196, 26, 0.1);
-  border: 1px solid #b7eb8f;
+  border: 1px solid var(--success-border);
 }
 .variation-cell.many {
-  color: #d46b08;
+  color: var(--orange-strong);
   background: rgba(250, 140, 22, 0.1);
-  border: 1px solid #ffd591;
+  border: 1px solid var(--orange-border);
 }
 
 /* BSR */
 .bsr-cell {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   font-variant-numeric: tabular-nums;
 }
 
@@ -901,81 +914,81 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: var(--space-4);
 }
 .listed-date {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
 }
 .listed-date.new {
-  color: #0958d9;
+  color: var(--primary-strong);
   font-weight: 600;
 }
 .listed-badge {
-  font-size: 10px;
-  color: #0958d9;
+  font-size: var(--font-size-10);
+  color: var(--primary-strong);
   background: rgba(24, 144, 255, 0.1);
   border: 1px solid #91caff;
-  padding: 0 4px;
-  border-radius: 3px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-3);
 }
 .muted {
   color: var(--text-disabled);
 }
 
 .report-summary {
-  padding: 12px 16px;
+  padding: var(--space-12) var(--space-16);
   background: var(--bg-base);
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--border-base);
 }
 
 .report-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-8);
   color: var(--text-primary);
 }
 
 .report-content {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   line-height: 1.6;
   color: var(--text-secondary);
 }
 
 .report-content :deep(h2),
 .report-content :deep(h3) {
-  margin: 8px 0 4px;
-  font-size: 13px;
+  margin: var(--space-8) 0 var(--space-4);
+  font-size: var(--font-size-13);
 }
 
 .report-content :deep(ul) {
-  padding-left: 16px;
-  margin: 4px 0;
+  padding-left: var(--space-16);
+  margin: var(--space-4) 0;
 }
 
 /* 成功弹窗 */
 .success-modal-body {
-  padding: 0 8px;
+  padding: 0 var(--space-8);
 }
 
 .saved-list {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #f0f0f0;
+  margin-top: var(--space-16);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--border-base);
 }
 
 .saved-list-title {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-8);
 }
 
 .saved-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  font-size: 13px;
+  gap: var(--space-8);
+  padding: var(--space-4) 0;
+  font-size: var(--font-size-13);
 }
 
 .saved-item-title {
@@ -988,25 +1001,25 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 
 /* ===== 商品观察池弹窗 ===== */
 .pool-modal-body {
-  padding: 4px 0;
+  padding: var(--space-4) 0;
 }
 
 .pool-selected-tip {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-secondary);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
   line-height: 1.6;
 }
 
 .pool-selected-tip b {
-  color: #722ed1;
+  color: var(--purple);
 }
 
 .pool-empty {
   text-align: center;
   color: var(--text-disabled);
-  padding: 24px 0;
-  font-size: 13px;
+  padding: var(--space-24) 0;
+  font-size: var(--font-size-13);
 }
 
 .pool-group-list {
@@ -1017,58 +1030,58 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 .pool-group-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid #f0f0f0;
-  border-radius: 6px;
-  margin-bottom: 8px;
+  gap: var(--space-10);
+  padding: var(--space-10) var(--space-12);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-6);
+  margin-bottom: var(--space-8);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .pool-group-item:hover {
-  border-color: #722ed1;
+  border-color: var(--purple);
   background: rgba(114, 46, 209, 0.08);
 }
 
 .pool-group-item.selected {
-  border-color: #722ed1;
+  border-color: var(--purple);
   background: rgba(114, 46, 209, 0.08);
 }
 
 .pool-color-dot {
   width: 12px;
   height: 12px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   flex-shrink: 0;
 }
 
 .pool-group-name {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--text-primary);
 }
 
 .pool-group-count {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
 }
 
 .pool-new-form {
-  padding: 8px 0;
+  padding: var(--space-8) 0;
 }
 
 .pool-color-picker {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
   flex-wrap: wrap;
 }
 
 .pool-color-swatch {
   width: 24px;
   height: 24px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   cursor: pointer;
   border: 2px solid transparent;
   transition: all 0.2s;
@@ -1092,19 +1105,19 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: var(--space-2);
 }
 .link-icon-btn {
-  font-size: 15px;
+  font-size: var(--font-size-15);
   line-height: 1;
-  padding: 0 6px;
-  color: #1677ff;
+  padding: 0 var(--space-6);
+  color: var(--primary);
 }
 .link-icon-btn:hover {
-  color: #0958d9;
+  color: var(--primary-strong);
 }
 .detail-btn {
-  padding: 0 6px;
+  padding: 0 var(--space-6);
 }
 
 /* ===== 行 hover 悬浮次要指标卡 ===== */
@@ -1115,23 +1128,23 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   max-width: 300px;
   background: var(--bg-elevated);
   border: 1px solid #e5e5e5;
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-  padding: 10px 12px;
+  padding: var(--space-10) var(--space-12);
   pointer-events: auto;
 }
 .hover-card-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px dashed #f0f0f0;
-  margin-bottom: 6px;
+  gap: var(--space-8);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px dashed var(--border-base);
+  margin-bottom: var(--space-6);
 }
 .hover-card-asin {
   font-family: monospace;
-  font-size: 12px;
+  font-size: var(--font-size-12);
   font-weight: 600;
   color: var(--text-primary);
   overflow: hidden;
@@ -1139,19 +1152,19 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   white-space: nowrap;
 }
 .hover-card-tag {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
-  color: #722ed1;
+  color: var(--purple);
   background: rgba(114, 46, 209, 0.08);
   border: 1px solid #d3adf7;
-  border-radius: 10px;
-  padding: 0 7px;
+  border-radius: var(--radius-10);
+  padding: 0 var(--space-7);
   flex-shrink: 0;
 }
 .hover-card-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 4px 12px;
+  gap: var(--space-4) var(--space-12);
 }
 .hover-card-item {
   display: flex;
@@ -1160,25 +1173,25 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   line-height: 1.9;
 }
 .hc-label {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
 }
 .hc-value {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   font-weight: 600;
   color: var(--text-primary);
 }
-.hc-value.good { color: #389e0d; }
-.hc-value.warn { color: #fa541c; }
-.hc-value.variation-few { color: #389e0d; }
-.hc-value.variation-many { color: #d46b08; }
+.hc-value.good { color: var(--success); }
+.hc-value.warn { color: var(--orange-strong); }
+.hc-value.variation-few { color: var(--success); }
+.hc-value.variation-many { color: var(--orange-strong); }
 .hover-card-foot {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed #f0f0f0;
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
+  border-top: 1px dashed var(--border-base);
   text-align: center;
-  font-size: 12px;
-  color: #722ed1;
+  font-size: var(--font-size-12);
+  color: var(--purple);
   cursor: pointer;
   font-weight: 500;
 }
@@ -1186,7 +1199,7 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
   color: #531dab;
 }
 .hover-card-foot b {
-  color: #722ed1;
+  color: var(--purple);
 }
 
 </style>

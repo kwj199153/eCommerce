@@ -46,16 +46,29 @@ AgentId = Literal[
 ]
 ViewId = Literal["faq", "candidates", "products", "assets", "rules", "monitor"]
 AccountMenuTarget = Literal["settings", "memory", "subscription", "logout"]
-ThemeMode = Literal["light", "dark", "system"]
+# ⚠️ 必须与前端 frontend/src/theme/presets.ts 的 `ThemeName` 保持一致（外加 system）。
+# 本枚举是**工具签名**的一部分 → LLM 只能从这里取值，所以加主题时漏改这里，
+# 表现是「老板说『换成马卡龙』，主 Agent 找不到该枚举值 → 答『没这个主题』或切错」。
+# 漂移由前端自检脚本兜底：frontend/scripts/check_theme_boot.py
+ThemeMode = Literal["light", "dark", "macaron", "system"]
 
 
-def _switch_agent(agent_id: AgentId) -> str:
-    """切换到指定的业务 Agent。
+def _switch_agent(agent_id: AgentId, query: str = "") -> str:
+    """切换到指定的业务 Agent，并可把老板的具体诉求一并转达给它。
 
     Args:
         agent_id: 目标 Agent 标识（枚举值）。
+        query: 老板诉求的**原话**（可选）。两种用法：
+            ① 纯导航 —— 老板只说「去选品页 / 打开选品分析师」，query 留空，
+               切过去后由老板自己输入；
+            ② 路由带参（更常见）—— 老板带着明确任务来（如「比较好卖的品类
+               有哪些」「帮我找厨房用品的蓝海机会」「优化下这个标题」），
+               把老板原话填进 query，子 Agent 切换过去后会**自动接着执行**。
     """
-    return f'{{"action": "switch_agent", "agentId": "{agent_id}"}}'
+    payload: dict = {"action": "switch_agent", "agentId": agent_id}
+    if query and query.strip():
+        payload["query"] = query.strip()
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def _open_view(view: ViewId) -> str:
@@ -81,10 +94,11 @@ def _open_account_menu(target: AccountMenuTarget) -> str:
 
 
 def _set_theme(mode: ThemeMode) -> str:
-    """切换界面外观主题（浅色 / 深色 / 跟随系统）。
+    """切换界面外观主题（浅色 / 深色 / 马卡龙 / 跟随系统）。
 
     Args:
-        mode: 目标主题（light 浅色 / dark 深色 / system 跟随系统）。
+        mode: 目标主题（light 浅色 / dark 深色 / macaron 马卡龙（粉彩甜点风，浅色族）
+            / system 跟随系统）。老板用中文口语说「马卡龙」「粉一点」「甜一点」时用 macaron。
     """
     return f'{{"action": "set_theme", "mode": "{mode}"}}'
 
@@ -121,8 +135,11 @@ navigation_tools = [
         name="switch_agent",
         description=(
             "切换到某个业务 Agent 的对话页。当老板想找某个专职 Agent 干活时使用。"
+            "**重要**：若老板带着明确诉求（想让它「分析 / 找 / 优化 / 做 / 看看」某件事），"
+            "必须把老板原话填进 query，子 Agent 会自动接着执行；"
+            "只有单纯的「去 XX 页面 / 打开 XX 分析师」才留空。"
             "各 Agent 与触发词对应如下："
-            "「找蓝海/选品/利润测算」→ product-research（选品分析师）；"
+            "「找蓝海/选品/利润测算/哪些品类好卖」→ product-research（选品分析师）；"
             "「竞品/对手/竞争分析」→ competitor-intel（竞品监控员）；"
             "「做图/视频/素材」→ aigc-media（AIGC 媒体生成器）；"
             "「改文案/标题/五点/描述/关键词」→ listing-generator（Listing 优化师）；"

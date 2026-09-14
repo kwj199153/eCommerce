@@ -11,7 +11,7 @@
     <a-alert
       type="info"
       show-icon
-      style="margin-bottom: 16px"
+      style="margin-bottom: var(--space-16)"
       message="本产品将成为该 SPU 的首个 SKU，保留其 ASIN/价格/库存/评分等信息；同时生成一个 SPU 作为公共模板。"
     />
     <a-form :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }">

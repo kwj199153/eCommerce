@@ -226,6 +226,45 @@ class PlatformAdapter(ABC):
         """
         pass
 
+    async def match_products(self, keyword: str, limit: int = 5) -> List[dict]:
+        """
+        关键词 → 具体商品（把「方向」落到「可入库的货」）。
+
+        为什么需要它：蓝海挖掘先产出的是**关键词级机会**（有搜索量/竞争度，
+        但没有 ASIN）。而候选选品库以 `asin` 为核心标识，只给词的话老板
+        既存不进库、也无法对比。本方法负责补上这一步。
+
+        默认实现：借用各平台自己的 `search_products`，把 `ProductData`
+        规范成统一 dict。有更精确实现的平台（如 AmazonAdapter 直接用统一
+        Mock 池做 token 命中，能保留 roi / category_key 等派生字段）应覆写。
+
+        Args:
+            keyword: 关键词（如 "exercise mat alignment lines"）
+            limit: 最多返回条数
+
+        Returns:
+            商品 dict 列表；**无命中返回空列表**（不回退随机结果——
+            调用方需据此走「该方向暂无匹配商品」的降级路径）。
+        """
+        products = await self.search_products(keyword)
+        return [
+            {
+                "asin": p.product_id,
+                "title": p.title,
+                "price": p.price,
+                "rating": p.rating,
+                "review_count": p.review_count,
+                "category": p.category,
+                "brand": p.brand or "",
+                "main_image": p.image_url or "",
+                "estimated_monthly_sales": p.estimated_monthly_sales or 0,
+                "bsr_rank": p.bsr_rank,
+                "marketplace": p.platform,
+                "url": p.url,
+            }
+            for p in products[:limit]
+        ]
+
     async def analyze_competitors(
         self,
         product_ids: List[str],

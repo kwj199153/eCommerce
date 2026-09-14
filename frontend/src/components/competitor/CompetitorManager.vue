@@ -326,7 +326,7 @@ const sourceLabel = (s: CompetitorRef['source']) => s === 'auto' ? '推荐' : s 
 const sourceColor = (s: CompetitorRef['source']) => s === 'auto' ? 'geekblue' : s === 'manual' ? 'gold' : 'purple'
 
 /** 竞品行「＋监控」：把该对标竞品纳入统一监控池，归属当前主品项目（定向监控） */
-function toggleMonitor(c: CompetitorRef) {
+async function toggleMonitor(c: CompetitorRef) {
   if (!props.owner) return
   if (mp.isAsinInPool(c.asin)) {
     message.info(`${c.asin} 已在监控池（竞品监控页可查看走势）`)
@@ -334,7 +334,7 @@ function toggleMonitor(c: CompetitorRef) {
   }
   // 归属：product/candidate 直接绑定；session（候选草稿）按候选归属（该 asin 将成为候选）
   const ownType = ownerType.value === 'session' ? 'candidate' : ownerType.value
-  mp.addFromCompetitor({
+  const { added } = await mp.addFromCompetitor({
     asin: c.asin,
     title: c.title,
     brand: c.brand,
@@ -346,34 +346,38 @@ function toggleMonitor(c: CompetitorRef) {
       title: props.owner.title,
     },
   })
-  message.success(`已将 ${c.asin} 加入监控池（归属「${props.owner.title || props.owner.asin}」）`)
+  if (added) {
+    message.success(`已将 ${c.asin} 加入监控池（归属「${props.owner.title || props.owner.asin}」）`)
+  } else {
+    message.info(`${c.asin} 已在监控池中，已补挂归属`)
+  }
 }
 
 function onImgError(e: Event) { ;(e.target as HTMLImageElement).style.display = 'none' }
 </script>
 
 <style scoped>
-.competitor-manager { display: flex; flex-direction: column; gap: 12px; }
-.pool-hint { font-size: 12px; color: #8c8c8c; }
+.competitor-manager { display: flex; flex-direction: column; gap: var(--space-12); }
+.pool-hint { font-size: var(--font-size-12); color: var(--text-tertiary); }
 .cm-source-tabs { margin-top: -4px; }
-.tab-pane-body { padding: 12px 4px 4px; display: flex; flex-direction: column; gap: 10px; }
-.tab-pane-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.tab-hint { margin: 0; font-size: 12px; color: #8c8c8c; }
-.pool-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.tab-pane-body { padding: var(--space-12) var(--space-4) var(--space-4); display: flex; flex-direction: column; gap: var(--space-10); }
+.tab-pane-actions { display: flex; justify-content: flex-end; gap: var(--space-8); }
+.tab-hint { margin: 0; font-size: var(--font-size-12); color: var(--text-tertiary); }
+.pool-list { display: flex; flex-direction: column; gap: var(--space-6); max-height: 320px; overflow-y: auto; }
 .pool-item {
-  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
-  border: 1px solid #f0f0f0; border-radius: 6px; background: #fff;
+  display: flex; align-items: center; gap: var(--space-8); padding: var(--space-6) var(--space-8);
+  border: 1px solid var(--border-base); border-radius: var(--radius-6); background: var(--bg-elevated);
 }
 .pool-item.disabled { opacity: 0.55; }
-.thumb { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; border: 1px solid #f0f0f0; background: #fafafa; }
-.thumb-ph { width: 36px; height: 36px; flex-shrink: 0; display:flex; align-items:center; justify-content:center; border-radius:4px; background:#fafafa; border:1px solid #f0f0f0; }
+.thumb { width: 36px; height: 36px; object-fit: cover; border-radius: var(--radius-4); border: 1px solid var(--border-base); background: var(--bg-sidebar); }
+.thumb-ph { width: 36px; height: 36px; flex-shrink: 0; display:flex; align-items:center; justify-content:center; border-radius:var(--radius-4); background:var(--bg-sidebar); border:1px solid var(--border-base); }
 .info { flex: 1; min-width: 0; }
-.title { font-size: 12px; color: #262626; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
-.asin { font-size: 10px; color: #8c8c8c; font-family: 'SF Mono', Monaco, monospace; }
-.brand { font-size: 10px; color: #bfbfbf; }
-.mon-btn { font-size: 11px; color: #1890ff; padding: 0 4px; white-space: nowrap; }
-.empty { text-align: center; padding: 28px 0; color: #8c8c8c; }
-.footer-actions { border-top: 1px solid #f0f0f0; padding-top: 12px; }
-.mode-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.title { font-size: var(--font-size-12); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { display: flex; align-items: center; gap: var(--space-6); margin-top: var(--space-2); }
+.asin { font-size: var(--font-size-10); color: var(--text-tertiary); font-family: 'SF Mono', Monaco, monospace; }
+.brand { font-size: var(--font-size-10); color: var(--text-disabled); }
+.mon-btn { font-size: var(--font-size-11); color: var(--primary); padding: 0 var(--space-4); white-space: nowrap; }
+.empty { text-align: center; padding: var(--space-28) 0; color: var(--text-tertiary); }
+.footer-actions { border-top: 1px solid var(--border-base); padding-top: var(--space-12); }
+.mode-btns { display: flex; justify-content: flex-end; gap: var(--space-8); margin-top: var(--space-10); }
 </style>

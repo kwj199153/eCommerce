@@ -126,6 +126,7 @@ import {
 } from '@ant-design/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useThemeStore } from '@/stores/theme'
+import { THEME_OPTIONS, themeModeLabel } from '@/theme/presets'
 
 const props = defineProps<{
   sidebarCollapsed?: boolean
@@ -152,17 +153,10 @@ const userRoleLabel = computed(() => {
   return map[role || ''] || '运营账号'
 })
 
-const modeLabel = computed(() => {
-  const map = { light: '浅色', dark: '深色', system: '跟随系统' } as const
-  return map[themeStore.mode]
-})
+const modeLabel = computed(() => themeModeLabel(themeStore.mode))
 
-// 主题选项（外观子菜单）
-const themeOptions = [
-  { icon: '☀️', label: '浅色', value: 'light' as const },
-  { icon: '🌙', label: '深色', value: 'dark' as const },
-  { icon: '💻', label: '跟随系统', value: 'system' as const },
-]
+// 主题选项（外观子菜单）—— 从预设表派生：加第三套主题时本文件零改动
+const themeOptions = THEME_OPTIONS
 
 const openSettings = () => {
   menuOpen.value = false
@@ -213,7 +207,7 @@ const copyAccountId = async () => {
 <style scoped>
 /* 底部触发器条 */
 .account-entry {
-  padding: 8px 12px;
+  padding: var(--space-8) var(--space-12);
   border-top: 1px solid var(--border-base);
   margin-top: auto;
   flex-shrink: 0;
@@ -222,9 +216,9 @@ const copyAccountId = async () => {
 .user-trigger {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: 8px;
+  gap: var(--space-10);
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-8);
   cursor: pointer;
   transition: background 0.2s;
   position: relative;
@@ -232,20 +226,19 @@ const copyAccountId = async () => {
 }
 .user-trigger:hover,
 .user-trigger.open { background: var(--bg-hover-light); }
-html.dark .user-trigger:hover,
-html.dark .user-trigger.open { background: var(--bg-hover-dark); }
+
 
 .avatar {
   width: 32px;
   height: 32px;
   min-width: 32px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: linear-gradient(135deg, #52c41a, #389e0d);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: var(--font-size-14);
   font-weight: 600;
   line-height: 1;
   flex-shrink: 0;
@@ -254,12 +247,12 @@ html.dark .user-trigger.open { background: var(--bg-hover-dark); }
 .user-meta {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
   flex: 1;
   min-width: 0;
 }
 .username {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.2;
@@ -268,7 +261,7 @@ html.dark .user-trigger.open { background: var(--bg-hover-dark); }
   white-space: nowrap;
 }
 .user-role {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
   line-height: 1;
   overflow: hidden;
@@ -277,7 +270,7 @@ html.dark .user-trigger.open { background: var(--bg-hover-dark); }
 }
 
 .caret {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-disabled);
   flex-shrink: 0;
 }
@@ -285,33 +278,31 @@ html.dark .user-trigger.open { background: var(--bg-hover-dark); }
 /* 弹出卡片容器 */
 .account-overlay {
   background: var(--bg-elevated);
-  border-radius: 12px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
-  padding: 4px 0 6px;
+  border-radius: var(--radius-12);
+  box-shadow: var(--shadow-overlay);
+  padding: var(--space-4) 0 var(--space-6);
   overflow: hidden;
   color: var(--text-primary);
 }
-html.dark .account-overlay {
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
-}
+
 
 /* 身份头 */
 .menu-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px 8px;
+  gap: var(--space-12);
+  padding: var(--space-10) var(--space-14) var(--space-8);
 }
 .mh-avatar {
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: linear-gradient(135deg, #52c41a, #389e0d);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: var(--font-size-16);
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -319,11 +310,11 @@ html.dark .account-overlay {
 .mh-name-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 2px;
+  gap: var(--space-6);
+  margin-bottom: var(--space-2);
 }
 .mh-name {
-  font-size: 14px;
+  font-size: var(--font-size-14);
   font-weight: 600;
   color: var(--text-primary);
   overflow: hidden;
@@ -335,56 +326,52 @@ html.dark .account-overlay {
 .copy-id-btn {
   background: transparent;
   border: 0;
-  padding: 0 4px;
+  padding: 0 var(--space-4);
   cursor: pointer;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--font-size-12);
   display: inline-flex;
   align-items: center;
   height: 18px;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   transition: all 0.15s;
 }
 .copy-id-btn:hover { background: var(--bg-hover-light); color: var(--primary); }
-html.dark .copy-id-btn:hover { background: var(--bg-hover-dark); color: var(--primary); }
+
 
 .mh-role {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
   line-height: 1.4;
 }
 
 /* 菜单 */
 .account-menu {
-  padding: 0 6px !important;
+  padding: 0 var(--space-6) !important;
 }
 .account-menu :deep(.ant-menu-item) {
   height: 36px;
   line-height: 36px;
-  border-radius: 6px;
-  padding: 0 12px !important;
-  margin: 1px 0;
+  border-radius: var(--radius-6);
+  padding: 0 var(--space-12) !important;
+  margin: var(--space-1) 0;
   color: var(--text-primary);
 }
 .account-menu :deep(.ant-menu-item:hover) {
   background: var(--bg-hover-light) !important;
 }
-html.dark .account-menu :deep(.ant-menu-item:hover) {
-  background: var(--bg-hover-dark) !important;
-}
+
 .account-menu :deep(.ant-menu-submenu-title) {
   height: 36px;
   line-height: 36px;
-  border-radius: 6px;
-  margin: 1px 0;
+  border-radius: var(--radius-6);
+  margin: var(--space-1) 0;
   color: var(--text-primary);
 }
 .account-menu :deep(.ant-menu-submenu-title:hover) {
   background: var(--bg-hover-light) !important;
 }
-html.dark .account-menu :deep(.ant-menu-submenu-title:hover) {
-  background: var(--bg-hover-dark) !important;
-}
+
 
 /* 单列菜单条目排版（flex 三段：图标 / 文字 / 右侧） */
 .mi-icon {
@@ -392,19 +379,19 @@ html.dark .account-menu :deep(.ant-menu-submenu-title:hover) {
   width: 18px;
   align-items: center;
   justify-content: center;
-  margin-right: 10px;
-  font-size: 15px;
+  margin-right: var(--space-10);
+  font-size: var(--font-size-15);
   color: var(--text-secondary);
 }
 
 .mi-label {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-primary);
 }
 
 .mi-extra {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-disabled);
   flex-shrink: 0;
 }
@@ -412,21 +399,19 @@ html.dark .account-menu :deep(.ant-menu-submenu-title:hover) {
 /* 退出登录 */
 .logout-item .mi-icon { color: var(--danger); }
 .logout-item .mi-label { color: var(--danger); }
-.logout-item:hover { background: rgba(255, 77, 79, 0.08) !important; }
-html.dark .logout-item:hover {
-  background: rgba(255, 77, 79, 0.18) !important;
-}
+.logout-item:hover { background: var(--danger-hover-bg) !important; }
+
 
 /* 外观子菜单状态 */
 .theme-icon {
   display: inline-block;
   width: 18px;
-  margin-right: 10px;
+  margin-right: var(--space-10);
   text-align: center;
-  font-size: 14px;
+  font-size: var(--font-size-14);
 }
 .theme-active { color: var(--primary) !important; font-weight: 600; }
-.theme-check { color: var(--primary); font-size: 12px; margin-left: auto; }
+.theme-check { color: var(--primary); font-size: var(--font-size-12); margin-left: auto; }
 
 .sub-title {
   display: flex;
@@ -435,11 +420,11 @@ html.dark .logout-item:hover {
 }
 
 .version-tag {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   background: var(--bg-card-pill);
   color: var(--text-tertiary);
-  padding: 1px 6px;
-  border-radius: 3px;
+  padding: var(--space-1) var(--space-6);
+  border-radius: var(--radius-3);
   line-height: 16px;
   flex-shrink: 0;
 }

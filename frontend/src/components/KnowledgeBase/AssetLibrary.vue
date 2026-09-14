@@ -758,11 +758,11 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 16px 8px;
+  padding: var(--space-16) var(--space-16) var(--space-8);
 }
 
 .al-sidebar-title {
-  font-size: 14px;
+  font-size: var(--font-size-14);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -770,11 +770,11 @@ onMounted(() => {
 .al-group-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 16px;
+  gap: var(--space-8);
+  padding: 9px var(--space-16);
   cursor: pointer;
   transition: background 0.15s;
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
 .al-group-item:hover {
@@ -789,7 +789,7 @@ onMounted(() => {
 .al-color-dot {
   width: 10px;
   height: 10px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   flex-shrink: 0;
 }
 
@@ -802,11 +802,11 @@ onMounted(() => {
 }
 
 .al-group-count {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
   background: var(--border-base);
-  border-radius: 10px;
-  padding: 0 8px;
+  border-radius: var(--radius-10);
+  padding: 0 var(--space-8);
 }
 
 .al-group-more {
@@ -819,16 +819,16 @@ onMounted(() => {
 }
 
 .al-group-empty {
-  padding: 16px;
-  font-size: 12px;
+  padding: var(--space-16);
+  font-size: var(--font-size-12);
   color: var(--text-disabled);
   line-height: 1.6;
 }
 
 .al-group-item--ungrouped {
-  margin-top: 8px;
+  margin-top: var(--space-8);
   border-top: 1px dashed var(--border-strong);
-  padding-top: 10px;
+  padding-top: var(--space-10);
   opacity: 0.85;
 }
 
@@ -838,13 +838,13 @@ onMounted(() => {
 
 .al-sidebar-summary {
   margin-top: auto;
-  padding: 12px 16px;
+  padding: var(--space-12) var(--space-16);
   border-top: 1px solid var(--border-base);
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 /* ===== 右侧内容区 ===== */
@@ -853,26 +853,26 @@ onMounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: 16px 24px;
+  padding: var(--space-16) var(--space-24);
 }
 
 .stat-cards {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: var(--space-12);
+  margin-bottom: var(--space-14);
   flex-shrink: 0;
 }
 
 .stat-card {
   background: var(--bg-sidebar);
-  border-radius: 8px;
-  padding: 12px 16px;
+  border-radius: var(--radius-8);
+  padding: var(--space-12) var(--space-16);
   border: 1px solid var(--border-base);
 }
 
 .stat-value {
-  font-size: 22px;
+  font-size: var(--font-size-22);
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -882,28 +882,28 @@ onMounted(() => {
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-top: 2px;
+  margin-top: var(--space-2);
 }
 
 .al-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
   flex-shrink: 0;
 }
 
 .toolbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .toolbar-right {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 /* ===== 已应用过滤条件（chip 行） ===== */
@@ -911,29 +911,29 @@ onMounted(() => {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 12px;
-  margin-bottom: 10px;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-12);
+  margin-bottom: var(--space-10);
   background: var(--bg-sidebar);
   border: 1px dashed var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
 }
 .af-label {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
   font-weight: 500;
-  margin-right: 4px;
+  margin-right: var(--space-4);
 }
 .af-chip {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 10px;
+  font-size: var(--font-size-12);
+  padding: var(--space-2) var(--space-8);
+  border-radius: var(--radius-10);
 }
 
 .cat-count {
   color: var(--text-tertiary);
-  font-size: 11px;
-  margin-left: 4px;
+  font-size: var(--font-size-11);
+  margin-left: var(--space-4);
 }
 
 /* ===== 素材网格 ===== */
@@ -942,14 +942,14 @@ onMounted(() => {
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 14px;
+  gap: var(--space-14);
   align-content: start;
-  padding-bottom: 12px;
+  padding-bottom: var(--space-12);
 }
 
 .asset-card {
   border: 1px solid var(--border-base);
-  border-radius: 10px;
+  border-radius: var(--radius-10);
   overflow: hidden;
   background: var(--bg-elevated);
   transition: box-shadow 0.2s, transform 0.2s;
@@ -987,7 +987,7 @@ onMounted(() => {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  font-size: 36px;
+  font-size: var(--font-size-36);
   color: rgba(255, 255, 255, 0.92);
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   pointer-events: none;
@@ -999,30 +999,30 @@ onMounted(() => {
   right: 6px;
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: rgba(24, 144, 255, 0.9);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 .asset-info {
-  padding: 8px 10px 6px;
+  padding: var(--space-8) var(--space-10) var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .asset-name-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .asset-name {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   font-weight: 500;
   color: var(--text-primary);
   overflow: hidden;
@@ -1033,12 +1033,12 @@ onMounted(() => {
 
 .asset-tags {
   display: flex;
-  gap: 4px;
+  gap: var(--space-4);
   flex-wrap: wrap;
 }
 
 .asset-product {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1047,14 +1047,14 @@ onMounted(() => {
 
 .asset-groups {
   display: flex;
-  gap: 4px;
+  gap: var(--space-4);
   flex-wrap: wrap;
 }
 
 .group-chip {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 8px;
+  font-size: var(--font-size-10);
+  padding: var(--space-1) var(--space-6);
+  border-radius: var(--radius-8);
   line-height: 1.6;
 }
 
@@ -1063,11 +1063,11 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 0;
   border-top: 1px solid var(--bg-sidebar);
-  padding-top: 2px;
+  padding-top: var(--space-2);
 }
 
 .asset-actions :deep(.ant-btn) {
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
 .al-empty {
@@ -1085,25 +1085,25 @@ onMounted(() => {
 
 .preview-media {
   background: var(--bg-sidebar);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   overflow: hidden;
   display: flex;
   justify-content: center;
 }
 
 .preview-actions {
-  margin-top: 14px;
+  margin-top: var(--space-14);
   text-align: right;
 }
 
 .prompt-text {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
   line-height: 1.6;
   word-break: break-word;
   background: var(--bg-sidebar);
-  padding: 6px 8px;
-  border-radius: 4px;
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-4);
 }
 
 .text-muted { color: var(--text-disabled); }
@@ -1112,14 +1112,14 @@ onMounted(() => {
 .product-picker-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: var(--space-10);
   max-height: 55vh;
   overflow-y: auto;
 }
 
 .picker-product {
   border: 1px solid var(--border-base);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   overflow: hidden;
   cursor: pointer;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -1139,8 +1139,8 @@ onMounted(() => {
 
 .picker-name {
   display: block;
-  padding: 6px 8px;
-  font-size: 11px;
+  padding: var(--space-6) var(--space-8);
+  font-size: var(--font-size-11);
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1150,14 +1150,14 @@ onMounted(() => {
 /* 颜色选择 */
 .al-color-picker {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
   flex-wrap: wrap;
 }
 
 .al-color-swatch {
   width: 24px;
   height: 24px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   cursor: pointer;
   border: 2px solid transparent;
   transition: all 0.2s;

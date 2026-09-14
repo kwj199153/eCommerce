@@ -9,12 +9,16 @@ from datetime import datetime
 import logging
 
 from .agent_aigc import AIGCMediaAgent
+from . import asset_gen
 from .schemas import (
     ImageGenerationRequest,
     MainImageAnalysisRequest,
     APlusContentRequest,
     BrandStoryRequest,
     TranslationRequest,
+    SelectionTranslateRequest,
+    EnhancePromptRequest,
+    AssetGenerationRequest,
     InfographicRequest,
     ComplianceCheckRequest,
     VideoScriptRequest,
@@ -212,6 +216,95 @@ async def translate_content_service(request: TranslationRequest) -> Dict[str, An
         }
 
 
+async def translate_selection_service(request: SelectionTranslateRequest) -> Dict[str, Any]:
+    """
+    划词翻译（轻量）。
+
+    与 `translate_content_service` 的区别只在产出结构：这边只要一个译文，
+    不返回 SEO/文化/多版本字段 —— 划词要的是快，不是全。
+    """
+    try:
+        return await agent.translate_selection(
+            text=request.text,
+            target_lang=request.target_lang,
+            context=request.context,
+        )
+    except Exception as e:
+        logger.error(f"划词翻译失败: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "翻译服务暂不可用",
+            "data": {
+                "original_text": request.text,
+                "translation": "",
+                "source_lang": "",
+                "target_lang": request.target_lang,
+                "degraded": True,
+            },
+        }
+
+
+async def enhance_prompt_service(request: EnhancePromptRequest) -> Dict[str, Any]:
+    """
+    提示词增强（输入框辅助）。
+
+    与 `translate_selection_service` 并列：都是「轻量 LLM 辅助」，都只回一段文本。
+    区别是这边改的不是语言，是需求的完备度。
+    """
+    try:
+        return await agent.enhance_prompt(
+            draft=request.draft,
+            context=request.context,
+        )
+    except Exception as e:
+        logger.error(f"提示词增强失败: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "提示词增强暂不可用",
+            "data": {"draft": request.draft, "enhanced": "", "degraded": True},
+        }
+
+
+async def generate_assets_service(request: AssetGenerationRequest) -> Dict[str, Any]:
+    """静态素材批量出图（面板驱动）。
+
+    与 `generate_product_image_service` 的区别：那条是**对话驱动**、可以先追问缺参；
+    这条是**面板驱动** —— 老板在表单里点「开始生成素材」就该出图，不做缺参拦截
+    （否则表单没有的字段会让面板永远出不了图）。
+
+    失败语义：整批全失败才 success=False；部分失败仍 success=True，把逐项原因
+    放进 data.failed（长任务最怕一张挂掉就全灭）。
+    """
+    try:
+        data = await asset_gen.generate_assets(
+            product_name=request.product_name,
+            image_types=request.image_types,
+            category=request.category,
+            extra_description=request.extra_description,
+            count_per_type=request.count_per_type,
+            size=request.size,
+            source_image=request.source_image or "",
+        )
+        if data.get("degraded") and not data.get("assets"):
+            reason = data.get("degraded_reason") or "素材生成失败"
+            return {"success": False, "error": reason, "message": reason, "data": data}
+        return {
+            "success": True,
+            "data": data,
+            "message": f"已生成 {len(data.get('assets', []))} 张素材",
+        }
+    except Exception as e:
+        logger.error(f"静态素材生成失败: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "素材生成失败",
+            "data": {"assets": [], "failed": [], "degraded": True, "degraded_reason": str(e)},
+        }
+
+
 # ============================================================
 # 信息图生成服务
 # ============================================================
@@ -402,10 +495,13 @@ class AIGCMediaService:
     agent = agent
 
     generate_product_image = staticmethod(generate_product_image_service)
+    generate_assets = staticmethod(generate_assets_service)
     analyze_main_image = staticmethod(analyze_main_image_service)
     generate_a_plus_content = staticmethod(generate_a_plus_content_service)
     generate_brand_story = staticmethod(generate_brand_story_service)
     translate_content = staticmethod(translate_content_service)
+    translate_selection = staticmethod(translate_selection_service)
+    enhance_prompt = staticmethod(enhance_prompt_service)
     generate_infographic = staticmethod(generate_infographic_service)
     check_compliance = staticmethod(check_compliance_service)
     generate_video_script = staticmethod(generate_video_script_service)

@@ -44,7 +44,7 @@
           </a-form-item>
           <a-form-item label="内容模块">
             <a-checkbox-group v-model:value="form.modules" @change="saveForm">
-              <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; flex-direction: column; gap: var(--space-6);">
                 <a-checkbox value="hero">🖼️ Hero 图文模块（首屏大图+卖点）</a-checkbox>
                 <a-checkbox value="highlights">✨ 要点列表模块</a-checkbox>
                 <a-checkbox value="comparison">📊 对比表格模块</a-checkbox>
@@ -226,21 +226,21 @@ const handleReset = () => { form.value = { ...defaultForm }; localStorage.remove
 
 /* 顶部产品横幅 */
 .product-banner {
-  display: flex; align-items: center; gap: 6px;
-  padding: 6px 10px; margin-bottom: 8px;
-  background: #f0f7ff; border: 1px solid #91caff; border-radius: 4px;
-  font-size: 12px; color: #0958d9;
+  display: flex; align-items: center; gap: var(--space-6);
+  padding: var(--space-6) var(--space-10); margin-bottom: var(--space-8);
+  background: #f0f7ff; border: 1px solid #91caff; border-radius: var(--radius-4);
+  font-size: var(--font-size-12); color: var(--primary-strong);
 }
-.product-banner .banner-icon { font-size: 14px; }
+.product-banner .banner-icon { font-size: var(--font-size-14); }
 
 /* 输入框 + 产品库按钮 */
 .input-with-picker {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
+  gap: var(--space-4);
 }
 .input-with-picker .ant-input { flex: 1; }
 
 .desc-config :deep(.ant-collapse) { flex: 1; overflow-y: auto; }
-.config-actions { padding: 16px 0 0; border-top: 1px solid #f0f0f0; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+.config-actions { padding: var(--space-16) 0 0; border-top: 1px solid var(--border-base); display: flex; flex-direction: column; gap: var(--space-8); flex-shrink: 0; }
 </style>

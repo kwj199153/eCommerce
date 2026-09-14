@@ -12,7 +12,7 @@
         <span class="brand-name">{{ product.brand }}</span>
         <span class="product-name">{{ product.product }}</span>
         <div class="rating-badge">
-          <a-rate :value="Math.round(product.overall_rating)" disabled :count="5" style="font-size: 13px;" />
+          <a-rate :value="Math.round(product.overall_rating)" disabled :count="5" style="font-size: var(--font-size-13);" />
           <span>{{ product.overall_rating?.toFixed(1) }} ({{ product.total_reviews }})</span>
         </div>
       </div>
@@ -30,7 +30,7 @@
               :width="50"
               :show-info="false"
             />
-            <span style="font-size: 10px; margin-left: 4px;">{{ ins.mention_count }}次</span>
+            <span style="font-size: var(--font-size-10); margin-left: var(--space-4);">{{ ins.mention_count }}次</span>
           </span>
         </div>
       </div>
@@ -62,48 +62,41 @@
 </template>
 
 <script setup lang="ts">
+import { bandColor, bandOf } from '@/theme/bands'
 defineProps<{ data: any }>()
 defineEmits<{ (e: 'close'): void }>()
 
-const sentimentColor = (score: number) => {
-  if (score >= 0.7) return '#52c41a'
-  if (score >= 0.45) return '#faad14'
-  return '#ff4d4f'
-}
+const sentimentColor = (score: number) => bandColor('sentiment', score)
 
-const sentimentClass = (score: number) => {
-  if (score >= 0.7) return 'pos'
-  if (score >= 0.45) return 'neu'
-  return 'neg'
-}
+const sentimentClass = (score: number) => bandOf('sentiment', score)
 </script>
 
 <style scoped>
-.review-spy-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
-.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.result-header h3 { margin: 0; font-size: 16px; }
-.product-card { padding: 14px; background: var(--bg-base); border-radius: 10px; margin-bottom: 12px; border: 1px solid #f0f0f0; }
-.product-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-.brand-name { font-weight: 600; color: #1890ff; }
-.product-name { color: var(--text-secondary); font-size: 13px; }
-.rating-badge { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-tertiary); }
-.insights-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-bottom: 12px; }
-.insight-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--bg-elevated); border-radius: 6px; font-size: 11.5px; }
-.aspect-tag { background: #e6f7ff; color: #0958d9; padding: 1px 6px; border-radius: 4px; font-size: 10.5px; white-space: nowrap; }
+.review-spy-result { padding: var(--space-16); background: var(--bg-elevated); border-radius: var(--radius-8); }
+.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-14); }
+.result-header h3 { margin: 0; font-size: var(--font-size-16); }
+.product-card { padding: var(--space-14); background: var(--bg-base); border-radius: var(--radius-10); margin-bottom: var(--space-12); border: 1px solid var(--border-base); }
+.product-header { display: flex; align-items: center; gap: var(--space-10); flex-wrap: wrap; margin-bottom: var(--space-10); }
+.brand-name { font-weight: 600; color: var(--primary); }
+.product-name { color: var(--text-secondary); font-size: var(--font-size-13); }
+.rating-badge { display: flex; align-items: center; gap: var(--space-6); font-size: var(--font-size-12); color: var(--text-tertiary); }
+.insights-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-8); margin-bottom: var(--space-12); }
+.insight-item { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-6) var(--space-8); background: var(--bg-elevated); border-radius: var(--radius-6); font-size: var(--font-size-11-5); }
+.aspect-tag { background: var(--info-bg); color: var(--primary-strong); padding: var(--space-1) var(--space-6); border-radius: var(--radius-4); font-size: var(--font-size-10-5); white-space: nowrap; }
 .topic-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sentiment-bar { display: flex; align-items: center; flex-shrink: 0; }
-.swot-section { margin-bottom: 10px; }
-.swot-section h4 { margin: 0 0 8px; font-size: 13px; }
-.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.swot-cell { padding: 10px; border-radius: 6px; font-size: 11.5px; line-height: 1.5; }
-.swot-cell strong { display: block; margin-bottom: 4px; font-size: 12px; }
-.swot-cell ul { margin: 0; padding-left: 16px; }
-.swot-s { background: #f6ffed; border: 1px solid #b7eb8f; }
-.swot-w { background: var(--bg-elevated)1f0; border: 1px solid #ffa39e; }
-.swot-o { background: #e6f7ff; border: 1px solid #91d5ff; }
-.swot-t { background: var(--bg-elevated)be6; border: 1px solid #ffe58f; }
-.intel-box { padding: 10px; background: #fcffe6; border-radius: 6px; font-size: 12px; line-height: 1.6; }
-.intel-box p { margin: 0 0 4px; }
-.intel-box ul { margin: 0; padding-left: 18px; }
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; margin-top: 4px; }
+.swot-section { margin-bottom: var(--space-10); }
+.swot-section h4 { margin: 0 0 var(--space-8); font-size: var(--font-size-13); }
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-8); }
+.swot-cell { padding: var(--space-10); border-radius: var(--radius-6); font-size: var(--font-size-11-5); line-height: 1.5; }
+.swot-cell strong { display: block; margin-bottom: var(--space-4); font-size: var(--font-size-12); }
+.swot-cell ul { margin: 0; padding-left: var(--space-16); }
+.swot-s { background: var(--success-bg); border: 1px solid var(--success-border); }
+.swot-w { background: var(--danger-bg); border: 1px solid var(--danger-border-strong); }
+.swot-o { background: var(--info-bg); border: 1px solid var(--info-border); }
+.swot-t { background: var(--warning-bg); border: 1px solid var(--warning-border); }
+.intel-box { padding: var(--space-10); background: var(--success-bg); border-radius: var(--radius-6); font-size: var(--font-size-12); line-height: 1.6; }
+.intel-box p { margin: 0 0 var(--space-4); }
+.intel-box ul { margin: 0; padding-left: var(--space-18); }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); margin-top: var(--space-4); }
 </style>

@@ -329,11 +329,20 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             }
         }
 
-    async def _llm_generate_text(self, prompt: str, system_prompt: str = None, max_tokens: int = 1500) -> Optional[str]:
+    async def _llm_generate_text(
+        self,
+        prompt: str,
+        system_prompt: str = None,
+        max_tokens: int = 1500,
+        temperature: float = 0.8,
+    ) -> Optional[str]:
         """
         LLM 增强：生成真实文案内容。
 
         LLM 不可用或失败时返回 None，由调用方降级到模板/规则生成。
+
+        temperature 默认 0.8（文案创作需要发挥）；**翻译类调用要显式压低**（如 0.2），
+        否则同一个词每次译法都不一样。
         """
         if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
             return None
@@ -342,7 +351,7 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
                 user_message=prompt,
                 system_prompt=system_prompt or self.get_prompt_template("aigc_media"),
                 model=self.DEFAULT_MODEL,
-                temperature=0.8,
+                temperature=temperature,
                 max_tokens=max_tokens,
             )
             if result.success and not result.fallback and result.content:
@@ -350,6 +359,189 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         except Exception as e:
             logger.warning(f"[aigc_media] LLM generate failed: {e}")
         return None
+
+    # 语言代码 → 中文名（翻译类调用共用，避免各处再抄一份）
+    _LANG_NAMES = {
+        "zh": "简体中文", "en": "英文", "ja": "日语", "ko": "韩语",
+        "de": "德语", "es": "西班牙语", "fr": "法语", "it": "意大利语",
+        "pt": "葡萄牙语", "ar": "阿拉伯语", "nl": "荷兰语",
+    }
+
+    # 划词翻译的 system prompt：只出译文，不许解释
+    _SELECTION_TRANSLATE_SYSTEM = (
+        "你是资深跨境电商翻译，服务对象是正在看海外商品页的中国卖家。\n"
+        "任务：把用户选中的文本翻译成目标语言。\n"
+        "硬性规则：\n"
+        "1. 只输出译文本身。不要解释、不要加引号、不要 Markdown、不要「译文：」之类前缀。\n"
+        "2. 品牌名、型号、ASIN/SKU、规格数字与单位、URL、邮箱原样保留。\n"
+        "3. 若原文是商品标题：不要当普通句子润色，保持「品牌 + 品类 + 关键规格 + 卖点」的信息密度，"
+        "按目标语言电商标题习惯组织语序；不要添加原文没有的营销词（如「爆款」「热销」）。\n"
+        "4. 若原文是五点描述：逐条对应翻译，保持条数一致。\n"
+        "5. 专业术语按中国电商惯例（例：Noise Cancelling → 主动降噪；Waterproof → 防水；"
+        "Skin-friendly → 亲肤；Adjustable → 可调节）。\n"
+        "6. 原文若是片段或含明显截断，按片段直译，不要补全、不要猜测后续内容。"
+    )
+
+    @classmethod
+    def _detect_lang(cls, text: str) -> str:
+        """粗判语言：含中日韩字符即视为 zh（划词场景两种方向足够，不做完整语种识别）。"""
+        for ch in text:
+            if "\u3400" <= ch <= "\u9fff":
+                return "zh"
+        return "en"
+
+    @staticmethod
+    def _clean_translation(raw: str) -> str:
+        """兜底清洗：模型偶尔仍会包 ``` 或加「译文：」前缀。"""
+        import re
+        s = (raw or "").strip()
+        s = re.sub(r"^```[a-zA-Z]*\s*\n?", "", s)
+        s = re.sub(r"\n?```\s*$", "", s)
+        s = re.sub(r"^(译文|翻译|Translation)\s*[:：]\s*", "", s, flags=re.IGNORECASE)
+        s = re.sub(r'^["\'「『]', "", s)
+        s = re.sub(r'["\'」』]$', "", s)
+        return s.strip()
+
+    async def translate_selection(
+        self,
+        text: str,
+        target_lang: str = "auto",
+        context: str = "ecommerce",
+    ) -> Dict[str, Any]:
+        """
+        划词翻译：用户选中一段文字，只要一个能直接读的译文。
+
+        与 `translate_content`（SEO 友好翻译）的分工，不是重复造轮子：
+          - `translate_content` 面向**内容生产**：长文本、关键词位置优化、文化适配、多版本输出；
+          - 本方法面向**阅读辅助**：短文本、1-2 秒内出结果、只要一个译文，
+            故不产出 keyword/cultural/alternative 这些内容生产用的结构。
+        两者共用同一套 LLM 基建（`_llm_generate_text`），不重复初始化、不重复维护 prompt 骨架。
+
+        Returns:
+            {"success", "data", "message"}；LLM 不可用时 success=False 且 translation 为空
+            （**不编造译文** —— 宁可让前端提示「暂不可用」，也不要给一个假译文）
+        """
+        text = (text or "").strip()
+        if not text:
+            return {"success": False, "message": "没有取到文字", "data": {
+                "original_text": "", "translation": "", "source_lang": "", "target_lang": "", "degraded": True,
+            }}
+
+        source_lang = self._detect_lang(text)
+        if target_lang in (None, "", "auto"):
+            target_lang = "en" if source_lang == "zh" else "zh"
+
+        target_name = self._LANG_NAMES.get(target_lang, target_lang)
+
+        translated = await self._llm_generate_text(
+            prompt=(
+                f"目标语言：{target_name}\n"
+                f"上下文：{context}\n\n"
+                f"原文：\n{text}"
+            ),
+            system_prompt=self._SELECTION_TRANSLATE_SYSTEM,
+            max_tokens=800,
+            temperature=0.2,
+        )
+
+        if not translated:
+            # 降级：空白而非假译文（空状态优于虚构默认）
+            return {
+                "success": False,
+                "message": "翻译服务暂不可用",
+                "data": {
+                    "original_text": text,
+                    "translation": "",
+                    "source_lang": source_lang,
+                    "target_lang": target_lang,
+                    "degraded": True,
+                },
+            }
+
+        return {
+            "success": True,
+            "message": f"翻译完成 ({source_lang} -> {target_lang})",
+            "data": {
+                "original_text": text,
+                "translation": self._clean_translation(translated),
+                "source_lang": source_lang,
+                "target_lang": target_lang,
+                "degraded": False,
+            },
+        }
+
+    # 提示词增强的 system prompt：补维度，但严禁编造业务事实
+    _ENHANCE_PROMPT_SYSTEM = (
+        """你是跨境电商 SaaS「店管家」的提示词工程师。
+用户会在对话框里写一句口语化的需求，你要把它改写成一段更清晰、更可执行的提示词。
+
+硬性规则：
+1. 只输出改写后的提示词本身。不要解释、不要加引号、不要 Markdown 代码块、不要「改写后：」这类前缀。
+2. 严禁编造用户没有提供的业务事实：具体 ASIN、店铺名、商品名、数字、日期、竞品品牌一律不许凭空补。缺什么就用「（请补充：…）」标出，让用户自己填。
+3. 用户原话里的所有具体信息（平台、类目、数量、时间范围、指标、币种）必须一个不丢。
+4. 补齐三个维度：任务目标 / 约束条件 / 期望的输出形式。原话已明确的维度就沿用，不要画蛇添足。
+5. 长度控制在原文的 1.5~3 倍。原话已经写得很完整时，只做轻度润色。
+6. 输出语言与用户输入一致：中文进中文出，英文进英文出。"""
+    )
+
+    # 增强结果常见的「前缀」写法（兜底剥掉；`_clean_translation` 只认译文类前缀）
+    _ENHANCE_PREFIXES = (
+        "改写后：", "改写：", "改写后的提示词：",
+        "增强后：", "增强：", "优化后：", "优化：",
+    )
+
+    async def enhance_prompt(self, draft: str, context: str = "ecommerce") -> Dict[str, Any]:
+        """
+        提示词增强：把一句口语化的需求改写成更可执行的提示词。
+
+        与 `translate_selection` 并列（都是「输入辅助、只回一段文本、共用 `_llm_generate_text`」），
+        区别是它**不改语言，改的是需求的完备度**：补齐任务目标 / 约束条件 / 输出形式。
+
+        temperature 压到 0.4：这不是创作，是「如实扩写」。放开会导致同一句话每次补出的
+        维度都不一样，用户会以为功能不稳定。
+
+        Returns:
+            {"success", "data", "message"}；LLM 不可用时 success=False 且 enhanced 为空
+            （**不编造提示词** —— 空状态优于虚构默认）
+        """
+        draft = (draft or "").strip()
+        if not draft:
+            return {
+                "success": False,
+                "message": "没有取到输入内容",
+                "data": {"draft": "", "enhanced": "", "degraded": True},
+            }
+
+        enhanced = await self._llm_generate_text(
+            prompt=f"""业务上下文：{context}
+
+用户原始输入：
+{draft}""",
+            system_prompt=self._ENHANCE_PROMPT_SYSTEM,
+            max_tokens=800,
+            temperature=0.4,
+        )
+
+        if not enhanced:
+            # 降级：空白而非假提示词（空状态优于虚构默认）
+            return {
+                "success": False,
+                "message": "提示词增强暂不可用",
+                "data": {"draft": draft, "enhanced": "", "degraded": True},
+            }
+
+        # 复用翻译的清洗（去 ``` 围栏、去包裹引号），再剥增强场景特有的前缀
+        cleaned = self._clean_translation(enhanced)
+        for prefix in self._ENHANCE_PREFIXES:
+            if cleaned.startswith(prefix):
+                cleaned = cleaned[len(prefix):].lstrip()
+                break
+
+        return {
+            "success": True,
+            "message": "已增强",
+            "data": {"draft": draft, "enhanced": cleaned, "degraded": False},
+        }
 
     async def generate_product_image(self, request: ImageGenerationRequest) -> Dict[str, Any]:
         """

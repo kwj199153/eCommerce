@@ -231,30 +231,26 @@ watch(isEditing, (val) => {
 .section-card {
   background-color: var(--bg-hover-light);
   border: 1px solid var(--border-base);
-  border-radius: 8px;
-  padding: 14px 16px;
-  margin-bottom: 12px;
+  border-radius: var(--radius-8);
+  padding: var(--space-14) var(--space-16);
+  margin-bottom: var(--space-12);
 }
-html.dark .section-card {
-  background-color: var(--bg-hover-dark);
-}
-
 /* 开关行 */
 .section-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-12);
 }
 .section-info { flex: 1; min-width: 0; }
 .section-label {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
 }
 .section-desc {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
   line-height: 1.5;
 }
@@ -263,36 +259,36 @@ html.dark .section-card {
 .section-header {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: var(--space-8);
+  margin-bottom: var(--space-10);
 }
 .section-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
 }
 .section-hint {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
 }
 
 /* 操作按钮行 */
 .memory-actions {
   display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
+  gap: var(--space-6);
+  margin-bottom: var(--space-10);
   flex-wrap: wrap;
 }
 
 /* 记忆内容区 */
 .memory-content-wrapper {
   border: 1px solid var(--border-base);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   overflow: hidden;
 }
 .memory-view {
-  padding: 12px 14px;
-  font-size: 12.5px;
+  padding: var(--space-12) var(--space-14);
+  font-size: var(--font-size-12-5);
   line-height: 1.7;
   color: var(--text-primary);
   max-height: 380px;
@@ -300,34 +296,34 @@ html.dark .section-card {
   word-break: break-word;
 }
 .memory-view :deep(h1) {
-  font-size: 15px; font-weight: 700; margin: 6px 0 3px;
+  font-size: var(--font-size-15); font-weight: 700; margin: var(--space-6) 0 var(--space-3);
   color: var(--text-primary);
 }
 .memory-view :deep(h2) {
-  font-size: 14px; font-weight: 600; margin: 8px 0 3px;
+  font-size: var(--font-size-14); font-weight: 600; margin: var(--space-8) 0 var(--space-3);
   color: var(--text-primary);
-  border-bottom: 1px solid var(--border-base); padding-bottom: 3px;
+  border-bottom: 1px solid var(--border-base); padding-bottom: var(--space-3);
 }
 .memory-view :deep(h3) {
-  font-size: 13px; font-weight: 600; margin: 6px 0 2px;
+  font-size: var(--font-size-13); font-weight: 600; margin: var(--space-6) 0 var(--space-2);
   color: var(--text-secondary);
 }
 .memory-view :deep(code) {
-  background: var(--bg-card-pill); padding: 1px 4px; border-radius: 3px;
-  font-size: 11.5px; font-family: SFMono-Regular, Consolas, monospace;
+  background: var(--bg-card-pill); padding: var(--space-1) var(--space-4); border-radius: var(--radius-3);
+  font-size: var(--font-size-11-5); font-family: SFMono-Regular, Consolas, monospace;
 }
-.memory-view :deep(li) { margin-left: 14px; margin-bottom: 1px; }
-.memory-view :deep(p) { margin-bottom: 3px; }
+.memory-view :deep(li) { margin-left: var(--space-14); margin-bottom: var(--space-1); }
+.memory-view :deep(p) { margin-bottom: var(--space-3); }
 
 .memory-editor {
   width: 100%;
   min-height: 300px;
   max-height: 420px;
-  padding: 12px 14px;
+  padding: var(--space-12) var(--space-14);
   border: none;
   outline: none;
   resize: vertical;
-  font-size: 12.5px;
+  font-size: var(--font-size-12-5);
   line-height: 1.65;
   font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
   background: transparent;
@@ -340,28 +336,28 @@ html.dark .section-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: var(--space-8);
+  padding-top: var(--space-8);
   border-top: 1px solid var(--border-base);
 }
-.editor-hint { font-size: 11px; color: var(--text-tertiary); }
+.editor-hint { font-size: var(--font-size-11); color: var(--text-tertiary); }
 
 /* 工作日志时间线 */
-.log-timeline { margin-top: 2px; padding-left: 2px; }
-.log-date { font-size: 11.5px; font-weight: 600; color: var(--text-primary); }
-.log-content { font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-top: 1px; }
+.log-timeline { margin-top: var(--space-2); padding-left: var(--space-2); }
+.log-date { font-size: var(--font-size-11-5); font-weight: 600; color: var(--text-primary); }
+.log-content { font-size: var(--font-size-12); color: var(--text-secondary); line-height: 1.5; margin-top: var(--space-1); }
 
 /* Drawer 标题样式覆盖 */
 :deep(.ant-drawer-header) {
   border-bottom: 1px solid var(--border-base);
-  padding: 14px 20px;
+  padding: var(--space-14) var(--space-20);
 }
 :deep(.ant-drawer-title) {
-  font-size: 16px;
+  font-size: var(--font-size-16);
   font-weight: 600;
 }
 :deep(.ant-drawer-body) {
-  padding: 16px 18px;
+  padding: var(--space-16) var(--space-18);
   background-color: var(--bg-base);
 }
 </style>

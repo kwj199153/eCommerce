@@ -17,7 +17,7 @@
               <SearchOutlined style="color: #bfbfbf" />
             </template>
             <template v-if="detectedType" #suffix>
-              <a-tag :color="platformTagColor" size="small" style="margin-right: 4px; font-size: 10px">
+              <a-tag :color="platformTagColor" size="small" style="margin-right: var(--space-4); font-size: var(--font-size-10)">
                 {{ platformLabel }}
               </a-tag>
             </template>
@@ -347,14 +347,14 @@ const onProductSelect = (product: any) => {
 .pain-point-config {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-12);
 }
 
 .form-group > label {
   display: block;
-  font-size: 12px;
-  color: #595959;
-  margin-bottom: 4px;
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-4);
   font-weight: 500;
 }
 
@@ -366,73 +366,73 @@ const onProductSelect = (product: any) => {
 /* 输入提示快捷标签 */
 .input-hints {
   display: flex;
-  gap: 6px;
-  margin-top: 6px;
+  gap: var(--space-6);
+  margin-top: var(--space-6);
   flex-wrap: wrap;
 }
 
 .hint-chip {
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: #f5f5f5;
-  color: #8c8c8c;
+  font-size: var(--font-size-10);
+  padding: var(--space-2) var(--space-8);
+  border-radius: var(--radius-10);
+  background: var(--bg-hover-light);
+  color: var(--text-tertiary);
   cursor: pointer;
   transition: all 0.2s;
   border: 1px solid transparent;
 }
 
 .hint-chip:hover {
-  background: #e6f7ff;
-  color: #1890ff;
-  border-color: #91d5ff;
+  background: var(--info-bg);
+  color: var(--primary);
+  border-color: var(--info-border);
 }
 
 .hint-chip.active {
-  background: #e6f7ff;
-  color: #1890ff;
-  border-color: #1890ff;
+  background: var(--info-bg);
+  color: var(--primary);
+  border-color: var(--primary);
 }
 
 /* 已识别商品卡片 */
 .product-card {
   background: linear-gradient(135deg, #f0f9ff 0%, #e6f7ff 100%);
   border: 1px solid #bae7ff;
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   overflow: hidden;
 }
 
 .product-card-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-10);
   background: rgba(24, 144, 255, 0.06);
-  font-size: 11px;
-  color: #595959;
+  font-size: var(--font-size-11);
+  color: var(--text-secondary);
 }
 
 .product-card-platform {
   font-weight: 600;
-  color: #1890ff;
+  color: var(--primary);
   flex: 1;
 }
 
 .product-card-body {
-  padding: 8px 10px;
+  padding: var(--space-8) var(--space-10);
 }
 
 .product-card-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
   font-family: 'SF Mono', Monaco, monospace;
 }
 
 .product-card-desc {
-  font-size: 11px;
-  color: #8c8c8c;
-  margin-top: 2px;
+  font-size: var(--font-size-11);
+  color: var(--text-tertiary);
+  margin-top: var(--space-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -441,34 +441,34 @@ const onProductSelect = (product: any) => {
 .range-labels {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
-  color: #8c8c8c;
+  font-size: var(--font-size-11);
+  color: var(--text-tertiary);
 }
 
 .range-labels .current {
-  color: #1890ff;
+  color: var(--primary);
   font-weight: 600;
 }
 
 .checkbox-row {
   display: flex;
-  gap: 16px;
-  margin-bottom: 4px;
+  gap: var(--space-16);
+  margin-bottom: var(--space-4);
 }
 
 .action-bar {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-  padding-top: 12px;
-  border-top: 1px solid #f0f0f0;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--border-base);
 }
 
 /* 智能输入 + 产品库按钮 */
 .smart-input-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-4);
 }
 </style>

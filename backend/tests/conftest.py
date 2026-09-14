@@ -4,7 +4,7 @@ pytest 公共夹具
 约定：
 - 所有测试针对真实本地 PostgreSQL（tests 会创建并清理自己的临时用户）
 - 需要鉴权的用例用 `auth_on` 夹具打开生产模式开关
-- 不发起真实 LLM 请求：涉及 LLM 的用例统一 monkeypatch 客户端
+- 不发起真实 LLM 请求：由下方的 `_no_real_llm` 自动夹具**强制兜底**，见其注释
 """
 
 import uuid
@@ -15,6 +15,157 @@ import pytest_asyncio
 from httpx import ASGITransport
 
 from core.config import config
+
+
+# ====== 真实 LLM 出网总闸（autouse） ======
+#
+# 背景（实测）：本后端存在**两套彼此独立的 LLM 栈**——
+#   栈 A：`ai_infra.base_agent.BaseAgent._llm_with_tools()` → LangChain `ChatOpenAI`
+#         （走 OpenAI 兼容端点，工具路由/多轮 ReAct 用）
+#   栈 B：`ai_infra.llm.integration.LLMEnabledAgent.llm_stream/llm_chat()`
+#         → `ai_infra.llm.dashscope_client.DashScopeLLM`（原生 httpx 流式，正文生成用）
+#
+# 原先的 `fake_llm` 夹具**只补丁了栈 B 的 `DashScopeLLM.chat`**，于是：
+#   - 栈 A 从未被拦截 → 真实调用 DashScope
+#   - 栈 B 的 `chat_stream` 也没被补丁（只补了 `chat`）→ 真实流式调用
+# 后果：大量「看起来已打桩」的用例实际在打真实 API，单个用例耗时 10~36s，
+# 全量 488 项要 6 分 33 秒，且**结果依赖网络/额度/限流，不稳定**（同输入耗时 16.8s~36s 波动）。
+#
+# 修复思路：不去逐个补丁具体实现（新增一条调用路径就会漏），
+# 而是在**网络出口**兜底——把 `httpx` 指向未配置的主机，任何真实出网都会
+# 立刻 `ConnectError` 并走各 Agent 既有的降级分支（不再静默等待数十秒）。
+# 这样新增 LLM 栈/新增端点也不会再悄悄打真 API。
+#
+# 需要真实 LLM 的用例（如 tests/test_llm_rag_integration.py）请显式声明
+# `@pytest.mark.allow_real_llm` 放行。
+
+_DASHSCOPE_HOST_MARKERS = ("dashscope.aliyuncs.com", "aliyuncs.com")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_llm(request, monkeypatch):
+    """
+    自动夹具：默认阻断一切真实 LLM 出网（除非用例标记 allow_real_llm）。
+
+    不改变业务代码：仅在做网络调用时抛 ConnectError，让 Agent 走既有降级分支。
+    """
+    if request.node.get_closest_marker("allow_real_llm"):
+        yield
+        return
+
+    import httpx as _httpx
+
+    real_send = _httpx.AsyncClient.send
+
+    async def guarded_send(self, request, *args, **kwargs):
+        url = str(getattr(request, "url", ""))
+        if any(m in url for m in _DASHSCOPE_HOST_MARKERS):
+            raise _httpx.ConnectError(
+                "测试环境禁止真实 LLM 出网（conftest._no_real_llm）。"
+                "如需真实调用请加 @pytest.mark.allow_real_llm",
+                request=request,
+            )
+        return await real_send(self, request, *args, **kwargs)
+
+    monkeypatch.setattr(_httpx.AsyncClient, "send", guarded_send)
+
+    # 栈 A 走 LangChain `ChatOpenAI`，它有**自己的** httpx 客户端与传输层，
+    # 上面的 `AsyncClient.send` 拦不到（实测：`/listing/chat` 仍耗时 9.5s）。
+    # 这里直接把 BaseAgent 取 LLM 的入口换成离线桩，从源头断掉出网。
+    #
+    # ⚠️ 桩必须**照常上报 `usage_metadata` 并记入计量器**。原因：
+    # `/listing/chat` 这类端点的正文完全由本栈产出，真实 `ChatOpenAI` 会在
+    # `AIMessage.usage_metadata` 里带回 token 数，`_llm_call_node` 读到后
+    # 经 `record_llm_usage` 落到订阅表。若桩不报，`test_billing_metering` 的
+    # 「LLM token/成本落库」断言就会假失败（实测踩过）。
+    from langchain_core.messages import AIMessage
+
+    from ai_infra import base_agent as _ba
+
+    _STUB_TEXT = "[测试桩] LLM 已离线，本响应由桩生成。"
+
+    def _stub_message() -> AIMessage:
+        from core.billing.llm_meter import record_llm_usage
+
+        input_tokens, output_tokens, cost = 120, 80, 0.0036
+        record_llm_usage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost=cost,
+            model="qwen-max",
+        )
+        return AIMessage(
+            content=_STUB_TEXT,
+            usage_metadata={
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+            },
+        )
+
+    class _OfflineChat:
+        """离线桩：不打网络，回固定文本并上报用量。"""
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def ainvoke(self, messages, **kwargs):
+            return _stub_message()
+
+        async def astream(self, messages, **kwargs):
+            yield _stub_message()
+
+        def stream(self, messages, **kwargs):
+            yield _stub_message()
+
+        def invoke(self, messages, **kwargs):
+            return _stub_message()
+
+    monkeypatch.setattr(
+        _ba.BaseAgent, "_get_default_llm", lambda self: _OfflineChat(), raising=False
+    )
+    monkeypatch.setattr(
+        _ba.BaseAgent, "_llm_with_tools", lambda self: _OfflineChat(), raising=False
+    )
+
+    # 栈 B：`LLMEnabledAgent.llm_chat/llm_stream` → `DashScopeLLM.chat/chat_stream`。
+    # 这里补丁**最底层的客户端方法**（而不是上层 wrapper），好处：
+    #   1. `llm_chat` 的返回组装、`_update_stats` 的**计量上报**全都保持真实，
+    #      `test_billing_metering` 的「LLM token/成本落库」断言依然有效；
+    #   2. 新增调用路径只要最终落到 `DashScopeLLM` 就自动被拦住。
+    # 注意必须**同时**补丁 `chat_stream`——原 `fake_llm` 只补了 `chat`，
+    # 这是流式用例仍在打真 API 的原因之一。
+    from ai_infra.llm import dashscope_client as _dc
+
+    def _stub_response(self, *args, **kwargs):
+        return _dc.LLMResponse(
+            content="[测试桩] LLM 已离线，本响应由桩生成。",
+            model="qwen-max",
+            input_tokens=120,
+            output_tokens=80,
+            total_tokens=200,
+            cost=0.0036,
+            latency_ms=1,
+            finish_reason="stop",
+            raw_response={},
+        )
+
+    async def _stub_chat(self, messages, system_prompt=None, **kwargs):
+        resp = _stub_response(self, messages, system_prompt, **kwargs)
+        # 走真实统计/计量钩子，确保「LLM 消耗 → 计费」链路仍被覆盖
+        self._update_stats(resp)
+        return resp
+
+    async def _stub_chat_stream(self, messages, system_prompt=None, **kwargs):
+        for chunk in ("[测试桩] ", "LLM 已离线。"):
+            yield chunk
+        resp = _stub_response(self, messages, system_prompt, **kwargs)
+        self._update_stats(resp)
+
+    monkeypatch.setattr(_dc.DashScopeLLM, "chat", _stub_chat, raising=False)
+    monkeypatch.setattr(_dc.DashScopeLLM, "chat_stream", _stub_chat_stream, raising=False)
+
+    yield
 
 
 # ====== 鉴权开关 ======

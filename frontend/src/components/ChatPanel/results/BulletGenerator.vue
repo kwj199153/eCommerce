@@ -372,7 +372,7 @@ const handleSaveToProduct = async () => {
 <style scoped>
 .bullet-generator-result {
   background: var(--bg-elevated);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   overflow: hidden;
 }
 
@@ -380,49 +380,49 @@ const handleSaveToProduct = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  padding: var(--space-16) var(--space-20);
+  border-bottom: 1px solid var(--border-base);
+  background: linear-gradient(135deg, var(--accent-pink-2) 0%, var(--accent-pink) 100%);
   color: #fff;
 }
 
 .header-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-12);
 }
 
 .result-icon {
-  font-size: 28px;
+  font-size: var(--font-size-28);
 }
 
 .header-info h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-size-16);
   font-weight: 600;
 }
 
 .subtitle {
-  margin: 2px 0 0;
-  font-size: 12px;
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-12);
   opacity: 0.85;
 }
 
 /* 五点列表 */
 .bullets-container {
-  padding: 16px 20px;
+  padding: var(--space-16) var(--space-20);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-14);
   max-height: 500px;
   overflow-y: auto;
 }
 
 .bullet-card {
   background: var(--bg-base);
-  border-radius: 8px;
-  padding: 14px 16px;
-  border-left: 3px solid #f5576c;
+  border-radius: var(--radius-8);
+  padding: var(--space-14) var(--space-16);
+  border-left: 3px solid var(--accent-pink);
   transition: transform 0.2s, box-shadow 0.2s;
 }
 
@@ -434,8 +434,8 @@ const handleSaveToProduct = async () => {
 .bullet-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: var(--space-8);
+  margin-bottom: var(--space-8);
 }
 
 /* 顶部新增/还原工具条 */
@@ -448,46 +448,46 @@ const handleSaveToProduct = async () => {
 .bullet-edit-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
   flex: 1;
 }
 
 .bullet-header-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-2);
   flex-shrink: 0;
 }
 
 /* 卖点标题 / 正文可编辑 textarea */
 .bullet-title-editor {
   background: var(--bg-elevated);
-  border-radius: 4px;
-  border: 1px dashed #d9d9d9;
-  font-size: 14px;
+  border-radius: var(--radius-4);
+  border: 1px dashed var(--border-strong);
+  font-size: var(--font-size-14);
   font-weight: 600;
   color: var(--text-primary);
-  padding: 4px 8px;
-  margin-bottom: 6px;
+  padding: var(--space-4) var(--space-8);
+  margin-bottom: var(--space-6);
   line-height: 1.5;
 }
 .bullet-title-editor:focus-within {
-  border: 1px solid #f5576c;
-  box-shadow: 0 0 0 2px rgba(245, 87, 108, 0.1);
+  border: 1px solid var(--accent-pink);
+  box-shadow: 0 0 0 2px var(--accent-pink-soft);
 }
 
 .bullet-content-editor {
   background: var(--bg-elevated);
-  border-radius: 4px;
-  border: 1px dashed #d9d9d9;
-  font-size: 13px;
+  border-radius: var(--radius-4);
+  border: 1px dashed var(--border-strong);
+  font-size: var(--font-size-13);
   color: var(--text-secondary);
-  padding: 4px 8px;
+  padding: var(--space-4) var(--space-8);
   line-height: 1.6;
 }
 .bullet-content-editor:focus-within {
-  border: 1px solid #f5576c;
-  box-shadow: 0 0 0 2px rgba(245, 87, 108, 0.1);
+  border: 1px solid var(--accent-pink);
+  box-shadow: 0 0 0 2px var(--accent-pink-soft);
 }
 
 .bullet-number {
@@ -496,28 +496,28 @@ const handleSaveToProduct = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f5576c;
+  background: var(--accent-pink);
   color: #fff;
-  border-radius: 50%;
-  font-size: 12px;
+  border-radius: var(--radius-circle);
+  font-size: var(--font-size-12);
   font-weight: 700;
 }
 
 .bullet-category {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
   font-weight: 500;
 }
 
 .bullet-title {
-  font-size: 14px;
+  font-size: var(--font-size-14);
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-6);
 }
 
 .bullet-body {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-secondary);
   line-height: 1.65;
 }
@@ -525,82 +525,82 @@ const handleSaveToProduct = async () => {
 .bullet-footer {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-top: 10px;
-  font-size: 11px;
+  gap: var(--space-16);
+  margin-top: var(--space-10);
+  font-size: var(--font-size-11);
   color: var(--text-disabled);
 }
 
 /* 分析概览 */
 .analysis-overview {
-  padding: 16px 20px;
-  border-top: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-top: 1px solid var(--border-base);
   background: var(--bg-base);
 }
 
 .overview-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .overview-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .overview-item {
   text-align: center;
-  padding: 10px;
+  padding: var(--space-10);
   background: var(--bg-elevated);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
 }
 
 .item-label {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
 }
 
 .item-value {
-  font-size: 22px;
+  font-size: var(--font-size-22);
   font-weight: 700;
 }
 
-.item-value.primary { color: #f5576c; }
-.item-value.success { color: #52c41a; }
-.item-value.warning { color: #faad14; }
-.item-value.info { color: #1890ff; }
+.item-value.primary { color: var(--accent-pink); }
+.item-value.success { color: var(--success); }
+.item-value.warning { color: var(--warning); }
+.item-value.info { color: var(--primary); }
 
 .item-desc {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--text-disabled);
-  margin-top: 2px;
+  margin-top: var(--space-2);
 }
 
 /* 情感词云 */
 .emotion-stats {
-  padding: 16px 20px;
-  border-top: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-top: 1px solid var(--border-base);
 }
 
 .stats-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .emotion-cloud {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--space-12);
   align-items: center;
-  padding: 12px;
+  padding: var(--space-12);
   background: linear-gradient(135deg, #fef6f8 0%, #fff5f7 100%);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
 }
 
 .emotion-tag {
@@ -612,38 +612,38 @@ const handleSaveToProduct = async () => {
 
 /* A9 提示 */
 .a9-tips {
-  padding: 16px 20px;
-  border-top: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-top: 1px solid var(--border-base);
 }
 
 .tips-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
 }
 
 .tips-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 .tip-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  padding: 4px 0;
+  gap: var(--space-8);
+  font-size: var(--font-size-12);
+  padding: var(--space-4) 0;
 }
 
 .tip-icon {
-  font-size: 14px;
+  font-size: var(--font-size-14);
 }
 
-.tip-icon.pass { color: #52c41a; }
-.tip-icon.warn { color: #faad14; }
-.tip-icon.fail { color: #ff4d4f; }
+.tip-icon.pass { color: var(--success); }
+.tip-icon.warn { color: var(--warning); }
+.tip-icon.fail { color: var(--danger); }
 
 .tip-text { color: var(--text-secondary); }
 </style>

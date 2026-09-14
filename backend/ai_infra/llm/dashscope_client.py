@@ -310,7 +310,18 @@ class DashScopeLLM:
                         # 部分兼容端点把 usage 放在最后一个 chunk
                         if chunk.get("usage"):
                             stream_usage = chunk["usage"] or {}
-                        delta = chunk.get("choices", [{}])[0].get("delta", {})
+                        # ⚠️ 不能写 `chunk.get("choices", [{}])[0]`：
+                        # 开了 `stream_options.include_usage=True` 后，**最后一个 chunk
+                        # 的 `choices` 是空数组**（只带 usage）。`.get(key, default)` 的
+                        # 默认值只在 key **缺失**时生效，key 存在但值为 `[]` → `[][0]` 越界。
+                        # 实测后果：正文 8 个 chunk 已全部流给老板，最后解析 usage chunk 时
+                        # 抛 IndexError，被上层 `llm_stream` 的 except 接住 →
+                        # 在完整回答末尾甩一句 `[错误: list index out of range]`。
+                        # 实证抓包：`{"choices": [], "usage": {...}}`（8 chunk 中恰有 1 个）。
+                        choices = chunk.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta") or {}
                         content = delta.get("content", "")
                         if content:
                             full_content += content

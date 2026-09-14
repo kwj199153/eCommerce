@@ -15,6 +15,8 @@ import { useUserStore } from '@/stores/user'
 export interface SSEHandlers {
   /** 增量文本 */
   onDelta?: (text: string) => void
+  /** 阶段进度提示（长任务期间的状态文案，非正文） */
+  onProgress?: (text: string) => void
   /** 元信息（结构化结果 + 展示类型，可选） */
   onMeta?: (meta: { display_type?: string; data?: any }) => void
   /** 结束（携带完整文本） */
@@ -92,6 +94,10 @@ export async function streamSSE(
           fullText += text
           handlers.onDelta?.(text)
         }
+      } else if (eventType === 'progress') {
+        // 阶段进度：只更新状态文案，不计入正文
+        const text = typeof data === 'string' ? data : data?.text || ''
+        if (text) handlers.onProgress?.(text)
       } else if (eventType === 'meta') {
         handlers.onMeta?.(data)
       } else if (eventType === 'done') {

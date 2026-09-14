@@ -270,43 +270,43 @@ function clearAll() {
 /* 头部：产品 + （文案模式）4 按钮 */
 .lb-head {
   flex-shrink: 0;
-  padding: 10px 12px 8px;
+  padding: var(--space-10) var(--space-12) var(--space-8);
   border-bottom: 1px solid var(--border-base);
 }
 
 .lb-prod {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
   align-items: center;
 }
-.lb-prod-icon { font-size: 18px; }
+.lb-prod-icon { font-size: var(--font-size-18); }
 .lb-prod-main { min-width: 0; flex: 1; }
 .lb-prod-name {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.lb-prod-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
-.lb-prod-asin { font-family: monospace; font-size: 11px; color: var(--primary); margin-right: 6px; }
-.mini-tag { transform: scale(0.85); margin-left: 4px; }
+.lb-prod-sub { font-size: var(--font-size-11); color: var(--text-tertiary); margin-top: var(--space-2); }
+.lb-prod-asin { font-family: monospace; font-size: var(--font-size-11); color: var(--primary); margin-right: var(--space-6); }
+.mini-tag { transform: scale(0.85); margin-left: var(--space-4); }
 
 .lb-tabs {
   display: flex;
-  gap: 6px;
-  margin-top: 8px;
+  gap: var(--space-6);
+  margin-top: var(--space-8);
 }
 .lb-tab {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px 14px;
-  font-size: 12px;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-14);
+  font-size: var(--font-size-12);
   border: 1px solid var(--border-base);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -318,21 +318,21 @@ function clearAll() {
   border-color: var(--primary);
   color: #fff;
 }
-.lb-tab-icon { font-size: 12px; }
+.lb-tab-icon { font-size: var(--font-size-12); }
 .lb-dot {
   width: 5px;
   height: 5px;
-  border-radius: 50%;
-  background: #52c41a;
+  border-radius: var(--radius-circle);
+  background: var(--success);
 }
-.lb-tab.active .lb-dot { background: #fff; }
+.lb-tab.active .lb-dot { background: var(--bg-elevated); }
 
 /* 内容页容器 */
 .lb-pane {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px;
+  padding: var(--space-12);
 }
 .lb-pane-single {
   display: flex;
@@ -341,7 +341,7 @@ function clearAll() {
 .lb-pane-all {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-20);
   scroll-behavior: smooth;
 }
 
@@ -349,10 +349,10 @@ function clearAll() {
 .lb-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
+  gap: var(--space-10);
+  padding: var(--space-12);
   border: 1px solid var(--border-base);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   background: var(--bg-elevated);
   transition: box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;
 }
@@ -370,8 +370,8 @@ function clearAll() {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
   border-top: 1px solid var(--border-base);
 }
 </style>

@@ -18,8 +18,22 @@ import re
 from dataclasses import dataclass, asdict
 
 from core.logger import get_logger
+from ai_infra.sse import progress
 
 logger = get_logger(__name__)
+
+
+# 结构化意图 → 阶段进度文案（stream_chat 在耗时分析前发给前端，避免空转）
+_INTENT_PROGRESS = {
+    "monitor": "正在拉取竞品最新动态…",
+    "compare": "正在对比竞品数据…",
+    "track_batch": "正在批量追踪竞品…",
+    "market_share": "正在测算市场份额…",
+    "pricing": "正在分析竞品定价策略…",
+    "reviews": "正在分析竞品评论…",
+    "buy_box": "正在分析 Buy Box 归属…",
+    "intruder": "正在识别新进入者…",
+}
 
 
 @dataclass
@@ -317,7 +331,7 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
     async def _monitor_competitor(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力1：竞品 Listing 监控"""
-        asin = self._extract_asin(query) or context.get("asin") if context else None
+        asin = self._resolve_asin(query, context)
 
         if not asin:
             # 返回所有竞品的最新状态
@@ -380,7 +394,7 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
     async def _track_batch_asins(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力2：ASIN 批量追踪"""
-        asins = self._extract_multiple_asins(query) or (context.get("asins") if context else [])
+        asins = self._resolve_asins(query, context)
 
         if not asins:
             # 返回所有竞品的对比视图
@@ -463,7 +477,7 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
     async def _analyze_pricing_strategy(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力4：定价策略分析"""
-        asin = self._extract_asin(query) or (context.get("asin") if context else None)
+        asin = self._resolve_asin(query, context)
 
         target_asins = [asin] if asin else list(self._competitor_db.keys())
 
@@ -529,7 +543,7 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
     async def _analyze_competitor_reviews(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力5：竞品评论深度分析"""
-        asin = self._extract_asin(query) or (context.get("asin") if context else None)
+        asin = self._resolve_asin(query, context)
 
         target_asins = [asin] if asin else list(self._competitor_db.keys())[:3]
 
@@ -659,7 +673,7 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
     async def _analyze_buy_box(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力7：Buy Box 竞争分析"""
-        asin = self._extract_asin(query) or (context.get("asin") if context else None)
+        asin = self._resolve_asin(query, context)
 
         target_asins = [asin] if asin else list(self._competitor_db.keys())
 
@@ -689,7 +703,7 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
     async def _compare_competitors(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力8：多维度竞品对比"""
-        asins = self._extract_multiple_asins(query) or (context.get("asins") if context else [])
+        asins = self._resolve_asins(query, context)
 
         if not asins:
             asins = list(self._competitor_db.keys())[:4]
@@ -754,15 +768,17 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         """
         流式对话（逐 token 返回 LLM 文本）。
 
-        对话/通用意图走 LLM 流式；结构化意图（监控/对比/份额等）退化为一次性文本。
+        对话/通用意图走 LLM 流式；结构化意图（监控/对比/份额等）退化为一次性文本，
+        但开跑前先发阶段进度，避免长任务期间「AI 正在思考…」空转。
 
         Yields:
-            文本片段（供 ai_infra.sse.sse_event_stream 包装成 SSE）
+            文本片段 / progress 事件（供 ai_infra.sse.sse_event_stream 包装成 SSE）
         """
         intent = self._classify_intent(query)
 
         # 结构化意图：走 analyze 一次性返回（含结构化数据）
         if intent != "general":
+            yield progress(_INTENT_PROGRESS.get(intent, "正在分析竞品数据…"))
             result = await self.analyze(query)
             # 提取可读文本（message 或摘要字段）
             text = result.get("message") or result.get("summary") or result.get("analysis", "")
@@ -808,6 +824,28 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         asins = re.findall(r'\b([A-Z0-9]{10})\b', text.upper())
         # 过滤掉明显不是 ASIN 的（如纯数字）
         return [a for a in asins if not a.isdigit() and a in self._competitor_db]
+
+    def _resolve_asin(self, query: str, context: Optional[Dict] = None) -> Optional[str]:
+        """
+        解析单个 ASIN：query 优先，其次 context，统一大写。
+
+        为什么需要它（2026-09-12 修复两个 bug）：
+        1. 各能力原先内联写 `self._extract_asin(query) or (context.get("asin")
+           if context else None)`，`_monitor_competitor` 漏了括号 → 被解析成
+           `(extract or context) if context else None`，context=None 时整条短路成
+           None，**已提取到的 ASIN 被丢弃** → `/analyze` 的「监控 B08ABC1234」
+           实际返回全量仪表盘，路由文档承诺的单品监控失效。
+        2. 竞品库以**大写** ASIN 为键，`_extract_asin` 提取时 `.upper()`，但 context
+           传入的值原样使用，而 `GET /reviews/{asin}` 又主动 `.upper()` —— 同一个
+           ASIN 小写走 POST 是「未找到竞品 ASIN」，走 GET 却正常。这里统一归一。
+        """
+        raw = self._extract_asin(query) or (context.get("asin") if context else None)
+        return raw.upper() if isinstance(raw, str) and raw else None
+
+    def _resolve_asins(self, query: str, context: Optional[Dict] = None) -> List[str]:
+        """解析多个 ASIN（query 优先，其次 context），统一大写"""
+        raw = self._extract_multiple_asins(query) or (context.get("asins") if context else None) or []
+        return [a.upper() for a in raw if isinstance(a, str) and a]
 
     def _extract_category(self, text: str) -> Optional[str]:
         """提取类目"""

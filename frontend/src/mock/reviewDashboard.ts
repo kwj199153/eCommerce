@@ -126,12 +126,12 @@ export const PROFIT_DETAIL = [
 ]
 // 成本结构（近 30 天全店占比）
 export const COST_STRUCTURE = [
-  { name: '采购成本',   value: 68890, color: '#5b8ff9' },
-  { name: '平台佣金',   value: 34376, color: '#5ad8a6' },
-  { name: 'FBA 费用',   value: 14308, color: '#f6bd16' },
-  { name: '广告花费',   value: 35336, color: '#e8684a' },
-  { name: '仓储/退货',  value: 9420,  color: '#9270ca' },
-  { name: '净利润',     value: 49290, color: '#269a99' },
+  { name: '采购成本',   value: 68890, color: 'var(--chart-1)' },
+  { name: '平台佣金',   value: 34376, color: 'var(--chart-2)' },
+  { name: 'FBA 费用',   value: 14308, color: 'var(--chart-3)' },
+  { name: '广告花费',   value: 35336, color: 'var(--chart-4)' },
+  { name: '仓储/退货',  value: 9420,  color: 'var(--chart-5)' },
+  { name: '净利润',     value: 49290, color: 'var(--chart-6)' },
 ]
 export const TOTAL_MONTH_REV = 231171
 export const NET_MONTH = 49290
@@ -144,9 +144,9 @@ export const AD_OVERALL = {
 
 // 流量占比（自然 / 广告 / 关联）
 export const TRAFFIC_MIX = [
-  { name: '自然流量', value: 58.2, color: '#5b8ff9', valueText: '58.2%' },
-  { name: '广告流量', value: 31.4, color: '#f6bd16', valueText: '31.4%' },
-  { name: '关联/其它', value: 10.4, color: '#5ad8a6', valueText: '10.4%' },
+  { name: '自然流量', value: 58.2, color: 'var(--chart-1)', valueText: '58.2%' },
+  { name: '广告流量', value: 31.4, color: 'var(--chart-3)', valueText: '31.4%' },
+  { name: '关联/其它', value: 10.4, color: 'var(--chart-2)', valueText: '10.4%' },
 ]
 
 export default {

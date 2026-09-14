@@ -5,6 +5,68 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>跨境电商AI SaaS</title>
+    <!--
+      首屏防白闪：早于任何 JS bundle 与样式表执行。
+      本脚本里有 4 组字面量是「复制点」（无 TS 类型可依赖），全部由
+      `scripts/check_theme_boot.py` 机检，改任何一处都必须同步改本文件：
+        · 键名 'theme_mode'            == stores/theme.ts 的 STORAGE_KEY
+        · 值 'system'                  == presets.ts 的 SYSTEM_MODE
+        · THEMES 列表                  == presets.ts 的 ThemeName（**加主题必须加进来**，
+                                          漏了的表现是「选马卡龙后冷启动闪一下浅色」）
+        · DARK_THEMES 列表             == presets.ts 里 `isDark: true` 的预设名
+        · 无值 / 不认识的值 → 'light'  == DEFAULT_THEME
+    -->
+    <script>
+      (function () {
+        // ⚠️ 这两个数组是「认识的主题」白名单 —— 加主题时必须同步（见上方注释）
+        var THEMES = ['light', 'dark', 'macaron']
+        var DARK_THEMES = ['dark']
+        var t = 'light'
+        try {
+          var m = window.localStorage.getItem('theme_mode')
+          if (m === 'system') {
+            // 跟随系统：此刻就能解析（matchMedia 不需要等 JS 框架）
+            t =
+              window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light'
+          } else if (THEMES.indexOf(m) >= 0) {
+            // 白名单命中：直接用（而不是「非 dark 一律 light」—— 后者会让
+            // 马卡龙这类新浅色主题在首帧退回 light 的兜底色）
+            t = m
+          }
+        } catch (e) {
+          /* 隐私模式 / 无 localStorage：退回 light */
+        }
+        var el = document.documentElement
+        el.setAttribute('data-theme', t)
+        // 深色族才挂 dark 类（补丁层按它匹配）；isDark 由 presets.ts 声明
+        if (DARK_THEMES.indexOf(t) >= 0) el.classList.add('dark')
+      })()
+    </script>
+    <!--
+      首帧兜底色：在 JS 注入的完整变量表（presets.ts 的 resolveVars）到达前用。
+      只兜「底色 + 文字色」两处，与 App.vue :root 的浅色兜底对称。
+      ⚠️ 下面每个主题的两个值必须与 presets.ts 同名键逐字一致（自检：check_theme_boot.py）。
+         需要兜底块的是「底色与 App.vue :root 兜底不同」的主题：dark、macaron；
+         light 与 :root 同值，故只给 color-scheme。
+      color-scheme 让浏览器原生控件（滚动条 / 表单）首帧就是深色，否则仍会闪白。
+    -->
+    <style>
+      html[data-theme='dark'] {
+        --bg-base: #141414;
+        --text-primary: rgba(255, 255, 255, 0.92);
+        color-scheme: dark;
+      }
+      html[data-theme='macaron'] {
+        --bg-base: #fdf6f8;
+        --text-primary: #4a3b42;
+        color-scheme: light;
+      }
+      html[data-theme='light'] {
+        color-scheme: light;
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>

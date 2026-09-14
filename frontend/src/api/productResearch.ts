@@ -6,12 +6,21 @@ import request from './request'
 
 /**
  * 蓝海品类分析
+ *
+ * 请求体按后端 `BlueOceanRequest` 的字段名（snake_case）组织；
+ * 前端表单是 camelCase，调用方负责映射。
  */
 export function analyzeBlueOcean(data: {
-  category: string
-  keywords?: string[]
-  minSearchVolume?: number
-  maxCompetition?: number
+  marketplace?: string
+  category?: string[]
+  price_min?: number | null
+  price_max?: number | null
+  max_reviews?: number
+  min_monthly_sales?: number
+  min_roi?: number
+  exclude_seasonal?: boolean
+  exclude_brand_dominant?: boolean
+  exclude_high_risk?: boolean
 }) {
   return request.post('/product-research/blue-ocean', data)
 }
@@ -57,7 +66,10 @@ export function compareCompetitors(data: {
  */
 export function chatWithProductResearcher(data: {
   message: string
-  contextId?: string
+  // ⚠️ 必须与后端 ChatRequest 的字段同名（snake_case `context_id`）。
+  // 早前写的是 `contextId`，body 直接透传 → Pydantic 收不到 → 会话 ID 永远是 None，
+  // 「按会话隔离的待补槽位 / 上一轮蓝海结果」全部退化成全局共享。
+  context_id?: string
   stream?: boolean
 }): Promise<any> {
   return request.post('/product-research/chat', data)

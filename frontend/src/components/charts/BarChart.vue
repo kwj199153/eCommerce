@@ -143,14 +143,14 @@ function barY(v: number): number {
 <style scoped>
 /* 填满父级给定空间（父级未给高度时退化为 130px 兜底，绝不撑大布局） */
 .bc-wrap { width: 100%; height: 100%; min-height: 130px; display: flex; flex-direction: column; }
-.bc-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 6px; flex-shrink: 0; }
-.bc-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary); }
-.bc-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.bc-legend { display: flex; flex-wrap: wrap; gap: var(--space-12); margin-bottom: var(--space-6); flex-shrink: 0; }
+.bc-legend-item { display: inline-flex; align-items: center; gap: var(--space-5); font-size: var(--font-size-11); color: var(--text-secondary); }
+.bc-dot { width: 8px; height: 8px; border-radius: var(--radius-2); display: inline-block; }
 .bc-plot { position: relative; flex: 1; min-height: 0; }
 .bc-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .bc-grid { stroke: var(--border-base); stroke-width: 1; stroke-dasharray: 3 4; }
-.bc-y-label { font-size: 9px; fill: var(--text-tertiary); text-anchor: end; }
-.bc-x-label { font-size: 9px; fill: var(--text-tertiary); text-anchor: middle; }
+.bc-y-label { font-size: var(--font-size-9); fill: var(--text-tertiary); text-anchor: end; }
+.bc-x-label { font-size: var(--font-size-9); fill: var(--text-tertiary); text-anchor: middle; }
 .bc-bar { transition: opacity 0.15s; }
 .bc-bar:hover { opacity: 0.85; }
 </style>

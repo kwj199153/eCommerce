@@ -80,6 +80,7 @@
 </template>
 
 <script setup lang="ts">
+import { bandColor } from '@/theme/bands'
 defineProps<{
   data: any
 }>()
@@ -98,15 +99,17 @@ const campaignColumns = [
   { title: '健康分', dataIndex: 'health_score', width: 60, align: 'center',
     customRender: ({ text }: { text: any }) => {
       const score = Number(text)
-      const color = score >= 80 ? '#52c41a' : score >= 60 ? '#faad14' : '#ff4d4f'
+      // 红界 50 对齐后端 agent_ad.py:902 的 health_score < 50 告警阈值
+      const color = bandColor('campaignHealth', score)
       return `<span style="color:${color};font-weight:600">${score}</span>`
     }
   },
 ]
 
-// 计算属性需要用 computed，这里简化为方法调用
-const campaignTableData = (props: any) => props.data?.campaigns || []
-
+// ⚠️ 此处曾遗留 `const campaignTableData = (props) => props.data?.campaigns || []`，
+//    它在 <script setup> 里遮蔽了下方 Options API 的同名 computed，
+//    导致 <a-table :dataSource> 收到**函数**而非数组 → 渲染期 TypeError。
+//    已删除，统一由下方 computed 提供数据。
 const priorityColor = (p: string) => {
   return p === 'high' ? 'red' : p === 'medium' ? 'orange' : 'blue'
 }
@@ -123,76 +126,76 @@ export default {
 </script>
 
 <style scoped>
-.ad-diagnosis-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
+.ad-diagnosis-result { padding: var(--space-16); background: var(--bg-elevated); border-radius: var(--radius-8); }
 
 /* 评分头部 */
 .score-header {
-  display: flex; align-items: center; gap: 20px;
-  padding: 20px; border-radius: 12px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: var(--space-20);
+  padding: var(--space-20); border-radius: var(--radius-12); margin-bottom: var(--space-16);
 }
-.score-header.grade-A { background: linear-gradient(135deg, #f6ffed, #d9f7be); border: 1px solid #b7eb8f; }
-.score-header.grade-B { background: linear-gradient(135deg, #e6f7ff, #bae7ff); border: 1px solid #91d5ff; }
-.score-header.grade-C { background: linear-gradient(135deg, #fffbe6, #ffe58f); border: 1px solid #ffd591; }
-.score-header.grade-D, .score-header.grade-F { background: linear-gradient(135deg, #fff2f0, #ffccc7); border: 1px solid #ffa39e; }
+.score-header.grade-A { background: linear-gradient(135deg, var(--success-bg), var(--success-bg-2)); border: 1px solid var(--success-border); }
+.score-header.grade-B { background: linear-gradient(135deg, #e6f7ff, #bae7ff); border: 1px solid var(--info-border); }
+.score-header.grade-C { background: linear-gradient(135deg, var(--warning-bg), var(--warning-border)); border: 1px solid var(--orange-border); }
+.score-header.grade-D, .score-header.grade-F { background: linear-gradient(135deg, var(--danger-bg), var(--danger-border)); border: 1px solid var(--danger-border-strong); }
 
 .score-circle {
-  width: 80px; height: 80px; border-radius: 50%;
+  width: 80px; height: 80px; border-radius: var(--radius-circle);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   background: var(--bg-elevated); box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
-.score-value { font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1; }
-.grade-label { font-size: 18px; font-weight: 800; margin-top: 2px; }
-.grade-A .grade-label { color: #52c41a; }
-.grade-B .grade-label { color: #1890ff; }
-.grade-C .grade-label { color: #faad14; }
-.grade-D .grade-label, .grade-F .grade-label { color: #ff4d4f; }
+.score-value { font-size: var(--font-size-28); font-weight: 700; color: var(--text-primary); line-height: 1; }
+.grade-label { font-size: var(--font-size-18); font-weight: 800; margin-top: var(--space-2); }
+.grade-A .grade-label { color: var(--success); }
+.grade-B .grade-label { color: var(--primary); }
+.grade-C .grade-label { color: var(--warning); }
+.grade-D .grade-label, .grade-F .grade-label { color: var(--danger); }
 
-.score-info h3 { margin: 0 0 6px; font-size: 16px; color: var(--text-primary); }
-.score-info .summary { margin: 0; font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.score-info h3 { margin: 0 0 var(--space-6); font-size: var(--font-size-16); color: var(--text-primary); }
+.score-info .summary { margin: 0; font-size: var(--font-size-13); color: var(--text-secondary); line-height: 1.5; }
 
 /* 指标卡片 */
-.metrics-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
+.metrics-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-10); margin-bottom: var(--space-16); }
 .metric-card {
-  padding: 12px 8px; border-radius: 8px; text-align: center;
-  border: 1px solid #f0f0f0; transition: all 0.2s;
+  padding: var(--space-12) var(--space-8); border-radius: var(--radius-8); text-align: center;
+  border: 1px solid var(--border-base); transition: all 0.2s;
 }
-.metric-card.status-good { border-color: #b7eb8f; background: var(--bg-base); }
-.metric-card.status-warning { border-color: #ffd591; background: var(--bg-elevated)beb; }
-.metric-card.status-critical { border-color: #ffa39e; background: var(--bg-elevated)1f0; }
+.metric-card.status-good { border-color: var(--success-border); background: var(--bg-base); }
+.metric-card.status-warning { border-color: var(--orange-border); background: var(--warning-bg); }
+.metric-card.status-critical { border-color: var(--danger-border-strong); background: var(--danger-bg); }
 
-.metric-name { display: block; font-size: 11.5px; color: var(--text-tertiary); margin-bottom: 4px; }
-.metric-value { display: block; font-size: 17px; font-weight: 700; color: var(--text-primary); }
-.benchmark { display: block; font-size: 10px; color: var(--text-disabled); margin-top: 2px; }
-.change { display: inline-block; font-size: 10px; margin-top: 3px; padding: 1px 6px; border-radius: 8px; }
-.change.up { background: #f6ffed; color: #52c41a; }
-.change.down { background: var(--bg-elevated)1f0; color: #ff4d4f; }
+.metric-name { display: block; font-size: var(--font-size-11-5); color: var(--text-tertiary); margin-bottom: var(--space-4); }
+.metric-value { display: block; font-size: var(--font-size-17); font-weight: 700; color: var(--text-primary); }
+.benchmark { display: block; font-size: var(--font-size-10); color: var(--text-disabled); margin-top: var(--space-2); }
+.change { display: inline-block; font-size: var(--font-size-10); margin-top: var(--space-3); padding: var(--space-1) var(--space-6); border-radius: var(--radius-8); }
+.change.up { background: var(--success-bg); color: var(--success); }
+.change.down { background: var(--danger-bg); color: var(--danger); }
 
 /* 区块 */
-.section-block { margin-bottom: 16px; }
-.section-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #f0f0f0; }
+.section-block { margin-bottom: var(--space-16); }
+.section-title { font-size: var(--font-size-14); font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-10); padding-bottom: var(--space-6); border-bottom: 1px solid var(--border-base); }
 
 /* 问题列表 */
-.issue-list { display: flex; flex-direction: column; gap: 8px; }
+.issue-list { display: flex; flex-direction: column; gap: var(--space-8); }
 .issue-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; border-radius: 8px; border: 1px solid #f0f0f0;
+  display: flex; align-items: center; gap: var(--space-10);
+  padding: var(--space-10) var(--space-12); border-radius: var(--radius-8); border: 1px solid var(--border-base);
 }
-.issue-item.priority-high { background: var(--bg-elevated)1f0; border-color: #ffa39e; }
-.issue-item.priority-medium { background: var(--bg-elevated)be6; border-color: #ffe58f; }
-.issue-item.priority-low { background: #f6ffed; border-color: #b7eb8f; }
+.issue-item.priority-high { background: var(--danger-bg); border-color: var(--danger-border-strong); }
+.issue-item.priority-medium { background: var(--warning-bg); border-color: var(--warning-border); }
+.issue-item.priority-low { background: var(--success-bg); border-color: var(--success-border); }
 
 .issue-rank {
-  width: 22px; height: 22px; border-radius: 50%;
+  width: 22px; height: 22px; border-radius: var(--radius-circle);
   display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 600; background: var(--bg-hover-light); color: var(--text-secondary); flex-shrink: 0;
+  font-size: var(--font-size-11); font-weight: 600; background: var(--bg-hover-light); color: var(--text-secondary); flex-shrink: 0;
 }
 .issue-content { flex: 1; min-width: 0; }
-.issue-title { display: block; font-size: 13px; font-weight: 500; color: var(--text-primary); }
-.issue-desc { display: block; font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.issue-title { display: block; font-size: var(--font-size-13); font-weight: 500; color: var(--text-primary); }
+.issue-desc { display: block; font-size: var(--font-size-11-5); color: var(--text-tertiary); margin-top: var(--space-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* 建议列表 */
-.rec-list { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.9; color: var(--text-secondary); }
+.rec-list { margin: 0; padding-left: var(--space-20); font-size: var(--font-size-13); line-height: 1.9; color: var(--text-secondary); }
 .rec-list li::marker { content: '✅ '; }
 
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); }
 </style>

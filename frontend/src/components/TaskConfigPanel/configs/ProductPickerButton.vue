@@ -13,7 +13,7 @@
           placeholder="搜索商品名称或 ASIN..."
           size="small"
           allow-clear
-          style="margin-bottom: 8px"
+          style="margin-bottom: var(--space-8)"
         >
           <template #prefix><SearchOutlined style="color: #bfbfbf" /></template>
         </a-input>
@@ -67,7 +67,7 @@
               </div>
               <div class="item-meta">
                 <span class="item-asin">{{ p.asin }}</span>
-                <CheckCircleFilled v-if="isSelected(p)" class="item-check" style="color: #1890ff; font-size: 12px" />
+                <CheckCircleFilled v-if="isSelected(p)" class="item-check" style="color: var(--primary); font-size: 12px" />
               </div>
             </div>
           </template>
@@ -107,7 +107,7 @@
                 </div>
                 <div class="item-meta">
                   <span class="item-asin">{{ p.asin }}</span>
-                  <CheckCircleFilled v-if="isSelected(p)" class="item-check" style="color: #1890ff; font-size: 12px" />
+                  <CheckCircleFilled v-if="isSelected(p)" class="item-check" style="color: var(--primary); font-size: 12px" />
                 </div>
               </div>
             </div>
@@ -142,7 +142,7 @@
                 </div>
                 <div class="item-meta">
                   <span class="item-asin">{{ p.asin }}</span>
-                  <CheckCircleFilled v-if="isSelected(p)" class="item-check" style="color: #1890ff; font-size: 12px" />
+                  <CheckCircleFilled v-if="isSelected(p)" class="item-check" style="color: var(--primary); font-size: 12px" />
                 </div>
               </div>
             </div>
@@ -248,25 +248,25 @@ function onImgError(e: Event) {
 .picker-btn {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  color: #8c8c8c;
+  gap: var(--space-2);
+  color: var(--text-tertiary);
   flex-shrink: 0;
-  padding: 2px 4px !important;
-  border-radius: 4px;
+  padding: var(--space-2) var(--space-4) !important;
+  border-radius: var(--radius-4);
   transition: all 0.2s;
 }
 
 .picker-btn:hover {
-  color: #1890ff;
-  background: #e6f7ff;
+  color: var(--primary);
+  background: var(--info-bg);
 }
 
 .picker-btn.has-value {
-  color: #1890ff;
+  color: var(--primary);
 }
 
 .btn-label {
-  font-size: 11px;
+  font-size: var(--font-size-11);
 }
 
 .product-picker {
@@ -279,38 +279,38 @@ function onImgError(e: Event) {
 }
 
 .product-item {
-  padding: 8px 6px;
-  border-radius: 6px;
+  padding: var(--space-8) var(--space-6);
+  border-radius: var(--radius-6);
   cursor: pointer;
   transition: background 0.15s;
   border: 1px solid transparent;
 }
 
 .product-item:hover {
-  background: #f5f5f5;
+  background: var(--bg-hover-light);
 }
 
 .product-item.selected {
-  background: #e6f7ff;
-  border-color: #91d5ff;
+  background: var(--info-bg);
+  border-color: var(--info-border);
 }
 
 .item-main {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 2px;
+  gap: var(--space-8);
+  margin-bottom: var(--space-2);
 }
 
 .item-thumb {
   width: 36px;
   height: 36px;
   object-fit: cover;
-  border-radius: 4px;
-  border: 1px solid #f0f0f0;
+  border-radius: var(--radius-4);
+  border: 1px solid var(--border-base);
   flex-shrink: 0;
-  background: #fafafa;
+  background: var(--bg-sidebar);
 }
 
 .item-thumb-ph {
@@ -320,10 +320,10 @@ function onImgError(e: Event) {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  border-radius: 4px;
-  background: #fafafa;
-  border: 1px solid #f0f0f0;
+  font-size: var(--font-size-16);
+  border-radius: var(--radius-4);
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-base);
 }
 
 .item-thumb-large {
@@ -331,12 +331,12 @@ function onImgError(e: Event) {
   width: 240px;
   height: 240px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
 }
 
 .item-title {
-  font-size: 12px;
-  color: #262626;
+  font-size: var(--font-size-12);
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -344,9 +344,9 @@ function onImgError(e: Event) {
 }
 
 .item-price {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   font-weight: 600;
-  color: #1890ff;
+  color: var(--primary);
   flex-shrink: 0;
 }
 
@@ -357,64 +357,64 @@ function onImgError(e: Event) {
 }
 
 .item-asin {
-  font-size: 10px;
-  color: #8c8c8c;
+  font-size: var(--font-size-10);
+  color: var(--text-tertiary);
   font-family: 'SF Mono', Monaco, monospace;
 }
 
 .empty-hint {
   text-align: center;
-  padding: 20px 0;
-  color: #bfbfbf;
-  font-size: 12px;
+  padding: var(--space-20) 0;
+  color: var(--text-disabled);
+  font-size: var(--font-size-12);
 }
 
 /* 分组过滤 chips */
 .group-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed #f0f0f0;
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+  padding-bottom: var(--space-8);
+  border-bottom: 1px dashed var(--border-base);
 }
 
 .group-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  font-size: 11px;
-  color: #595959;
-  background: #fafafa;
-  border: 1px solid #f0f0f0;
-  border-radius: 10px;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-8);
+  font-size: var(--font-size-11);
+  color: var(--text-secondary);
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-10);
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
 }
 
 .group-chip:hover {
-  border-color: #d9d9d9;
-  color: #262626;
+  border-color: var(--border-strong);
+  color: var(--text-primary);
 }
 
 .group-chip.active {
-  color: #1890ff;
-  background: #e6f7ff;
-  border-color: #91d5ff;
+  color: var(--primary);
+  background: var(--info-bg);
+  border-color: var(--info-border);
 }
 
 .group-color-dot {
   display: inline-block;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   flex-shrink: 0;
 }
 
 .group-section {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
 }
 
 .group-section:last-child {
@@ -424,14 +424,14 @@ function onImgError(e: Event) {
 .group-section-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  font-size: 11px;
-  color: #595959;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--font-size-11);
+  color: var(--text-secondary);
   font-weight: 600;
-  background: #fafafa;
-  border-radius: 4px;
-  margin-bottom: 4px;
+  background: var(--bg-sidebar);
+  border-radius: var(--radius-4);
+  margin-bottom: var(--space-4);
 }
 
 .group-section-name {
@@ -439,8 +439,8 @@ function onImgError(e: Event) {
 }
 
 .group-section-count {
-  font-size: 10px;
-  color: #8c8c8c;
+  font-size: var(--font-size-10);
+  color: var(--text-tertiary);
   font-weight: normal;
 }
 </style>

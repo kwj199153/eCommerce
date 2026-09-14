@@ -353,13 +353,13 @@ const handleReset = () => {
 .keyword-miner-config { display: flex; flex-direction: column; height: 100%; }
 
 .keyword-miner-config :deep(.ant-collapse) { flex: 1; overflow-y: auto; }
-.config-actions { padding: 16px 0 0; border-top: 1px solid #f0f0f0; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+.config-actions { padding: var(--space-16) 0 0; border-top: 1px solid var(--border-base); display: flex; flex-direction: column; gap: var(--space-8); flex-shrink: 0; }
 
 /* 输入框 + 产品库按钮 */
 .input-with-picker {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
+  gap: var(--space-4);
 }
 .input-with-picker .ant-input,
 .input-with-picker .ant-input-textarea {
@@ -368,57 +368,57 @@ const handleReset = () => {
 
 /* 已选产品预览 */
 .seed-preview {
-  margin-top: 8px;
+  margin-top: var(--space-8);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
   flex-wrap: wrap;
 }
 .text-hint {
-  font-size: 12px;
-  color: #8c8c8c;
+  font-size: var(--font-size-12);
+  color: var(--text-tertiary);
 }
 
 /* 卡片式关键词类型选择 */
 .keyword-type-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
+  gap: var(--space-8);
 }
 .kw-type-card {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 1px solid #d9d9d9;
-  border-radius: 6px;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-10);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-6);
   cursor: pointer;
   transition: all 0.2s ease;
-  background: #fff;
+  background: var(--bg-elevated);
   user-select: none;
 }
 .kw-type-card:hover {
-  border-color: #1677ff;
+  border-color: var(--primary);
   background: #f0f7ff;
 }
 .kw-type-card.active {
-  border-color: #1677ff;
+  border-color: var(--primary);
   background: #e6f4ff;
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
 }
 .kw-icon {
-  font-size: 16px;
+  font-size: var(--font-size-16);
   flex-shrink: 0;
 }
 .kw-label {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
-  color: #262626;
+  color: var(--text-primary);
   white-space: nowrap;
 }
 .kw-desc {
-  font-size: 11px;
-  color: #8c8c8c;
+  font-size: var(--font-size-11);
+  color: var(--text-tertiary);
   white-space: nowrap;
 }
 </style>

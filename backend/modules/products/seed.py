@@ -1,15 +1,25 @@
 """
 产品库种子数据
 
-首次启动（products 表为空）时，把前端 MOCK_PRODUCTS 的 6 条产品预置到 PG，
+首次启动（spus 表为空）时，把前端 MOCK_PRODUCTS 的 6 条产品预置到 PG，
 确保演示时产品库打开即有真实数据。
 
 数据来源：frontend/src/stores/productLibrary.ts 的 MOCK_PRODUCTS。
+
+**shop_id 不硬编码**：早期版本把 `shop_id` 写成 `"shop-1"`，而真实租户 id 是
+`X-Shop-ID` 头传进来的 `store_xxxxxxxx`（store_ 前缀 + 8 位 hex）——两者格式
+对不上，列表端点按 shop_id 过滤后**一条都查不到**，等于「灌了但没灌」。
+现改为启动时先查 `stores_store` 取真实店铺 id，再为每个店铺各灌一份；
+库里没有店铺则直接跳过（没有租户上下文，灌了也看不到）。
+
+注意 spus / skus 都是 **id 单主键**（无 `(shop_id, asin)` 唯一约束），
+多店铺灌入必须给 id 追加店铺后缀，否则第二个店铺会主键冲突。
 """
 
 from sqlalchemy import select, func
 from core.database import async_session_factory
 from modules.products.db_model import SpuRecord, SkuRecord
+from modules.stores.db_model import StoreRecord
 
 SEED_PRODUCTS = [
     {
@@ -41,7 +51,6 @@ SEED_PRODUCTS = [
         "daily_sales_avg": 0,
         "roi": 0,
         "margin": 26,
-        "shop_id": "shop-1",
         "tags": ["蓝海", "新品"],
         "notes": "从蓝海挖掘保存的草稿，待 Listing 优化",
         "status": "draft",
@@ -98,7 +107,6 @@ SEED_PRODUCTS = [
         "daily_sales_avg": 45,
         "roi": 170,
         "margin": 63,
-        "shop_id": "shop-1",
         "tags": ["热销", "新品", "Prime"],
         "notes": "Q4 主推款，已开广告",
         "status": "active",
@@ -155,7 +163,6 @@ SEED_PRODUCTS = [
         "daily_sales_avg": 28,
         "roi": 206,
         "margin": 67,
-        "shop_id": "shop-1",
         "tags": ["热销", "礼品"],
         "notes": "冬季主推，库存充足",
         "status": "active",
@@ -212,7 +219,6 @@ SEED_PRODUCTS = [
         "daily_sales_avg": 62,
         "roi": 204,
         "margin": 67,
-        "shop_id": "shop-1",
         "tags": ["爆款", "Prime", "广告中"],
         "notes": "ACoS 控制在 18%，ROI 表现优秀",
         "status": "active",
@@ -265,7 +271,6 @@ SEED_PRODUCTS = [
         "daily_sales_avg": 18,
         "roi": 263,
         "margin": 72,
-        "shop_id": "shop-1",
         "tags": ["新品", "轻量"],
         "notes": "新上架两周，正在积累评论",
         "status": "active",
@@ -324,7 +329,6 @@ SEED_PRODUCTS = [
         "daily_sales_avg": 85,
         "roi": 280,
         "margin": 74,
-        "shop_id": "shop-1",
         "tags": ["爆款", "高周转"],
         "notes": "变体齐全，S码断货补货中",
         "status": "active",
@@ -352,59 +356,108 @@ SEED_PRODUCTS = [
 
 
 async def seed_products_if_empty() -> int:
-    """首次启动时，若 spus 表为空，预置种子数据（SPU + SKU 分表）。返回预置 SPU 条数。"""
+    """
+    首次启动时，若 spus 表为空，**为每个已存在的店铺**预置种子数据（SPU + SKU 分表）。
+
+    Returns:
+        实际写入的 SPU 条数（表非空、或无店铺可归属时返回 0）。
+    """
     async with async_session_factory() as session:
         count = (await session.execute(select(func.count()).select_from(SpuRecord))).scalar_one()
         if count > 0:
             return 0
-        for data in SEED_PRODUCTS:
-            spu_id = data["id"]
-            spu = SpuRecord(
-                id=spu_id,
-                title=data["title"],
-                brand=data["brand"],
-                category=data["category"],
-                sub_category=data["sub_category"],
-                spu_theme=data.get("variation_theme"),
-                keywords=data.get("keywords"),
-                selling_points=data.get("selling_points"),
-                description=data.get("description"),
-                main_image=data["main_image"],
-                images=data["images"],
-                spu_common={
-                    "brand": data["brand"],
-                    "category": data["category"],
-                    "keywords": data.get("keywords") or [],
-                    "selling_points": data.get("selling_points") or "",
-                    "bullets": data.get("generated_bullets") or [],
-                    "a_plus": None,
-                },
-                shop_id=data["shop_id"],
-                tags=data["tags"],
-                notes=data["notes"],
-                status=data["status"],
-                groups=data["groups"],
-                created_at=data["created_at"],
-                updated_at=data["created_at"],
-            )
-            session.add(spu)
 
-            # 有变体清单则拆成对应 SKU；否则生成一条无规格的默认 SKU
-            variations = data.get("variations") or []
-            if variations:
-                for i, v in enumerate(variations):
-                    spec = v.get("color") or v.get("size") or ""
+        # 取真实店铺 id；一个都没有则跳过（无租户上下文，灌了也查不到）
+        shop_ids = (await session.execute(select(StoreRecord.id))).scalars().all()
+        if not shop_ids:
+            return 0
+
+        total = 0
+        for shop_id in shop_ids:
+            for data in SEED_PRODUCTS:
+                # spus / skus 都是 id 单主键（无 (shop_id, asin) 唯一约束），
+                # 多店铺灌入必须给 id 追加店铺后缀，否则第二个店铺会主键冲突。
+                spu_id = f"{data['id']}-{shop_id}"
+                spu = SpuRecord(
+                    id=spu_id,
+                    title=data["title"],
+                    brand=data["brand"],
+                    category=data["category"],
+                    sub_category=data["sub_category"],
+                    spu_theme=data.get("variation_theme"),
+                    keywords=data.get("keywords"),
+                    selling_points=data.get("selling_points"),
+                    description=data.get("description"),
+                    main_image=data["main_image"],
+                    images=data["images"],
+                    spu_common={
+                        "brand": data["brand"],
+                        "category": data["category"],
+                        "keywords": data.get("keywords") or [],
+                        "selling_points": data.get("selling_points") or "",
+                        "bullets": data.get("generated_bullets") or [],
+                        "a_plus": None,
+                    },
+                    shop_id=shop_id,
+                    tags=data["tags"],
+                    notes=data["notes"],
+                    status=data["status"],
+                    groups=data["groups"],
+                    created_at=data["created_at"],
+                    updated_at=data["created_at"],
+                )
+                session.add(spu)
+
+                # 有变体清单则拆成对应 SKU；否则生成一条无规格的默认 SKU
+                variations = data.get("variations") or []
+                if variations:
+                    for i, v in enumerate(variations):
+                        spec = v.get("color") or v.get("size") or ""
+                        session.add(SkuRecord(
+                            id=f"{spu_id}-sku-{i}",
+                            spu_id=spu_id,
+                            spec_value=spec,
+                            asin=v["asin"],
+                            sku_code=data.get("sku") or f"SKU-{v['asin']}",
+                            price=v.get("price", data["price"]),
+                            cost=data["cost"],
+                            currency=data["currency"],
+                            fba_stock=v.get("stock", 0),
+                            fbm_stock=0,
+                            fulfillment_type=data.get("fulfillment_type", "FBA"),
+                            bsr=data.get("bsr"),
+                            rating=data.get("rating", 0),
+                            review_count=data.get("review_count", 0),
+                            daily_sales_avg=data.get("daily_sales_avg", 0),
+                            roi=data.get("roi", 0),
+                            margin=data.get("margin", 0),
+                            listing_status=data.get("listing_status", "draft"),
+                            generated_title=data.get("generated_title"),
+                            generated_bullets=data.get("generated_bullets"),
+                            generated_a_plus=None,
+                            seo_score=data.get("seo_score"),
+                            listing_version=data.get("listing_version", 1),
+                            has_a_plus=data.get("has_a_plus", False),
+                            has_video=data.get("has_video", False),
+                            rating_breakdown=data.get("rating_breakdown"),
+                            tags=data["tags"],
+                            notes=data["notes"],
+                            status=data["status"],
+                            created_at=data["created_at"],
+                            updated_at=data["created_at"],
+                        ))
+                else:
                     session.add(SkuRecord(
-                        id=f"{spu_id}-sku-{i}",
+                        id=f"{spu_id}-sku-0",
                         spu_id=spu_id,
-                        spec_value=spec,
-                        asin=v["asin"],
-                        sku_code=data.get("sku") or f"SKU-{v['asin']}",
-                        price=v.get("price", data["price"]),
+                        spec_value=None,
+                        asin=data["asin"],
+                        sku_code=data.get("sku") or f"SKU-{data['asin']}",
+                        price=data["price"],
                         cost=data["cost"],
                         currency=data["currency"],
-                        fba_stock=v.get("stock", 0),
-                        fbm_stock=0,
+                        fba_stock=data.get("fba_stock", 0),
+                        fbm_stock=data.get("fbm_stock", 0),
                         fulfillment_type=data.get("fulfillment_type", "FBA"),
                         bsr=data.get("bsr"),
                         rating=data.get("rating", 0),
@@ -427,39 +480,7 @@ async def seed_products_if_empty() -> int:
                         created_at=data["created_at"],
                         updated_at=data["created_at"],
                     ))
-            else:
-                session.add(SkuRecord(
-                    id=f"{spu_id}-sku-0",
-                    spu_id=spu_id,
-                    spec_value=None,
-                    asin=data["asin"],
-                    sku_code=data.get("sku") or f"SKU-{data['asin']}",
-                    price=data["price"],
-                    cost=data["cost"],
-                    currency=data["currency"],
-                    fba_stock=data.get("fba_stock", 0),
-                    fbm_stock=data.get("fbm_stock", 0),
-                    fulfillment_type=data.get("fulfillment_type", "FBA"),
-                    bsr=data.get("bsr"),
-                    rating=data.get("rating", 0),
-                    review_count=data.get("review_count", 0),
-                    daily_sales_avg=data.get("daily_sales_avg", 0),
-                    roi=data.get("roi", 0),
-                    margin=data.get("margin", 0),
-                    listing_status=data.get("listing_status", "draft"),
-                    generated_title=data.get("generated_title"),
-                    generated_bullets=data.get("generated_bullets"),
-                    generated_a_plus=None,
-                    seo_score=data.get("seo_score"),
-                    listing_version=data.get("listing_version", 1),
-                    has_a_plus=data.get("has_a_plus", False),
-                    has_video=data.get("has_video", False),
-                    rating_breakdown=data.get("rating_breakdown"),
-                    tags=data["tags"],
-                    notes=data["notes"],
-                    status=data["status"],
-                    created_at=data["created_at"],
-                    updated_at=data["created_at"],
-                ))
+                total += 1
         await session.commit()
-    return len(SEED_PRODUCTS)
+
+    return total

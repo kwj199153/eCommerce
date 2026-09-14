@@ -4,7 +4,7 @@
       type="info"
       show-icon
       message="输入 ASIN 后，系统将自动分析该 Listing 的 SEO 健康度"
-      style="margin-bottom: 16px"
+      style="margin-bottom: var(--space-16)"
     />
 
     <a-form layout="vertical" :model="form">
@@ -190,13 +190,13 @@ const onCompetitorSelect = (product: any) => {
 <style scoped>
 .seo-config { display: flex; flex-direction: column; height: 100%; }
 
-.seo-config .ant-form { flex: 1; overflow-y: auto; padding-right: 4px; }
-.config-actions { padding: 16px 0 0; border-top: 1px solid #f0f0f0; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+.seo-config .ant-form { flex: 1; overflow-y: auto; padding-right: var(--space-4); }
+.config-actions { padding: var(--space-16) 0 0; border-top: 1px solid var(--border-base); display: flex; flex-direction: column; gap: var(--space-8); flex-shrink: 0; }
 
 /* 输入框 + 产品库按钮 */
 .input-with-picker {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-4);
 }
 </style>

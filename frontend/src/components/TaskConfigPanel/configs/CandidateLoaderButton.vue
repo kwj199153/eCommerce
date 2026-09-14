@@ -18,7 +18,7 @@
           placeholder="搜索标题或 ASIN..."
           size="small"
           allow-clear
-          style="margin-bottom: 8px"
+          style="margin-bottom: var(--space-8)"
         >
           <template #prefix><SearchOutlined style="color: var(--text-disabled)" /></template>
         </a-input>
@@ -91,6 +91,7 @@
 </template>
 
 <script setup lang="ts">
+import { SEM } from '@/theme/semantic'
 import { ref, computed, watch } from 'vue'
 import { SearchOutlined, FolderOpenOutlined, CloseOutlined, CheckCircleFilled } from '@ant-design/icons-vue'
 import { useCandidateLibraryStore, REVIEW_STATUS_MAP, type CandidateItem } from '@/stores/candidateLibrary'
@@ -155,11 +156,11 @@ function statusLabel(s?: string) {
 function statusColor(s?: string) {
   if (!s) return '#8c8c8c'
   return REVIEW_STATUS_MAP[s as keyof typeof REVIEW_STATUS_MAP]?.color === 'green'
-    ? '#52c41a'
+    ? SEM.success
     : REVIEW_STATUS_MAP[s as keyof typeof REVIEW_STATUS_MAP]?.color === 'orange'
-      ? '#fa8c16'
+      ? SEM.orangeStrong
       : REVIEW_STATUS_MAP[s as keyof typeof REVIEW_STATUS_MAP]?.color === 'red' || s === 'rejected'
-        ? '#ff4d4f'
+        ? SEM.danger
         : '#8c8c8c'
 }
 
@@ -171,61 +172,61 @@ function onImgError(e: Event) {
 
 <style scoped>
 .loader-btn {
-  border-radius: 14px;
-  font-size: 11px;
-  margin-left: 10px;
+  border-radius: var(--radius-14);
+  font-size: var(--font-size-11);
+  margin-left: var(--space-10);
   flex-shrink: 0;
   height: 26px;
   line-height: 24px;
-  padding: 0 10px;
+  padding: 0 var(--space-10);
 }
 
 .loader-btn.loaded {
-  background: #52c41a;
-  border-color: #52c41a;
+  background: var(--success);
+  border-color: var(--success);
 }
 
 .loader-header {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
 }
 
 .loader-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .loader-desc {
   display: block;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--text-tertiary);
-  margin-top: 2px;
+  margin-top: var(--space-2);
 }
 
 /* 当前已选 */
 .current-selected {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
 }
 
 .current-label {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--text-tertiary);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
 }
 
 .current-card {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-8);
   background: linear-gradient(135deg, var(--success-bg) 0%, var(--info-bg) 100%);
   border: 1px solid var(--success-border, #b7eb8f);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   cursor: pointer;
 }
 
 .current-title {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 500;
   color: var(--text-primary);
   overflow: hidden;
@@ -235,7 +236,7 @@ function onImgError(e: Event) {
 }
 
 .current-asin {
-  font-size: 9px;
+  font-size: var(--font-size-9);
   color: var(--text-tertiary);
   font-family: 'SF Mono', Monaco, monospace;
 }
@@ -247,8 +248,8 @@ function onImgError(e: Event) {
 }
 
 .cand-item {
-  padding: 8px 6px;
-  border-radius: 6px;
+  padding: var(--space-8) var(--space-6);
+  border-radius: var(--radius-6);
   cursor: pointer;
   transition: background 0.15s;
   border: 1px solid transparent;
@@ -267,15 +268,15 @@ function onImgError(e: Event) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 2px;
+  gap: var(--space-8);
+  margin-bottom: var(--space-2);
 }
 
 .item-thumb {
   width: 36px;
   height: 36px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   border: 1px solid var(--border-base);
   flex-shrink: 0;
   background: var(--bg-base);
@@ -288,8 +289,8 @@ function onImgError(e: Event) {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  border-radius: 4px;
+  font-size: var(--font-size-16);
+  border-radius: var(--radius-4);
   background: var(--bg-base);
   border: 1px solid var(--border-base);
 }
@@ -299,11 +300,11 @@ function onImgError(e: Event) {
   width: 240px;
   height: 240px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
 }
 
 .item-title {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -312,66 +313,66 @@ function onImgError(e: Event) {
 }
 
 .item-price {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   font-weight: 600;
-  color: #1890ff;
+  color: var(--primary);
   flex-shrink: 0;
 }
 
 .item-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-left: 44px;
+  gap: var(--space-8);
+  margin-left: var(--space-44);
 }
 
 .item-badges {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--space-4);
   flex: 1;
   min-width: 0;
 }
 
 .score-badge {
-  font-size: 10px;
-  color: #722ed1;
+  font-size: var(--font-size-10);
+  color: var(--purple);
   background: var(--purple-bg, #f9f0ff);
   border: 1px solid var(--purple-border, #efdbff);
-  padding: 0 4px;
-  border-radius: 4px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-4);
   white-space: nowrap;
 }
 
 .roi-badge {
-  font-size: 10px;
-  color: #389e0d;
+  font-size: var(--font-size-10);
+  color: var(--success);
   background: var(--success-bg, #f6ffed);
   border: 1px solid var(--success-border, #d9f7be);
-  padding: 0 4px;
-  border-radius: 4px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-4);
   white-space: nowrap;
 }
 
 .status-chip {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   white-space: nowrap;
 }
 
 .item-asin {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--text-tertiary);
   font-family: 'SF Mono', Monaco, monospace;
 }
 
 .item-check {
-  color: #52c41a;
-  font-size: 12px;
+  color: var(--success);
+  font-size: var(--font-size-12);
 }
 
 .empty-hint {
   text-align: center;
-  padding: 20px 0;
+  padding: var(--space-20) 0;
   color: var(--text-disabled);
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 </style>

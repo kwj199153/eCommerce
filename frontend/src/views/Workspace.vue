@@ -1,7 +1,11 @@
 <template>
   <a-layout
     class="workspace-container"
-    :class="{ 'review-data-mode': isReviewDataMode, 'listing-data-mode': isReviewDataMode && isListingAgent }"
+    :class="{
+      'review-data-mode': isReviewDataMode,
+      'listing-data-mode': isReviewDataMode && isListingAgent,
+      'aigc-data-mode': isReviewDataMode && isAigcAgent,
+    }"
   >
     <!-- 左侧边栏 -->
     <a-layout-sider
@@ -40,7 +44,7 @@
       <SidebarAgentList />
 
       <!-- 资料库 -->
-      <SidebarKnowledgeBase @navigate="handleKnowledgeNavigate" />
+      <SidebarKnowledgeBase ref="knowledgeBaseRef" @navigate="handleKnowledgeNavigate" />
 
       <!-- 分隔线 -->
       <a-divider style="margin: 8px 0" />
@@ -69,8 +73,8 @@
             <span class="toolbar-agent-label">{{ currentAgent.name }}</span>
 
             <!-- 竞品监控员：顶部不展示工具卡片（看数面板收敛到监控看板；推理走输入框上方 chip） -->
-            <!-- 运营复盘师/广告分析师：仅对话模式显示工具按钮（数据模式看宽看板自带 Tab 切换） -->
-            <template v-if="!isSecretaryAgent && !isCompetitorIntelAgent && !(isReviewAgent && reviewMode === 'data') && !(isAdAnalyst && reviewMode === 'data')">
+            <!-- 运营复盘师/广告分析师/AIGC：仅对话模式显示工具按钮（数据模式看宽看板自带 Tab 切换） -->
+            <template v-if="!isSecretaryAgent && !isCompetitorIntelAgent && !(isReviewAgent && reviewMode === 'data') && !(isAdAnalyst && reviewMode === 'data') && !(isAigcAgent && reviewMode === 'data')">
               <a-divider type="vertical" :margin="8" />
               <div class="toolbar-tools">
                 <div
@@ -79,7 +83,7 @@
                   class="toolbar-tool-btn"
                   :title="`${tool.name} — ${tool.description}`"
                   :style="{
-                    backgroundColor: currentSelectedTool?.id === tool.id ? '#1890ff' : 'transparent',
+                    backgroundColor: currentSelectedTool?.id === tool.id ? SEM.primary : 'transparent',
                     color: currentSelectedTool?.id === tool.id ? '#fff' : (tool.status === 'coming_soon' ? '#d9d9d9' : '#595959'),
                     opacity: tool.status === 'coming_soon' ? 0.4 : 1,
                     cursor: tool.status === 'coming_soon' ? 'not-allowed' : 'pointer',
@@ -107,11 +111,19 @@
             @select="onWorkspaceCandidateSelect"
           />
 
+          <!-- 圈选竞品按钮（仅竞品监控员·仅 chat 视图）
+               大屏的六个追踪视角都读「监控池已圈选」，所以圈选入口收在顶部按钮里，
+               右栏整块让给大屏 —— 对齐「对象驱动型 Agent 统一用载入主角入口」的约定。 -->
+          <IntelPickButton
+            v-else-if="isCompetitorIntelAgent && currentView === 'chat'"
+          />
+
           <!-- 未选 Agent 提示（仅对话视图且确实未选 Agent） -->
           <span v-else-if="!currentAgent && currentView === 'chat'" class="no-agent-hint">选择左侧 Agent 开始</span>
         </div>
         <div class="header-right">
-          <!-- 宽看板 Agent（运营复盘师 / Listing 优化师）：双模式切换（对话模式 / 大屏模式[复盘]·文案模式[Listing]） -->
+          <!-- 宽看板场景（复盘 / Listing / 广告 / 竞品监控 / AIGC）：双模式切换（对话模式 / 大屏模式；Listing 为文案模式）
+               利润测算**不进**：它是工具级加宽（528），无大屏模式（详见 isWideProfitTool 注释）。 -->
           <div v-if="isWideBoardAgent && currentView === 'chat'" class="mode-switch">
             <button
               class="mode-switch-btn"
@@ -127,7 +139,7 @@
               title="大屏模式：右侧看板占大部分宽度，对话压缩为窄侧栏"
               @click="setReviewMode('data')"
             >
-              <AreaChartOutlined /> {{ isReviewAgent || isAdAnalyst ? '大屏模式' : '文案模式' }}
+              <AreaChartOutlined /> {{ isListingAgent ? '文案模式' : '大屏模式' }}
             </button>
           </div>
 
@@ -135,6 +147,14 @@
           <a-badge :count="0" dot>
             <BellOutlined style="font-size: 18px; cursor: pointer" />
           </a-badge>
+
+          <!-- 语音播报开关（右上角喇叭）
+               是否**显示**由 store 白名单决定（首期只有店秘书）—— 这里只判「功能开关 + 处于对话视图」，
+               这样「扩展到其他 Agent」只需改 store 里的白名单一处。 -->
+          <VoiceSpeakerButton
+            v-if="VOICE_CLONE_ENABLED && currentView === 'chat' && currentAgent"
+            :agent-id="currentAgent.id"
+          />
         </div>
       </a-layout-header>
 
@@ -152,21 +172,21 @@
         <!-- 产品/Listing 库视图 -->
         <ProductLibrary v-else-if="currentView === 'products'" />
 
+        <!-- 竞品监控池视图（长期盯盘清单；与产品库内嵌的「对标竞品」区分） -->
+        <MonitorPoolLibrary v-else-if="currentView === 'competitors'" />
+
         <!-- 营销素材库视图 -->
         <AssetLibrary v-else-if="currentView === 'assets'" />
 
         <!-- 平台规则库视图 -->
         <PlatformRules v-else-if="currentView === 'rules'" />
-
-        <!-- 竞品监控工作台视图（一套监控池 → 多面板） -->
-        <CompetitorMonitor v-else-if="currentView === 'monitor'" />
       </a-layout-content>
     </a-layout>
 
     <!-- 右侧任务配置面板（仅对话视图显示） -->
     <a-layout-sider
       v-if="currentView === 'chat' && !isSecretaryAgent"
-      :width="isWideBoardAgent ? 528 : 340"
+      :width="isWidePanel ? 528 : 340"
       :collapsed="rightPanelCollapsed"
       :collapsed-width="0"
       reverse-direction
@@ -189,10 +209,14 @@
 
     <!-- 设置 Drawer（全局，由侧栏菜单触发） -->
     <Settings v-model:open="settingsDrawerOpen" />
+
+    <!-- 划词翻译浮层（全局一次，选中英文商品文字即出译文） -->
+    <SelectionTranslateLayer />
   </a-layout>
 </template>
 
 <script setup lang="ts">
+import { SEM } from '@/theme/semantic'
 import { ref, provide, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -214,11 +238,15 @@ import TaskConfigPanel from '@/components/TaskConfigPanel/index.vue'
 import FaqKnowledgeBase from '@/components/KnowledgeBase/FaqKnowledgeBase.vue'
 import CandidateLibrary from '@/components/KnowledgeBase/CandidateLibrary.vue'
 import ProductLibrary from '@/components/KnowledgeBase/ProductLibrary.vue'
+import MonitorPoolLibrary from '@/components/KnowledgeBase/MonitorPoolLibrary.vue'
 import AssetLibrary from '@/components/KnowledgeBase/AssetLibrary.vue'
 import PlatformRules from '@/components/KnowledgeBase/PlatformRules.vue'
-import CompetitorMonitor from '@/components/KnowledgeBase/CompetitorMonitor.vue'
+import IntelPickButton from '@/components/TaskConfigPanel/configs/IntelPickButton.vue'
 import MemoryEvolution from '@/views/MemoryEvolution.vue'
 import Settings from '@/views/Settings.vue'
+import SelectionTranslateLayer from '@/components/Translate/SelectionTranslateLayer.vue'
+import VoiceSpeakerButton from '@/components/common/VoiceSpeakerButton.vue'
+import { VOICE_CLONE_ENABLED } from '@/config/featureFlags'
 import type { ToolDefinition } from '@/components/ChatPanel/tools/toolDefinitions'
 import { getAgentTools } from '@/components/ChatPanel/tools/toolDefinitions'
 
@@ -228,6 +256,9 @@ import { useShopStore } from '@/stores/shop'
 import { useProductLibraryStore } from '@/stores/productLibrary'
 import { useAssetLibraryStore } from '@/stores/assetLibrary'
 import { useCandidateLibraryStore } from '@/stores/candidateLibrary'
+import { useMonitorPoolStore } from '@/stores/monitorPool'
+import { usePlatformRulesStore } from '@/stores/platformRules'
+import { useKnowledgeStore } from '@/stores/knowledge'
 import ProductLoaderButton from '@/components/TaskConfigPanel/configs/ProductLoaderButton.vue'
 import CandidateLoaderButton from '@/components/TaskConfigPanel/configs/CandidateLoaderButton.vue'
 
@@ -238,6 +269,9 @@ const shopStore = useShopStore()
 const productLibraryStore = useProductLibraryStore()
 const assetLibraryStore = useAssetLibraryStore()
 const candidateLibraryStore = useCandidateLibraryStore()
+const monitorPoolStore = useMonitorPoolStore()
+const platformRulesStore = usePlatformRulesStore()
+const knowledgeStore = useKnowledgeStore()
 
 // 侧边栏状态
 const sidebarCollapsed = ref(false)
@@ -254,8 +288,12 @@ const shopCount = computed(() => shopStore.shopList.length)
 // 当前选中店铺（用于标题栏显示）
 const currentShop = computed(() => shopStore.currentShop)
 
-// 内容区视图切换：chat（Agent 对话）| faq（业务话术库）| products（产品/Listing 库）| assets（营销素材库）| rules（平台规则库）| monitor（竞品监控工作台）
-const currentView = ref<'chat' | 'faq' | 'candidates' | 'products' | 'assets' | 'rules' | 'monitor'>('chat')
+// 内容区视图切换：chat（Agent 对话）| faq（业务话术库）| candidates（选品库）| products（产品/Listing 库）| assets（营销素材库）| rules（平台规则库）
+// 竞品监控看板已并入竞品监控员的右侧边栏，不再是独立视图
+const currentView = ref<'chat' | 'faq' | 'candidates' | 'products' | 'competitors' | 'assets' | 'rules'>('chat')
+
+/** 侧边栏资料库组件引用：供 CustomEvent 跳转（不经过菜单点击）时同步菜单高亮 */
+const knowledgeBaseRef = ref<{ navigateTo: (key: string) => void } | null>(null)
 
 // 当前选中的工具（用于右侧配置面板）
 const currentSelectedTool = ref<ToolDefinition | null>(null)
@@ -313,8 +351,45 @@ const isAdAnalyst = computed(() => currentAgent.value?.id === 'ad-analysis')
 // 店秘书（全局入口 · 编排层）：无工具卡片、无右侧配置面板，纯对话 + 自动调度
 const isSecretaryAgent = computed(() => currentAgent.value?.id === 'secretary')
 
-// 需要「宽看板」的 Agent（复盘数据看板 / Listing 统一工作区 / 广告大屏看板）
-const isWideBoardAgent = computed(() => isReviewAgent.value || isListingAgent.value || isAdAnalyst.value)
+// 选品分析师·利润测算：这是**工具级**宽版，不是 Agent 级。
+// 同一个 Agent 下还挂着「蓝海挖掘」，它是常规表单、不需要加宽 —— 所以必须用
+// 「Agent + 当前选中工具」双重判定，只认 Agent 会把蓝海挖掘一起带宽。
+// 利润测算有 13 个字段，340px 下只能纵向堆叠；改成 Excel 风格表格必须加宽。
+//
+// ⚠️ 它**只借宽度，不接大屏模式**（09-13 老板拍板）：
+//    大屏是「吃剩余宽度」（右栏 = 视口 − 260 导航 − 400 对话区），窗口越宽右栏越大；
+//    而利润测算的表格把「说明」列设成吃 100% 剩余 → 宽屏下被撑成一片空白
+//    （1477px 实测：说明列 1216px，其中 1110px 是纯空白；「计算利润」按钮被推到 1100px 外）。
+//    故宽度由 isWidePanel 单独判定，模式切换与大屏布局仍只认 isWideBoardAgent。
+const isWideProfitTool = computed(
+  () => currentAgent.value?.id === 'product-research' && currentSelectedTool.value?.id === 'profit-calc'
+)
+
+// AIGC 媒体生成器（3 工具）：与复盘/Listing/广告/竞品监控一样，接「对话模式 / 大屏模式」。
+// 09-13 老板纠偏：AIGC 大屏**参照其他 Agent**，走 Workspace 顶栏 mode-switch（reviewMode 切 chat/data），
+//   不要在每个工具配置窗口里自造「对话/大屏」按钮（AIGCMediaWrapper 头部按钮已删除）。
+// 第 9 轮进一步细化：AIGC 用 **Agent 级**判定（与具体工具无关），点 AIGC Agent 就该显示顶栏 mode-switch，
+// 不用先选「静态素材生成/脚本/视频」。3 个工具共用同一对「对话/大屏」按钮。
+// 大屏模式 = 右栏「左右分栏」：左半边是表单（继续可见），右半边是预览窗口（图片网格/分镜卡片/视频播放器）。
+const isAigcAgent = computed(() => currentAgent.value?.id === 'aigc-media')
+
+// 需要「宽看板」场景（复盘 / Listing / 广告 / 竞品监控 / AIGC）
+// —— 这些都同时拥有「对话模式 / 大屏模式」切换能力（顶栏 mode-switch + 整页看板布局）。
+// AIGC 是 Agent 级判定（用 isAigcAgent）—— 点 AIGC Agent 即可见 mode-switch。
+const isWideBoardAgent = computed(
+  () =>
+    isReviewAgent.value ||
+    isListingAgent.value ||
+    isAdAnalyst.value ||
+    isCompetitorIntelAgent.value ||
+    isAigcAgent.value
+)
+
+// 右栏「加宽」的判定：宽看板 Agent ∪ 宽版工具（利润测算）。
+// 与上面 isWideBoardAgent 的唯一区别 —— **只加宽到固定 528，不给大屏模式**。
+const isWidePanel = computed(
+  () => isWideBoardAgent.value || isWideProfitTool.value
+)
 
 // ====== 宽看板 Agent·双模式布局 ======
 // chat = 对话优先（中间对话宽，右侧看板窄）
@@ -327,13 +402,18 @@ function setReviewMode(mode: 'chat' | 'data') {
   reviewMode.value = mode
   localStorage.setItem(REVIEW_MODE_KEY, mode)
 }
-// 仅宽看板 Agent + 面板优先模式 + 右侧面板未收起时，才应用宽看板布局
+// 仅宽看板 Agent + 面板优先模式 + 右侧面板未收起时，才应用**整页**看板布局
+// （中间对话压缩成窄边栏、右栏吃剩余宽度）。
+// AIGC 也在这里：大屏模式下中间对话变窄，右栏预览窗口吃满剩余宽度（与其他看板 Agent 一致）。
 const isReviewDataMode = computed(
   () => isWideBoardAgent.value && reviewMode.value === 'data' && !rightPanelCollapsed.value
 )
 
 // 向 ListingBoard / ReviewConfig 提供当前「对话/文案(数据)」模式
 provide('reviewMode', reviewMode)
+
+// 注：原先还 provide('isWidePanel') 让右栏自己决定「配置 | 预览」是否并排；
+// 09-13 取消 AIGC 右栏预览后已无消费方，故移除（右栏宽度只由 :width 的 isWidePanel 决定）。
 
 // 当前 Agent 的工具列表（广告分析师：出价建议/预算分配已移至输入框上方 chip，顶部不再重复展示）
 const AD_TOOLBAR_EXCLUDE = new Set(['bid-suggest', 'budget-alloc'])
@@ -375,9 +455,35 @@ const goHome = () => {
   }
 }
 
+/**
+ * 统一落地：切到竞品监控员并把右栏切进「大屏模式」。
+ *
+ * 竞品监控看板已从「左侧导航独立视图」并入竞品监控员的右侧边栏，
+ * 因此所有旧的 'monitor' 视图入口都要重定向到这里，否则会切到一个
+ * 已经没有渲染分支的空白视图（currentView='monitor' 谁都不匹配）。
+ */
+const openIntelBoard = () => {
+  const target = agentStore.agentList.find((a: any) => a.id === 'competitor-intel')
+  if (target && agentStore.currentAgent?.id !== 'competitor-intel') {
+    agentStore.setCurrentAgent(target)
+  }
+  currentSelectedTool.value = null
+  currentView.value = 'chat'
+  rightPanelCollapsed.value = false
+  setReviewMode('data')
+}
+
 // 资料库导航切换
 const handleKnowledgeNavigate = (key: string) => {
-  currentView.value = key as 'faq' | 'candidates' | 'products' | 'assets' | 'rules' | 'monitor'
+  // 旧「竞品监控」入口（蓝海详情抽屉 / 选品库开启监控 / 店秘书导航）统一重定向
+  if (key === 'monitor') {
+    openIntelBoard()
+    return
+  }
+  currentView.value = key as 'faq' | 'candidates' | 'products' | 'competitors' | 'assets' | 'rules'
+  // 同步侧边栏高亮：来自 CustomEvent（如大屏的「在资料库中管理」）的跳转不会经过菜单点击，
+  // 不补这一步就会出现「视图已切、菜单没高亮」的错位。
+  knowledgeBaseRef.value?.navigateTo(key)
   // 切换到资料库视图时，关闭右侧配置面板（工具面板不适用）
   if (key !== 'chat') {
     currentSelectedTool.value = null
@@ -391,6 +497,16 @@ watch([() => agentStore.currentAgent, () => agentStore.agentClickCounter], () =>
   if (agentStore.currentAgent) {
     // 切换 Agent 时必须清空当前工具，否则右侧配置面板会残留旧 Agent 的配置
     currentSelectedTool.value = null
+    // AIGC 媒体生成器：点 Agent 即默认选中第一个工具「静态素材生成」，
+    // 对齐运营复盘师「点 Agent 默认落到第一个数据视图」的体验（无需再手动点工具）。
+    if (agentStore.currentAgent.id === 'aigc-media') {
+      const firstTool = getAgentTools('aigc-media')[0]
+      if (firstTool) {
+        currentSelectedTool.value = firstTool
+        // 默认选中工具时同步展开右栏，避免工具已选但面板折叠看不到
+        rightPanelCollapsed.value = false
+      }
+    }
     // 离开选品分析师：清空「载入选品」工作候选，避免携带到其它 Agent
     if (agentStore.currentAgent.id !== 'product-research') {
       currentWorkingCandidate.value = null
@@ -402,6 +518,49 @@ watch([() => agentStore.currentAgent, () => agentStore.agentClickCounter], () =>
   }
 })
 
+/**
+ * 资料库（选品库 / 产品库 / 素材库 / 监控池 / 平台规则库）统一重新拉取。
+ *
+ * 它们都按 `X-Shop-ID` 在服务端过滤（平台规则库同样如此），因此必须与当前店铺严格同步：
+ * - 切店铺不刷新 → 把旧店铺的数据当成新店铺的展示（跨店铺串数据）；
+ * - 首屏不刷新 → 漏掉「选品 Agent 后端 `save_candidate` 写库」的结果
+ *   （它只写库，碰不到前端 store）。
+ */
+const reloadLibraries = () => {
+  candidateLibraryStore.resetForShopSwitch()
+  candidateLibraryStore.fetchItems()
+  productLibraryStore.fetchItems()
+  assetLibraryStore.fetchItems()
+  // 监控池与选品库同理：切店铺必须先把 UI 圈选/过滤重置，再按新店铺重拉
+  monitorPoolStore.resetForShopSwitch()
+  monitorPoolStore.fetchItems()
+  // 平台规则库也按 X-Shop-ID 过滤，切店铺同样要重置过滤条件 + 重拉
+  platformRulesStore.resetForShopSwitch()
+  platformRulesStore.fetchItems()
+  // 业务话术库同理：知识库容器本身就是按店铺隔离的
+  knowledgeStore.resetForShopSwitch()
+  knowledgeStore.fetchItems()
+}
+
+/**
+ * 资料库跟随当前店铺加载。
+ *
+ * 用 watch 而不是在 onMounted 里裸调 fetchItems，是为了避开竞态：
+ * 首屏店铺列表是异步拉的，onMounted 时 `current_shop_id` 可能还没写进
+ * localStorage → 请求不带 X-Shop-ID → 后端一律返回空列表，且**再也不重拉**。
+ * 这里 shopId 为空就跳过，等店铺 store 自动选中第一个店铺后由本 watch 触发。
+ * （「店铺 store 自动选中」由同文件 onMounted 的 `shopStore.ensureShopsLoaded()`
+ *   保证 —— 其 setShopList 内含「未选店铺则选中第一个」的兜底。）
+ */
+watch(
+  () => shopStore.currentShopId,
+  (shopId) => {
+    if (!shopId) return
+    reloadLibraries()
+  },
+  { immediate: true },
+)
+
 // 监听来自 ChatPanel 的导航事件（如：蓝海挖掘结果→跳转产品库）
 // 监听来自产品库的 Listing 优化 / AIGC 生成 跳转请求
 onMounted(() => {
@@ -411,10 +570,16 @@ onMounted(() => {
   window.addEventListener('monitor-launch-analysis', handleMonitorLaunchAnalysis as EventListener)
   window.addEventListener('open-memory-drawer', () => { memoryDrawerOpen.value = true })
   window.addEventListener('open-settings-drawer', () => { settingsDrawerOpen.value = true })
-  // 预加载资料库数据（选品库 + 产品库 + 素材库），确保各消费方组件打开时数据已就绪
-  candidateLibraryStore.fetchItems()
-  productLibraryStore.fetchItems()
-  assetLibraryStore.fetchItems()
+
+  // ★★ 店铺列表 = 应用级基础数据，必须在主界面挂载时主动拉一次。
+  //    曾经它只在「店铺群」弹层挂载时（ShopPopoverContent.onMounted）加载，
+  //    导致不点开弹层就 `shops=[]`：左上角店铺名不显示（`currentShop` 算不出）、
+  //    AI 说「切换到 X 店」时 `switch_shop` 找不到目标被静默丢弃。
+  //    这里是**唯一权威的启动加载点**；弹层内的 refreshShopList 保留（增删后刷新用）。
+  //    下面 `watch(currentShopId)` 会在本调用写回 currentShopId 后自动触发资料库加载。
+  void shopStore.ensureShopsLoaded()
+
+  // 资料库数据的加载交给上面的 `watch(currentShopId)`（见其注释：避开首屏无店铺头的竞态）
 
   // 店秘书首屏欢迎语（仅首次进入且该会话无消息时注入）
   if (chatStore.getMessages('secretary').length === 0) {
@@ -541,7 +706,7 @@ const getToolBtnStyle = (tool: ToolDefinition): Record<string, string> => {
   const isActive = currentSelectedTool.value?.id === tool.id
   const isDisabled = tool.status === 'coming_soon'
   return {
-    backgroundColor: isActive ? '#1890ff' : 'transparent',
+    backgroundColor: isActive ? SEM.primary : 'transparent',
     color: isActive ? '#fff' : isDisabled ? '#d9d9d9' : '#595959',
     fontWeight: isActive ? '500' : '400',
     opacity: isDisabled ? '0.4' : '1',
@@ -553,7 +718,7 @@ const getToolBtnStyle = (tool: ToolDefinition): Record<string, string> => {
 const handleToolAnalysis = (params: any) => {
   // 通过事件总线或 store 传递给 ChatPanel 执行
   window.dispatchEvent(new CustomEvent('tool-analysis', {
-    detail: { tool: currentSelectedTool.value, params }
+    detail: { tool: currentSelectedTool.value, params, mode: reviewMode.value }
   }))
 }
 </script>
@@ -587,18 +752,18 @@ const handleToolAnalysis = (params: any) => {
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border-base);
-  padding: 0 12px 0 16px;
+  padding: 0 var(--space-12) 0 var(--space-16);
   flex-shrink: 0;
 }
 
 .logo-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-10);
   min-width: 0;
   flex: 1;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   transition: opacity 0.15s ease;
 }
 
@@ -613,10 +778,10 @@ const handleToolAnalysis = (params: any) => {
   width: 36px;
   height: 36px;
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-10);
   background: var(--primary);
   color: #fff;
-  font-size: 20px;
+  font-size: var(--font-size-20);
 }
 
 .logo-name {
@@ -627,7 +792,7 @@ const handleToolAnalysis = (params: any) => {
 
 .logo-title {
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: var(--font-size-16);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -636,9 +801,9 @@ const handleToolAnalysis = (params: any) => {
 
 .logo-shop-name {
   color: var(--text-tertiary);
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 400;
-  margin-left: 4px;
+  margin-left: var(--space-4);
 }
 
 /* 店铺群触发按钮（右上角小图标） */
@@ -646,15 +811,15 @@ const handleToolAnalysis = (params: any) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: var(--space-4);
   width: 32px;
   height: 32px;
   border: 1.5px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   background: var(--bg-elevated);
   cursor: pointer;
   color: var(--text-secondary);
-  font-size: 15px;
+  font-size: var(--font-size-15);
   transition: all 0.2s ease;
   flex-shrink: 0;
   padding: 0;
@@ -674,7 +839,7 @@ const handleToolAnalysis = (params: any) => {
 }
 
 .shop-trigger-count {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
   min-width: 16px;
   height: 16px;
@@ -682,8 +847,8 @@ const handleToolAnalysis = (params: any) => {
   text-align: center;
   background: var(--primary);
   color: #fff;
-  border-radius: 8px;
-  padding: 0 4px;
+  border-radius: var(--radius-8);
+  padding: 0 var(--space-4);
 }
 
 /* 主内容区 */
@@ -701,7 +866,7 @@ const handleToolAnalysis = (params: any) => {
 .header {
   background-color: var(--bg-toolbar);
   color: var(--text-primary);
-  padding: 0 16px;
+  padding: 0 var(--space-16);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -715,14 +880,14 @@ const handleToolAnalysis = (params: any) => {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
   flex: 1;
   min-width: 0;
   overflow: hidden;
 }
 
 .collapse-btn {
-  font-size: 18px;
+  font-size: var(--font-size-18);
   flex-shrink: 0;
   color: var(--text-secondary);
 }
@@ -731,15 +896,15 @@ const handleToolAnalysis = (params: any) => {
 .inline-toolbar {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-left: 4px;
+  gap: var(--space-4);
+  margin-left: var(--space-4);
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
 }
 
 .toolbar-agent-label {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -749,7 +914,7 @@ const handleToolAnalysis = (params: any) => {
 .toolbar-tools {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-2);
   overflow-x: auto;
   overflow-y: hidden;
   flex: 1;
@@ -766,14 +931,14 @@ const handleToolAnalysis = (params: any) => {
 .toolbar-tool-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-4);
   height: 28px;
-  padding: 0 8px;
+  padding: 0 var(--space-8);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background-color: transparent;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--font-size-12);
   line-height: 1;
   flex-shrink: 0;
   color: var(--text-secondary);
@@ -786,29 +951,29 @@ const handleToolAnalysis = (params: any) => {
 }
 
 .tb-icon {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   line-height: 1;
   flex-shrink: 0;
 }
 
 .tb-name {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   line-height: 1;
 }
 
 /* 窄屏工具栏：隐藏按钮文字只显示 icon，避免被滚动隐藏 */
 @media (max-width: 1400px) {
   .toolbar-tool-btn .tb-name { display: none; }
-  .toolbar-tool-btn { padding: 0 6px; }
+  .toolbar-tool-btn { padding: 0 var(--space-6); }
 }
 @media (max-width: 1100px) {
   .toolbar-agent-label { display: none; }
 }
 
 .no-agent-hint {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-disabled);
-  margin-left: 8px;
+  margin-left: var(--space-8);
 }
 
 .header-right {
@@ -821,27 +986,27 @@ const handleToolAnalysis = (params: any) => {
 .mode-switch {
   display: flex;
   align-items: center;
-  gap: 2px;
-  margin-right: 12px;
-  padding: 2px;
+  gap: var(--space-2);
+  margin-right: var(--space-12);
+  padding: var(--space-2);
   background: var(--bg-card-pill);
   border: 1px solid var(--border-base);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   flex-shrink: 0;
 }
 
 .mode-switch-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-4);
   height: 26px;
-  padding: 0 10px;
-  font-size: 12px;
+  padding: 0 var(--space-10);
+  font-size: var(--font-size-12);
   white-space: nowrap;
   color: var(--text-secondary);
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   cursor: pointer;
   transition: all 0.18s ease;
 }
@@ -873,9 +1038,10 @@ const handleToolAnalysis = (params: any) => {
   max-width: none !important;
 }
 /* 窄对话栏下隐藏顶部工具按钮（复盘看板自带 6 个 Tab 可直接切换视图）
-   —— 但 Listing 优化师需保留工具栏：点工具 = 跳到工作区对应模块 */
-.workspace-container.review-data-mode:not(.listing-data-mode) .inline-toolbar .toolbar-tools,
-.workspace-container.review-data-mode:not(.listing-data-mode) .inline-toolbar .ant-divider {
+   —— 但 Listing 优化师需保留工具栏：点工具 = 跳到工作区对应模块
+   —— AIGC 也保留：大屏模式下仍需顶部工具栏切换 3 个工具（静态素材/脚本/视频） */
+.workspace-container.review-data-mode:not(.listing-data-mode):not(.aigc-data-mode) .inline-toolbar .toolbar-tools,
+.workspace-container.review-data-mode:not(.listing-data-mode):not(.aigc-data-mode) .inline-toolbar .ant-divider {
   display: none !important;
 }
 

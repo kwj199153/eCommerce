@@ -49,7 +49,7 @@
             <div class="bar-track">
               <div
                 class="bar-fill"
-                :style="{ width: barWidth(dim.dimension, v.value), background: j === dim.best_index ? '#1890ff' : '#bae7ff' }"
+                :style="{ width: barWidth(dim.dimension, v.value), background: j === dim.best_index ? SEM.primary : 'var(--info-bg-2)' }"
               ></div>
               <span class="bar-value">{{ formatValue(dim.dimension, v.value) }}</span>
             </div>
@@ -74,7 +74,7 @@
           <a-progress
             :percent="item.value_score"
             size="small"
-            :stroke-color="i === 0 ? '#faad14' : i === 1 ? '#d9d9d9' : i === 2 ? '#cd7f32' : '#1890ff'"
+            :stroke-color="i === 0 ? 'var(--rank-1)' : i === 1 ? 'var(--rank-2)' : i === 2 ? 'var(--rank-3)' : SEM.primary"
             :width="70"
           />
           <span class="rank-score">{{ item.value_score?.toFixed(0) }}分</span>
@@ -110,6 +110,7 @@
 </template>
 
 <script setup lang="ts">
+import { SEM } from '@/theme/semantic'
 defineProps<{ data: any }>()
 defineEmits<{ (e: 'close'): void }>()
 
@@ -155,41 +156,41 @@ const barWidth = (dim: string, val: any) => {
 </script>
 
 <style scoped>
-.compare-grid-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
-.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.result-header h3 { margin: 0; font-size: 16px; }
-.dimensions-section { margin-top: 18px; padding: 14px; background: var(--bg-base); border-radius: 8px; }
-.dimensions-section h4 { margin: 0 0 12px; font-size: 13.5px; }
-.dimension-card { margin-bottom: 16px; }
+.compare-grid-result { padding: var(--space-16); background: var(--bg-elevated); border-radius: var(--radius-8); }
+.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-14); }
+.result-header h3 { margin: 0; font-size: var(--font-size-16); }
+.dimensions-section { margin-top: var(--space-18); padding: var(--space-14); background: var(--bg-base); border-radius: var(--radius-8); }
+.dimensions-section h4 { margin: 0 0 var(--space-12); font-size: var(--font-size-13-5); }
+.dimension-card { margin-bottom: var(--space-16); }
 .dimension-card:last-child { margin-bottom: 0; }
-.dimension-card h5 { margin: 0 0 10px; font-size: 13px; color: var(--text-primary); }
-.dim-bars { display: flex; flex-direction: column; gap: 6px; }
-.dim-bar-item { display: flex; align-items: center; gap: 8px; }
-.bar-label { min-width: 90px; font-size: 11.5px; font-family: monospace; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar-track { flex: 1; height: 20px; background: var(--bg-hover-light); border-radius: 4px; position: relative; min-width: 60px; }
-.bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
-.bar-value { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-size: 10.5px; font-weight: 600; white-space: nowrap; }
-.value-ranking { margin-top: 18px; padding: 14px; background: var(--bg-elevated)be6; border-radius: 8px; }
-.value-ranking h4 { margin: 0 0 10px; font-size: 13.5px; }
-.rank-list { display: flex; flex-direction: column; gap: 6px; }
-.rank-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--bg-elevated); border-radius: 6px; }
-.rank-row.top1 { background: linear-gradient(135deg, #fffbe6, #fff7e6); border: 1px solid #ffd666; }
-.rank-row.top2 { background: var(--bg-base); border: 1px solid #e8e8e8; }
-.rank-row.top3 { background: var(--bg-elevated)7e6; border: 1px solid #ffe7ba; }
-.rank-num { font-weight: 700; font-size: 15px; min-width: 24px; }
-.rank-row.top1 .rank-num { color: #d48806; }
+.dimension-card h5 { margin: 0 0 var(--space-10); font-size: var(--font-size-13); color: var(--text-primary); }
+.dim-bars { display: flex; flex-direction: column; gap: var(--space-6); }
+.dim-bar-item { display: flex; align-items: center; gap: var(--space-8); }
+.bar-label { min-width: 90px; font-size: var(--font-size-11-5); font-family: monospace; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { flex: 1; height: 20px; background: var(--bg-hover-light); border-radius: var(--radius-4); position: relative; min-width: 60px; }
+.bar-fill { height: 100%; border-radius: var(--radius-4); transition: width 0.3s; }
+.bar-value { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-size: var(--font-size-10-5); font-weight: 600; white-space: nowrap; }
+.value-ranking { margin-top: var(--space-18); padding: var(--space-14); background: var(--warning-bg); border-radius: var(--radius-8); }
+.value-ranking h4 { margin: 0 0 var(--space-10); font-size: var(--font-size-13-5); }
+.rank-list { display: flex; flex-direction: column; gap: var(--space-6); }
+.rank-row { display: flex; align-items: center; gap: var(--space-10); padding: var(--space-8) var(--space-10); background: var(--bg-elevated); border-radius: var(--radius-6); }
+.rank-row.top1 { background: linear-gradient(135deg, var(--warning-bg), var(--orange-bg)); border: 1px solid #ffd666; }
+.rank-row.top2 { background: var(--bg-base); border: 1px solid var(--border-base); }
+.rank-row.top3 { background: var(--orange-bg); border: 1px solid #ffe7ba; }
+.rank-num { font-weight: 700; font-size: var(--font-size-15); min-width: 24px; }
+.rank-row.top1 .rank-num { color: var(--warning-strong); }
 .rank-row.top2 .rank-num { color: var(--text-tertiary); }
-.rank-row.top3 .rank-num { color: #ad6800; }
-.rank-brand { flex: 1; font-size: 13px; }
-.rank-score { font-weight: 600; font-size: 12px; min-width: 40px; text-align: right; }
-.diff-section { margin-top: 18px; padding: 14px; background: #f9f0ff; border-radius: 8px; }
-.diff-section h4 { margin: 0 0 10px; font-size: 13.5px; }
-.diff-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
-.diff-stat { text-align: center; padding: 10px; background: var(--bg-elevated); border-radius: 6px; }
-.ds-label { display: block; font-size: 11px; color: var(--text-tertiary); }
-.ds-value { font-size: 20px; font-weight: 700; color: #722ed1; }
-.gap-box { font-size: 12.5px; line-height: 1.7; }
-.gap-box p { margin: 0 0 4px; }
-.gap-box ul { margin: 0; padding-left: 18px; }
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; margin-top: 12px; }
+.rank-row.top3 .rank-num { color: var(--warning); }
+.rank-brand { flex: 1; font-size: var(--font-size-13); }
+.rank-score { font-weight: 600; font-size: var(--font-size-12); min-width: 40px; text-align: right; }
+.diff-section { margin-top: var(--space-18); padding: var(--space-14); background: var(--purple-bg); border-radius: var(--radius-8); }
+.diff-section h4 { margin: 0 0 var(--space-10); font-size: var(--font-size-13-5); }
+.diff-stats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-12); margin-bottom: var(--space-10); }
+.diff-stat { text-align: center; padding: var(--space-10); background: var(--bg-elevated); border-radius: var(--radius-6); }
+.ds-label { display: block; font-size: var(--font-size-11); color: var(--text-tertiary); }
+.ds-value { font-size: var(--font-size-20); font-weight: 700; color: var(--purple); }
+.gap-box { font-size: var(--font-size-12-5); line-height: 1.7; }
+.gap-box p { margin: 0 0 var(--space-4); }
+.gap-box ul { margin: 0; padding-left: var(--space-18); }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); margin-top: var(--space-12); }
 </style>

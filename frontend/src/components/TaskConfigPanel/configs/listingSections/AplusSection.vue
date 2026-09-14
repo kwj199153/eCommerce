@@ -65,26 +65,26 @@ function apTypeLabel(t: string) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-8);
 }
-.sec-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-.sec-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
-.mini-tag { transform: scale(0.85); margin-left: 4px; }
+.sec-title { font-size: var(--font-size-13); font-weight: 600; color: var(--text-primary); }
+.sec-sub { font-size: var(--font-size-11); color: var(--text-tertiary); margin-top: var(--space-2); }
+.mini-tag { transform: scale(0.85); margin-left: var(--space-4); }
 
-.ap-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.ap-list { display: flex; flex-direction: column; gap: var(--space-8); margin-top: var(--space-10); }
 .ap-card {
   border: 1px solid var(--border-base);
-  border-radius: 6px;
-  padding: 8px;
+  border-radius: var(--radius-6);
+  padding: var(--space-8);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-6);
   background: var(--bg-base);
 }
-.ap-head { display: flex; align-items: center; gap: 6px; }
+.ap-head { display: flex; align-items: center; gap: var(--space-6); }
 .ap-heading { flex: 1; }
-.ap-para { margin-bottom: 4px; }
-.ap-item { display: flex; gap: 6px; }
+.ap-para { margin-bottom: var(--space-4); }
+.ap-item { display: flex; gap: var(--space-6); }
 .ap-item-title { max-width: 40%; }
-.ap-add { display: flex; gap: 6px; flex-wrap: wrap; }
+.ap-add { display: flex; gap: var(--space-6); flex-wrap: wrap; }
 </style>

@@ -3,10 +3,30 @@
  *
  * 多知识库容器架构：每个知识库 = 一个独立话术集合（按店铺/平台隔离）
  * 单库内支持双轨录入：结构化问答（FAQ）+ 文档素材（PDF/MD/Excel）
+ *
+ * 数据源：后端 PostgreSQL（/api/v1/knowledge-base），唯一权威源。
+ *
+ * 注意 `faq_count` / `doc_count` 是**后端读时实时统计**的派生值，不是本地算的
+ * （本地算就得在增/删/导入/删库每条路径上打补丁同步，漏一处数字就永远对不上）。
+ * 本 store 不再有 `refreshKbCounts()`：任何写操作后重拉一次即可。
  */
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import {
+  fetchKnowledgeBase,
+  createKnowledgeBase as apiCreateKnowledgeBase,
+  updateKnowledgeBase as apiUpdateKnowledgeBase,
+  deleteKnowledgeBase as apiDeleteKnowledgeBase,
+  createFaq,
+  updateFaq,
+  deleteFaq,
+  batchCreateFaqs,
+  batchDeleteFaqs,
+  createKnowledgeDoc,
+  fetchKnowledgeDoc,
+  deleteKnowledgeDoc,
+} from '@/api/knowledge'
 
 // ====== 类型定义 ======
 
@@ -17,8 +37,16 @@ export interface KnowledgeBase {
   description: string                   // 描述
   icon: string                          // emoji 图标
   type: 'shop' | 'platform' | 'custom'  // 类型
-  faq_count: number                     // 话术条数（冗余，便于展示）
-  doc_count: number                     // 文档数（冗余）
+  /**
+   * 是否默认库（每个店铺 seed 时各建一个「通用话术库」）。
+   *
+   * 用显式布尔值而非「id 等于某个字面量」判断：库 id 带店铺后缀
+   * （`kb-default-{shop_id}`，单主键表多店铺灌入必须加后缀），
+   * 拿字面量比较会静默失效（不报错，只是删除按钮突然都出现了）。
+   */
+  is_default: boolean
+  faq_count: number                     // 话术条数（后端读时统计）
+  doc_count: number                     // 文档数（后端读时统计）
   created_at: string
   updated_at: string
 }
@@ -47,6 +75,14 @@ export interface KnowledgeDoc {
   size: number                         // bytes
   uploaded_at: string
   description: string                  // 用户备注
+  /**
+   * 文档正文（文本类文件上传时前端读取并提交）。
+   *
+   * **列表接口不返回**（整篇动辄数千字符），只在两处有值：
+   * ① 上传时的响应；② `loadDocContent(id)` 按需拉取后回填。
+   * 所以读到 `undefined` 只代表"还没拉"，不等于"没有正文"。
+   */
+  content?: string
 }
 
 export interface FaqCategory {
@@ -59,124 +95,26 @@ export interface FaqCategory {
 // ====== 内置分类 ======
 
 export const FAQ_CATEGORIES: FaqCategory[] = [
-  { key: 'shipping', label: '物流配送', icon: '📦', color: '#1890ff' },
-  { key: 'return', label: '退换货', icon: '🔄', color: '#faad14' },
-  { key: 'product', label: '商品咨询', icon: '📦', color: '#52c41a' },
-  { key: 'payment', label: '支付问题', icon: '💳', color: '#722ed1' },
-  { key: 'account', label: '账户相关', icon: '👤', color: '#13c2c2' },
-  { key: 'policy', label: '平台政策', icon: '⚖️', color: '#eb2f96' },
-  { key: 'review', label: '差评处理', icon: '💢', color: '#f5222d' },
+  { key: 'shipping', label: '物流配送', icon: '📦', color: 'var(--primary)' },
+  { key: 'return', label: '退换货', icon: '🔄', color: 'var(--warning)' },
+  { key: 'product', label: '商品咨询', icon: '📦', color: 'var(--success)' },
+  { key: 'payment', label: '支付问题', icon: '💳', color: 'var(--purple)' },
+  { key: 'account', label: '账户相关', icon: '👤', color: 'var(--cyan)' },
+  { key: 'policy', label: '平台政策', icon: '⚖️', color: 'var(--chart-7)' },
+  { key: 'review', label: '差评处理', icon: '💢', color: 'var(--danger)' },
   { key: 'other', label: '其他', icon: '❓', color: '#8c8c8c' },
-]
-
-// ====== 默认知识库容器 ======
-
-export const DEFAULT_KNOWLEDGE_BASES: KnowledgeBase[] = [
-  {
-    id: 'kb-default',
-    name: '通用话术库',
-    description: '默认通用问答，适用于全场景',
-    icon: '📚',
-    type: 'custom',
-    faq_count: 6,
-    doc_count: 0,
-    created_at: '2026-08-01T00:00:00Z',
-    updated_at: '2026-09-02T00:00:00Z',
-  },
-]
-
-// ====== Mock 数据 ======
-
-const MOCK_FAQS: FaqItem[] = [
-  {
-    id: 'faq-001',
-    kb_id: 'kb-default',
-    question: '订单发货后多久可以收到？',
-    answer: '标准配送通常需要 3-7 个工作日。加急配送 1-3 个工作日。具体时间取决于收货地址和物流商。',
-    category: 'shipping',
-    keywords: ['发货', '配送', '快递', '多久', '几天'],
-    priority: 'high',
-    status: 'active',
-    usage_count: 156,
-    created_at: '2026-08-15T10:00:00Z',
-    updated_at: '2026-08-20T14:30:00Z',
-  },
-  {
-    id: 'faq-002',
-    kb_id: 'kb-default',
-    question: '如何申请退货？',
-    answer: '收到商品后 30 天内可在「我的订单」中点击「申请退货」，选择退货原因并提交。审核通过后寄回商品，退款将在 3-5 个工作日原路返回。',
-    category: 'return',
-    keywords: ['退货', '退款', '怎么退', '退换'],
-    priority: 'high',
-    status: 'active',
-    usage_count: 203,
-    created_at: '2026-08-10T09:00:00Z',
-    updated_at: '2026-08-25T11:00:00Z',
-  },
-  {
-    id: 'faq-003',
-    kb_id: 'kb-default',
-    question: '商品有质量问题怎么办？',
-    answer: '如收到商品存在质量问题，请在签收后 48 小时内联系客服，提供照片证据。我们将安排免费换货或全额退款，运费由我们承担。',
-    category: 'product',
-    keywords: ['质量', '问题', '损坏', '瑕疵', ' defective'],
-    priority: 'high',
-    status: 'active',
-    usage_count: 89,
-    created_at: '2026-08-12T16:00:00Z',
-    updated_at: '2026-08-22T10:00:00Z',
-  },
-  {
-    id: 'faq-004',
-    kb_id: 'kb-default',
-    question: '支持哪些支付方式？',
-    answer: '我们支持信用卡（Visa/Mastercard/AE）、PayPal、Apple Pay、Google Pay 以及本地支付方式（根据收货地区自动显示可用选项）。',
-    category: 'payment',
-    keywords: ['支付', '付款', '信用卡', 'PayPal', '方式'],
-    priority: 'medium',
-    status: 'active',
-    usage_count: 134,
-    created_at: '2026-08-08T12:00:00Z',
-    updated_at: '2026-08-18T09:00:00Z',
-  },
-  {
-    id: 'faq-005',
-    kb_id: 'kb-default',
-    question: '如何修改账户信息？',
-    answer: '登录后进入「账户设置」，可修改邮箱、手机号、收货地址等信息。修改邮箱和手机需验证原信息。',
-    category: 'account',
-    keywords: ['账户', '修改', '信息', '密码', '设置'],
-    priority: 'medium',
-    status: 'active',
-    usage_count: 67,
-    created_at: '2026-08-05T14:00:00Z',
-    updated_at: '2026-08-15T16:00:00Z',
-  },
-  {
-    id: 'faq-006',
-    kb_id: 'kb-default',
-    question: '可以更改收货地址吗？',
-    answer: '订单未发货前可在订单详情页修改地址。已发货订单无法更改，请联系客服尝试拦截。',
-    category: 'shipping',
-    keywords: ['地址', '收货', '更改', '修改', '配送地址'],
-    priority: 'medium',
-    status: 'active',
-    usage_count: 78,
-    created_at: '2026-08-14T11:00:00Z',
-    updated_at: '2026-08-20T15:00:00Z',
-  },
 ]
 
 // ====== Store ======
 
 export const useKnowledgeStore = defineStore('knowledge', () => {
   // ====== 知识库容器 State ======
-  const knowledgeBases = ref<KnowledgeBase[]>([...DEFAULT_KNOWLEDGE_BASES])
-  const currentKbId = ref<string>('kb-default')
+  const knowledgeBases = ref<KnowledgeBase[]>([])
+  // 空串 = 尚未选中（首屏拉取后自动落到第一个库，即默认库）
+  const currentKbId = ref<string>('')
 
   // ====== 话术条目 State ======
-  const items = ref<FaqItem[]>([...MOCK_FAQS])
+  const items = ref<FaqItem[]>([])
   const isLoading = ref(false)
   const searchQuery = ref('')
   // 初始值改为 undefined：避免 a-select allow-clear 清空后被误判为「过滤生效」
@@ -238,34 +176,88 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     return stats
   })
 
-  // ====== 知识库容器 Actions ======
+  // ====== 加载 / 重置 ======
 
-  /** 创建新知识库 */
-  async function createKnowledgeBase(data: { name: string; description: string; icon: string; type: KnowledgeBase['type'] }): Promise<KnowledgeBase> {
-    const newKb: KnowledgeBase = {
-      id: `kb-${Date.now()}`,
-      name: data.name,
-      description: data.description,
-      icon: data.icon,
-      type: data.type,
-      faq_count: 0,
-      doc_count: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+  let ensured = false
+
+  /**
+   * 拉取容器 + 话术 + 文档（一次请求）。
+   *
+   * 失败时**不清空本地数据** —— 网络抖动不该让用户看到"话术库被清空了"。
+   * 首屏本来就是 `[]`；切店铺的场景由 `resetForShopSwitch()` 负责清。
+   */
+  async function fetchItems() {
+    ensured = true
+    isLoading.value = true
+    try {
+      const res = await fetchKnowledgeBase()
+      knowledgeBases.value = res.bases || []
+      items.value = res.faqs || []
+      docs.value = res.docs || []
+      // 当前选中的库可能已被删除 / 尚未选中 → 落到第一个（后端把默认库排在最前）
+      if (!knowledgeBases.value.some(kb => kb.id === currentKbId.value)) {
+        currentKbId.value = knowledgeBases.value[0]?.id || ''
+      }
+    } catch (e) {
+      console.warn('[Knowledge] 拉取话术库失败', e)
+    } finally {
+      isLoading.value = false
     }
-    knowledgeBases.value.push(newKb)
-    return newKb
   }
 
-  /** 删除知识库（同时清理其下所有话术和文档） */
-  async function deleteKnowledgeBase(kbId: string): Promise<void> {
+  /**
+   * 确保至少拉取过一次。
+   *
+   * 库页 `onMounted` 调它做兜底：正常路径上 Workspace 的 `watch(currentShopId)`
+   * 已经拉过（`ensured` 为 true），这里会直接返回。
+   */
+  async function ensureLoaded() {
+    if (ensured) return
+    try { await fetchItems() } catch (e) { /* 忽略 */ }
+  }
+
+  /**
+   * 切换店铺时重置。
+   *
+   * 必须同时清 `ensured` —— 它是一次性闭包标记，只清 items 的话
+   * `ensureLoaded()` 仍会因 `ensured === true` 提前返回，切店铺后不再拉取。
+   */
+  function resetForShopSwitch() {
+    knowledgeBases.value = []
+    items.value = []
+    docs.value = []
+    currentKbId.value = ''
+    searchQuery.value = ''
+    filterCategory.value = undefined
+    filterStatus.value = undefined
+    ensured = false
+  }
+
+  // ====== 知识库容器 Actions ======
+
+  /** 创建新知识库（后端生成 id；随后刷新以拿到准确计数） */
+  async function createKnowledgeBase(data: { name: string; description: string; icon: string; type: KnowledgeBase['type'] }): Promise<KnowledgeBase> {
+    const created = await apiCreateKnowledgeBase(data)
+    knowledgeBases.value.push(created)
+    return created
+  }
+
+  /**
+   * 删除知识库（后端**级联删除**其下话术与文档）。
+   *
+   * 与 monitorPool 的本地 filter 不同：这里必须等后端返回再改本地 ——
+   * 后端才是权威，且要拿到 `deleted_faqs` / `deleted_docs` 计数提示用户。
+   */
+  async function deleteKnowledgeBase(kbId: string): Promise<{ deleted_faqs: number; deleted_docs: number }> {
+    const res = await apiDeleteKnowledgeBase(kbId)
     items.value = items.value.filter(i => i.kb_id !== kbId)
     docs.value = docs.value.filter(d => d.kb_id !== kbId)
     knowledgeBases.value = knowledgeBases.value.filter(kb => kb.id !== kbId)
-    // 如果删除的是当前库，切到第一个
-    if (currentKbId.value === kbId && knowledgeBases.value.length > 0) {
-      currentKbId.value = knowledgeBases.value[0].id
+    // 删掉的是当前库 → 落到第一个（后端把默认库排在最前）
+    if (currentKbId.value === kbId) {
+      currentKbId.value = knowledgeBases.value[0]?.id || ''
     }
+    return { deleted_faqs: res.deleted_faqs, deleted_docs: res.deleted_docs }
   }
 
   /** 切换当前知识库 */
@@ -277,112 +269,117 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     filterStatus.value = undefined
   }
 
-  /** 更新知识库元信息（名称/描述等） */
+  /** 更新知识库元信息（名称/描述/图标） */
   async function updateKnowledgeBase(kbId: string, data: Partial<Pick<KnowledgeBase, 'name' | 'description' | 'icon'>>): Promise<void> {
-    const kb = knowledgeBases.value.find(k => k.id === kbId)
-    if (kb) {
-      Object.assign(kb, data, { updated_at: new Date().toISOString() })
-    }
-  }
-
-  /** 刷新各库的计数缓存 */
-  function refreshKbCounts() {
-    knowledgeBases.value.forEach(kb => {
-      kb.faq_count = items.value.filter(i => i.kb_id === kb.id).length
-      kb.doc_count = docs.value.filter(d => d.kb_id === kb.id).length
-    })
+    const updated = await apiUpdateKnowledgeBase(kbId, data)
+    const idx = knowledgeBases.value.findIndex(k => k.id === kbId)
+    if (idx !== -1) knowledgeBases.value[idx] = updated
   }
 
   // ====== 话术 Actions ======
 
-  /**
-   * 加载知识库（Mock：已内置数据）
-   */
-  async function fetchItems() {
-    isLoading.value = true
+  /** 写操作后刷新容器计数（计数由后端统计，只能重拉） */
+  async function refreshKbCounts() {
     try {
-      // TODO: 替换为真实 API: get('/knowledge-base/faqs')
-      await new Promise(resolve => setTimeout(resolve, 300))
-      refreshKbCounts()
-    } finally {
-      isLoading.value = false
+      const bases = await fetchKnowledgeBase()
+      // 只更新计数，不动 items / docs（避免把本地刚插入的行回灌覆盖）
+      const byId = new Map(bases.bases.map(b => [b.id, b]))
+      knowledgeBases.value = knowledgeBases.value.map(kb => byId.get(kb.id) || kb)
+    } catch (e) {
+      console.warn('[Knowledge] 刷新知识库计数失败', e)
     }
   }
 
   /**
    * 新增话术（自动关联当前知识库）
+   *
+   * `kb_id` 必传（后端也强制校验）：它是话术的唯一归属维度，
+   * 没归属的条目在前端任何列表里都不可见。
    */
   async function addItem(data: Omit<FaqItem, 'id' | 'kb_id' | 'created_at' | 'updated_at' | 'usage_count'>): Promise<FaqItem> {
-    const newItem: FaqItem = {
-      ...data,
-      kb_id: currentKbId.value,
-      id: `faq-${Date.now()}`,
-      usage_count: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-    items.value.unshift(newItem)
-    refreshKbCounts()
-    return newItem
+    const created = await createFaq({ ...data, kb_id: currentKbId.value })
+    items.value.unshift(created)
+    await refreshKbCounts()
+    return created
   }
 
-  /**
-   * 更新话术
-   */
+  /** 更新话术 */
   async function updateItem(id: string, data: Partial<Pick<FaqItem, 'question' | 'answer' | 'category' | 'keywords' | 'priority' | 'status'>>): Promise<void> {
+    const updated = await updateFaq(id, data)
     const index = items.value.findIndex(i => i.id === id)
-    if (index !== -1) {
-      items.value[index] = {
-        ...items.value[index],
-        ...data,
-        updated_at: new Date().toISOString(),
-      }
-    }
+    if (index !== -1) items.value[index] = updated
   }
 
-  /**
-   * 删除话术
-   */
+  /** 删除话术 */
   async function deleteItem(id: string): Promise<void> {
+    await deleteFaq(id)
     items.value = items.value.filter(i => i.id !== id)
-    refreshKbCounts()
+    await refreshKbCounts()
   }
 
-  /**
-   * 批量删除
-   */
+  /** 批量删除（列表勾选删除） */
   async function batchDelete(ids: string[]): Promise<void> {
+    if (ids.length === 0) return
+    await batchDeleteFaqs(ids)
     items.value = items.value.filter(i => !ids.includes(i.id))
-    refreshKbCounts()
+    await refreshKbCounts()
   }
 
   // ====== 文档素材 Actions ======
 
-  /** 上传文档（RAG 补充素材） */
+  /**
+   * 上传文档（RAG 补充素材）。
+   *
+   * 文本类文件顺带读取正文（txt/md/csv/json 直接读，超 1MB 跳过），
+   * PDF / Excel 浏览器端无法抽取 → 正文留空（后端字段允许为空）。
+   */
   async function uploadDoc(file: File, description: string = ''): Promise<KnowledgeDoc> {
     const ext = file.name.split('.').pop()?.toLowerCase() || 'other'
     const fileTypeMap: Record<string, KnowledgeDoc['file_type']> = {
       pdf: 'pdf', md: 'md', txt: 'txt',
       xlsx: 'excel', xls: 'excel', csv: 'excel',
     }
-    const newDoc: KnowledgeDoc = {
-      id: `doc-${Date.now()}`,
+    const TEXT_EXTS = new Set(['txt', 'md', 'csv', 'json'])
+    let content: string | undefined
+    if (TEXT_EXTS.has(ext) && file.size <= 1024 * 1024) {
+      try { content = await file.text() } catch { content = undefined }
+    }
+
+    const created = await createKnowledgeDoc({
       kb_id: currentKbId.value,
       filename: file.name,
       file_type: fileTypeMap[ext] || 'other',
       size: file.size,
-      uploaded_at: new Date().toISOString(),
       description,
+      content,
+    })
+    docs.value.push(created)
+    await refreshKbCounts()
+    return created
+  }
+
+  /**
+   * 按 id 取单篇文档正文并回填本地。
+   *
+   * 列表接口刻意不返回 content（整篇数千字符），需要正文时按需拉取。
+   */
+  async function loadDocContent(docId: string): Promise<KnowledgeDoc | undefined> {
+    try {
+      const full = await fetchKnowledgeDoc(docId)
+      const idx = docs.value.findIndex(d => d.id === docId)
+      if (idx !== -1) docs.value[idx] = full
+      return full
+    } catch (e) {
+      console.warn('[Knowledge] 拉取文档正文失败', e)
+      return undefined
     }
-    docs.value.push(newDoc)
-    refreshKbCounts()
-    return newDoc
   }
 
   /** 删除文档 */
   async function deleteDoc(docId: string): Promise<void> {
+    await deleteKnowledgeDoc(docId)
     docs.value = docs.value.filter(d => d.id !== docId)
-    refreshKbCounts()
+    await refreshKbCounts()
   }
 
   /**
@@ -391,7 +388,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
    */
   async function parseAndImport(file: File): Promise<{ success: number; failed: number; errors: string[] }> {
     const text = await file.text()
-    let imported: Omit<FaqItem, 'id' | 'kb_id' | 'created_at' | 'updated_at' | 'usage_count'>[] = []
+    const imported: Omit<FaqItem, 'id' | 'kb_id' | 'created_at' | 'updated_at' | 'usage_count'>[] = []
     const errors: string[] = []
     const ext = file.name.split('.').pop()?.toLowerCase()
 
@@ -463,14 +460,24 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         errors.push(`不支持的文件格式: .${ext}`)
       }
 
-      // 批量入库
-      for (const item of imported) {
-        await addItem(item)
+      if (imported.length === 0) {
+        return { success: 0, failed: errors.length, errors }
       }
 
-      return { success: imported.length, failed: errors.length, errors }
+      // 一次批量提交（不是循环单条 POST）。**导入的条目统一归入当前库** ——
+      // 文件里没有「归属哪个库」的概念，孤立条目在 UI 里取不到。
+      const kbId = currentKbId.value
+      const res = await batchCreateFaqs(imported.map(it => ({ ...it, kb_id: kbId })))
+      items.value.unshift(...(res.items || []))
+      await refreshKbCounts()
+
+      // 后端跳过的不再计入 success，避免"导入成功 N 条"与实际入库不符
+      const skipped = res.skipped || 0
+      if (skipped > 0) errors.push(`${skipped} 条因缺少必填字段被服务端跳过`)
+
+      return { success: res.added || 0, failed: errors.length, errors }
     } catch (e) {
-      return { success: 0, failed: 1, errors: [`文件解析失败: ${e instanceof Error ? e.message : String(e)}`] }
+      return { success: 0, failed: 1, errors: [`导入失败: ${e instanceof Error ? e.message : String(e)}`] }
     }
   }
 
@@ -509,6 +516,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
     // 话术 Actions
     fetchItems,
+    ensureLoaded,
+    resetForShopSwitch,
     addItem,
     updateItem,
     deleteItem,
@@ -517,6 +526,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
     // 文档 Actions
     uploadDoc,
+    loadDocContent,
     deleteDoc,
   }
 })

@@ -15,7 +15,7 @@
             <SearchOutlined style="color: #bfbfbf" />
           </template>
           <template v-if="detectedType" #suffix>
-            <a-tag :color="platformTagColor" size="small" style="margin-right: 4px; font-size: 10px">
+            <a-tag :color="platformTagColor" size="small" style="margin-right: var(--space-4); font-size: var(--font-size-10)">
               {{ platformLabel }}
             </a-tag>
           </template>
@@ -46,288 +46,131 @@
       <CloseOutlined class="mini-clear" @click="clearProduct" />
     </div>
 
-    <!-- ====== 基础成本（常显）====== -->
-    <div class="section-title">基础成本</div>
-
-    <div class="form-row">
-      <div class="form-group flex-1">
-        <label>采购成本 ($)</label>
-        <a-input-number
-          v-model:value="form.costPrice"
-          placeholder="0.00"
-          :min="0"
-          :precision="2"
-          size="small"
-          style="width: 100%"
-        />
-      </div>
-      <div class="form-group flex-1">
-        <label>头程运费 ($)</label>
-        <a-input-number
-          v-model:value="form.shippingCost"
-          placeholder="0.00"
-          :min="0"
-          :precision="2"
-          size="small"
-          style="width: 100%"
-        />
-      </div>
+    <!-- ====== 成本明细表（Excel 风格：表头 + 一行一项 + 框线 + 分组合并格）======
+         输入框去掉自身边框融进单元格，聚焦时整格高亮；金额/费率的含义统一写在「说明」列 -->
+    <div class="cost-sheet">
+      <table class="cost-table">
+        <colgroup>
+          <col class="col-group" />
+          <col class="col-item" />
+          <col class="col-value" />
+          <col class="col-hint" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>分组</th>
+            <th>成本项</th>
+            <th>数值</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in costRows" :key="row.key">
+            <td v-if="row.span" :rowspan="row.span" class="cell-group">{{ row.group }}</td>
+            <td class="cell-item">{{ row.label }}</td>
+            <td class="cell-value">
+              <a-input-number
+                v-model:value="row.value"
+                size="small"
+                :min="row.min"
+                :max="row.max"
+                :step="row.step"
+                :precision="row.precision"
+                :placeholder="row.placeholder"
+                :disabled="row.disabled"
+              />
+            </td>
+            <td class="cell-hint">{{ row.hint }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="sheet-note">正向计算：填「目标售价」算利润；逆向定价：填「目标毛利」算售价（「目标售价」自动禁用）。其余空值一律按 0 计算。</div>
     </div>
 
-    <div class="form-row">
-      <div class="form-group flex-1">
-        <label>目标售价 ($)</label>
-        <a-input-number
-          v-model:value="form.sellingPrice"
-          placeholder="输入售价"
-          :min="0"
-          :precision="2"
-          size="small"
-          style="width: 100%"
-        />
-      </div>
-      <div class="form-group flex-1">
-        <label>包装成本 ($)</label>
-        <a-input-number
-          v-model:value="form.packagingCost"
-          placeholder="0.00"
-          :min="0"
-          :precision="2"
-          size="small"
-          style="width: 100%"
-        />
-      </div>
-    </div>
-
-    <!-- ====== 高级参数（可折叠）====== -->
-    <a-collapse
-      v-model:activeKey="advancedActiveKey"
-      ghost
-      size="small"
-      style="margin-top: 4px"
-    >
-      <a-collapse-panel key="platform" header="平台费用">
-        <div class="form-row">
-          <div class="form-group flex-1">
-            <label>平台佣金 (%)</label>
-            <a-input-number
-              v-model:value="form.referralFeePct"
-              placeholder="15"
-              :min="0"
-              :max="45"
-              :step="0.5"
-              :precision="1"
-              size="small"
-              style="width: 100%"
-              addon-after="%"
-            />
-          </div>
-          <div class="form-group flex-1">
-            <label>FBA 配送费 ($)</label>
-            <a-input-number
-              v-model:value="form.fbaFee"
-              placeholder="3.22"
-              :min="0"
-              :precision="2"
-              size="small"
-              style="width: 100%"
-            />
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group flex-1">
-            <label>月仓储费 ($)</label>
-            <a-input-number
-              v-model:value="form.storageFee"
-              placeholder="0.87"
-              :min="0"
-              :precision="2"
-              size="small"
-              style="width: 100%"
-            />
-          </div>
-          <div class="form-group flex-1">
-            <label>提现手续费 (%)</label>
-            <a-input-number
-              v-model:value="form.withdrawalFeePct"
-              placeholder="1"
-              :min="0"
-              :max="5"
-              :step="0.1"
-              :precision="1"
-              size="small"
-              style="width: 100%"
-              addon-after="%"
-            />
-          </div>
-        </div>
-      </a-collapse-panel>
-
-      <a-collapse-panel key="marketing" header="营销 & 税费">
-        <div class="form-row">
-          <div class="form-group flex-1">
-            <label>PPC 广告费 ($)</label>
-            <a-input-number
-              v-model:value="form.adCost"
-              placeholder="0 = 不投广告"
-              :min="0"
-              :precision="2"
-              size="small"
-              style="width: 100%"
-            />
-          </div>
-          <div class="form-group flex-1">
-            <label>VAT 税率 (%)</label>
-            <a-input-number
-              v-model:value="form.vatRate"
-              placeholder="欧洲站必填"
-              :min="0"
-              :max="25"
-              :step="1"
-              :precision="0"
-              size="small"
-              style="width: 100%"
-              addon-after="%"
-            />
-          </div>
-        </div>
-        <div class="form-group">
-          <label>促销/优惠券折扣 (%)</label>
-          <a-slider
-            v-model:value="form.discountPct"
-            :min="0"
-            :max="50"
-            :marks="{ 0: '无', 10: '10%', 20: '20%', 30: '30%' }"
-            :tooltip-formatter="(v: number) => `${v}%`"
-          />
-        </div>
-      </a-collapse-panel>
-
-      <a-collapse-panel key="other" header="其他成本">
-        <div class="form-row">
-          <div class="form-group flex-1">
-            <label>退货损耗率 (%)</label>
-            <a-input-number
-              v-model:value="form.returnRatePct"
-              placeholder="服装类 5-15%"
-              :min="0"
-              :max="50"
-              :step="1"
-              :precision="0"
-              size="small"
-              style="width: 100%"
-              addon-after="%"
-            />
-          </div>
-          <div class="form-group flex-1">
-            <label>汇率损失 (%)</label>
-            <a-input-number
-              v-model:value="form.exchangeLossPct"
-              placeholder="通常 1-2%"
-              :min="0"
-              :max="10"
-              :step="0.5"
-              :precision="1"
-              size="small"
-              style="width: 100%"
-              addon-after="%"
-            />
-          </div>
-        </div>
-        <a-alert
-          type="info"
-          show-icon
-          message="退货损耗会按比例摊入单件成本，影响最终利润计算"
-          style="margin-top: 8px; font-size: 11px"
-        />
-      </a-collapse-panel>
-    </a-collapse>
-
-    <!-- ====== 计算模式 ====== -->
-    <a-divider style="margin: 12px 0 8px" />
-
-    <div class="section-title">计算模式</div>
-    <div class="mode-switch">
+    <!-- ====== 计算模式 + 操作（同一行，不再各占一段）====== -->
+    <div class="mode-bar">
       <a-radio-group v-model:value="form.mode" size="small" button-style="solid">
         <a-radio-button value="forward">正向计算</a-radio-button>
         <a-radio-button value="reverse">逆向定价</a-radio-button>
       </a-radio-group>
+
+      <div v-if="form.mode === 'reverse'" class="mode-target">
+        <label>目标毛利 ($)</label>
+        <a-input-number v-model:value="form.targetProfit" placeholder="期望利润" :min="0" :precision="2" size="small" style="width: 100%" />
+      </div>
+
+      <div class="mode-actions">
+        <a-button size="small" @click="handleReset">
+          <ReloadOutlined /> 重置
+        </a-button>
+        <a-button type="primary" size="small" :loading="loading" @click="handleSubmit">
+          <CalculatorOutlined /> {{ form.mode === 'forward' ? '计算利润' : '计算售价' }}
+        </a-button>
+      </div>
     </div>
 
-    <div v-if="form.mode === 'reverse'" class="form-group">
-      <label>目标毛利 ($)</label>
-      <a-input-number
-        v-model:value="form.targetProfit"
-        placeholder="期望利润"
-        :min="0"
-        :precision="2"
-        size="small"
-        style="width: 100%"
-      />
+    <!-- ====== 实时预览（后端唯一计算源，与对话结果卡同源）======
+         这里不再有前端公式：输入 → 调 /stores/profit/calculate（费率来自当前店铺）
+         → 拿回的 result 同时喂给本预览区与对话结果卡，两处只做渲染差异。 -->
+    <div v-if="preview" class="quick-preview">
+      <div class="preview-metrics">
+        <template v-if="form.mode === 'forward'">
+          <div class="preview-item">
+            <span class="preview-label">预估毛利</span>
+            <span class="preview-value" :class="{ positive: preview.net_profit > 0, negative: preview.net_profit <= 0 }">
+              {{ preview.net_profit > 0 ? '+' : '' }}${{ (preview.net_profit ?? 0).toFixed(2) }}
+            </span>
+          </div>
+          <div class="preview-item">
+            <span class="preview-label">毛利率</span>
+            <span class="preview-value">{{ (preview.profit_margin_pct ?? 0).toFixed(1) }}%</span>
+          </div>
+          <div class="preview-item">
+            <span class="preview-label">总费用占比</span>
+            <span class="preview-value warning">{{ previewCostPct.toFixed(1) }}%</span>
+          </div>
+        </template>
+        <template v-else>
+          <div class="preview-item">
+            <span class="preview-label">建议售价</span>
+            <span class="preview-value suggested">${{ (preview.listing_price ?? 0).toFixed(2) }}</span>
+          </div>
+          <div class="preview-item">
+            <span class="preview-label">对应毛利率</span>
+            <span class="preview-value">{{ (preview.profit_margin_pct ?? 0).toFixed(1) }}%</span>
+          </div>
+        </template>
+      </div>
+      <div v-if="form.mode === 'reverse'" class="preview-hint">
+        要实现 ${{ (form.targetProfit || 0).toFixed(2) }} 目标毛利，需定价不低于 ${{ (preview.listing_price ?? 0).toFixed(2) }}
+      </div>
+      <div class="preview-source">{{ preview.platform }} · {{ preview.currency }} · 费率取当前店铺</div>
     </div>
-
-    <!-- ====== 快速预览（有足够数据时自动显示）====== -->
-    <div v-if="quickPreview" class="quick-preview">
-      <a-divider style="margin: 8px 0" />
-      <!-- 正向模式：显示利润 -->
-      <template v-if="form.mode === 'forward'">
-        <div class="preview-row">
-          <span class="preview-label">预估毛利</span>
-          <span class="preview-value" :class="{ positive: quickPreview.grossProfit > 0, negative: quickPreview.grossProfit <= 0 }">
-            {{ quickPreview.grossProfit > 0 ? '+' : '' }}${{ quickPreview.grossProfit.toFixed(2) }}
-          </span>
-        </div>
-        <div class="preview-row">
-          <span class="preview-label">毛利率</span>
-          <span class="preview-value">{{ quickPreview.marginPct.toFixed(1) }}%</span>
-        </div>
-        <div class="preview-row">
-          <span class="preview-label">总费用占比</span>
-          <span class="preview-value warning">{{ quickPreview.feePct.toFixed(1) }}%</span>
-        </div>
-      </template>
-      <!-- 逆向模式：显示建议售价 -->
-      <template v-else>
-        <div class="preview-row">
-          <span class="preview-label">建议售价</span>
-          <span class="preview-value suggested">
-            ${{ (quickPreview.suggestedPrice ?? 0).toFixed(2) }}
-          </span>
-        </div>
-        <div class="preview-row">
-          <span class="preview-label">对应毛利率</span>
-          <span class="preview-value">{{ quickPreview.marginPct.toFixed(1) }}%</span>
-        </div>
-        <div class="preview-hint">
-          💡 要实现 ${{ (form.targetProfit || 0).toFixed(2) }} 目标毛利，需定价不低于 ${{ (quickPreview.suggestedPrice ?? 0).toFixed(2) }}
-        </div>
-      </template>
-    </div>
-
-    <!-- ====== 操作按钮 ====== -->
-    <div class="action-bar">
-      <a-button @click="handleReset" block size="small">
-        <ReloadOutlined /> 重置
-      </a-button>
-      <a-button type="primary" @click="handleSubmit" block size="small" :loading="loading">
-        <CalculatorOutlined /> {{ form.mode === 'forward' ? '计算利润' : '计算售价' }}
-      </a-button>
+    <div v-else-if="previewError" class="quick-preview quick-preview--error">{{ previewError }}</div>
+    <div v-else class="quick-preview quick-preview--idle">
+      {{ previewLoading
+        ? '正在按当前店铺费率测算…'
+        : `填好「采购成本」和${form.mode === 'forward' ? '目标售价' : '目标毛利'}，这里会实时给出店铺费率下的结果。` }}
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ReloadOutlined, CalculatorOutlined, SearchOutlined, ShopOutlined, CloseOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import ProductPickerButton from './ProductPickerButton.vue'
+import { calculateProfit, toProfitRequest, type ProfitResult } from '@/api/stores'
+import { useShopStore } from '@/stores/shop'
 
 const emit = defineEmits<{
   (e: 'startAnalysis', params: any): void
 }>()
 
 const loading = ref(false)
-const advancedActiveKey = ref<string[]>([])
+
+// 当前店铺决定费率模板 —— 利润测算的「平台规则」部分由它提供
+const shopStore = useShopStore()
 
 // ====== 输入类型检测 ======
 type InputType = 'url' | 'asin' | 'keyword' | ''
@@ -373,6 +216,65 @@ const defaultForm = () => ({
 })
 
 const form = reactive(defaultForm())
+
+// ====== 成本明细表定义（Excel 风格表格的数据源）======
+// 一行一项；group 相同的连续行在表格里合并为一格（rowspan）
+interface CostRowDef {
+  key: string
+  group: string
+  label: string
+  hint: string
+  min?: number
+  max?: number
+  step?: number
+  precision?: number
+  placeholder?: string
+  /** 逆向定价时禁用（该项由计算得出、不该手填）—— 目前只有「目标售价」 */
+  disabledInReverse?: boolean
+}
+
+const COST_ROWS_DEF: CostRowDef[] = [
+  // 基础成本
+  { key: 'costPrice', group: '基础成本', label: '采购成本', hint: '$ / 单件', min: 0, precision: 2, placeholder: '0.00' },
+  { key: 'shippingCost', group: '基础成本', label: '头程运费', hint: '$ / 单件', min: 0, precision: 2, placeholder: '0.00' },
+  { key: 'packagingCost', group: '基础成本', label: '包装成本', hint: '$ / 单件', min: 0, precision: 2, placeholder: '0.00' },
+  // 目标售价：正向计算的核心输入（必填）；逆向定价时它是计算结果，故禁用
+  { key: 'sellingPrice', group: '基础成本', label: '目标售价', hint: '$ · 逆向定价无需填', min: 0, precision: 2, placeholder: '0.00', disabledInReverse: true },
+  // 平台费用
+  { key: 'referralFeePct', group: '平台费用', label: '平台佣金', hint: '% · 亚马逊默认 15', min: 0, max: 45, step: 0.5, precision: 1, placeholder: '15' },
+  { key: 'fbaFee', group: '平台费用', label: 'FBA 配送费', hint: '$ / 单件', min: 0, precision: 2, placeholder: '3.22' },
+  { key: 'storageFee', group: '平台费用', label: '月仓储费', hint: '$ / 单件', min: 0, precision: 2, placeholder: '0.87' },
+  { key: 'withdrawalFeePct', group: '平台费用', label: '提现手续费', hint: '%', min: 0, max: 5, step: 0.1, precision: 1, placeholder: '1' },
+  // 营销 + 税费
+  { key: 'adCost', group: '营销税费', label: 'PPC 广告费', hint: '$ · 0 = 不投', min: 0, precision: 2, placeholder: '0' },
+  { key: 'vatRate', group: '营销税费', label: 'VAT 税率', hint: '% · 欧洲站必填', min: 0, max: 25, step: 1, precision: 0, placeholder: '0' },
+  { key: 'discountPct', group: '营销税费', label: '促销折扣', hint: '% · 按标价折', min: 0, max: 50, step: 1, precision: 0, placeholder: '0' },
+  // 其他成本
+  { key: 'returnRatePct', group: '其他成本', label: '退货损耗率', hint: '% · 服装类 5-15', min: 0, max: 50, step: 1, precision: 0, placeholder: '0' },
+  { key: 'exchangeLossPct', group: '其他成本', label: '汇率损失', hint: '% · 通常 1-2', min: 0, max: 10, step: 0.5, precision: 1, placeholder: '1.5' },
+]
+
+// 转成可直接 v-model 的行：getter/setter 读写 form 的对应字段，避免模板里写 13 段重复结构；
+// 每个分组首行带 span（=该组行数），其余为 0 —— 模板据此只渲染一次分组格并 rowspan 合并
+const costRows = COST_ROWS_DEF.map((def, i, arr) => {
+  const isGroupStart = i === 0 || arr[i - 1]?.group !== def.group
+  const span = isGroupStart ? arr.filter((d) => d.group === def.group).length : 0
+  return {
+    ...def,
+    span,
+    get value(): any { return (form as any)[def.key] },
+    set value(v: any) { (form as any)[def.key] = v },
+    // 是否禁用：随计算模式变化 —— 「目标售价」在逆向定价下由计算得出，不该手填
+    get disabled(): boolean {
+      return Boolean(def.disabledInReverse && form.mode === 'reverse')
+    },
+    // 说明文案同样随模式变化：正向计算时它是必填项，不能沿用「无需填」的说法
+    get hint(): string {
+      if (def.key !== 'sellingPrice') return def.hint
+      return form.mode === 'forward' ? '$ · 正向计算必填' : '$ · 由计算得出'
+    },
+  }
+})
 
 // ====== 智能输入检测 ======
 const detectedType = ref<InputType>('')
@@ -461,115 +363,64 @@ const onProductSelect = (product: any) => {
   onInputChange(form.productInput)
 }
 
-// ====== 快速预览计算 ======
-interface QuickPreview {
-  grossProfit: number
-  marginPct: number
-  feePct: number
-  suggestedPrice?: number  // 逆向定价：建议售价
-}
+// ====== 实时预览（后端为唯一计算源）======
+// 之前这里是一段前端 computed 公式，与 mock 执行器、后端引擎三方并存 ——
+// 同一份输入能算出三个结果。现在只保留一条路：调后端。
+const preview = ref<ProfitResult | null>(null)
+const previewLoading = ref(false)
+const previewError = ref('')
 
-const quickPreview = computed<QuickPreview | null>(() => {
-  const { costPrice, sellingPrice, shippingCost, packagingCost,
-          referralFeePct, fbaFee, storageFee, withdrawalFeePct,
-          adCost, vatRate, discountPct, returnRatePct, exchangeLossPct,
-          mode, targetProfit } = form
+let previewTimer: ReturnType<typeof setTimeout> | null = null
 
-  // 正向模式：需要售价
-  if (mode === 'forward') {
-    if (!costPrice || !sellingPrice) return null
+const shopId = computed(() => shopStore.currentShopId || '')
 
-    const actualPrice = sellingPrice * (1 - (discountPct || 0) / 100)
-    const referralFee = actualPrice * (referralFeePct || 0) / 100
-    const vatAmount = actualPrice * (vatRate || 0) / 100
-    const withdrawalFee = actualPrice * (withdrawalFeePct || 0) / 100
-    const exchangeLoss = actualPrice * (exchangeLossPct || 0) / 100
-
-    const totalFixedCost =
-      (costPrice || 0) + (shippingCost || 0) + (packagingCost || 0) +
-      (fbaFee || 0) + (storageFee || 0) + (adCost || 0)
-
-    const returnLoss = totalFixedCost * ((returnRatePct || 0) / 100) / (1 - (returnRatePct || 0) / 100)
-    const totalCost = totalFixedCost + returnLoss + referralFee + vatAmount + withdrawalFee + exchangeLoss
-    const grossProfit = actualPrice - totalCost
-    const feePct = (totalCost / actualPrice) * 100
-
-    return {
-      grossProfit,
-      marginPct: (grossProfit / actualPrice) * 100,
-      feePct,
-    }
-  }
-
-  // 逆向模式：需要成本 + 目标毛利
-  if (mode === 'reverse') {
-    if (!costPrice || !targetProfit) return null
-
-    // 固定成本（不随售价变化的部分）
-    const fixedCost =
-      (costPrice || 0) + (shippingCost || 0) + (packagingCost || 0) +
-      (fbaFee || 0) + (storageFee || 0) + (adCost || 0)
-
-    // 费率参数
-    const r = (referralFeePct || 0) / 100       // 佣金率
-    const v = (vatRate || 0) / 100               // VAT 率
-    const w = (withdrawalFeePct || 0) / 100      // 提现费率
-    const e = (exchangeLossPct || 0) / 100       // 汇率损失率
-    const rr = (returnRatePct || 0) / 100        // 退货率
-    const d = (discountPct || 0) / 100           // 折扣率
-
-    // 逆向公式推导：
-    // 实际售价 = 标价 × (1 - d)
-    // 毛利 = 实际售价 - 固定成本 - 退货损耗 - 佣金 - VAT - 提现费 - 汇率损失
-    // 其中：退货损耗 = 固定成本 × rr/(1-rr)
-    //       佣金 = 实际售价 × r
-    //       VAT = 实际售价 × v
-    //       提现费 = 实际售价 × w
-    //       汇率损失 = 实际售价 × e
-    //
-    // 整理得：毛利 = 实际售价 × (1 - r - v - w - e) - 固定成本 × (1 + rr/(1-rr))
-    // → 实际售价 = (目标毛利 + 固定成本 × (1 + rr/(1-rr))) / (1 - r - v - w - e)
-    // → 标价 = 实际售价 / (1 - d)
-
-    const returnMultiplier = 1 + rr / (1 - rr)
-    const totalFixedWithReturn = fixedCost * returnMultiplier
-    const rateDenominator = 1 - r - v - w - e
-
-    if (rateDenominator <= 0) {
-      // 费率过高，无法盈利
-      return {
-        grossProfit: 0,
-        marginPct: 0,
-        feePct: 100,
-        suggestedPrice: Infinity,
-      }
-    }
-
-    const actualPriceNeeded = (targetProfit + totalFixedWithReturn) / rateDenominator
-    const suggestedPrice = actualPriceNeeded / (1 - d)
-
-    // 用建议售价反算毛利率供参考
-    const actualSuggested = suggestedPrice * (1 - d)
-    const refFee = actualSuggested * r
-    const vatAmt = actualSuggested * v
-    const withFee = actualSuggested * w
-    const exLoss = actualSuggested * e
-    const retLoss = fixedCost * rr / (1 - rr)
-    const totalCost = fixedCost + retLoss + refFee + vatAmt + withFee + exLoss
-    const verifyProfit = actualSuggested - totalCost
-
-    return {
-      grossProfit: verifyProfit,
-      marginPct: (verifyProfit / actualSuggested) * 100,
-      feePct: (totalCost / actualSuggested) * 100,
-      suggestedPrice,
-    }
-  }
-
-  return null
+/** 总费用占成交价比例 (%) */
+const previewCostPct = computed(() => {
+  const p = preview.value
+  if (!p || !p.final_price) return 0
+  return (p.total_cost / p.final_price) * 100
 })
 
-// ====== 持久化 ======
+/** 三个必要条件齐了才发请求：选了店铺、填了采购成本、填了售价或目标毛利 */
+const canPreview = computed(() => {
+  if (!shopId.value) return false
+  if (!form.costPrice) return false
+  return form.mode === 'forward' ? !!form.sellingPrice : !!form.targetProfit
+})
+
+const runPreview = async () => {
+  if (!canPreview.value) {
+    preview.value = null
+    previewError.value = shopId.value ? '' : '未选择店铺，取不到费率模板'
+    return
+  }
+  previewLoading.value = true
+  try {
+    preview.value = await calculateProfit(toProfitRequest(form), shopId.value)
+    previewError.value = ''
+  } catch (e: any) {
+    // 降级必须给出原因，绝不编一个数字顶上（空状态优于虚构默认）
+    preview.value = null
+    previewError.value = e?.message || '测算失败，请检查参数或店铺费率配置'
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+/** 输入停顿 350ms 再请求：保住「边填边看」的手感，又不至于每敲一个字符打一次后端 */
+const schedulePreview = () => {
+  if (previewTimer) clearTimeout(previewTimer)
+  previewTimer = setTimeout(runPreview, 350)
+}
+
+// 换店铺 = 换费率模板，必须重算
+watch(shopId, () => runPreview())
+
+onBeforeUnmount(() => {
+  if (previewTimer) clearTimeout(previewTimer)
+})
+
+
 onMounted(() => {
   try {
     const saved = localStorage.getItem('profit_config_v2')
@@ -582,6 +433,8 @@ onMounted(() => {
       }
     }
   } catch (e) {}
+  // 恢复上次参数后立刻按当前店铺费率算一次（与恢复出来的表单保持一致）
+  runPreview()
 })
 
 // 自动保存
@@ -591,12 +444,13 @@ watch(
     try {
       localStorage.setItem('profit_config_v2', JSON.stringify(val))
     } catch (e) {}
+    schedulePreview()
   },
   { deep: true }
 )
 
 // ====== 提交 ======
-const handleSubmit = () => {
+const handleSubmit = async () => {
   if (form.mode === 'forward') {
     if (!form.costPrice || !form.sellingPrice) {
       message.warning('正向计算：请填写采购成本和目标售价')
@@ -611,11 +465,13 @@ const handleSubmit = () => {
 
   loading.value = true
 
-  // 构建完整参数对象发给后端/AI
+  // 同源关键：把后端刚算出的这份结果原样交给对话区，
+  // 对话结果卡据此渲染 —— 不再自己算第二遍。
+  if (!preview.value) await runPreview()
+
   const params = {
     ...form,
-    // 附上快速预览结果供参考
-    _preview: quickPreview.value,
+    _preview: preview.value,
   }
 
   emit('startAnalysis', params)
@@ -624,7 +480,6 @@ const handleSubmit = () => {
 
 const handleReset = () => {
   Object.assign(form, defaultForm())
-  advancedActiveKey.value = []
   detectedType.value = ''
   detectedPlatform.value = ''
   detectedProduct.value = null
@@ -637,109 +492,239 @@ const handleReset = () => {
 .profit-config {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 .form-group > label {
   display: block;
-  font-size: 12px;
-  color: #595959;
-  margin-bottom: 3px;
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
   font-weight: 500;
 }
 
-.form-row {
+/* ====== 成本明细表（Excel 风格）======
+   一行一项、表头 + 框线 + 分组合并单元格；输入框去边框融进单元格，
+   聚焦时整格高亮 —— 观感对齐 Excel 的「选中单元格」。 */
+.cost-sheet {
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-6);
+  overflow: hidden;
+}
+
+.cost-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--font-size-11);
+}
+
+.cost-table .col-group { width: 58px; }
+.cost-table .col-item { width: 80px; }
+/* 数值列定宽：只放数字，把剩余宽度全部让给「说明」列 */
+.cost-table .col-value { width: 104px; }
+
+.cost-table th {
+  height: 26px;
+  padding: 0 var(--space-6);
+  font-size: var(--font-size-10);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-align: left;
+  background: var(--bg-hover-light);
+  border-right: 1px solid var(--border-base);
+  border-bottom: 1px solid var(--border-base);
+}
+
+.cost-table th:last-child { border-right: none; }
+
+.cost-table td {
+  height: 28px;
+  padding: 0;
+  vertical-align: middle;
+  border-right: 1px solid var(--border-base);
+  border-bottom: 1px solid var(--border-base);
+}
+
+.cost-table td:last-child { border-right: none; }
+.cost-table tbody tr:last-child td { border-bottom: none; }
+.cost-table tbody tr:hover td { background: var(--bg-hover-light); }
+
+.cost-table td.cell-group {
+  text-align: center;
+  font-size: var(--font-size-10);
+  color: var(--text-secondary);
+  background: var(--bg-hover-light);
+  white-space: nowrap;
+}
+
+.cost-table td.cell-item {
+  padding: 0 var(--space-6);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cost-table td.cell-hint {
+  padding: 0 var(--space-6);
+  font-size: var(--font-size-10);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cost-table td.cell-value { position: relative; }
+
+/* 输入框与单元格融为一体：去边框去圆角，聚焦时由格子的 inset 描边接管 */
+.cost-table td.cell-value :deep(.ant-input-number) {
+  width: 100%;
+  height: 27px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cost-table td.cell-value :deep(.ant-input-number-input) {
+  height: 26px;
+  padding: 0 var(--space-6);
+  font-size: var(--font-size-11);
+}
+
+.cost-table td.cell-value :deep(.ant-input-number-focused) { box-shadow: none; }
+
+/* 空值占位符：antd 默认色 rgba(0,0,0,.25) 与「禁用态文字色」**完全相同** ——
+   于是「待填的空格」看起来和「不能填的格子」一模一样（这就是「目标售价不该灰」的根因）。
+   提到 --text-tertiary 后：中灰 = 空且可填；浅灰 + 灰底 = 已禁用，一眼可辨。 */
+.cost-table td.cell-value :deep(.ant-input-number-input::placeholder) {
+  color: var(--text-tertiary);
+}
+
+/* 禁用态（仅逆向定价时的「目标售价」）：垫灰底 + not-allowed，与「空且可填」区分开 */
+.cost-table td.cell-value :deep(.ant-input-number-disabled) {
+  background: var(--bg-base);
+  cursor: not-allowed;
+}
+
+.cost-table td.cell-value:focus-within {
+  background: var(--info-bg);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.sheet-note {
+  padding: var(--space-5) var(--space-8);
+  font-size: var(--font-size-10);
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  background: var(--bg-base);
+  border-top: 1px solid var(--border-base);
+}
+
+/* ====== 计算模式 + 操作（合并到同一行，不再各占一段）====== */
+.mode-bar {
   display: flex;
-  gap: 8px;
-}
-
-.flex-1 { flex: 1; }
-
-.section-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #262626;
-  margin-top: 4px;
-}
-
-.mode-switch {
-  display: flex;
-  justify-content: center;
-}
-
-/* 折叠面板样式优化 */
-.profit-config :deep(.ant-collapse-header) {
-  padding: 4px 0 !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  color: #1890ff !important;
-}
-
-.profit-config :deep(.ant-collapse-content-box) {
-  padding: 8px 0 !important;
-}
-
-/* 快速预览 */
-.quick-preview {
-  background: #f6ffed;
-  border: 1px solid #b7eb8f;
-  border-radius: 6px;
-  padding: 8px 10px;
-}
-
-.preview-row {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 2px 0;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+  margin-top: var(--space-4);
+  padding-top: var(--space-10);
+  border-top: 1px solid var(--border-base);
+}
+
+.mode-target {
+  flex: 1;
+  min-width: 120px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.mode-target > label {
+  margin: 0;
+  font-size: var(--font-size-11);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.mode-actions {
+  display: flex;
+  gap: var(--space-6);
+  margin-left: auto;
+}
+
+/* ====== 实时预览（横排三格，和表单同屏可见）====== */
+.quick-preview {
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  border-radius: var(--radius-6);
+  padding: var(--space-8) var(--space-10);
+}
+
+.preview-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-8);
+}
+
+.preview-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .preview-label {
-  font-size: 11px;
-  color: #8c8c8c;
+  font-size: var(--font-size-11);
+  color: var(--text-tertiary);
 }
 
 .preview-value {
-  font-size: 13px;
+  font-size: var(--font-size-16);
   font-weight: 600;
-  color: #262626;
+  color: var(--text-primary);
 }
 
-.preview-value.positive {
-  color: #52c41a;
+.preview-value.positive { color: var(--success); }
+.preview-value.negative { color: var(--danger); }
+.preview-value.warning { color: var(--warning); }
+
+.preview-value.suggested { color: var(--primary); }
+
+/* 数据来源标注：让人一眼看出这个数字是店铺费率算出来的，不是本地估的 */
+.preview-source {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--success-border);
+  font-size: var(--font-size-10);
+  color: var(--text-tertiary);
 }
 
-.preview-value.negative {
-  color: #ff4d4f;
+/* 未就绪 / 失败态：明确的空状态或原因，不给假数字 */
+.quick-preview--idle {
+  background: var(--bg-base);
+  border-color: var(--border-base);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-11);
+  line-height: 1.6;
 }
 
-.preview-value.warning {
-  color: #fa8c16;
-}
-
-.preview-value.suggested {
-  color: #1890ff;
-  font-size: 16px;
+.quick-preview--error {
+  background: var(--bg-base);
+  border-color: var(--border-base);
+  color: var(--danger);
+  font-size: var(--font-size-11);
+  line-height: 1.6;
 }
 
 .preview-hint {
-  margin-top: 6px;
-  padding: 6px 8px;
-  background: #e6f7ff;
-  border-radius: 4px;
-  font-size: 11px;
-  color: #595959;
+  margin-top: var(--space-8);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--success-border);
+  font-size: var(--font-size-11);
+  color: var(--text-secondary);
   line-height: 1.5;
-}
-
-/* 操作按钮 */
-.action-bar {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-  padding-top: 10px;
-  border-top: 1px solid #f0f0f0;
 }
 
 /* 智能输入框 */
@@ -754,60 +739,60 @@ const handleReset = () => {
 }
 
 .smart-input-picker :deep(.picker-btn) {
-  font-size: 11px !important;
-  color: #1890ff !important;
-  padding: 0 6px !important;
+  font-size: var(--font-size-11) !important;
+  color: var(--primary) !important;
+  padding: 0 var(--space-6) !important;
   background: rgba(230, 247, 255, 0.6) !important;
-  border: 1px solid #91d5ff !important;
-  border-radius: 4px !important;
+  border: 1px solid var(--info-border) !important;
+  border-radius: var(--radius-4) !important;
 }
 
 .smart-input-picker :deep(.picker-btn:hover) {
-  background: #e6f7ff !important;
+  background: var(--info-bg) !important;
 }
 
 .input-hints {
   display: flex;
-  gap: 6px;
-  margin-top: 6px;
+  gap: var(--space-6);
+  margin-top: var(--space-6);
   flex-wrap: wrap;
 }
 
 .hint-chip {
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: #f5f5f5;
-  color: #8c8c8c;
+  font-size: var(--font-size-10);
+  padding: var(--space-2) var(--space-8);
+  border-radius: var(--radius-10);
+  background: var(--bg-hover-light);
+  color: var(--text-tertiary);
   cursor: pointer;
   transition: all 0.2s;
   border: 1px solid transparent;
 }
 
-.hint-chip:hover { background: #e6f7ff; color: #1890ff; border-color: #91d5ff; }
-.hint-chip.active { background: #e6f7ff; color: #1890ff; border-color: #1890ff; }
+.hint-chip:hover { background: var(--info-bg); color: var(--primary); border-color: var(--info-border); }
+.hint-chip.active { background: var(--info-bg); color: var(--primary); border-color: var(--primary); }
 
 /* 迷你商品卡片 */
 .product-card-mini {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-8);
   background: linear-gradient(135deg, #f0f9ff 0%, #e6f7ff 100%);
   border: 1px solid #bae7ff;
-  border-radius: 6px;
-  font-size: 11px;
+  border-radius: var(--radius-6);
+  font-size: var(--font-size-11);
 }
 
-.mini-platform { font-weight: 600; color: #1890ff; }
+.mini-platform { font-weight: 600; color: var(--primary); }
 .mini-id {
   font-family: 'SF Mono', Monaco, monospace;
-  color: #262626;
+  color: var(--text-primary);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .mini-clear { cursor: pointer; color: #999; }
-.mini-clear:hover { color: #ff4d4f; }
+.mini-clear:hover { color: var(--danger); }
 </style>

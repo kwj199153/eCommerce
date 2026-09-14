@@ -11,6 +11,7 @@
  * 组件层无需改动 —— 通过 toolExecutors 注册表查表调用。
  */
 import { useMonitorPoolStore } from '@/stores/monitorPool'
+import { generateAssets } from '@/api/aigcMedia'
 
 // 辅助：时间范围标签
 const timeRangeLabel = (tr: string): string => ({ '7d': '近7天', '30d': '近30天', '90d': '近90天' }[tr] || '近30天')
@@ -76,7 +77,9 @@ export const getParamSummary = (toolId: string, params: any): string => {
       return `- 目标产品：${params.asin || params.product_name || '未指定'}\n- 扫描维度：8 项全扫描\n- 严重程度过滤：全部`
     // ===== AIGC 媒体生成器 =====
     case 'static-asset-gen':
-      return `- 产品：${params._sourceProduct?.title || params.productName || '未指定'}\n- 素材类型：${(params.imageTypes || []).join('、') || '三视图'}\n- 数量：${params.quantity || 4} 张\n- 模式：图生图（${params.source_image_name || '已上传原图'}）`
+      // 不写「模式：图生图」—— 执行前无法断言模式，且后端目前只做文生图
+      // （源图是前端 base64、没有图床），结果摘要按真实返回写（见 useChatOrchestrator）
+      return `- 产品：${params._sourceProduct?.title || params.productName || '未指定'}\n- 素材类型：${(params.imageTypes || []).join('、') || '三视图'}\n- 数量：${params.quantity || 4} 张\n- 参考原图：${params.source_image_name || '未提供'}`
     case 'video-script-gen':
       return `- 产品：${params._sourceProduct?.title || params.productName || '未指定'}\n- 平台：${({ tiktok: 'TikTok', reels: 'Reels', 'youtube-shorts': 'Shorts', 'amazon-post': 'Amazon Post' } as Record<string, string>)[params.platform] || 'TikTok'}\n- 风格：${params.videoStyle || '痛点解决型'}\n- 分镜数：${params.scenes?.length || 5} 个镜头\n- 总时长：${params.total_scene_duration || 30}s`
     case 'ai-video-generator':
@@ -105,12 +108,20 @@ export const getParamSummary = (toolId: string, params: any): string => {
   }
 }
 
-// 执行蓝海挖掘分析（Mock）
+// 执行蓝海挖掘分析
+//
+// 数据源策略：**后端优先，本地 mock 兜底**。
+//
+// 修复记录：此前无条件走前端 mock（mock/data.ts:getBlueOceanCandidates），
+// 而对话流走的是后端 MOCK_PRODUCTS —— 两边是两批互不相通的商品，
+// 「右栏工具卡」与「对话结论卡」因此永远对不上。现在后端可用时两边同源；
+// 后端不可用（离线演示）才退回本地 mock。
 export const executeBlueOceanAnalysis = async (params: any): Promise<any> => {
-  // 模拟异步处理
-  await new Promise(resolve => setTimeout(resolve, 600))
+  const fromBackend = await tryBackendBlueOcean(params)
+  if (fromBackend) return fromBackend
 
-  // 使用 Mock 数据生成结果（从 mock/data.ts 取带图片的真实商品数据）
+  // ===== 兜底：本地 mock（离线演示）=====
+  await new Promise(resolve => setTimeout(resolve, 300))
   const products = await generateMockBlueOceanProducts(params)
 
   return {
@@ -123,7 +134,55 @@ export const executeBlueOceanAnalysis = async (params: any): Promise<any> => {
       medium_potential: products.filter((p: any) => p.blue_ocean_score >= 40 && p.blue_ocean_score < 65).length,
       high_competition: products.filter((p: any) => p.blue_ocean_score < 40).length,
     },
-    report: `## 蓝海市场分析报告\n\n基于您设定的筛选条件，系统在 **${params.marketplace || 'US'}** 站点发现 **${products.length}** 个候选商品。\n\n### 市场洞察\n1. **Home & Kitchen** 类目竞争度相对较低，新进入者有较大机会\n2. 价格区间 $15-$35 的商品 ROI 表现最优\n3. 评论数 <100 的商品平均月销量达 800+，验证了"低竞争+有需求"的蓝海特征\n\n### TOP3 推荐\n1. **便携式加湿器** - 蓝海评分 82，建议定价 $24.99\n2. **硅胶厨具套装** - 蓝海评分 76，差异化空间大\n3. **LED植物生长灯** - 蓝海评分 74，季节性需求稳定`
+    report: `## 蓝海市场分析报告\n\n（离线演示数据）系统在 **${params.marketplace || 'US'}** 站点发现 **${products.length}** 个候选商品。`,
+    source: 'local-mock',
+  }
+}
+
+/**
+ * 尝试从后端获取蓝海结果，并把响应适配成工具卡期望的形状。
+ * 后端不可用 / 无结果 → 返回 null，由调用方降级到本地 mock。
+ */
+const tryBackendBlueOcean = async (params: any): Promise<any | null> => {
+  try {
+    const { analyzeBlueOcean } = await import('@/api/productResearch')
+    const raw: any = await analyzeBlueOcean({
+      marketplace: params.marketplace || 'amazon_us',
+      category: params.category || [],
+      price_min: params.priceMin ?? null,
+      price_max: params.priceMax ?? null,
+      max_reviews: params.maxReviews ?? 100,
+      min_monthly_sales: params.minMonthlySales ?? 100,
+      min_roi: params.minRoi ?? 20,
+    })
+    // 后端统一包一层 ApiResponse：{ success, message, data }
+    const res: any = raw?.data ?? raw
+
+    const products = (res?.products || []).map((p: any) => ({
+      ...p,
+      // 工具卡表格读取的字段名对齐（后端字段已同名，这里只补缺失项）
+      main_image: p.main_image || p.image_url || '',
+      brand: p.brand || '',
+      marketplace: p.marketplace || params.marketplace || 'us',
+    }))
+    if (!products.length) return null
+
+    return {
+      type: 'blue_ocean',
+      params,
+      products,
+      summary: {
+        total_candidates: res.total_candidates ?? products.length,
+        high_potential: res.premium_count ?? 0,
+        medium_potential: res.moderate_count ?? 0,
+        high_competition: res.high_competition_count ?? 0,
+      },
+      report: res.analysis_summary || '',
+      source: 'backend',
+    }
+  } catch (e) {
+    console.warn('[蓝海挖掘] 后端不可用，降级本地 mock：', e)
+    return null
   }
 }
 
@@ -158,41 +217,13 @@ export const executeCompetitorAnalysis = async (params: any): Promise<any> => {
   return getMockCompetitorComparison(params.validAsins || params.asins.filter((a: string) => a))
 }
 
-// 执行利润测算（Mock）
-export const executeProfitAnalysis = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 400))
-
-  const sellingPrice = params.sellingPrice || 29.99
-  const costPrice = params.costPrice || 8.5
-  const shippingCost = params.shippingCost || 3.2
-
-  const referralFee = sellingPrice * 0.15
-  const fbaFee = sellingPrice * 0.12
-  const totalCost = costPrice + shippingCost + referralFee + fbaFee
-  const netProfit = sellingPrice - totalCost
-  const roi = (netProfit / totalCost) * 100
-
-  return {
-    type: 'profit_analysis',
-    params,
-    calculation: {
-      selling_price: sellingPrice,
-      cost_price: costPrice,
-      shipping_cost: shippingCost,
-      referral_fee: parseFloat(referralFee.toFixed(2)),
-      fba_fee: parseFloat(fbaFee.toFixed(2)),
-      total_cost: parseFloat(totalCost.toFixed(2)),
-      net_profit: parseFloat(netProfit.toFixed(2)),
-      roi: parseFloat(roi.toFixed(1)),
-    },
-    breakdown: [
-      { item: '采购成本', amount: costPrice },
-      { item: '头程运费', amount: shippingCost },
-      { item: '平台佣金 (15%)', amount: parseFloat(referralFee.toFixed(2)) },
-      { item: 'FBA 配送费', amount: parseFloat(fbaFee.toFixed(2)) },
-    ]
-  }
-}
+// 执行利润测算 —— 已下线（09-14）
+//
+// 这里原本是第二套利润公式：FBA 按售价 12% 凭空估算、头程用 `|| 3.2` 兜底
+// （用户填 0 也会被换成 3.2），且只算 4 个成本项，与右栏面板的 13 项口径对不上 ——
+// 同一份输入因此出现两个结果。现在利润测算统一走后端
+// POST /stores/profit/calculate（费率取自店铺费率模板），入口在 useChatOrchestrator
+// 的 resolveProfitResult，不再经过本文件。
 
 // ========== 广告分析 Mock 执行函数 ==========
 
@@ -450,6 +481,9 @@ export const executeMonitorDashboard = async (params: any): Promise<any> => {
   await new Promise(resolve => setTimeout(resolve, 300))
 
   const pool = useMonitorPoolStore()
+  // 监控池来自后端（唯一权威源）。这里是异步函数，直接等加载完成再进行聚合，
+  // 否则首屏直接跑本工具会把"还没加载"误当成"池是空的"。
+  await pool.ensureLoaded()
   const records = pool.records.filter(r => {
     if (params.asin) return r.asin === params.asin
     return true
@@ -506,6 +540,7 @@ export const executePriceTrack = async (params: any): Promise<any> => {
   await new Promise(resolve => setTimeout(resolve, 300))
 
   const pool = useMonitorPoolStore()
+  await pool.ensureLoaded()
   const asins = (params.asins || []).filter(Boolean)
   const records = asins.length
     ? pool.records.filter(r => asins.includes(r.asin))
@@ -584,9 +619,9 @@ export const executePricingAnalysis = async (params: any): Promise<any> => {
     ],
     market_positioning_map: {
       segments: [
-        { name: '溢价区', count: 1, color: '#cf1322' },
-        { name: '竞争区', count: 2, color: '#1890ff' },
-        { name: '经济区', count: 1, color: '#52c41a' },
+        { name: '溢价区', count: 1, color: 'var(--danger-strong)' },
+        { name: '竞争区', count: 2, color: 'var(--primary)' },
+        { name: '经济区', count: 1, color: 'var(--success)' },
       ],
     },
   }
@@ -1213,83 +1248,90 @@ export const executePitfalls = async (params: any): Promise<any> => {
 
 // ========== AIGC 媒体生成器 Mock 执行函数 ==========
 
-// 执行静态素材生成（Mock）— 替代 AI商品绘图 + 主图诊断
+// 执行静态素材生成 —— **真实出图**（通义万相文生图，走 /aigc/asset/generate）
+//
+// 这里已不是 mock：单张约 15-25s，后端并发出图后返回 /static 长期链接。
+// 失败时**显式降级并把原因带出去**，绝不用 picsum 之类的随机图凑数 ——
+// 拿假图顶上去会让老板以为「生成的就是这个产品」（空状态优于虚构默认）。
 export const executeStaticAssetGen = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 1500))
+  const productName = params._sourceProduct?.title || params.productName || ''
+  const imageTypes: string[] = params.imageTypes?.length ? params.imageTypes : ['spu-main']
+  const category = params._sourceProduct?.category || params.category || 'general'
+  const extraDescription = [params.extraPrompt, params.sceneDescription, params.infographicPoints, params.selling_points]
+    .filter((s: any) => typeof s === 'string' && s.trim())
+    .join('；')
 
-  const productName = params._sourceProduct?.title || params.productName || 'Coffee Grinder'
-  const imageTypes = params.imageTypes || ['three-view']
-  const quantity = params.quantity || 4
-
-  // 根据类型生成不同的 mock 图片
-  const generatedAssets: any[] = []
-  const typeMap: Record<string, { desc: string; prompt: string }[]> = {
-    'three-view': [
-      { desc: '正面 45° 白底图', prompt: 'Pure white #FFF background, front 45° angle, studio soft-box lighting, e-commerce standard, 2000x2000' },
-      { desc: '侧面轮廓白底图', prompt: 'Pure white background, side profile 90°, clean drop shadow minimal, product photography' },
-      { desc: '俯视图白底图', prompt: 'Pure white background, top-down view, flat lay composition, all accessories visible' },
-      { desc: '细节特写白底图', prompt: 'Pure white background, macro close-up of key detail texture, sharp focus' },
-    ],
-    'detail': [
-      { desc: '材质纹理特写', prompt: 'Macro close-up, material texture detail, shallow depth of field, studio lighting' },
-      { desc: '工艺细节展示', prompt: 'Close-up craftsmanship detail, precision engineering visible, dramatic side lighting' },
-      { desc: '尺寸对比参照', prompt: 'Product with size reference object (hand/ruler), natural proportion demonstration' },
-    ],
-    'scene': [
-      { desc: '厨房使用场景', prompt: 'Lifestyle scene on modern kitchen countertop, morning sunlight, warm cozy atmosphere' },
-      { desc: '户外露营场景', prompt: 'Outdoor camping lifestyle shot, portable product in nature, adventure aesthetic, golden hour' },
-      { desc: '办公桌面场景', prompt: 'Minimalist office desk setup, clean workspace, productivity aesthetic, soft window light' },
-    ],
-    'lifestyle': [
-      { desc: '礼品开箱瞬间', prompt: 'Gift unboxing moment, premium packaging, warm ambient lighting, celebration feeling' },
-      { desc: '社交分享场景', prompt: 'Social media style flat lay, product with coffee/phone/laptop, Instagram aesthetic' },
-    ],
-    'character': [
-      { desc: '人物手持产品', prompt: 'Person holding product naturally, casual lifestyle, authentic expression, soft bokeh background' },
-      { desc: '人物使用场景', prompt: 'Person actively using product in real scenario, candid moment, documentary style' },
-    ],
-    'storyboard-frame': [
-      { desc: '分镜首帧-钩子开头', prompt: 'Cinematic storyboard frame, dramatic opening hook, high contrast, TikTok 9:16 vertical format' },
-      { desc: '分镜首帧-痛点展示', prompt: 'Storyboard frame showing pain point, emotional storytelling, close-up reaction shot' },
-      { desc: '分镜首帧-CTA 结尾', prompt: 'Storyboard final frame CTA, product showcase with price tag overlay, call-to-action composition' },
-    ],
-  }
-
-  let assetIdx = 0
-  for (const t of imageTypes) {
-    const items = typeMap[t] || typeMap['three-view']
-    for (const item of items) {
-      if (assetIdx >= quantity) break
-      generatedAssets.push({
-        id: `asset_${Date.now()}_${assetIdx}`,
-        url: `https://picsum.photos/seed/${productName.replace(/\s/g, '')}_${t}_${assetIdx}/600/600`,
-        type: t,
-        desc: item.desc,
-        prompt_hint: item.prompt,
-        created_at: new Date().toISOString(),
-      })
-      assetIdx++
+  if (!productName) {
+    return {
+      type: 'static_asset_gen',
+      params,
+      product_name: '',
+      generated_assets: [],
+      degraded: true,
+      degraded_reason: '未指定产品：请先「载入产品」再生成素材',
     }
   }
 
-  return {
-    type: 'static_asset_gen',
-    params,
-    product_name: productName,
-    generated_assets: generatedAssets,
-    generation_params: {
-      mode: 'image-to-image',
-      source_image: params.source_image_name || 'uploaded',
-      style: params.style || 'studio',
-      types: imageTypes,
-      total_generated: generatedAssets.length,
-    },
-    tips: [
-      '确认满意后，点结果卡片「归档到素材库」手动保存（可选择分组、绑定产品）',
-      '白底图符合 Amazon 主图规范（纯白 #FFFFFF 背景，产品占 85% 以上面积）',
-      '场景图注意文化中性（避免特定节日/宗教元素）',
-      '分镜首帧图可关联到带货脚本的对应镜头',
-    ],
+  try {
+    const res: any = await generateAssets({
+      product_name: productName,
+      image_types: imageTypes,
+      category,
+      extra_description: extraDescription,
+      // 前端 quantity（1-12）→ 单类型张数（夹紧 1-4，与后端 asset_gen.MAX_PER_TYPE 对齐）。
+      // 6 类型 × 4 张 = 24 上限由后端 MAX_TOTAL=8 轮次裁剪，单类型必出至少 1 张。
+      count_per_type: Math.max(1, Math.min(Math.floor(params.quantity) || 1, 4)),
+      // 产品原图（base64 data URI）：传了 → 后端走图生图（原图参与生成）；空 → 退回文生图
+      source_image: params.source_image || '',
+    })
+
+    const data = res?.response || {}
+    const generatedAssets = (data.assets || []).map((a: any) => ({
+      id: a.id,
+      url: a.url,
+      type: a.type,
+      desc: a.desc,
+      prompt_hint: a.prompt,
+      created_at: a.created_at,
+    }))
+
+    return {
+      type: 'static_asset_gen',
+      params,
+      product_name: productName,
+      generated_assets: generatedAssets,
+      failed: data.failed || [],
+      degraded: Boolean(data.degraded),
+      degraded_reason: data.degraded_reason || null,
+      notice: data.notice,
+      generation_params: {
+        mode: data.mode || 'text2image',
+        model: data.model,
+        source_image_used: Boolean(data.source_image_used),
+        types: imageTypes,
+        total_generated: generatedAssets.length,
+      },
+      tips: [
+        '确认满意后，点结果卡片「归档到素材库」手动保存（可选择分组、绑定产品）',
+        '白底图符合 Amazon 主图规范（纯白 #FFFFFF 背景，产品占 85% 以上面积）',
+        '场景图注意文化中性（避免特定节日/宗教元素）',
+        '分镜首帧图可关联到带货脚本的对应镜头',
+      ],
+    }
+  } catch (error: any) {
+    // 显式降级：给出可读原因，不用随机图凑数
+    const detail =
+      error?.response?.data?.detail || error?.message || '后端不可用或出图服务异常'
+    return {
+      type: 'static_asset_gen',
+      params,
+      product_name: productName,
+      generated_assets: [],
+      failed: [],
+      degraded: true,
+      degraded_reason: `素材生成失败：${detail}`,
+      generation_params: { mode: 'text2image', types: imageTypes, total_generated: 0 },
+    }
   }
 }
 
@@ -1693,7 +1735,6 @@ export const toolExecutors: Record<string, (params: any) => Promise<any>> = {
   'blue-ocean': executeBlueOceanAnalysis,
   'pain-points': executePainPointAnalysis,
   'competitor': executeCompetitorAnalysis,
-  'profit-calc': executeProfitAnalysis,
   'ad-diagnosis': executeAdDiagnosis,
   'keyword-report': executeSearchTermReport,
   'bid-suggest': executeBidSuggest,

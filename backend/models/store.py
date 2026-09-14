@@ -113,8 +113,12 @@ class StoreCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     platform: str = Field(..., description="如: amazon_us, shopee_my")
     marketplace_id: Optional[str] = None
+    # 两个「可自动推断」字段的默认值都必须是 falsy：
+    # create_store 用的是 `data.X or 推断值`，非空默认值会让 `or` 永远短路。
+    # region_code 默认 "" 一直是对的；currency 曾误设默认 "USD"，
+    # 导致 `get_currency_for_marketplace()` 形同虚设（2026-09-12 修）。
     region_code: str = ""
-    currency: str = "USD"
+    currency: Optional[str] = Field(None, description="默认币种，不传则按 platform 推断（shopee_my → MYR）")
     fee_template_id: Optional[str] = None
     discount_template_id: str = "default"
 

@@ -5,11 +5,21 @@
 展示「待评审 / 评审中 / 已淘汰」等评审状态机。
 
 数据为演示 mock，后续接入真实选品分析师产出后替换。
+
+**shop_id 不硬编码**：早期版本把 `shop_id` 写成 `"shop-1"`，而真实租户 id 是
+`X-Shop-ID` 头传进来的 `store_xxxxxxxx`（store_ 前缀 + 8 位 hex）——两者格式
+对不上，列表端点按 shop_id 过滤后**一条都查不到**，等于「灌了但没灌」。
+现改为启动时先查 `stores_store` 取真实店铺 id，再为每个店铺各灌一份；
+库里没有店铺则直接跳过（没有租户上下文，灌了也看不到）。
+
+注意本表是 **id 单主键**（无 `(shop_id, asin)` 唯一约束），多店铺灌入必须给
+记录 id 追加店铺后缀，否则第二个店铺会主键冲突。
 """
 
 from sqlalchemy import select, func
 from core.database import async_session_factory
 from modules.candidates.db_model import CandidateRecord
+from modules.stores.db_model import StoreRecord
 
 SEED_CANDIDATES = [
     {
@@ -45,7 +55,6 @@ SEED_CANDIDATES = [
         "reviewed_by": None,
         "monitor_data": None,
         "last_monitored_at": None,
-        "shop_id": "shop-1",
         "tags": ["蓝海挖掘", "评分:86", "ROI:142%"],
         "notes": "高潜力蓝海，竞争度低，建议优先评审",
         "groups": [],
@@ -89,7 +98,6 @@ SEED_CANDIDATES = [
             "review_growth": "fast",
         },
         "last_monitored_at": "2026-09-05T14:00:00Z",
-        "shop_id": "shop-1",
         "tags": ["蓝海挖掘", "评审中"],
         "notes": "磁吸配件赛道，需关注专利风险",
         "groups": [],
@@ -128,7 +136,6 @@ SEED_CANDIDATES = [
         "reviewed_by": "运营",
         "monitor_data": None,
         "last_monitored_at": None,
-        "shop_id": "shop-1",
         "tags": ["蓝海挖掘", "已淘汰"],
         "notes": "竞品过多，蓝海评分偏低",
         "groups": [],
@@ -138,52 +145,67 @@ SEED_CANDIDATES = [
 
 
 async def seed_candidates_if_empty() -> int:
-    """首次启动时，若 candidates 表为空，预置种子数据。返回预置条数。"""
+    """
+    首次启动时，若 candidates 表为空，**为每个已存在的店铺**预置种子数据。
+
+    Returns:
+        实际写入的条数（表非空、或无店铺可归属时返回 0）。
+    """
     async with async_session_factory() as session:
         count = (await session.execute(select(func.count()).select_from(CandidateRecord))).scalar_one()
         if count > 0:
             return 0
-        for data in SEED_CANDIDATES:
-            record = CandidateRecord(
-                id=data["id"],
-                asin=data["asin"],
-                sku=data["sku"],
-                title=data["title"],
-                brand=data["brand"],
-                category=data["category"],
-                sub_category=data["sub_category"],
-                price=data["price"],
-                currency=data["currency"],
-                site=data["site"],
-                estimated_monthly_sales=data["estimated_monthly_sales"],
-                review_count=data["review_count"],
-                rating=data["rating"],
-                bsr=data["bsr"],
-                bsr_category=data["bsr_category"],
-                listed_date=data["listed_date"],
-                roi_estimated=data["roi_estimated"],
-                margin=data["margin"],
-                blue_ocean_score=data["blue_ocean_score"],
-                overall_listing_score=data["overall_listing_score"],
-                keywords=data["keywords"],
-                competitor_asins=data["competitor_asins"],
-                selling_points=data["selling_points"],
-                main_image=data["main_image"],
-                images=data["images"],
-                source=data["source"],
-                review_status=data["review_status"],
-                review_notes=data["review_notes"],
-                reviewed_at=data["reviewed_at"],
-                reviewed_by=data["reviewed_by"],
-                monitor_data=data["monitor_data"],
-                last_monitored_at=data["last_monitored_at"],
-                shop_id=data["shop_id"],
-                tags=data["tags"],
-                notes=data["notes"],
-                groups=data["groups"],
-                created_at=data["created_at"],
-                updated_at=data["created_at"],
-            )
-            session.add(record)
+
+        # 取真实店铺 id；一个都没有则跳过（无租户上下文，灌了也查不到）
+        shop_ids = (await session.execute(select(StoreRecord.id))).scalars().all()
+        if not shop_ids:
+            return 0
+
+        total = 0
+        for shop_id in shop_ids:
+            for data in SEED_CANDIDATES:
+                record = CandidateRecord(
+                    id=f"{data['id']}-{shop_id}",
+                    asin=data["asin"],
+                    sku=data["sku"],
+                    title=data["title"],
+                    brand=data["brand"],
+                    category=data["category"],
+                    sub_category=data["sub_category"],
+                    price=data["price"],
+                    currency=data["currency"],
+                    site=data["site"],
+                    estimated_monthly_sales=data["estimated_monthly_sales"],
+                    review_count=data["review_count"],
+                    rating=data["rating"],
+                    bsr=data["bsr"],
+                    bsr_category=data["bsr_category"],
+                    listed_date=data["listed_date"],
+                    roi_estimated=data["roi_estimated"],
+                    margin=data["margin"],
+                    blue_ocean_score=data["blue_ocean_score"],
+                    overall_listing_score=data["overall_listing_score"],
+                    keywords=data["keywords"],
+                    competitor_asins=data["competitor_asins"],
+                    selling_points=data["selling_points"],
+                    main_image=data["main_image"],
+                    images=data["images"],
+                    source=data["source"],
+                    review_status=data["review_status"],
+                    review_notes=data["review_notes"],
+                    reviewed_at=data["reviewed_at"],
+                    reviewed_by=data["reviewed_by"],
+                    monitor_data=data["monitor_data"],
+                    last_monitored_at=data["last_monitored_at"],
+                    shop_id=shop_id,
+                    tags=data["tags"],
+                    notes=data["notes"],
+                    groups=data["groups"],
+                    created_at=data["created_at"],
+                    updated_at=data["created_at"],
+                )
+                session.add(record)
+                total += 1
         await session.commit()
-    return len(SEED_CANDIDATES)
+
+    return total

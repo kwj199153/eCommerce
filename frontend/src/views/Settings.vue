@@ -8,7 +8,7 @@
     :body-style="{ padding: '0', overflow: 'auto' }"
     :destroyOnClose="false"
   >
-    <a-tabs v-model:activeKey="activeTab" type="card" class="settings-tabs" style="padding: 16px 20px">
+    <a-tabs v-model:activeKey="activeTab" type="card" class="settings-tabs" style="padding: var(--space-16) var(--space-20)">
       <!-- ====== Tab 1: 个人资料 ====== -->
       <a-tab-pane key="profile" tab="个人资料">
         <a-card :bordered="false" class="profile-card">
@@ -29,7 +29,7 @@
             </div>
           </div>
 
-          <a-divider style="margin: 16px 0" />
+          <a-divider style="margin: var(--space-16) 0" />
 
           <a-form
             :model="profileForm"
@@ -198,7 +198,26 @@
         </a-card>
       </a-tab-pane>
 
-      <!-- ====== Tab 4: 店铺管理 ====== -->
+      <!-- ====== Tab 4: 交互偏好 ====== -->
+      <a-tab-pane key="preferences" tab="交互偏好">
+        <a-card :bordered="false" class="notification-card">
+          <div class="notify-section">
+            <h4>翻译</h4>
+            <div class="pref-item">
+              <div class="pref-text">
+                <span class="pref-title">选中文字后自动弹出翻译</span>
+                <p class="pref-desc">
+                  在平台任意页面选中英文内容即自动翻译并弹出译文。关闭后不再自动弹窗，
+                  仍可点击商品标题旁的「译」按钮手动翻译。
+                </p>
+              </div>
+              <a-switch v-model:checked="autoTranslate" />
+            </div>
+          </div>
+        </a-card>
+      </a-tab-pane>
+
+      <!-- ====== Tab 5: 店铺管理 ====== -->
       <a-tab-pane key="shops" tab="店铺管理">
         <a-card :bordered="false" title="我的店铺">
           <template #extra>
@@ -233,6 +252,16 @@
             <a-button type="primary" @click="showAddShop = true">立即添加</a-button>
           </a-empty>
         </a-card>
+      </a-tab-pane>
+
+      <!-- ====== Tab 6: 客服语音（附加模块，可插拔）======
+           由总开关控制：前端 VITE_VOICE_CLONE_ENABLED + 后端 VOICE_CLONE_ENABLED。
+           关闭时本 Tab **整个不渲染**（不是渲染后显示空态）—— 让「拔掉」在前端也真成立：
+           用户不会看到一个点进去是空的入口。
+           开启方式：frontend/.env.local 设 VITE_VOICE_CLONE_ENABLED=true，
+           同时 backend/.env 设 VOICE_CLONE_ENABLED=true 与 PUBLIC_BASE_URL。 -->
+      <a-tab-pane v-if="VOICE_CLONE_ENABLED" key="voice" tab="客服语音">
+        <VoiceClonePanel />
       </a-tab-pane>
     </a-tabs>
 
@@ -305,7 +334,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { SEM } from '@/theme/semantic'
+import { VOICE_CLONE_ENABLED } from '@/config/featureFlags'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   MailOutlined,
@@ -317,6 +348,9 @@ import { useUserStore } from '@/stores/user'
 import { useShopStore } from '@/stores/shop'
 import { get, post, put, del } from '@/api/request'
 import { fetchStores, createShop, deleteShop as apiDeleteShop } from '@/api/stores'
+import { useSelectionTranslate } from '@/composables/useSelectionTranslate'
+// 附加模块：客服语音（可插拔，宿主只加这一行 import + 一个 tab-pane）
+import VoiceClonePanel from '@/components/Settings/VoiceClonePanel.vue'
 
 defineProps<{
   open: boolean
@@ -330,6 +364,20 @@ const shopStore = useShopStore()
 
 // ====== Tab 控制 ======
 const activeTab = ref('profile')
+
+// ====== 交互偏好 ======
+// 开关状态是模块级单例（在 useSelectionTranslate 里），浮层组件读的是同一份，
+// 所以这里改完立即生效，不需要「保存」按钮。
+const { autoEnabled, setAutoEnabled } = useSelectionTranslate()
+
+/**
+ * 不直接把 autoEnabled 绑到 a-switch：必须走 setAutoEnabled，
+ * 否则「关掉时收起已开浮层」和「写入 localStorage」两步都会丢。
+ */
+const autoTranslate = computed({
+  get: () => autoEnabled.value,
+  set: (v: boolean) => setAutoEnabled(v),
+})
 
 // ====== 个人资料 ======
 const savingProfile = ref(false)
@@ -567,7 +615,7 @@ function getPlatformColor(platform: string): string {
     tiktok: '#000000',
     shopify: '#95BF47',
   }
-  return colors[platform] || '#1890ff'
+  return colors[platform] || SEM.primary
 }
 
 function getPlatformIcon(platform: string): string {
@@ -646,11 +694,11 @@ onMounted(async () => {
 }
 
 .settings-tabs :deep(.ant-tabs-nav) {
-  margin-bottom: 20px;
+  margin-bottom: var(--space-20);
 }
 
 .settings-tabs :deep(.ant-tabs-tab) {
-  padding: 8px 20px;
+  padding: var(--space-8) var(--space-20);
 }
 
 /* 个人资料 */
@@ -661,19 +709,19 @@ onMounted(async () => {
 .avatar-section {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-16);
 }
 
 .user-avatar {
-  background-color: #1890ff;
-  font-size: 32px;
+  background-color: var(--primary);
+  font-size: var(--font-size-32);
   flex-shrink: 0;
 }
 
 .form-hint {
-  font-size: 11px;
-  color: #8c8c8c;
-  margin-top: 2px;
+  font-size: var(--font-size-11);
+  color: var(--text-tertiary);
+  margin-top: var(--space-2);
 }
 
 /* 安全设置 */
@@ -684,36 +732,36 @@ onMounted(async () => {
 .api-key-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-12);
 }
 
 .api-key-item {
-  border: 1px solid #f0f0f0;
-  border-radius: 6px;
-  padding: 12px;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-6);
+  padding: var(--space-12);
 }
 
 .key-info {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
+  gap: var(--space-10);
+  margin-bottom: var(--space-6);
 }
 
 .key-value {
-  background: #f5f5f5;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  color: #595959;
+  background: var(--bg-hover-light);
+  padding: var(--space-2) var(--space-8);
+  border-radius: var(--radius-4);
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
 }
 
 .key-meta {
   display: flex;
-  gap: 16px;
-  font-size: 11px;
-  color: #8c8c8c;
-  margin-bottom: 6px;
+  gap: var(--space-16);
+  font-size: var(--font-size-11);
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-6);
 }
 
 .key-actions {
@@ -727,19 +775,50 @@ onMounted(async () => {
 }
 
 .notify-section h4 {
-  margin-bottom: 12px;
-  font-size: 14px;
+  margin-bottom: var(--space-12);
+  font-size: var(--font-size-14);
 }
 
 .notify-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 0;
+  padding: var(--space-10) 0;
   border-bottom: 1px solid #f5f5f5;
 }
 
 .notify-item:last-child {
   border-bottom: none;
+}
+
+/* 交互偏好 —— 用主题变量，深色模式下也要能读 */
+.pref-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-24);
+  padding: var(--space-10) 0;
+}
+
+.pref-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.pref-title {
+  font-size: var(--font-size-14);
+}
+
+.pref-desc {
+  margin: 0;
+  font-size: var(--font-size-12);
+  line-height: 1.6;
+  color: var(--text-tertiary);
+}
+
+.pref-item :deep(.ant-switch) {
+  flex: 0 0 auto;
+  margin-top: var(--space-2);
 }
 </style>

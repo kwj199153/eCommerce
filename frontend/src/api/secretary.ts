@@ -3,11 +3,14 @@
  */
 
 import request from './request'
+import type { ThemeMode } from '@/theme/presets'
 
 /** 后端 orchestrator 返回的动作 */
 export interface SecretaryAction {
   action: 'switch_agent' | 'navigate' | 'select_product' | 'open_drawer' | 'account_menu' | 'handoff' | 'set_theme' | 'switch_shop'
   agentId?: string
+  /** switch_agent 专属：老板原话（路由带参）。非空时子 Agent 切换后自动续跑 */
+  query?: string
   view?: string
   /** select_product 专属：选中的产品（id 用于前端从 productLibrary 定位完整对象） */
   product?: { id: string; title: string; asin: string; spu_id?: string } | null
@@ -18,8 +21,12 @@ export interface SecretaryAction {
   /** handoff 专属：已识别的意图 + 需追问的缺失字段 */
   intent?: string
   missing_fields?: string[]
-  /** set_theme 专属：目标主题（light / dark / system） */
-  mode?: 'light' | 'dark' | 'system'
+  /**
+   * set_theme 专属：目标主题。
+   * ★ 刻意**引用** `ThemeMode` 而不是写死字面量 —— 主题清单的真源是
+   *   `@/theme/presets` 的 `ThemeName`，写死会产生第 3 个复制点（加主题时静默漏改）。
+   */
+  mode?: ThemeMode
   /** switch_shop 专属：目标店铺（id 用于前端 shopStore.setCurrentShop） */
   shop?: { id: string; name: string; platform: string } | null
   index?: number

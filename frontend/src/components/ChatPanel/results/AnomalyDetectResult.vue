@@ -53,7 +53,7 @@
 
     <!-- 无异常提示 -->
     <div v-if="!(data.anomalies?.length)" class="no-anomaly">
-      <CheckCircleOutlined style="font-size: 32px; color: #52c41a;" />
+      <CheckCircleOutlined style="font-size: var(--font-size-32); color: var(--success);" />
       <p>未发现明显异常，账户运行正常</p>
     </div>
 
@@ -89,58 +89,58 @@ import { CheckCircleOutlined } from '@ant-design/icons-vue'
 </script>
 
 <style scoped>
-.anomaly-detect-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
+.anomaly-detect-result { padding: var(--space-16); background: var(--bg-elevated); border-radius: var(--radius-8); }
 
 .detect-overview {
-  display: flex; align-items: center; gap: 14px;
-  padding: 14px 18px; border-radius: 10px; margin-bottom: 14px;
+  display: flex; align-items: center; gap: var(--space-14);
+  padding: var(--space-14) var(--space-18); border-radius: var(--radius-10); margin-bottom: var(--space-14);
 }
-.detect-overview.has-alert { background: var(--bg-elevated)1f0; border: 1px solid #ffa39e; }
-.detect-overview.clean { background: #f6ffed; border: 1px solid #b7eb8f; }
-.overview-icon { font-size: 28px; }
-.overview-text h3 { margin: 0; font-size: 14px; color: var(--text-primary); }
-.overview-text .period { margin: 2px 0 0; font-size: 11.5px; color: var(--text-tertiary); }
+.detect-overview.has-alert { background: var(--danger-bg); border: 1px solid var(--danger-border-strong); }
+.detect-overview.clean { background: var(--success-bg); border: 1px solid var(--success-border); }
+.overview-icon { font-size: var(--font-size-28); }
+.overview-text h3 { margin: 0; font-size: var(--font-size-14); color: var(--text-primary); }
+.overview-text .period { margin: var(--space-2) 0 0; font-size: var(--font-size-11-5); color: var(--text-tertiary); }
 .alert-count {
-  margin-left: auto; padding: 4px 12px; border-radius: 12px;
-  background: #ff4d4f; color: #fff; font-size: 12px; font-weight: 600;
+  margin-left: auto; padding: var(--space-4) var(--space-12); border-radius: var(--radius-12);
+  background: var(--danger); color: #fff; font-size: var(--font-size-12); font-weight: 600;
 }
 
-.anomaly-list { display: flex; flex-direction: column; gap: 10px; }
+.anomaly-list { display: flex; flex-direction: column; gap: var(--space-10); }
 .anomaly-card {
-  border: 1px solid #f0f0f0; border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--border-base); border-radius: var(--radius-10); overflow: hidden;
 }
-.anomaly-card.severity-high { border-color: #ffa39e; border-width: 1.5px; }
-.anomaly-card.severity-medium { border-color: #ffd591; }
+.anomaly-card.severity-high { border-color: var(--danger-border-strong); border-width: 1.5px; }
+.anomaly-card.severity-medium { border-color: var(--orange-border); }
 .anomaly-card.severity-low { border-color: var(--border-strong); }
 
 .card-header {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 12px; font-size: 11.5px;
+  display: flex; align-items: center; gap: var(--space-8);
+  padding: var(--space-8) var(--space-12); font-size: var(--font-size-11-5);
 }
-.severity-high .card-header { background: var(--bg-elevated)1f0; }
-.severity-medium .card-header { background: var(--bg-elevated)be6; }
+.severity-high .card-header { background: var(--danger-bg); }
+.severity-medium .card-header { background: var(--warning-bg); }
 .severity-low .card-header { background: var(--bg-base); }
-.severity-tag { font-size: 10.5px; border-radius: 8px; }
+.severity-tag { font-size: var(--font-size-10-5); border-radius: var(--radius-8); }
 .anomaly-type { font-weight: 600; color: var(--text-primary); }
 .campaign-name { color: var(--text-secondary); margin-left: auto; }
-.detect-time { color: var(--text-disabled); font-size: 10.5px; }
+.detect-time { color: var(--text-disabled); font-size: var(--font-size-10-5); }
 
-.card-body { padding: 10px 12px; }
-.metric-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 6px; flex-wrap: wrap; }
+.card-body { padding: var(--space-10) var(--space-12); }
+.metric-row { display: flex; align-items: center; gap: var(--space-8); font-size: var(--font-size-12); margin-bottom: var(--space-6); flex-wrap: wrap; }
 .m-label { color: var(--text-tertiary); min-width: 32px; }
 .m-value { font-weight: 600; color: var(--text-primary); }
 .m-current { color: var(--text-secondary); }
 .m-expected { color: var(--text-tertiary); text-decoration: line-through; }
-.m-deviation { font-weight: 700; padding: 1px 6px; border-radius: 8px; }
-.m-deviation.up { background: var(--bg-elevated)1f0; color: #ff4d4f; }
-.m-deviation.down { background: #f6ffed; color: #52c41a; }
+.m-deviation { font-weight: 700; padding: var(--space-1) var(--space-6); border-radius: var(--radius-8); }
+.m-deviation.up { background: var(--danger-bg); color: var(--danger); }
+.m-deviation.down { background: var(--success-bg); color: var(--success); }
 
-.cause-row, .action-row { font-size: 11.5px; line-height: 1.6; margin-top: 4px; }
+.cause-row, .action-row { font-size: var(--font-size-11-5); line-height: 1.6; margin-top: var(--space-4); }
 .cause-row .label, .action-row .label { color: var(--text-tertiary); font-weight: 500; }
-.action-row .action-text { color: #1890ff; cursor: pointer; }
+.action-row .action-text { color: var(--primary); cursor: pointer; }
 
-.no-anomaly { text-align: center; padding: 30px; color: #52c41a; }
-.no-anomaly p { margin: 10px 0 0; font-size: 14px; }
+.no-anomaly { text-align: center; padding: var(--space-30); color: var(--success); }
+.no-anomaly p { margin: var(--space-10) 0 0; font-size: var(--font-size-14); }
 
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); }
 </style>

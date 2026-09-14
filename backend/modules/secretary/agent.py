@@ -12,11 +12,14 @@
 """
 
 import json
+import time
 from typing import Any, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from loguru import logger
 
 from ai_infra.base_agent import BaseAgent
+from modules.secretary import intent_shortcut
 from modules.secretary.navigation_tools import navigation_tools
 from modules.secretary.subscription_tools import subscription_tools
 from modules.secretary.product_tools import build_product_tools
@@ -31,7 +34,7 @@ SECRETARY_SYSTEM_PROMPT = """你是「店管家 AI」的店秘书，一个跨境
 可用的工具分三类：
 
 【路由工具】
-- switch_agent：把老板切换到某个专职 Agent 的对话页（老板要「做专业的事」时用它）
+- switch_agent：把老板切换到某个专职 Agent 的对话页（老板要「做专业的事」时用它）。**带 query 参数**：若老板带着明确诉求来，把老板原话填进 query，子 Agent 切换过去后会**自动接着执行**；只有纯「去 XX 页面」才留空。
 - handoff_to_agent：老板提出专业生成类需求（生图/视频脚本/A+内容等）但关键信息不足时，把对话交接给专职 Agent，让它逐项追问补齐后执行
 - select_product：选中产品库里的某个产品作为「工作商品」（切 Agent 前的前置动作）
 
@@ -44,6 +47,7 @@ SECRETARY_SYSTEM_PROMPT = """你是「店管家 AI」的店秘书，一个跨境
 
 规则：
 1. 老板要「做专业的事」（改 listing、做图、写视频脚本、找蓝海、算利润、广告分析、竞品监控、经营复盘、客服问答）→ 调 switch_agent 切到对应专职 Agent。你**不负责**生成这些业务结果。
+   **关键**：老板几乎总是带着具体诉求来的（如「比较好卖的品类有哪些」「帮我找厨房用品的蓝海机会」「优化下我的标题」），此时**必须把老板原话填进 query 参数**，子 Agent 会自动接着干活，不要切完就停、让老板再打一遍。只有老板单纯说「去选品页 / 打开选品分析师」这类纯导航时才留空 query。
 2. 老板要「看某个库 / 看板」→ 调 open_view。
 3. 老板要「打开账户相关功能」（设置、记忆、订阅、退出登录）→ 调 open_account_menu 并选对应 target。
 4. 老板要「改界面主题」→ 调 set_theme；「换店铺」→ 调 switch_shop；「选产品」→ 调 select_product。
@@ -127,8 +131,31 @@ async def route(query: str, shop_id: Optional[str] = None, history: Optional[lis
             持久化（决策层 C）；同时优先于前端显式传的 history。
 
     Returns:
-        {"reply": str, "actions": [dict], "action": dict|None, "tool_calls": [str]}
+        {"reply": str, "actions": [dict], "action": dict|None, "tool_calls": [str],
+         "route_mode": "shortcut"|"llm", "shortcut_rule": str}
     """
+    started = time.perf_counter()
+
+    # ===== 决策层 B：意图预判短路 =====
+    # 高置信度的「纯导航 / 纯系统操作」直接产出动作，**跳过整次 LLM 调用**。
+    # 判据在 intent_shortcut 里是「否定优先」：只要疑似复合意图就放行给 LLM。
+    shortcut = intent_shortcut.match(query)
+    if shortcut is not None:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        logger.info(
+            f"[secretary] 决策层B 短路命中 rule={shortcut.get('action')} "
+            f"shop={shop_id or '-'} session={session_id or '-'} "
+            f"cost={elapsed_ms:.1f}ms query={query[:40]!r}"
+        )
+        return {
+            "reply": intent_shortcut.build_reply(shortcut),
+            "actions": [shortcut],
+            "action": shortcut,
+            "tool_calls": intent_shortcut.to_tool_calls(shortcut),
+            "route_mode": "shortcut",
+            "shortcut_rule": shortcut.get("action", ""),
+        }
+
     agent = get_secretary_agent(shop_id)
 
     # 决策层 C：session_id 作为 checkpointer 的 thread_id，实现跨轮持久化。
@@ -153,18 +180,6 @@ async def route(query: str, shop_id: Optional[str] = None, history: Optional[lis
                 messages.append(HumanMessage(content=content))
     messages.append(HumanMessage(content=query))
 
-    # 记录本次调用前的历史消息数（用于只提取本次新增的动作，避免历史动作重复提取）
-    if use_checkpoint:
-        try:
-            prev_state = await agent.graph.aget_state(
-                {"configurable": {"thread_id": thread_id}}
-            )
-            prev_count = len(prev_state.values.get("messages", [])) if prev_state.values else 0
-        except Exception:
-            prev_count = 0
-    else:
-        prev_count = 0
-
     state = await agent.graph.ainvoke(
         {"messages": messages},
         config={"configurable": {"thread_id": thread_id}},
@@ -172,14 +187,32 @@ async def route(query: str, shop_id: Optional[str] = None, history: Optional[lis
 
     messages = state.get("messages", [])
 
+    # 只提取「本轮新增」的消息：定位最后一条 HumanMessage（= 本轮输入），其后的即为本轮产出。
+    #
+    # 为什么不用 aget_state 取调用前的历史长度（旧实现）：
+    #   ① 多一次 DB 往返；② 连接池紧张时会 PoolTimeout，而当时的
+    #   `except Exception: prev_count = 0` 会把它静默吞掉 → prev_count=0 →
+    #   历史里的动作被当作本轮新增重复提取 → 前端重复切 Agent（切到 A 又切到 B）。
+    # 用「最后一条 HumanMessage 之后」切分不依赖 DB，天然免疫该问题；
+    # LLM 只产出 AIMessage / ToolMessage，不会再产生 HumanMessage，
+    # 因此最后一条 HumanMessage 必然是本轮输入。
+    last_human_idx = -1
+    for i, m in enumerate(messages):
+        if isinstance(m, HumanMessage):
+            last_human_idx = i
+    new_messages = messages[last_human_idx + 1:]
+
     # 1) 按顺序收集所有动作标记（导航/选择工具的 ToolMessage 内容）
     actions: list[dict] = []
     # 2) 提取工具调用名
     tool_calls: list[str] = []
     # 3) 最终回复文本（最后一条 AIMessage 的非空 content）
     reply = "处理完成"
+    # 动作去重：LLM 偶尔会在一次回复里重复调用同一工具（如两次 switch_agent 同名同参），
+    # 重复执行对前端无意义（切两次同一 Agent），这里按「动作签名」去重，保留首次出现。
+    _seen_actions: set[str] = set()
 
-    for m in messages[prev_count:]:
+    for m in new_messages:
         cls = m.__class__.__name__
         if cls == "ToolMessage":
             content = str(m.content)
@@ -195,7 +228,10 @@ async def route(query: str, shop_id: Optional[str] = None, history: Optional[lis
                     "set_theme",
                     "switch_shop",
                 ):
-                    actions.append(parsed)
+                    sig = json.dumps(parsed, sort_keys=True, ensure_ascii=False)
+                    if sig not in _seen_actions:
+                        _seen_actions.add(sig)
+                        actions.append(parsed)
             except (json.JSONDecodeError, TypeError):
                 pass
         elif cls == "AIMessage":
@@ -214,9 +250,18 @@ async def route(query: str, shop_id: Optional[str] = None, history: Optional[lis
                 if text.strip():
                     reply = text
 
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    logger.info(
+        f"[secretary] 决策层B LLM 兜底 shop={shop_id or '-'} "
+        f"session={session_id or '-'} cost={elapsed_ms:.1f}ms "
+        f"tools={tool_calls or '-'} actions={len(actions)} query={query[:40]!r}"
+    )
+
     return {
         "reply": reply,
         "actions": actions,
         "action": actions[-1] if actions else None,
         "tool_calls": tool_calls,
+        "route_mode": "llm",
+        "shortcut_rule": "",
     }

@@ -1,17 +1,7 @@
 <template>
   <div class="knowledge-base">
-    <div class="section-title">监控</div>
-    <a-menu
-      mode="inline"
-      :selectedKeys="monitorSelectedKeys"
-      @click="handleMonitorClick"
-    >
-      <a-menu-item key="monitor">
-        <FundOutlined />
-        <span>竞品监控</span>
-      </a-menu-item>
-    </a-menu>
-
+    <!-- 「竞品监控」独立入口已下线：看板并入竞品监控员的右侧边栏；
+         旧入口（蓝海抽屉 / 选品库开启监控 / 店秘书导航）在 Workspace 统一重定向。 -->
     <div class="section-title">资料库</div>
     <a-menu
       mode="inline"
@@ -29,6 +19,10 @@
       <a-menu-item key="products">
         <DatabaseOutlined />
         <span>自有产品库</span>
+      </a-menu-item>
+      <a-menu-item key="competitors">
+        <FundOutlined />
+        <span>竞品监控池</span>
       </a-menu-item>
       <a-menu-item key="faq">
         <MessageOutlined />
@@ -58,29 +52,15 @@ const emit = defineEmits<{
 }>()
 
 const selectedKeys = ref<string[]>([])
-const monitorSelectedKeys = ref<string[]>([])
 
 const handleMenuClick = ({ key }: { key: string }) => {
   selectedKeys.value = [key]
-  monitorSelectedKeys.value = []
   emit('navigate', key)
 }
 
-const handleMonitorClick = ({ key }: { key: string }) => {
-  monitorSelectedKeys.value = [key]
-  selectedKeys.value = []
-  emit('navigate', key)
-}
-
-/** 外部可调用的切换方法 */
+/** 外部可调用的切换方法（只同步高亮；视图切换由 'navigate' 的接收方决定） */
 function navigateTo(key: string) {
-  if (key === 'monitor') {
-    monitorSelectedKeys.value = [key]
-    selectedKeys.value = []
-  } else {
-    selectedKeys.value = [key]
-    monitorSelectedKeys.value = []
-  }
+  selectedKeys.value = [key]
 }
 
 defineExpose({ navigateTo })
@@ -88,25 +68,25 @@ defineExpose({ navigateTo })
 
 <style scoped>
 .knowledge-base {
-  padding: 8px 0;
+  padding: var(--space-8) 0;
 }
 
 .section-title {
-  padding: 12px 16px 8px;
-  font-size: 13px;
+  padding: var(--space-12) var(--space-16) var(--space-8);
+  font-size: var(--font-size-13);
   font-weight: 500;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
 }
 
 :deep(.ant-menu-item) {
   height: 40px;
   line-height: 40px;
-  margin: 2px 8px;
-  border-radius: 6px;
+  margin: var(--space-2) var(--space-8);
+  border-radius: var(--radius-6);
 }
 
 :deep(.ant-menu-item .anticon) {
-  font-size: 16px;
-  margin-right: 10px;
+  font-size: var(--font-size-16);
+  margin-right: var(--space-10);
 }
 </style>

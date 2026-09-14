@@ -271,23 +271,23 @@ const onCompetitorSelect = (product: any) => {
 
 /* 顶部产品横幅（载入产品时显示） */
 .product-banner {
-  display: flex; align-items: center; gap: 6px;
-  padding: 6px 10px; margin-bottom: 8px;
-  background: #f0f7ff; border: 1px solid #91caff; border-radius: 4px;
-  font-size: 12px; color: #0958d9;
+  display: flex; align-items: center; gap: var(--space-6);
+  padding: var(--space-6) var(--space-10); margin-bottom: var(--space-8);
+  background: #f0f7ff; border: 1px solid #91caff; border-radius: var(--radius-4);
+  font-size: var(--font-size-12); color: var(--primary-strong);
 }
-.product-banner .banner-icon { font-size: 14px; }
+.product-banner .banner-icon { font-size: var(--font-size-14); }
 
 .bullet-config :deep(.ant-collapse) { flex: 1; overflow-y: auto; }
-.feature-list { display: flex; flex-direction: column; gap: 8px; }
-.feature-row { display: flex; gap: 6px; align-items: center; }
-.config-actions { padding: 16px 0 0; border-top: 1px solid #f0f0f0; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+.feature-list { display: flex; flex-direction: column; gap: var(--space-8); }
+.feature-row { display: flex; gap: var(--space-6); align-items: center; }
+.config-actions { padding: var(--space-16) 0 0; border-top: 1px solid var(--border-base); display: flex; flex-direction: column; gap: var(--space-8); flex-shrink: 0; }
 
 /* 输入框 + 产品库按钮 */
 .input-with-picker {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
+  gap: var(--space-4);
 }
 .input-with-picker .ant-input {
   flex: 1;

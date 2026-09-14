@@ -215,6 +215,7 @@
 </template>
 
 <script setup lang="ts">
+import { bandColor, bandIndex, bandOf } from '@/theme/bands'
 import {
   CloseOutlined, PictureOutlined, TrophyOutlined, RocketOutlined,
 } from '@ant-design/icons-vue'
@@ -304,31 +305,20 @@ const resultData = props.data || {
   ],
 }
 
-const getScoreColor = (score: number) => {
-  if (score >= 80) return '#52c41a'
-  if (score >= 60) return '#faad14'
-  return '#ff4d4f'
-}
+/** 总分 / 各维度分配色（通用 0–100 口径） */
+const getScoreColor = (score: number) => bandColor('score', score)
 
-const getGrade = (score: number) => {
-  if (score >= 90) return 'A'
-  if (score >= 80) return 'B'
-  if (score >= 70) return 'C'
-  if (score >= 60) return 'D'
-  return 'F'
-}
+/** 等级 A–F —— 与后端 `agent_ad._score_to_grade` / `listing_generator._calculate_grade` 同源 */
+const getGrade = (score: number) => bandOf('grade', score)
 
-const getGradeClass = (score: number) => {
-  if (score >= 80) return 'grade-good'
-  if (score >= 60) return 'grade-warn'
-  return 'grade-bad'
-}
+const GRADE_CLASSES = ['grade-good', 'grade-warn', 'grade-bad']
+const getGradeClass = (score: number) => GRADE_CLASSES[bandIndex('score', score)]
 </script>
 
 <style scoped>
 .seo-diagnostic-result {
   background: var(--bg-elevated);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   overflow: hidden;
 }
 
@@ -336,8 +326,8 @@ const getGradeClass = (score: number) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-bottom: 1px solid var(--border-base);
   background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
   color: #fff;
 }
@@ -345,20 +335,20 @@ const getGradeClass = (score: number) => {
 .header-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-12);
 }
 
-.result-icon { font-size: 28px; }
-.header-info h3 { margin: 0; font-size: 16px; font-weight: 600; }
-.subtitle { margin: 2px 0 0; font-size: 12px; opacity: 0.85; }
+.result-icon { font-size: var(--font-size-28); }
+.header-info h3 { margin: 0; font-size: var(--font-size-16); font-weight: 600; }
+.subtitle { margin: var(--space-2) 0 0; font-size: var(--font-size-12); opacity: 0.85; }
 
 /* 分数仪表盘 */
 .score-dashboard {
   display: flex;
-  gap: 24px;
-  padding: 24px 20px;
+  gap: var(--space-24);
+  padding: var(--space-24) var(--space-20);
   background: var(--bg-base);
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--border-base);
   align-items: center;
 }
 
@@ -367,42 +357,42 @@ const getGradeClass = (score: number) => {
 }
 
 .score-number {
-  font-size: 36px;
+  font-size: var(--font-size-36);
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .score-label {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
 }
 
 .score-grade {
-  font-size: 18px;
+  font-size: var(--font-size-18);
   font-weight: 700;
-  margin-top: 2px;
+  margin-top: var(--space-2);
 }
 
-.grade-good { color: #52c41a; }
-.grade-warn { color: #faad14; }
-.grade-bad { color: #ff4d4f; }
+.grade-good { color: var(--success); }
+.grade-warn { color: var(--warning); }
+.grade-bad { color: var(--danger); }
 
 .score-details {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .detail-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .detail-label {
   width: 80px;
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
   font-weight: 500;
 }
@@ -414,13 +404,13 @@ const getGradeClass = (score: number) => {
 
 .detail-status {
   width: 50px;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
 }
 
-.detail-status.good { color: #52c41a; }
-.detail-status.warn { color: #faad14; }
-.detail-status.bad { color: #ff4d4f; }
+.detail-status.good { color: var(--success); }
+.detail-status.warn { color: var(--warning); }
+.detail-status.bad { color: var(--danger); }
 
 /* 维度详情 */
 .dimension-cards {
@@ -428,122 +418,122 @@ const getGradeClass = (score: number) => {
 }
 
 .dimension-detail {
-  padding: 16px;
+  padding: var(--space-16);
 }
 
 .metric-row {
   display: flex;
   align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px dashed #f0f0f0;
+  padding: var(--space-8) 0;
+  border-bottom: 1px dashed var(--border-base);
 }
 
 .metric-name {
   width: 100px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-secondary);
 }
 
 .metric-value {
   width: 120px;
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
-.metric-value.ok { color: #52c41a; }
-.metric-value.warn { color: #faad14; }
-.metric-value.bad { color: #ff4d4f; }
+.metric-value.ok { color: var(--success); }
+.metric-value.warn { color: var(--warning); }
+.metric-value.bad { color: var(--danger); }
 
 .metric-target {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-disabled);
 }
 
 .improvement-box {
-  margin-top: 16px;
-  padding: 12px;
-  background: var(--bg-elevated)be6;
-  border-radius: 6px;
-  border-left: 3px solid #faad14;
+  margin-top: var(--space-16);
+  padding: var(--space-12);
+  background: var(--warning-bg);
+  border-radius: var(--radius-6);
+  border-left: 3px solid var(--warning);
 }
 
 .improvement-box h4 {
-  margin: 0 0 8px;
-  font-size: 13px;
-  color: #d48806;
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-size-13);
+  color: var(--warning-strong);
 }
 
 .improvement-box ul {
   margin: 0;
-  padding-left: 18px;
-  font-size: 13px;
+  padding-left: var(--space-18);
+  font-size: var(--font-size-13);
   color: var(--text-secondary);
 }
 
 .improvement-box li {
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
 }
 
 /* 五点质量 */
 .bullet-quality-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .quality-card {
   background: var(--bg-base);
-  border-radius: 8px;
-  padding: 12px;
+  border-radius: var(--radius-8);
+  padding: var(--space-12);
   text-align: center;
-  border-top: 3px solid #d9d9d9;
+  border-top: 3px solid var(--border-strong);
 }
 
-.quality-card.good { border-top-color: #52c41a; }
-.quality-card.warn { border-top-color: #faad14; }
-.quality-card.bad { border-top-color: #ff4d4f; }
+.quality-card.good { border-top-color: var(--success); }
+.quality-card.warn { border-top-color: var(--warning); }
+.quality-card.bad { border-top-color: var(--danger); }
 
 .quality-num {
   width: 24px;
   height: 24px;
   line-height: 24px;
   background: var(--bg-hover-light);
-  border-radius: 50%;
-  font-size: 12px;
+  border-radius: var(--radius-circle);
+  font-size: var(--font-size-12);
   font-weight: 700;
-  margin: 0 auto 8px;
+  margin: 0 auto var(--space-8);
 }
 
 .quality-score {
-  font-size: 20px;
+  font-size: var(--font-size-20);
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .quality-issues {
-  margin-top: 8px;
+  margin-top: var(--space-8);
 }
 
 .issue-tag {
   display: inline-block;
-  font-size: 10px;
-  padding: 2px 6px;
-  background: var(--bg-elevated)1f0;
-  color: #cf1322;
-  border-radius: 4px;
-  margin: 2px;
+  font-size: var(--font-size-10);
+  padding: var(--space-2) var(--space-6);
+  background: var(--danger-bg);
+  color: var(--danger-strong);
+  border-radius: var(--radius-4);
+  margin: var(--space-2);
 }
 
 /* 图片审核 */
 .image-audit-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  gap: var(--space-12);
 }
 
 .image-card {
   background: var(--bg-base);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   overflow: hidden;
 }
 
@@ -554,90 +544,90 @@ const getGradeClass = (score: number) => {
   align-items: center;
   justify-content: center;
   background: var(--bg-base);
-  gap: 4px;
+  gap: var(--space-4);
   color: var(--text-disabled);
-  font-size: 11px;
+  font-size: var(--font-size-11);
 }
 
 .image-score {
   text-align: center;
-  padding: 6px;
+  padding: var(--space-6);
   font-weight: 700;
-  font-size: 14px;
+  font-size: var(--font-size-14);
 }
 
-.image-score.good { background: #f6ffed; color: #52c41a; }
-.image-score.warn { background: var(--bg-elevated)be6; color: #faad14; }
-.image-score.bad { background: var(--bg-elevated)2f0; color: #ff4d4f; }
+.image-score.good { background: var(--success-bg); color: var(--success); }
+.image-score.warn { background: var(--warning-bg); color: var(--warning); }
+.image-score.bad { background: var(--danger-bg); color: var(--danger); }
 
 .image-issues {
-  padding: 8px;
+  padding: var(--space-8);
 }
 
 .issue-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  gap: var(--space-6);
+  font-size: var(--font-size-11);
   color: var(--text-secondary);
-  margin-bottom: 3px;
+  margin-bottom: var(--space-3);
 }
 
 .issue-dot {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   flex-shrink: 0;
 }
 
-.issue-dot.error { background: #ff4d4f; }
-.issue-dot.warn { background: #faad14; }
-.issue-dot.info { background: #1890ff; }
+.issue-dot.error { background: var(--danger); }
+.issue-dot.warn { background: var(--warning); }
+.issue-dot.info { background: var(--primary); }
 
 /* 价格分析 */
 .price-compare {
   display: flex;
-  gap: 24px;
+  gap: var(--space-24);
   justify-content: center;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-16);
 }
 
 .price-item {
   text-align: center;
-  padding: 16px 24px;
-  border-radius: 8px;
+  padding: var(--space-16) var(--space-24);
+  border-radius: var(--radius-8);
 }
 
 .price-item.current {
-  background: var(--bg-elevated)1f0;
-  border: 1px solid #ffa39e;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border-strong);
 }
 
 .price-item.suggested {
-  background: #f6ffed;
-  border: 1px solid #b7eb8f;
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
 }
 
 .price-item label {
   display: block;
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-6);
 }
 
 .price-value {
-  font-size: 28px;
+  font-size: var(--font-size-28);
   font-weight: 700;
 }
 
-.price-item.current .price-value { color: #cf1322; }
-.price-item.suggested .price-value { color: #389e0d; }
+.price-item.current .price-value { color: var(--danger-strong); }
+.price-item.suggested .price-value { color: var(--success); }
 
 /* 评论摘要 */
 .review-summary {
   display: flex;
   justify-content: space-around;
-  padding: 16px 0;
+  padding: var(--space-16) 0;
 }
 
 .summary-stat {
@@ -645,51 +635,51 @@ const getGradeClass = (score: number) => {
 }
 
 .stat-value {
-  font-size: 24px;
+  font-size: var(--font-size-24);
   font-weight: 700;
   color: var(--text-primary);
 }
 
-.stat-value.positive { color: #52c41a; }
-.stat-value.negative { color: #ff4d4f; }
+.stat-value.positive { color: var(--success); }
+.stat-value.negative { color: var(--danger); }
 
 .stat-label {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-top: 4px;
+  margin-top: var(--space-4);
 }
 
 /* 竞品对标 */
 .competitor-benchmark {
-  padding: 16px 20px;
-  border-top: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-top: 1px solid var(--border-base);
 }
 
 .benchmark-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .benchmark-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 .benchmark-table th {
   background: var(--bg-base);
-  padding: 8px;
+  padding: var(--space-8);
   text-align: left;
   font-weight: 600;
   color: var(--text-secondary);
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 2px solid var(--border-base);
 }
 
 .benchmark-table td {
-  padding: 8px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: var(--space-8);
+  border-bottom: 1px solid var(--border-base);
 }
 
 .row-label {
@@ -697,30 +687,30 @@ const getGradeClass = (score: number) => {
   color: var(--text-primary);
 }
 
-.cell-value.ok { color: #52c41a; font-weight: 600; }
-.cell-value.warn { color: #faad14; }
+.cell-value.ok { color: var(--success); font-weight: 600; }
+.cell-value.warn { color: var(--warning); }
 
 /* 行动计划 */
 .action-plan {
-  padding: 16px 20px;
+  padding: var(--space-16) var(--space-20);
   background: var(--bg-base);
 }
 
 .plan-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .action-item strong {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-primary);
 }
 
 .action-item p {
-  margin: 4px 0 8px;
-  font-size: 12px;
+  margin: var(--space-4) 0 var(--space-8);
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
 }
 </style>

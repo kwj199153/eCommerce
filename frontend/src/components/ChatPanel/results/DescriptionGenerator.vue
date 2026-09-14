@@ -130,7 +130,7 @@
           <template v-else-if="module.type === 'highlights'">
             <div class="module-field" v-for="(item, iidx) in module.items" :key="iidx">
               <label>要点 {{ iidx + 1 }}</label>
-              <a-input-group compact style="display: flex; gap: 6px; align-items: center">
+              <a-input-group compact style="display: flex; gap: var(--space-6); align-items: center">
                 <a-input v-model:value="item.title" style="flex: 1" placeholder="要点标题" />
                 <a-button type="text" size="small" danger @click="removeHighlight(module, iidx)">删</a-button>
               </a-input-group>
@@ -138,7 +138,7 @@
                 v-model:value="item.description"
                 :auto-size="{ minRows: 1, maxRows: 3 }"
                 class="field-input"
-                style="margin-top: 6px"
+                style="margin-top: var(--space-6)"
                 placeholder="要点说明，可编辑"
               />
             </div>
@@ -429,7 +429,7 @@ const handleSaveToProduct = async () => {
 <style scoped>
 .desc-generator-result {
   background: var(--bg-elevated);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   overflow: hidden;
 }
 
@@ -437,8 +437,8 @@ const handleSaveToProduct = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: var(--space-16) var(--space-20);
+  border-bottom: 1px solid var(--border-base);
   background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
   color: #fff;
 }
@@ -446,43 +446,43 @@ const handleSaveToProduct = async () => {
 .header-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-12);
 }
-.result-icon { font-size: 28px; }
-.header-info h3 { margin: 0; font-size: 16px; font-weight: 600; }
-.subtitle { margin: 2px 0 0; font-size: 12px; opacity: 0.85; }
+.result-icon { font-size: var(--font-size-28); }
+.header-info h3 { margin: 0; font-size: var(--font-size-16); font-weight: 600; }
+.subtitle { margin: var(--space-2) 0 0; font-size: var(--font-size-12); opacity: 0.85; }
 
 /* 内容预览 */
 .content-preview {
-  padding: 20px;
+  padding: var(--space-20);
   max-height: 600px;
   overflow-y: auto;
 }
 
 /* 品牌横幅 */
 .brand-banner {
-  margin-bottom: 20px;
-  border-radius: 8px;
+  margin-bottom: var(--space-20);
+  border-radius: var(--radius-8);
   overflow: hidden;
 }
 
 .banner-placeholder {
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  padding: 24px;
+  padding: var(--space-24);
   text-align: center;
   color: #fff;
 }
 
 .brand-name {
   display: block;
-  font-size: 24px;
+  font-size: var(--font-size-24);
   font-weight: 700;
   letter-spacing: 4px;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
 }
 
 .brand-slogan {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   opacity: 0.7;
   letter-spacing: 2px;
 }
@@ -491,7 +491,7 @@ const handleSaveToProduct = async () => {
 .content-modules {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-20);
 }
 
 /* 模块编辑工具栏 + 字段区 */
@@ -499,36 +499,36 @@ const handleSaveToProduct = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 16px;
+  padding: var(--space-10) var(--space-16);
   background: var(--bg-base);
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--border-base);
 }
 .module-toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-4);
 }
 .module-field {
-  padding: 10px 16px 0;
+  padding: var(--space-10) var(--space-16) 0;
 }
 .module-field label {
   display: block;
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
 }
 .field-input {
-  border: 1px dashed #d9d9d9 !important;
-  border-radius: 4px;
+  border: 1px dashed var(--border-strong) !important;
+  border-radius: var(--radius-4);
 }
 .field-input:focus-within,
 .field-input:focus {
-  border: 1px solid #1890ff !important;
+  border: 1px solid var(--primary) !important;
   box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }
 .para-row {
   display: flex;
-  gap: 6px;
+  gap: var(--space-6);
   align-items: flex-start;
 }
 .add-module-select {
@@ -538,33 +538,33 @@ const handleSaveToProduct = async () => {
 
 .content-module {
   background: var(--bg-elevated);
-  border: 1px solid #f0f0f0;
-  border-radius: 8px;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-8);
   overflow: hidden;
 }
 
 .module-header {
-  padding: 14px 18px;
+  padding: var(--space-14) var(--space-18);
   background: var(--bg-base);
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--border-base);
 }
 
 .module-header h4 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--font-size-15);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .module-body {
-  padding: 16px 18px;
-  font-size: 13px;
+  padding: var(--space-16) var(--space-18);
+  font-size: var(--font-size-13);
   line-height: 1.75;
   color: var(--text-secondary);
 }
 
 .module-body :deep(p) {
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-10);
 }
 
 .module-body :deep(p:last-child) {
@@ -595,26 +595,26 @@ const handleSaveToProduct = async () => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
   color: var(--text-disabled);
-  font-size: 11px;
-  padding: 20px;
+  font-size: var(--font-size-11);
+  padding: var(--space-20);
 }
 
 .it-text {
-  padding: 18px;
+  padding: var(--space-18);
 }
 
 .it-text h4 {
-  margin: 0 0 10px;
-  font-size: 14px;
+  margin: 0 0 var(--space-10);
+  font-size: var(--font-size-14);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .it-text p {
-  margin: 0 0 8px;
-  font-size: 13px;
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-size-13);
   color: var(--text-secondary);
   line-height: 1.6;
 }
@@ -627,21 +627,21 @@ const handleSaveToProduct = async () => {
 .comp-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 .comp-table th {
   background: var(--bg-base);
-  padding: 10px 12px;
+  padding: var(--space-10) var(--space-12);
   text-align: center;
   font-weight: 600;
   color: var(--text-secondary);
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 2px solid var(--border-base);
 }
 
 .comp-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: var(--space-10) var(--space-12);
+  border-bottom: 1px solid var(--border-base);
   text-align: center;
 }
 
@@ -652,14 +652,14 @@ const handleSaveToProduct = async () => {
 }
 
 .comp-table td.highlight {
-  background: #f6ffed;
-  color: #389e0d;
+  background: var(--success-bg);
+  color: var(--success);
   font-weight: 600;
 }
 
 .check-icon {
-  color: #52c41a;
-  margin-left: 4px;
+  color: var(--success);
+  margin-left: var(--space-4);
 }
 
 /* 要点列表 */
@@ -671,8 +671,8 @@ const handleSaveToProduct = async () => {
 
 .hl-list li {
   display: flex;
-  gap: 12px;
-  padding: 12px 18px;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-18);
   border-bottom: 1px solid #f5f5f5;
 }
 
@@ -681,20 +681,20 @@ const handleSaveToProduct = async () => {
 }
 
 .hl-icon {
-  font-size: 24px;
+  font-size: var(--font-size-24);
   flex-shrink: 0;
 }
 
 .hl-content strong {
   display: block;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-primary);
-  margin-bottom: 2px;
+  margin-bottom: var(--space-2);
 }
 
 .hl-content p {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
   line-height: 1.5;
 }
@@ -703,11 +703,11 @@ const handleSaveToProduct = async () => {
 .brand-footer {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 20px;
+  gap: var(--space-16);
+  padding: var(--space-20);
   background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-  border-radius: 8px;
-  margin-top: 20px;
+  border-radius: var(--radius-8);
+  margin-top: var(--space-20);
 }
 
 .footer-logo {
@@ -717,22 +717,22 @@ const handleSaveToProduct = async () => {
   align-items: center;
   justify-content: center;
   background: var(--bg-elevated);
-  border-radius: 50%;
-  font-size: 20px;
+  border-radius: var(--radius-circle);
+  font-size: var(--font-size-20);
   font-weight: 700;
-  color: #1890ff;
+  color: var(--primary);
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 
 .footer-text h4 {
-  margin: 0 0 4px;
-  font-size: 15px;
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-size-15);
   color: var(--text-primary);
 }
 
 .footer-text p {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-secondary);
   line-height: 1.5;
 }
@@ -741,36 +741,36 @@ const handleSaveToProduct = async () => {
 .content-stats {
   display: flex;
   justify-content: space-around;
-  padding: 14px 20px;
+  padding: var(--space-14) var(--space-20);
   background: var(--bg-base);
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--border-base);
 }
 
 .stat-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  font-size: 12px;
+  gap: var(--space-2);
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
 }
 
 .stat-item .anticon {
-  font-size: 16px;
-  color: #1890ff;
+  font-size: var(--font-size-16);
+  color: var(--primary);
 }
 
-.s-label { font-size: 11px; }
+.s-label { font-size: var(--font-size-11); }
 .s-value {
-  font-size: 16px;
+  font-size: var(--font-size-16);
   font-weight: 700;
   color: var(--text-primary);
 }
 
 /* 操作栏 */
 .action-bar {
-  padding: 14px 20px;
-  border-top: 1px solid #f0f0f0;
+  padding: var(--space-14) var(--space-20);
+  border-top: 1px solid var(--border-base);
   display: flex;
   justify-content: center;
 }

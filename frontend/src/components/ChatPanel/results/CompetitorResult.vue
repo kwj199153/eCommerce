@@ -36,7 +36,7 @@
         <template v-else-if="column.key === 'listing_quality_score'">
           <a-progress
             :percent="record.listing_quality_score"
-            :stroke-color="record.listing_quality_score >= 80 ? '#52c41a' : record.listing_quality_score >= 60 ? '#faad14' : '#ff4d4f'"
+            :stroke-color="bandColor('score', record.listing_quality_score)"
             size="small"
           />
         </template>
@@ -52,6 +52,7 @@
 </template>
 
 <script setup lang="ts">
+import { bandColor } from '@/theme/bands'
 import { computed } from 'vue'
 import { CloseOutlined } from '@ant-design/icons-vue'
 
@@ -88,29 +89,29 @@ const getPositionLabel = (pos: string): string => {
 <style scoped>
 .competitor-result {
   background: var(--bg-elevated);
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-  margin: 12px 16px;
+  border-radius: var(--radius-8);
+  border: 1px solid var(--border-base);
+  margin: var(--space-12) var(--space-16);
 }
 .result-header {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 16px;
+  padding: var(--space-10) var(--space-16);
   background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
   color: #fff;
 }
-.header-left { display: flex; gap: 8px; align-items: center; }
-.result-icon { font-size: 18px; }
+.header-left { display: flex; gap: var(--space-8); align-items: center; }
+.result-icon { font-size: var(--font-size-18); }
 .result-title { font-weight: 600; }
 
 .overview-bar {
-  display: flex; gap: 20px; padding: 10px 16px;
-  font-size: 12px; border-bottom: 1px solid #f0f0f0;
+  display: flex; gap: var(--space-20); padding: var(--space-10) var(--space-16);
+  font-size: var(--font-size-12); border-bottom: 1px solid var(--border-base);
   background: var(--bg-base);
 }
 
 .conclusion {
-  padding: 12px 16px; border-top: 1px solid #f0f0f0;
+  padding: var(--space-12) var(--space-16); border-top: 1px solid var(--border-base);
 }
-.conclusion-title { font-weight: 600; margin-bottom: 6px; }
-.conclusion p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
+.conclusion-title { font-weight: 600; margin-bottom: var(--space-6); }
+.conclusion p { margin: 0; font-size: var(--font-size-12); line-height: 1.6; color: var(--text-secondary); }
 </style>

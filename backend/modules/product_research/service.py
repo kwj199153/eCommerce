@@ -16,6 +16,7 @@ from modules.product_research.schemas import (
 )
 from modules.product_research.agent_product_research import ProductResearchAgent
 from platforms import get_platform_adapter
+from platforms.amazon.client import CATEGORY_KEYS, get_mock_products
 
 
 class ProductResearchService:
@@ -91,57 +92,40 @@ class ProductResearchService:
         }
 
     def _generate_mock_blue_ocean_products(self, request: BlueOceanRequest) -> List[dict]:
-        """生成 Mock 商品数据（MVP 阶段）"""
-        # 模拟不同类目的商品池
-        category_pool = {
-            "home_kitchen": [
-                {"asin": "B0CXXXX001", "title": "Portable Mini Humidifier for Bedroom Desk USB Cool Mist", "price": 24.99, "sales": 1200, "reviews": 45, "roi": 35.2},
-                {"asin": "B0CXXXX002", "title": "Silicone Kitchen Utensil Set 43 Pcs Non-Stick Cooking Tools", "price": 29.99, "sales": 890, "reviews": 78, "roi": 28.5},
-                {"asin": "B0CXXXX007", "title": "Bamboo Cutting Board with Juice Groove Kitchen Chopping", "price": 22.99, "sales": 750, "reviews": 56, "roi": 38.4},
-                {"asin": "B0CXXXX013", "title": "Electric Can Opener Smooth Edge Automatic", "price": 19.99, "sales": 650, "reviews": 34, "roi": 42.1},
-                {"asin": "B0CXXXX014", "title": "Glass Food Storage Containers Airtight Lids Meal Prep", "price": 27.99, "sales": 1100, "reviews": 92, "roi": 31.2},
-            ],
-            "sports_outdoors": [
-                {"asin": "B0CXXXX006", "title": "Resistance Bands Set Exercise Workout Bands Fitness", "price": 15.99, "sales": 3200, "reviews": 234, "roi": 18.6},
-                {"asin": "B0CXXXX015", "title": "Jump Rope Adjustable Speed Skipping Rope Fitness", "price": 9.99, "sales": 2800, "reviews": 167, "roi": 25.3},
-                {"asin": "B0CXXXX016", "title": "Push Up Board Multi-function Foldable Home Gym", "price": 24.99, "sales": 560, "reviews": 42, "roi": 36.8},
-            ],
-            "beauty_personal_care": [
-                {"asin": "B0CXXXX005", "title": "Acrylic Organizer Makeup Storage Drawer Cosmetic Box", "price": 19.99, "sales": 1800, "reviews": 89, "roi": 31.8},
-                {"asin": "B0CXXXX017", "title": "LED Vanity Mirror Lights Strip Makeup Mirror", "price": 16.99, "sales": 1400, "reviews": 123, "roi": 26.4},
-                {"asin": "B0CXXXX018", "title": "Jade Roller Gua Sha Facial Beauty Tools Set", "price": 14.99, "sales": 2100, "reviews": 198, "roi": 22.1},
-            ],
-            "electronics": [
-                {"asin": "B0CXXXX008", "title": "Wireless Charging Pad Fast Charger Stand for Phone", "price": 18.99, "sales": 1450, "reviews": 198, "roi": 19.2},
-                {"asin": "B0CXXXX003", "title": "LED Plant Grow Light Full Spectrum for Indoor Plants", "price": 34.99, "sales": 650, "reviews": 32, "roi": 42.1},
-                {"asin": "B0CXXXX019", "title": "USB C Hub Multiport Adapter Type C Docking Station", "price": 29.99, "sales": 890, "reviews": 145, "roi": 21.5},
-            ],
-            "pet_supplies": [
-                {"asin": "B0CXXXX020", "title": "Pet Grooming Brush Deshedding Tool for Dogs Cats", "price": 12.99, "sales": 1900, "reviews": 156, "roi": 24.6},
-                {"asin": "B0CXXXX021", "title": "Dog Puzzle Toys Interactive Treat Dispenser Slow Feeder", "price": 17.99, "sales": 720, "reviews": 67, "roi": 33.2},
-            ],
-            "toys_games": [
-                {"asin": "B0CXXXX022", "title": "Building Blocks STEM Educational Toy Kids Ages 4-8", "price": 21.99, "sales": 480, "reviews": 38, "roi": 39.5},
-                {"asin": "B0CXXXX023", "title": "Fidget Toys Pack Sensory Tools Stress Relief Adults Kids", "price": 11.99, "sales": 3500, "reviews": 289, "roi": 17.8},
-            ],
-        }
+        """
+        取候选商品池（MVP 阶段）。
 
-        # 获取目标类目或默认使用 home_kitchen
-        target_category = (request.category[0] if request.category else None) or "home_kitchen"
-        products = category_pool.get(target_category, category_pool["home_kitchen"])
+        修复记录：原先此处内联了一份 ~18 条、ASIN 为 `B0CXXXX00N` 的自有商品池，
+        与 `platforms/amazon/client.py::MOCK_PRODUCTS`（选品 Agent 用的池子）互不相通，
+        且类目键用了 `sports_outdoors`/`pet_supplies`/`toys_games`，而前端下发的是
+        `sports`/`pet`/`toys` → `category_pool.get()` 永远落空，选任何类目都退回
+        `home_kitchen`。
 
-        # 如果有价格范围限制，补充一些不同价位的产品
-        all_products = products.copy()
-        if not request.price_min and not request.price_max:
-            # 无价格限制时混合多个类目
-            for cat, prods in category_pool.items():
-                if cat != target_category:
-                    all_products.extend(prods[:2])
+        现统一改为读 `get_mock_products()`（唯一权威源），类目键以 `CATEGORY_KEYS`
+        为准。字段名同步规范化为 `review_count` / `estimated_monthly_sales`。
+        """
+        # 目标类目：request.category 形如 ['home_kitchen', 'kitchen_dining']，取顶层键
+        target_category = (request.category[0] if request.category else None) or None
+        products = get_mock_products(target_category)
 
-        return all_products
+        # 无价格限制时混合多个类目，避免结果过度集中在单一类目
+        # （仅在指定了具体类目时补混合；未指定类目时全池已在手，重复追加会出重）
+        if target_category and not request.price_min and not request.price_max:
+            extra: List[dict] = []
+            for key in CATEGORY_KEYS:
+                if key != target_category:
+                    extra.extend(get_mock_products(key)[:2])
+            products = products + extra
+
+        return products
 
     def _apply_filters(self, products: List[dict], request: BlueOceanRequest) -> List[dict]:
-        """应用筛选条件"""
+        """
+        应用筛选条件。
+
+        字段名使用统一池的规范名（`review_count` / `estimated_monthly_sales`），
+        不再使用旧的 `reviews` / `sales` 别名。
+        """
         filtered = []
         for p in products:
             # 价格过滤
@@ -150,10 +134,10 @@ class ProductResearchService:
             if request.price_max and p["price"] > request.price_max:
                 continue
             # 评论数过滤
-            if p["reviews"] > request.max_reviews:
+            if p["review_count"] > request.max_reviews:
                 continue
             # 月销量过滤
-            if p["sales"] < request.min_monthly_sales:
+            if p["estimated_monthly_sales"] < request.min_monthly_sales:
                 continue
             # ROI 过滤
             if p["roi"] < request.min_roi:
@@ -161,14 +145,14 @@ class ProductResearchService:
             # 高级筛选：季节性、品牌垄断、高风险（Mock 阶段简化处理）
             if request.exclude_seasonal and "Christmas" in p.get("title", ""):
                 continue
-            if request.exclude_brand_dominant and p["reviews"] > 500:
+            if request.exclude_brand_dominant and p["review_count"] > 500:
                 continue
 
             filtered.append(p)
 
         # 如果过滤后为空，放宽条件返回部分结果作为建议
         if len(filtered) == 0 and len(products) > 0:
-            # 返回评分最高的前 5 个作为"接近匹配"
+            # 返回 ROI 最高的前 5 个作为"接近匹配"
             filtered = sorted(products, key=lambda x: x["roi"], reverse=True)[:5]
 
         return filtered
@@ -181,10 +165,10 @@ class ProductResearchService:
         for p in products:
             # 蓝海评分算法（综合维度）
             # 1. 需求分 (0-40)：月销量越高需求越大
-            demand_score = min((p["sales"] / 3000) * 40, 40)
+            demand_score = min((p["estimated_monthly_sales"] / 3000) * 40, 40)
 
             # 2. 竞争分 (0-40)：评论越少竞争越小
-            competition_score = max(40 - (p["reviews"] / 5), 5)
+            competition_score = max(40 - (p["review_count"] / 5), 5)
 
             # 3. 利润分 (0-20)：ROI 越高利润空间越大
             profit_score = min((p["roi"] / 50) * 20, 20)
@@ -196,12 +180,12 @@ class ProductResearchService:
                 asin=p["asin"],
                 title=p["title"],
                 price=p["price"],
-                estimated_monthly_sales=p["sales"],
-                review_count=p["reviews"],
+                estimated_monthly_sales=p["estimated_monthly_sales"],
+                review_count=p["review_count"],
                 roi_estimated=round(p["roi"], 1),
                 blue_ocean_score=blue_ocean_score,
                 marketplace=request.marketplace or "amazon_us",
-                category=request.category[-1] if request.category else "Home & Kitchen",
+                category=p["category"],
             ))
 
         # 按蓝海评分降序排列
@@ -339,9 +323,14 @@ class ProductResearchService:
             suggestions=self._generate_suggestions(result),
         )
 
-    async def stream_chat(self, message: str):
-        """流式对话入口（返回逐 token 异步迭代器）"""
-        async for chunk in self.agent.stream_chat(message):
+    async def stream_chat(self, message: str, context_id: str = None):
+        """
+        流式对话入口（返回逐 token 异步迭代器）。
+
+        `context_id` 必须一路带到 Agent —— 入库的「待补槽位」与「上一轮蓝海结果」
+        都按会话隔离，不传就退化成全局共享（多会话会串数据）。
+        """
+        async for chunk in self.agent.stream_chat(message, context_id=context_id):
             yield chunk
 
     @staticmethod
@@ -380,3 +369,14 @@ class ProductResearchService:
         ])
 
         return base_suggestions
+
+
+# ====== 全局单例 ======
+#
+# router 与 tools **必须共用同一个实例**：Agent 的会话状态（待补入库槽位、
+# 上一轮蓝海结果）按 context_id 挂在实例上。
+# 早前 router 与 tools 各 `ProductResearchService()` 一次（tools.py 里那句
+# 「单例 service（与 router 同源）」的注释其实从未成立）→ 两个 Agent 实例 →
+# 「先对话挖蓝海，再让 LLM 工具路由去入库」时，工具那边看不到这份蓝海结果，
+# 只能退化成「找不到要入库的商品」。
+product_research_service = ProductResearchService()

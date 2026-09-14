@@ -58,25 +58,25 @@ const handleSelectAgent = ({ key }: { key: string }) => {
 
 <style scoped>
 .agent-list {
-  padding: 8px 0;
+  padding: var(--space-8) 0;
 }
 
 .section-title {
-  padding: 12px 16px 8px;
-  font-size: 13px;
+  padding: var(--space-12) var(--space-16) var(--space-8);
+  font-size: var(--font-size-13);
   font-weight: 500;
-  color: #8c8c8c;
+  color: var(--text-tertiary);
 }
 
 :deep(.ant-menu-item) {
   height: 40px;
   line-height: 40px;
-  margin: 2px 8px;
-  border-radius: 6px;
+  margin: var(--space-2) var(--space-8);
+  border-radius: var(--radius-6);
 }
 
 :deep(.ant-menu-item .anticon) {
-  font-size: 16px;
-  margin-right: 10px;
+  font-size: var(--font-size-16);
+  margin-right: var(--space-10);
 }
 </style>

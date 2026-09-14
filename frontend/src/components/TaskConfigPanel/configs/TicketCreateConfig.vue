@@ -120,16 +120,16 @@ const handleStart = () => {
 </script>
 
 <style scoped>
-.ticket-create-config { padding: 4px 0; }
-.config-form :deep(.ant-form-item) { margin-bottom: 12px; }
-.config-form :deep(.ant-form-item-label) { font-size: 13px; font-weight: 500; }
-.form-hint { font-size: 11px; color: #8c8c8c; margin-top: 4px; }
-.action-bar { margin-top: 16px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.ticket-create-config { padding: var(--space-4) 0; }
+.config-form :deep(.ant-form-item) { margin-bottom: var(--space-12); }
+.config-form :deep(.ant-form-item-label) { font-size: var(--font-size-13); font-weight: 500; }
+.form-hint { font-size: var(--font-size-11); color: var(--text-tertiary); margin-top: var(--space-4); }
+.action-bar { margin-top: var(--space-16); padding-top: var(--space-12); border-top: 1px solid var(--border-base); }
 
-.sla-info { margin-top: 16px; padding: 12px; background: #fff7e6; border-radius: 8px; border: 1px solid #ffd591; }
-.sla-title { font-size: 12px; font-weight: 600; color: #d46b08; margin-bottom: 10px; }
-.sla-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.sla-item { display: flex; justify-content: space-between; font-size: 11.5px; padding: 4px 8px; background: #fff; border-radius: 4px; }
-.sla-item .label { color: #595959; }
-.sla-item .time { font-weight: 600; color: #d46b08; }
+.sla-info { margin-top: var(--space-16); padding: var(--space-12); background: var(--orange-bg); border-radius: var(--radius-8); border: 1px solid var(--orange-border); }
+.sla-title { font-size: var(--font-size-12); font-weight: 600; color: var(--orange-strong); margin-bottom: var(--space-10); }
+.sla-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
+.sla-item { display: flex; justify-content: space-between; font-size: var(--font-size-11-5); padding: var(--space-4) var(--space-8); background: var(--bg-elevated); border-radius: var(--radius-4); }
+.sla-item .label { color: var(--text-secondary); }
+.sla-item .time { font-weight: 600; color: var(--orange-strong); }
 </style>

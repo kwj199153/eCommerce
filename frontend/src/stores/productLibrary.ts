@@ -28,6 +28,7 @@ import {
   deleteProductGroup,
   moveProductGroup,
 } from '@/api/products'
+import { GROUP_PALETTE } from '@/theme/palette'
 
 // ====== 类型定义 ======
 
@@ -200,10 +201,7 @@ export const PRODUCT_CATEGORIES: ProductCategory[] = [
 ]
 
 /** 预置分组标签颜色 */
-export const GROUP_COLORS = [
-  '#1890ff', '#52c41a', '#faad14', '#ff4d4f',
-  '#722ed1', '#13c2c2', '#eb2f96', '#fa8c16',
-]
+export const GROUP_COLORS: readonly string[] = GROUP_PALETTE
 
 // ====== Mock 数据（离线兜底用，SPU + SKU 结构） ======
 
@@ -812,7 +810,7 @@ export const useProductLibraryStore = defineStore('productLibrary', () => {
       const g: ProductGroup = {
         id: `group-${Date.now()}`,
         name: input.name,
-        color: input.color || '#1890ff',
+        color: input.color || GROUP_COLORS[0],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }

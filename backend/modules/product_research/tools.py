@@ -13,11 +13,11 @@
 """
 
 import json
-from typing import Optional
+from typing import List, Optional
 
 from langchain_core.tools import StructuredTool
 
-from .service import ProductResearchService
+from .service import product_research_service
 from .schemas import (
     BlueOceanRequest,
     ProfitAnalysisRequest,
@@ -25,8 +25,10 @@ from .schemas import (
     CompetitorCompareRequest,
 )
 
-# 单例 service（与 router 同源）
-_service = ProductResearchService()
+# service 单例：**与 router 真正同源**（同一个实例）。
+# 早前这里又 `ProductResearchService()` 了一次，与 router 各持一个 Agent，
+# 导致会话状态（蓝海结果 / 待补槽位）在工具路径上不可见。
+_service = product_research_service
 
 
 def _dump(resp) -> str:
@@ -53,7 +55,7 @@ async def _analyze_blue_ocean_tool(
 
     Args:
         marketplace: 目标站点，如 amazon_us / shopee_my（默认 amazon_us）。
-        category: 类目关键词，如 home_kitchen / sports_outdoors / beauty_personal_care。
+        category: 类目键，取值 home_kitchen / electronics / sports / beauty / toys / pet（可选）。
         price_min: 最低售价（USD，可选）。
         price_max: 最高售价（USD，可选）。
         max_reviews: 评论数上限（控制低竞争，默认 100）。
@@ -143,6 +145,47 @@ async def _compare_competitors_tool(
     return _dump(resp)
 
 
+async def _save_candidate_tool(
+    asin: str = "",
+    title: str = "",
+    source_keyword: Optional[str] = None,
+) -> str:
+    """把商品写入候选选品库（待评审）。
+
+    这是前端「蓝海结果卡 → 勾选 → 选分组 → 保存」那条**面板流程的对话版**，
+    字段契约与面板一致（必填 ASIN + 商品标题），差别只在交互方式：
+      - 必填缺失 → 返回的是**追问**（`type=candidate_save_failed` + `error` 文案）。
+        请把这句追问**原样转达给用户**并等下一轮补充；**不要**自己编一个 ASIN
+        或标题填进去，也不要改存别的商品充数。
+      - 可选字段（售价/月销/蓝海评分/ROI/备注/分组）留空即可，后台按默认值补齐。
+
+    修复记录：此前「保存到选品库」只是前端卡片上的一个按钮，Agent 侧
+    **没有任何写入口**——对话里说「把这个品加进选品库」没有工具可调，
+    只能靠关键词猜意图，会被误判成蓝海挖掘又跑一遍。
+
+    Args:
+        asin: 商品 ASIN（形如 B0KLMN3456）。不知道就留空，工具会引导用户补。
+        title: 商品标题。能从蓝海结果或用户原话里拿到就带上。
+        source_keyword: 该商品来自哪个机会词（可选，便于回溯成色来源）。
+    """
+    parts: List[str] = []
+    if title:
+        parts.append(title)
+    if asin:
+        parts.append(f"ASIN {asin}")
+    if source_keyword:
+        parts.append(f"来源机会词 {source_keyword}")
+    query = f"把 {'，'.join(parts)} 加入选品库" if parts else "帮我入库"
+
+    # 会话 ID 靠 ContextVar 传递（工具入参由 LLM 生成，塞不进 context_id）——
+    # 不传的话工具会在 `_default` 会话里找不到蓝海结果与待补槽位。
+    from .agent_product_research import _current_context_id
+
+    return _dump(await _service.agent._save_candidate(
+        query, context_id=_current_context_id.get()
+    ))
+
+
 # ====== 工具注册表 ======
 
 product_research_tools = [
@@ -176,6 +219,17 @@ product_research_tools = [
         description=(
             "竞品对比：对比多个竞品 ASIN 的 Listing 质量、价格、优劣势，给出参考建议。"
             "当用户想对比竞品/分析竞争对手/看竞品优劣势时使用。"
+        ),
+    ),
+    StructuredTool.from_function(
+        coroutine=_save_candidate_tool,
+        name="save_candidate",
+        description=(
+            "把商品加入候选选品库（草稿池，待评审）。"
+            "当用户想把某个商品加进选品库/候选库/候选池/入库/保存到选品库时使用。"
+            "能拿到 ASIN 或商品标题就带上；都拿不到也**可以直接调用**（参数留空），"
+            "工具会返回一句**追问**，把它原样转达给用户即可 —— 不要自己编 ASIN，"
+            "也不要改存别的商品充数。"
         ),
     ),
 ]

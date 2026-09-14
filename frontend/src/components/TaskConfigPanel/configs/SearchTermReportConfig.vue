@@ -17,7 +17,7 @@
           <span class="filter-label">最小花费</span>
           <a-input-number v-model:value="formState.minSpend" :min="0" :precision="2" addon-after="$" style="width: 100%" />
         </div>
-        <div class="filter-row" style="margin-top: 8px;">
+        <div class="filter-row" style="margin-top: var(--space-8);">
           <span class="filter-label">最小点击</span>
           <a-input-number v-model:value="formState.minClicks" :min="0" style="width: 100%" />
         </div>
@@ -91,10 +91,10 @@ const handleStart = () => {
 </script>
 
 <style scoped>
-.search-term-config { padding: 4px 0; }
-.config-form :deep(.ant-form-item) { margin-bottom: 14px; }
-.config-form :deep(.ant-form-item-label) { font-size: 13px; font-weight: 500; }
-.filter-row { display: flex; align-items: center; gap: 8px; }
-.filter-label { font-size: 12px; color: #595959; white-space: nowrap; min-width: 56px; }
-.action-bar { margin-top: 16px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.search-term-config { padding: var(--space-4) 0; }
+.config-form :deep(.ant-form-item) { margin-bottom: var(--space-14); }
+.config-form :deep(.ant-form-item-label) { font-size: var(--font-size-13); font-weight: 500; }
+.filter-row { display: flex; align-items: center; gap: var(--space-8); }
+.filter-label { font-size: var(--font-size-12); color: var(--text-secondary); white-space: nowrap; min-width: 56px; }
+.action-bar { margin-top: var(--space-16); padding-top: var(--space-12); border-top: 1px solid var(--border-base); }
 </style>

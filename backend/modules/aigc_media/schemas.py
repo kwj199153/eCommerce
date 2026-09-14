@@ -245,6 +245,64 @@ class TranslationResponse(BaseModel):
     alternative_versions: List[AlternativeVersion]
 
 
+class SelectionTranslateRequest(BaseModel):
+    """划词翻译请求（面向阅读辅助：用户选中一段文字，只要一个能直接读的译文）"""
+    text: str = Field(..., min_length=1, max_length=2000, description="选中的文本")
+    target_lang: str = Field(
+        default="auto",
+        description="目标语言代码；auto = 按原文自动判断（含中文则译英，否则译中）"
+    )
+    context: str = Field(
+        default="ecommerce",
+        description="翻译上下文，决定术语口味（如 ecommerce / listing / customer_service）"
+    )
+
+
+class SelectionTranslateResponse(BaseModel):
+    """
+    划词翻译响应。
+
+    刻意**不含** seo_optimized / keyword_inclusion / cultural_notes / alternative_versions
+    —— 那些是内容生产（`TranslationResponse`）需要的，划词场景背上它们只会拖慢首字。
+    """
+    original_text: str
+    translation: str
+    source_lang: str = Field(description="实际判定的源语言")
+    target_lang: str = Field(description="实际使用的目标语言")
+    degraded: bool = Field(
+        default=False,
+        description="LLM 不可用时为 True，此时 translation 为空字符串（绝不编造译文）"
+    )
+
+
+class EnhancePromptRequest(BaseModel):
+    """
+    提示词增强请求。
+
+    面向**输入框辅助**：用户在对话框里写了一句口语化需求，点一下变成更可执行的提示词。
+    与 `SelectionTranslateRequest` 并列，但改的不是语言，是需求的完备度。
+    """
+    draft: str = Field(..., min_length=1, max_length=2000, description="用户原始输入")
+    context: str = Field(
+        default="ecommerce",
+        description="业务上下文，决定补齐哪些维度（如 ecommerce / listing / ad / customer_service）"
+    )
+
+
+class EnhancePromptResponse(BaseModel):
+    """
+    提示词增强响应。
+
+    刻意**只回一段文本** —— 输入框辅助要的是「点一下就能替换进去」，不是一份分析报告。
+    """
+    draft: str = Field(description="原始输入，原样回传，便于前端做比对/撤销")
+    enhanced: str = Field(description="增强后的提示词")
+    degraded: bool = Field(
+        default=False,
+        description="LLM 不可用时为 True，此时 enhanced 为空字符串（绝不编造提示词）"
+    )
+
+
 # ============================================================
 # 信息图相关
 # ============================================================
@@ -346,6 +404,31 @@ class VideoScriptResponse(BaseModel):
     cta_suggestions: List[str]
     hashtag_recommendations: List[str]
     production_notes: List[str]
+
+
+# ============================================================
+# 静态素材批量生成（面板驱动）
+# ============================================================
+
+class AssetGenerationRequest(BaseModel):
+    """静态素材批量出图请求（面板驱动，不做缺参追问）。"""
+    product_name: str = Field(..., min_length=1, max_length=200, description="产品名称")
+    image_types: List[str] = Field(
+        default_factory=lambda: ["spu-main"],
+        description="素材类型：spu-main/white-bg/scene/lifestyle/infographic/ad-main",
+    )
+    category: str = Field(default="general", description="产品类目")
+    extra_description: str = Field(default="", description="补充描述（场景描述、卖点关键词等）")
+    count_per_type: int = Field(default=1, ge=1, le=4, description="每种类型生成张数")
+    size: str = Field(default="1024*1024", description="分辨率，必须用星号分隔（小写 x 会被拒）")
+    source_image: Optional[str] = Field(
+        default=None,
+        description=(
+            "产品原图（图生图底图）：公网 URL 或 base64 data URI 均可，"
+            "万相 base_image_url 原生支持 base64、无需图床。"
+            "留空则退回文生图。"
+        ),
+    )
 
 
 # ============================================================

@@ -47,7 +47,7 @@
       <h4>📍 市场定位分布</h4>
       <div class="position-legend">
         <span v-for="(pos, k) in data.market_positioning_map.segments" :key="k" class="legend-item">
-          <span class="dot" :style="{ background: pos.color || '#1890ff' }"></span>
+          <span class="dot" :style="{ background: pos.color || SEM.primary }"></span>
           {{ pos.name }}: {{ pos.count || 0 }}
         </span>
       </div>
@@ -68,6 +68,7 @@
 </template>
 
 <script setup lang="ts">
+import { SEM } from '@/theme/semantic'
 import { computed } from 'vue'
 
 const props = defineProps<{ data: any }>()
@@ -97,31 +98,31 @@ const aggregatedRecommendations = computed(() => {
 </script>
 
 <style scoped>
-.pricing-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
-.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.result-header h3 { margin: 0; font-size: 16px; }
-.strategy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 14px; }
-.strategy-card { padding: 14px; border-radius: 10px; border: 1px solid #f0f0f0; }
-.strategy-premium { background: linear-gradient(135deg, #fff7e6, #fffbe6); border-color: #ffd591; }
-.strategy-economy { background: linear-gradient(135deg, #f6ffed, #eaffff); border-color: #b7eb8f; }
-.strategy-competitive { background: linear-gradient(135deg, #e6f7ff, #f0f5ff); border-color: #91d5ff; }
+.pricing-result { padding: var(--space-16); background: var(--bg-elevated); border-radius: var(--radius-8); }
+.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-14); }
+.result-header h3 { margin: 0; font-size: var(--font-size-16); }
+.strategy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-12); margin-bottom: var(--space-14); }
+.strategy-card { padding: var(--space-14); border-radius: var(--radius-10); border: 1px solid var(--border-base); }
+.strategy-premium { background: linear-gradient(135deg, var(--orange-bg), var(--warning-bg)); border-color: var(--orange-border); }
+.strategy-economy { background: linear-gradient(135deg, #f6ffed, #eaffff); border-color: var(--success-border); }
+.strategy-competitive { background: linear-gradient(135deg, #e6f7ff, #f0f5ff); border-color: var(--info-border); }
 .strategy-dynamic { background: linear-gradient(135deg, #f9f0ff, #fff0f6); border-color: #d3adf7; }
-.strategy-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.strategy-name { font-weight: 600; font-size: 13.5px; }
-.strategy-price { font-size: 18px; font-weight: 700; color: var(--text-primary); }
-.strategy-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
-.metric { text-align: center; padding: 4px; background: rgba(255,255,255,0.6); border-radius: 4px; }
-.m-label { display: block; font-size: 10.5px; color: var(--text-tertiary); }
-.m-val { font-weight: 600; font-size: 12.5px; color: var(--text-primary); }
-.rec-list { margin: 0; padding-left: 16px; font-size: 11.5px; line-height: 1.6; color: var(--text-secondary); }
-.rec-list li { margin-bottom: 2px; }
-.position-map { padding: 12px; background: var(--bg-base); border-radius: 8px; margin-bottom: 14px; }
-.position-map h4 { margin: 0 0 8px; font-size: 13px; }
-.position-legend { display: flex; flex-wrap: wrap; gap: 12px; }
-.legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; }
-.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.insight-box { padding: 12px; background: var(--bg-elevated)0f6; border-radius: 8px; font-size: 12.5px; line-height: 1.7; }
-.insight-box p { margin: 0 0 6px; }
-.insight-box ul { margin: 0; padding-left: 18px; }
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; margin-top: 12px; }
+.strategy-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-10); }
+.strategy-name { font-weight: 600; font-size: var(--font-size-13-5); }
+.strategy-price { font-size: var(--font-size-18); font-weight: 700; color: var(--text-primary); }
+.strategy-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); margin-bottom: var(--space-10); }
+.metric { text-align: center; padding: var(--space-4); background: rgba(255,255,255,0.6); border-radius: var(--radius-4); }
+.m-label { display: block; font-size: var(--font-size-10-5); color: var(--text-tertiary); }
+.m-val { font-weight: 600; font-size: var(--font-size-12-5); color: var(--text-primary); }
+.rec-list { margin: 0; padding-left: var(--space-16); font-size: var(--font-size-11-5); line-height: 1.6; color: var(--text-secondary); }
+.rec-list li { margin-bottom: var(--space-2); }
+.position-map { padding: var(--space-12); background: var(--bg-base); border-radius: var(--radius-8); margin-bottom: var(--space-14); }
+.position-map h4 { margin: 0 0 var(--space-8); font-size: var(--font-size-13); }
+.position-legend { display: flex; flex-wrap: wrap; gap: var(--space-12); }
+.legend-item { display: flex; align-items: center; gap: var(--space-5); font-size: var(--font-size-12); }
+.dot { width: 10px; height: 10px; border-radius: var(--radius-circle); display: inline-block; }
+.insight-box { padding: var(--space-12); background: #fff0f6; border-radius: var(--radius-8); font-size: var(--font-size-12-5); line-height: 1.7; }
+.insight-box p { margin: 0 0 var(--space-6); }
+.insight-box ul { margin: 0; padding-left: var(--space-18); }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); margin-top: var(--space-12); }
 </style>

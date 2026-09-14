@@ -21,6 +21,7 @@ import {
   updateAssetGroup,
   deleteAssetGroup,
 } from '@/api/assets'
+import { GROUP_PALETTE } from '@/theme/palette'
 
 // ====== 类型定义 ======
 
@@ -84,10 +85,7 @@ export const CATEGORY_LABEL: Record<string, string> = Object.fromEntries(
 )
 
 /** 预置分组标签颜色 */
-export const ASSET_GROUP_COLORS = [
-  '#1890ff', '#52c41a', '#faad14', '#ff4d4f',
-  '#722ed1', '#13c2c2', '#eb2f96', '#fa8c16',
-]
+export const ASSET_GROUP_COLORS: readonly string[] = GROUP_PALETTE
 
 // ====== Mock 素材（离线兜底用） ======
 

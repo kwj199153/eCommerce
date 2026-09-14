@@ -40,13 +40,13 @@
 
         <!-- 评分 -->
         <template v-else-if="column.key === 'rating'">
-          <span :class="record.rating < 4 ? 'cie-rate-low' : 'cie-rate-high'">★ {{ Number(record.rating).toFixed(1) }}</span>
+          <span :class="rateClass(record.rating)">★ {{ Number(record.rating).toFixed(1) }}</span>
         </template>
 
         <!-- 评论 -->
         <template v-else-if="column.key === 'review'">
           <span>+{{ record.reviews_added_7d }}</span>
-          <a-tag v-if="record.negative_7d > 0" color="red" style="margin-left: 4px">差评{{ record.negative_7d }}</a-tag>
+          <a-tag v-if="record.negative_7d > 0" color="red" style="margin-left: var(--space-4)">差评{{ record.negative_7d }}</a-tag>
         </template>
 
         <!-- 促销天数 -->
@@ -83,6 +83,10 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { bandIndex } from '@/theme/bands'
+
+/** 星级配色（0–5，口径见 bands.ts `rating`），≥4 分良好 */
+const rateClass = (n: any) => (bandIndex('rating', Number(n) || 0) === 0 ? 'cie-rate-high' : 'cie-rate-low')
 
 const props = defineProps<{ data: any }>()
 
@@ -135,20 +139,20 @@ const columns: any[] = [
   表头与数据几乎不可见。token 值与这些硬编码一一对应，浅色观感不变，深色自动适配。
 */
 .cie-box {
-  margin-top: 10px;
+  margin-top: var(--space-10);
   border: 1px solid var(--success-border);
-  border-radius: 8px;
-  padding: 10px 12px;
+  border-radius: var(--radius-8);
+  padding: var(--space-10) var(--space-12);
   background: var(--success-bg);
 }
 .cie-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: var(--space-8);
+  margin-bottom: var(--space-8);
 }
 .cie-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--success);
 }
@@ -157,11 +161,11 @@ const columns: any[] = [
   flex-direction: column;
 }
 .cie-brand {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   line-height: 1.3;
 }
 .cie-asin {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--text-tertiary);
   font-family: monospace;
 }
@@ -169,7 +173,7 @@ const columns: any[] = [
   color: var(--text-disabled);
 }
 .cie-d {
-  font-size: 11px;
+  font-size: var(--font-size-11);
 }
 /* BSR 数值变大 = 排名下滑 = 不利（红），反之向好（绿） */
 .cie-up {

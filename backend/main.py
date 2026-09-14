@@ -17,6 +17,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from core.config import config
 from core.database import init_db, close_db, get_db_session
@@ -72,6 +73,36 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️ 候选选品库种子数据跳过: {e}")
 
+    # 启动时：竞品监控池种子数据（首次启动预置演示数据）
+    # 注意：本 seed 不硬编码 shop_id，而是查 stores 表取真实店铺 id 逐个灌。
+    # 2026-09-12 起 candidates / products 的 seed 也已统一此写法 —— 真实租户 id 是
+    # X-Shop-ID 里的 store_xxxxxxxx，写死 "shop-1" 会导致那批数据任何请求都查不到。
+    try:
+        from modules.monitors.seed import seed_monitors_if_empty
+        seeded = await seed_monitors_if_empty()
+        if seeded:
+            print(f"✅ 竞品监控池种子数据已预置 {seeded} 条")
+    except Exception as e:
+        print(f"⚠️ 竞品监控池种子数据跳过: {e}")
+
+    # 启动时：平台规则库种子数据（首次启动预置演示数据：6 条规则 + 5 篇带正文的文档）
+    try:
+        from modules.platform_rules.seed import seed_platform_rules_if_empty
+        seeded = await seed_platform_rules_if_empty()
+        if seeded:
+            print(f"✅ 平台规则库种子数据已预置 {seeded} 条")
+    except Exception as e:
+        print(f"⚠️ 平台规则库种子数据跳过: {e}")
+
+    # 启动时：业务话术库种子数据（每个店铺各一份默认库 + 6 条通用问答）
+    try:
+        from modules.knowledge_base.seed import seed_knowledge_if_empty
+        seeded = await seed_knowledge_if_empty()
+        if seeded:
+            print(f"✅ 业务话术库种子数据已预置 {seeded} 条")
+    except Exception as e:
+        print(f"⚠️ 业务话术库种子数据跳过: {e}")
+
     # 启动时：订阅套餐基础数据（free/pro/enterprise）
     # 缺失会导致注册接口 500：创建默认订阅时 plan_id=1 触发外键约束失败
     try:
@@ -105,6 +136,15 @@ app = FastAPI(
     docs_url="/docs" if config.debug else None,  # 生产环境关闭文档
     redoc_url="/redoc" if config.debug else None,
 )
+
+# ====== 静态资源（AIGC 生成的素材图）======
+# 万相出图返回的是 OSS 临时链接（24h 过期）→ 出图后立即转存到 uploads/，
+# 对外只暴露 /static/。缺这一步，归档到素材库的图片次日全部失效。
+from modules.aigc_media.storage import upload_root as _upload_root
+
+_static_dir = _upload_root()
+_static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 # ====== 中间件配置 ======
 
@@ -228,6 +268,18 @@ app.include_router(assets_router, dependencies=BUSINESS_AUTH)  # 路由已包含
 from modules.candidates.router import router as candidates_router
 app.include_router(candidates_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
 
+# 竞品监控池（监控池 + 自建分组，持久化到 PG）
+from modules.monitors.router import router as monitors_router
+app.include_router(monitors_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
+
+# 平台规则库（规则 + 来源文档素材，持久化到 PG；含 AI 拆分端点）
+from modules.platform_rules.router import router as platform_rules_router
+app.include_router(platform_rules_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
+
+# 业务话术库（知识库容器 + 话术条目 + 文档素材，持久化到 PG）
+from modules.knowledge_base.router import router as knowledge_base_router
+app.include_router(knowledge_base_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
+
 # 店秘书（主 Agent / 编排层）
 from modules.secretary.router import router as secretary_router
 app.include_router(secretary_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
@@ -235,6 +287,19 @@ app.include_router(secretary_router, dependencies=BUSINESS_AUTH)  # 路由已包
 # 会话持久化（决策层 B：跨会话记忆）
 from modules.conversation.router import router as conversation_router
 app.include_router(conversation_router, prefix="/api/v1", dependencies=BUSINESS_AUTH)
+
+
+# ====== 附加模块（可插拔，默认关闭）======
+
+# 语音克隆（客服音色）：独立 router（前缀 /voice-clone）+ 独立表 shop_voice，
+# 不 import 任何业务模块；关闭时该路由**根本不注册**（前端拿到 404 → 入口隐藏）。
+# 打开方式：.env 里设 VOICE_CLONE_ENABLED=true，并配好 PUBLIC_BASE_URL（样本需公网可回源）。
+if config.voice_clone_enabled:
+    from modules.voice_clone.router import router as voice_clone_router
+    app.include_router(voice_clone_router, prefix="/api/v1", dependencies=BUSINESS_AUTH)
+    print("🔌 附加模块已启用：语音克隆（/api/v1/voice-clone）")
+else:
+    print("🔌 附加模块未启用：语音克隆（VOICE_CLONE_ENABLED=false）")
 
 
 # ====== 开发模式启动 ======

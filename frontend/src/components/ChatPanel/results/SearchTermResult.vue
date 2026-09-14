@@ -50,7 +50,7 @@
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.dataIndex === 'acos'">
-              <span style="color: #ff4d4f; font-weight: 600;">{{ record.acos === 999 ? '∞' : record.acos + '%' }}</span>
+              <span style="color: var(--danger); font-weight: 600;">{{ record.acos === 999 ? '∞' : record.acos + '%' }}</span>
             </template>
             <template v-if="column.dataIndex === 'sales'">
               <span style="color: var(--text-tertiary);">$0.00</span>
@@ -107,23 +107,23 @@ const termColumns = [
 </script>
 
 <style scoped>
-.search-term-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
+.search-term-result { padding: var(--space-16); background: var(--bg-elevated); border-radius: var(--radius-8); }
 
 .summary-bar {
-  display: flex; gap: 16px; padding: 12px 16px;
-  background: var(--bg-base); border-radius: 8px; margin-bottom: 14px;
-  flex-wrap: wrap; font-size: 12.5px; color: var(--text-secondary);
+  display: flex; gap: var(--space-16); padding: var(--space-12) var(--space-16);
+  background: var(--bg-base); border-radius: var(--radius-8); margin-bottom: var(--space-14);
+  flex-wrap: wrap; font-size: var(--font-size-12-5); color: var(--text-secondary);
 }
-.stat-item b { color: var(--text-primary); margin-left: 2px; }
+.stat-item b { color: var(--text-primary); margin-left: var(--space-2); }
 
-.suggestions-box { margin-top: 14px; padding: 12px; background: #f6ffed; border-radius: 8px; border: 1px solid #b7eb8f; }
-.suggestions-box h4 { margin: 0 0 8px; font-size: 13px; color: #389e0d; }
-.suggestions-box ul { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.8; color: var(--text-secondary); }
+.suggestions-box { margin-top: var(--space-14); padding: var(--space-12); background: var(--success-bg); border-radius: var(--radius-8); border: 1px solid var(--success-border); }
+.suggestions-box h4 { margin: 0 0 var(--space-8); font-size: var(--font-size-13); color: var(--success); }
+.suggestions-box ul { margin: 0; padding-left: var(--space-18); font-size: var(--font-size-12-5); line-height: 1.8; color: var(--text-secondary); }
 
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); }
 
-:deep(.row-high) { background-color: #f6ffed !important; }
-:deep(.row-low) { background-color: #fffbe6 !important; }
-:deep(.row-waste) { background-color: #fff1f0 !important; }
-:deep(.row-opp) { background-color: #e6f7ff !important; }
+:deep(.row-high) { background-color: var(--success-bg) !important; }
+:deep(.row-low) { background-color: var(--warning-bg) !important; }
+:deep(.row-waste) { background-color: var(--danger-bg) !important; }
+:deep(.row-opp) { background-color: var(--info-bg) !important; }
 </style>

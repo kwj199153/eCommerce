@@ -188,9 +188,18 @@
             />
             <span v-else class="title-thumb-ph">🖼️</span>
             <div class="title-text-wrap">
-              <a-tooltip :title="record.title">
-                <span class="title-text">{{ record.title }}</span>
-              </a-tooltip>
+              <div class="title-line">
+                <a-tooltip :title="record.title">
+                  <span class="title-text">{{ record.title }}</span>
+                </a-tooltip>
+                <button
+                  class="title-translate-btn"
+                  type="button"
+                  title="翻译标题"
+                  data-stl-trigger=""
+                  @click.stop="translateFromEvent(record.title, $event)"
+                >译</button>
+              </div>
               <div class="title-sub">
                 <a-tag color="blue" size="small">{{ record.asin }}</a-tag>
                 <span v-if="record.brand" class="title-brand">{{ record.brand }}</span>
@@ -377,7 +386,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   SearchOutlined,
@@ -402,10 +411,25 @@ import AddToMonitorModal from '@/components/common/AddToMonitorModal.vue'
 import CompetitorManager from '@/components/competitor/CompetitorManager.vue'
 import type { CompetitorOwnerType } from '@/stores/competitorPool'
 import { COLOR_INFO } from '@/utils/colorSemantics'
+import { translateFromEvent } from '@/composables/useSelectionTranslate'
+import { bandColor } from '@/theme/bands'
 
 const store = useCandidateLibraryStore()
 const productStore = useProductLibraryStore()
 const monitorPool = useMonitorPoolStore()
+
+/**
+ * 每次打开视图都重新拉取。
+ *
+ * 为什么必须在这里拉、不能只靠 Workspace 首屏预加载：
+ * 选品库有**两个写入口** —— 前端按钮（会同步 store）和选品 Agent 的后端工具
+ * `save_candidate`（**只写库，碰不到前端 store**）。后者写完前端毫不知情，
+ * 若视图不重新拉取，用户就会看到「AI 说已加入，但库里没有」的假失败。
+ * （实测：写库后无任何新的 GET /candidates，视图渲染的还是首屏那份快照。）
+ */
+onMounted(() => {
+  store.fetchItems()
+})
 
 // ====== 表格列 ======
 const columns = [
@@ -663,11 +687,8 @@ const currentGroupLabel = computed(() => {
   return g ? `分组：${g.name}` : '已选分组'
 })
 
-const getScoreColor = (score: number): string => {
-  if (score >= 70) return 'var(--success)'
-  if (score >= 40) return 'var(--warning)'
-  return 'var(--danger)'
-}
+/** 蓝海评分（阈值真源在后端 product_research，见 bands.ts `ocean`） */
+const getScoreColor = (score: number): string => bandColor('ocean', score)
 
 const onImgError = (e: Event) => {
   ;(e.target as HTMLImageElement).style.display = 'none'
@@ -676,9 +697,9 @@ const onImgError = (e: Event) => {
 
 <style scoped>
 .cand-page {
-  padding: 16px;
+  padding: var(--space-16);
   background: var(--bg-elevated);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   height: 100%;
   overflow: hidden;
   display: flex;
@@ -689,16 +710,16 @@ const onImgError = (e: Event) => {
 .row-action-cell {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-2);
   white-space: nowrap;
 }
 .row-action-cell .act-primary {
-  font-size: 12px;
-  padding: 0 6px;
+  font-size: var(--font-size-12);
+  padding: 0 var(--space-6);
 }
 .row-action-cell .act-more {
   color: var(--text-secondary);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
 }
 .row-action-cell .act-more:hover {
   color: var(--primary);
@@ -708,8 +729,8 @@ const onImgError = (e: Event) => {
 /* 统计卡片 */
 .stat-cards {
   display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: var(--space-12);
+  margin-bottom: var(--space-16);
   flex-shrink: 0;
 }
 
@@ -717,13 +738,13 @@ const onImgError = (e: Event) => {
   flex: 1;
   background: var(--bg-sidebar);
   border: 1px solid var(--border-base);
-  border-radius: 8px;
-  padding: 12px 16px;
+  border-radius: var(--radius-8);
+  padding: var(--space-12) var(--space-16);
   text-align: center;
 }
 
 .stat-value {
-  font-size: 22px;
+  font-size: var(--font-size-22);
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -734,9 +755,9 @@ const onImgError = (e: Event) => {
 .stat-value.gray { color: var(--text-tertiary); }
 
 .stat-label {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-top: 4px;
+  margin-top: var(--space-4);
 }
 
 /* 工具栏 */
@@ -744,14 +765,14 @@ const onImgError = (e: Event) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-16);
   flex-shrink: 0;
 }
 
 .toolbar-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 /* ====== 已启用过滤（chip 行） ====== */
@@ -759,42 +780,42 @@ const onImgError = (e: Event) => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin: -8px 0 16px 0;
-  padding: 10px 12px;
+  gap: var(--space-8);
+  margin: -8px 0 var(--space-16) 0;
+  padding: var(--space-10) var(--space-12);
   background: var(--bg-sidebar);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   border: 1px dashed var(--border-strong);
 }
 
 .af-label {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
-  margin-right: 4px;
+  margin-right: var(--space-4);
 }
 
 .af-chip {
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 .toolbar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 /* 标题单元格 */
 .title-cell {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .title-thumb {
   width: 40px;
   height: 40px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   border: 1px solid var(--border-base);
   flex-shrink: 0;
   background: var(--bg-sidebar);
@@ -807,8 +828,8 @@ const onImgError = (e: Event) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
-  border-radius: 4px;
+  font-size: var(--font-size-18);
+  border-radius: var(--radius-4);
   background: var(--bg-sidebar);
   border: 1px solid var(--border-base);
 }
@@ -817,9 +838,35 @@ const onImgError = (e: Event) => {
   min-width: 0;
 }
 
+.title-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.title-translate-btn {
+  flex-shrink: 0;
+  height: 18px;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-11);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.title-translate-btn:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
 .title-text {
   display: block;
-  font-size: 13px;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--font-size-13);
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -830,12 +877,12 @@ const onImgError = (e: Event) => {
 .title-sub {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 2px;
+  gap: var(--space-6);
+  margin-top: var(--space-2);
 }
 
 .title-brand {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
 }
 
@@ -843,7 +890,7 @@ const onImgError = (e: Event) => {
 .score-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .score-cell .ant-progress {
@@ -864,32 +911,32 @@ const onImgError = (e: Event) => {
 
 /* ====== 导入弹窗 ====== */
 .import-area {
-  padding: 4px 0;
+  padding: var(--space-4) 0;
 }
 
 .import-result {
-  margin-top: 16px;
+  margin-top: var(--space-16);
 }
 
 .error-list {
-  margin: 4px 0 0;
-  padding-left: 18px;
+  margin: var(--space-4) 0 0;
+  padding-left: var(--space-18);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 /* ====== 悬浮预览卡片 ====== */
 .hover-preview {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .hp-img {
   width: 100%;
   height: 160px;
   object-fit: cover;
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   border: 1px solid var(--border-base);
   background: var(--bg-sidebar);
 }
@@ -897,11 +944,11 @@ const onImgError = (e: Event) => {
 .hp-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 .hp-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.4;
@@ -914,64 +961,64 @@ const onImgError = (e: Event) => {
 .hp-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
   flex-wrap: wrap;
 }
 
-.hp-brand { font-size: 12px; color: var(--text-secondary); }
-.hp-cat { font-size: 11px; color: var(--text-tertiary); background: var(--bg-hover-light); border-radius: 3px; padding: 1px 6px; }
+.hp-brand { font-size: var(--font-size-12); color: var(--text-secondary); }
+.hp-cat { font-size: var(--font-size-11); color: var(--text-tertiary); background: var(--bg-hover-light); border-radius: var(--radius-3); padding: var(--space-1) var(--space-6); }
 
 .hp-stats {
   display: flex;
-  gap: 16px;
-  padding: 8px 10px;
+  gap: var(--space-16);
+  padding: var(--space-8) var(--space-10);
   background: var(--bg-sidebar);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
 }
 
 .hp-stat {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--space-1);
 }
 
 .hp-label {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
 }
 
 .hp-score-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .hp-points {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .hp-point {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-secondary);
   line-height: 1.4;
-  padding: 4px 8px;
+  padding: var(--space-4) var(--space-8);
   background: linear-gradient(135deg, var(--warning-bg), var(--warning-bg));
   border-left: 3px solid var(--warning);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .hp-notes {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
   line-height: 1.4;
-  padding: 6px 8px;
+  padding: var(--space-6) var(--space-8);
   background: var(--bg-hover-light);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   max-height: 48px;
   overflow: hidden;
 }

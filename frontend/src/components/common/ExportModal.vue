@@ -53,14 +53,14 @@
         type="info"
         show-icon
         message="点击下方按钮将弹出系统「另存为」对话框，可选择任意目标文件夹后保存。"
-        style="margin-top: 8px"
+        style="margin-top: var(--space-8)"
       />
       <a-alert
         v-else
         type="warning"
         show-icon
         message="当前浏览器（非 Chrome / Edge）不支持选择保存位置，将自动下载到浏览器默认下载目录。建议使用 Chrome 或 Edge 以支持选择目标文件夹。"
-        style="margin-top: 8px"
+        style="margin-top: var(--space-8)"
       />
     </div>
   </a-modal>
@@ -160,55 +160,55 @@ function handleCancel() {
 
 <style scoped>
 .export-modal {
-  padding-top: 4px;
+  padding-top: var(--space-4);
 }
 .em-summary {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: var(--space-8);
+  margin-bottom: var(--space-14);
   flex-wrap: wrap;
 }
 .em-field {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 .em-label {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: #666;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-6);
 }
 .em-formats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  gap: var(--space-8);
 }
 .em-format-card {
-  border: 1px solid #d9d9d9;
-  border-radius: 8px;
-  padding: 10px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-8);
+  padding: var(--space-10) var(--space-6);
   text-align: center;
   cursor: pointer;
   transition: all 0.2s;
-  background: #fff;
+  background: var(--bg-elevated);
 }
 .em-format-card:hover {
-  border-color: #1677ff;
+  border-color: var(--primary);
 }
 .em-format-card.active {
-  border-color: #1677ff;
+  border-color: var(--primary);
   background: #e6f4ff;
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
 }
 .em-f-icon {
-  font-size: 20px;
+  font-size: var(--font-size-20);
 }
 .em-f-label {
-  font-size: 12px;
-  margin-top: 4px;
+  font-size: var(--font-size-12);
+  margin-top: var(--space-4);
   color: #333;
 }
 .em-f-ext {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: #999;
 }
 </style>

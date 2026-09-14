@@ -13,7 +13,7 @@
         <div class="form-hint">格式：ORD-XXXXXXXX 或纯数字订单号</div>
       </a-form-item>
 
-      <a-divider style="margin: 12px 0;" />
+      <a-divider style="margin: var(--space-12) 0;" />
 
       <!-- 或通过邮箱/手机 -->
       <a-form-item label="下单邮箱">
@@ -87,13 +87,13 @@ const handleStart = () => {
 </script>
 
 <style scoped>
-.order-track-config { padding: 4px 0; }
-.config-form :deep(.ant-form-item) { margin-bottom: 12px; }
-.config-form :deep(.ant-form-item-label) { font-size: 13px; font-weight: 500; }
-.form-hint { font-size: 11px; color: #8c8c8c; margin-top: 4px; }
-.section-title { font-size: 13px; font-weight: 600; color: #262626; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #1890ff; display: inline-block; }
-.action-bar { margin-top: 16px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
-.quick-tips { margin-top: 16px; padding: 12px; background: #e6f7ff; border-radius: 8px; border: 1px solid #91d5ff; }
-.tips-title { font-size: 12px; font-weight: 600; color: #0958d9; margin-bottom: 6px; }
-.quick-tips ul { margin: 0; padding-left: 18px; font-size: 11.5px; color: #595959; line-height: 1.7; }
+.order-track-config { padding: var(--space-4) 0; }
+.config-form :deep(.ant-form-item) { margin-bottom: var(--space-12); }
+.config-form :deep(.ant-form-item-label) { font-size: var(--font-size-13); font-weight: 500; }
+.form-hint { font-size: var(--font-size-11); color: var(--text-tertiary); margin-top: var(--space-4); }
+.section-title { font-size: var(--font-size-13); font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-10); padding-bottom: var(--space-8); border-bottom: 2px solid var(--primary); display: inline-block; }
+.action-bar { margin-top: var(--space-16); padding-top: var(--space-12); border-top: 1px solid var(--border-base); }
+.quick-tips { margin-top: var(--space-16); padding: var(--space-12); background: var(--info-bg); border-radius: var(--radius-8); border: 1px solid var(--info-border); }
+.tips-title { font-size: var(--font-size-12); font-weight: 600; color: var(--primary-strong); margin-bottom: var(--space-6); }
+.quick-tips ul { margin: 0; padding-left: var(--space-18); font-size: var(--font-size-11-5); color: var(--text-secondary); line-height: 1.7; }
 </style>

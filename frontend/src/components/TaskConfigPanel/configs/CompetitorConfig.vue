@@ -203,23 +203,23 @@ function onImgError(e: Event) { ;(e.target as HTMLImageElement).style.display = 
 .competitor-config {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-12);
 }
 
 .pool-entry {
-  padding: 8px;
-  border: 1px dashed #91d5ff;
-  border-radius: 6px;
-  background: #e6f7ff;
+  padding: var(--space-8);
+  border: 1px dashed var(--info-border);
+  border-radius: var(--radius-6);
+  background: var(--info-bg);
 }
-.pool-entry-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pool-entry-hint { font-size: 10px; color: #1890ff; }
+.pool-entry-main { display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap; }
+.pool-entry-hint { font-size: var(--font-size-10); color: var(--primary); }
 
 .form-group > label {
   display: block;
-  font-size: 12px;
-  color: #595959;
-  margin-bottom: 4px;
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-4);
   font-weight: 500;
 }
 
@@ -227,42 +227,42 @@ function onImgError(e: Event) { ;(e.target as HTMLImageElement).style.display = 
 .compare-source-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-6);
 }
 .compare-source-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border: 1px solid #f0f0f0;
-  border-radius: 6px;
-  background: #fafafa;
+  gap: var(--space-8);
+  padding: var(--space-6) var(--space-8);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-6);
+  background: var(--bg-sidebar);
 }
-.thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; border: 1px solid #f0f0f0; background: #fff; }
-.thumb-ph { width: 32px; height: 32px; flex-shrink: 0; display:flex; align-items:center; justify-content:center; border-radius:4px; background:#f5f5f5; border:1px solid #f0f0f0; font-size:14px; }
+.thumb { width: 32px; height: 32px; object-fit: cover; border-radius: var(--radius-4); border: 1px solid var(--border-base); background: var(--bg-elevated); }
+.thumb-ph { width: 32px; height: 32px; flex-shrink: 0; display:flex; align-items:center; justify-content:center; border-radius:var(--radius-4); background:var(--bg-hover-light); border:1px solid var(--border-base); font-size:var(--font-size-14); }
 .info { flex: 1; min-width: 0; }
-.title { font-size: 12px; color: #262626; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
-.asin { font-size: 10px; color: #8c8c8c; font-family: 'SF Mono', Monaco, monospace; }
-.overflow-hint { font-size: 11px; color: #d48806; padding-left: 4px; }
+.title { font-size: var(--font-size-12); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { display: flex; align-items: center; gap: var(--space-6); margin-top: var(--space-2); }
+.asin { font-size: var(--font-size-10); color: var(--text-tertiary); font-family: 'SF Mono', Monaco, monospace; }
+.overflow-hint { font-size: var(--font-size-11); color: var(--warning-strong); padding-left: var(--space-4); }
 .compare-empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 4px; padding: 18px 8px; border: 1px dashed #f0f0f0; border-radius: 6px; background: #fafafa;
+  gap: var(--space-4); padding: var(--space-18) var(--space-8); border: 1px dashed var(--border-base); border-radius: var(--radius-6); background: var(--bg-sidebar);
 }
-.compare-empty p { margin: 0; font-size: 11px; color: #8c8c8c; text-align: center; }
+.compare-empty p { margin: 0; font-size: var(--font-size-11); color: var(--text-tertiary); text-align: center; }
 
 .checkbox-row {
   display: flex;
-  gap: 16px;
-  margin-bottom: 4px;
+  gap: var(--space-16);
+  margin-bottom: var(--space-4);
 }
 
 .action-bar {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-  padding-top: 12px;
-  border-top: 1px solid #f0f0f0;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--border-base);
 }
 </style>

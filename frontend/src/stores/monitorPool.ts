@@ -5,12 +5,34 @@
  * 竞品监控工作台内 6 个面板（价格/BSR/评论星级/变体/Listing快照/库存）
  * 都只是这份监控池的「不同查看面板」，不各自为政。
  *
- * 本阶段为纯前端实现（Pinia + 确定性 mock 快照），后端 monitors 表/接口留 TODO，
- * 产品逻辑验证跑通后再接真实数据源。
+ * 数据源：后端 PostgreSQL（/api/v1/monitors、/api/v1/monitor-groups），唯一权威源。
+ *
+ * 两个关键约定（本次改造确立，改代码前务必理解）：
+ * 1. **时序数据（price_history / bsr_history / review_events / variations /
+ *    listing_changes）不从前端传**。它们在**入池那一刻**由后端 `snapshot.build_time_series`
+ *    按 ASIN 确定性生成一次并落库，此后固定不变 —— 原先前端每次进页面重算，
+ *    刷新就"重掷"一套曲线，7 日变化/差评预警全跟着跳，数据不可信。
+ *    将来接真实抓取时只替换后端生成器，表结构与前端契约都不动。
+ * 2. **UI 状态（selectedAsins / currentGroupId / currentOwnership / activePanel）
+ *    是纯内存的会话态，刻意不持久化** —— 它们是"当前在看哪一批"的临时圈选，
+ *    跟着用户当前操作走；持久化反而会让下次进页面被昨天的圈选绑架。
  */
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import {
+  fetchMonitors,
+  createMonitor,
+  batchDeleteMonitors,
+  batchUpsertMonitors,
+  assignMonitorsToGroup,
+  unassignMonitorsFromGroup,
+  fetchMonitorGroups,
+  createMonitorGroup,
+  updateMonitorGroup,
+  deleteMonitorGroup,
+} from '@/api/monitors'
+import { GROUP_PALETTE } from '@/theme/palette'
 
 // ====== 类型定义 ======
 
@@ -134,7 +156,7 @@ export interface FreeMonitorInput {
   groupId?: string | null
 }
 
-/** 从选品库开启监控所需的静态快照（不含时序，首次抓取后补齐） */
+/** 从选品库开启监控所需的静态快照（不含时序，首采后由后端补齐） */
 export interface MonitorFromCandidateInput {
   asin: string
   title: string
@@ -151,185 +173,58 @@ export interface MonitorFromCandidateInput {
   owned_by?: { type: 'product' | 'candidate'; asin: string; title?: string }
 }
 
+/** 对标竞品入池（定向监控）入参 */
+export interface MonitorFromCompetitorInput {
+  asin: string
+  title?: string
+  brand?: string
+  main_image?: string
+  category?: string
+  marketplace?: string
+  ownedBy?: { type: 'product' | 'candidate'; asin: string; title?: string }
+}
+
 // ====== 常量 ======
 
-export const POOL_GROUP_COLORS = ['#1890ff', '#52c41a', '#faad14', '#722ed1', '#13c2c2', '#eb2f96', '#fa8c16', '#f5222d']
+export const POOL_GROUP_COLORS: readonly string[] = GROUP_PALETTE
 
-// ====== Mock：确定性历史生成 ======
+/** 入池 payload（后端能补的字段一律不带） */
+type MonitorWritePayload = Partial<MonitorPoolRecord> & { asin: string }
 
-/** 生成近 30 天日期（YYYY-MM-DD，不含今天） */
-function lastNDays(n: number): string[] {
-  const out: string[] = []
-  for (let i = n; i >= 1; i--) {
-    const d = new Date(Date.now() - i * 24 * 3600 * 1000)
-    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
+/**
+ * 请求体瘦身：把「前端并不知道」的字段整条丢掉，让后端按 ASIN 推导。
+ *
+ * 为什么必须丢而不是传空值：
+ * - 传 `price_history: []` → 新建时 `_prefer_list` 会把空数组当缺失、回退成生成序列（尚可），
+ *   但**合并**已有记录时 `apply_fields` 会把已有的 30 天序列覆写成空（数据丢失）。
+ * - 传 `latest_price: 0` → 0 是合法数值，后端 `_prefer` 只认 None，会真的写成 0，
+ *   面板上就会出现「售价 $0」这种脏数据。而 0 在此语境下就是"不知道"。
+ *
+ * 判据：`undefined / null / '' / 0 / []` 一律视为「未提供」。这是**入池**专用语义，
+ * 不用于通用编辑（编辑要能显式把字段改成 0）。
+ */
+function compactPayload(payload: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {}
+  for (const [k, v] of Object.entries(payload)) {
+    if (v === undefined || v === null || v === '') continue
+    if (typeof v === 'number' && v === 0) continue
+    if (Array.isArray(v) && v.length === 0) continue
+    out[k] = v
   }
   return out
 }
 
-/** ASIN 尾数确定性伪随机（0-1），保证刷新不跳动 */
-function seedRand(seedStr: string, salt = 0): number {
-  let h = 2166136261
-  const s = seedStr + salt
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return ((h >>> 0) % 1000) / 1000
-}
-
-interface SeedSpec {
-  asin: string
-  brand: string
-  title: string
-  /** 该 ASIN 关联的 mock 主图（public/mock/products/*.png） */
-  image: string
-  basePrice: number
-  baseBsr: number
-  rating: number
-  reviewCount: number
-  monthSales: number
-  group: string
-  desc: string
-}
-
-const MOCK_SPECS: SeedSpec[] = [
-  { asin: 'B0MONPRO01', brand: 'ZestPro',     title: 'Portable Espresso Maker 20 Bar Electric for Travel', image: '/mock/products/B0CXXXX001.png', basePrice: 69.99, baseBsr: 842,  rating: 4.3, reviewCount: 3120,  monthSales: 3600,  group: 'grp-product', desc: '核心对标爆款，主图/五点每周更新一次' },
-  { asin: 'B0MONPRO02', brand: 'BrewMate',    title: 'Manual Espresso Machine Portable Mini Coffee Press', image: '/mock/products/B0CXXXX002.png', basePrice: 34.99, baseBsr: 1805, rating: 3.9, reviewCount: 958,   monthSales: 1200,  group: 'grp-product', desc: '低价走量款，近两周连续降价抢排名' },
-  { asin: 'B0MONSTO01', brand: 'CafeNow',     title: 'CafeNow Cold Brew Maker 2L with Reusable Filter', image: '/mock/products/B0CXXXX003.png', basePrice: 45.5,  baseBsr: 2660, rating: 4.1, reviewCount: 5241,  monthSales: 2100,  group: 'grp-store',   desc: '同一店铺多链接，重点跟踪店铺整体上新节奏' },
-  { asin: 'B0MONBRD01', brand: 'Voltage',     title: 'Voltage 100W Fast Charger USB C GaN Wall Charger', image: '/mock/products/B0CXXXX004.png', basePrice: 29.99, baseBsr: 421,  rating: 4.6, reviewCount: 18732, monthSales: 15000, group: 'grp-brand',   desc: '类目头部品牌，监视其促销节奏与变体扩张' },
-  { asin: 'B0MONBRD02', brand: 'Voltage',     title: 'Voltage 3-in-1 Magnetic Wireless Charging Stand', image: '/mock/products/B0CXXXX005.png', basePrice: 49.99, baseBsr: 980,  rating: 4.5, reviewCount: 6404,  monthSales: 6800,  group: 'grp-brand',   desc: '同品牌衍生款，注意是否复制爆款打法' },
-  { asin: 'B0MONPRO03', brand: 'AeroHeat',    title: 'Smart Portable Heater with Thermostat & Remote', image: '/mock/products/B0CXXXX006.png', basePrice: 55.0,  baseBsr: 3200, rating: 3.7, reviewCount: 402,   monthSales: 640,   group: 'grp-product', desc: '新进入者，评分偏低，观察差评是否限制起量' },
-]
-
-/** 依据 spec 生成带 30 天历史序列的完整监控记录 */
-function buildMockRecord(spec: SeedSpec, idx: number): MonitorPoolRecord {
-  const days = lastNDays(30)
-  const base = spec.basePrice
-  const p0 = seedRand(spec.asin, 1)
-
-  // 价格历史：缓慢波动 + 几次促销（部分 ASIN 近几天降价）
-  const price_history: PricePoint[] = days.map((date, i) => {
-    const wave = Math.sin(i / 4 + p0 * 6) * 1.2
-    let price = +(base + wave).toFixed(2)
-    const pp: PricePoint = { date, price }
-    const r = seedRand(spec.asin + date, 2)
-    if (r > 0.72) pp.coupon = +(price * 0.08).toFixed(2)
-    if (r > 0.9) pp.is_prime_deal = true
-    if (i > days.length - 6 && seedRand(spec.asin, 3 + i) > 0.55) {
-      // 近几天秒杀
-      pp.price = +(base * 0.86).toFixed(2)
-      pp.deal_type = seedRand(spec.asin, 4 + i) > 0.5 ? 'ld' : '7dd'
-    }
-    return pp
-  })
-  const latest_price = price_history[price_history.length - 1].price
-  const price_7d_ago = price_history[price_history.length - 8]?.price || base
-  const price_change_7d = +(((latest_price - price_7d_ago) / price_7d_ago) * 100).toFixed(1)
-
-  // BSR 历史：随排名波动
-  const bsr_history: BsrPoint[] = days.map((date, i) => {
-    const drift = (seedRand(spec.asin + date, 5) - 0.5) * (spec.baseBsr * 0.25)
-    let bsr = Math.round(spec.baseBsr + drift + Math.sin(i / 5 + idx) * spec.baseBsr * 0.12)
-    return { date, bsr: Math.max(1, bsr) }
-  })
-  const latest_bsr = bsr_history[bsr_history.length - 1].bsr
-  const bsr_7d_ago = bsr_history[bsr_history.length - 8]?.bsr || spec.baseBsr
-  const bsr_change_7d = latest_bsr - bsr_7d_ago
-
-  // 评论事件：多数日为 0 新增，偶有新增，差评预警
-  const review_events: ReviewEvent[] = days.map((date, i) => {
-    const r = seedRand(spec.asin + date, 6)
-    if (r < 0.55) return { date, added: 0, rating_delta: 0 }
-    const added = 1 + Math.floor(seedRand(spec.asin + date, 7) * (spec.monthSales > 5000 ? 9 : 3))
-    const neg = seedRand(spec.asin + date, 8) > 0.88
-    return {
-      date,
-      added,
-      rating_delta: +(seedRand(spec.asin + date, 9) * 0.12 - 0.05).toFixed(2),
-      negative: neg,
-      snippet: neg ? 'Product stopped working after a week, poor quality control.' : undefined,
-    }
-  })
-  const reviews_added_7d = review_events.slice(-7).reduce((s, e) => s + e.added, 0)
-  const has_negative_7d = review_events.slice(-7).some(e => e.negative)
-
-  // 变体（部分记录有几个变体）
-  const variation_count = 1 + Math.floor(seedRand(spec.asin, 10) * 4)
-  const variations: VariationItem[] = Array.from({ length: variation_count }, (_, v) => ({
-    child_asin: `${spec.asin.slice(0, -1)}${v}`,
-    color: ['Black', 'White', 'Silver', 'Blue', 'Rose Gold'][v % 5],
-    size: v % 2 === 0 ? 'Standard' : 'Large',
-    price: +(base + (v * 3 - (variation_count / 2))).toFixed(2),
-    in_stock: seedRand(spec.asin, 11 + v) > 0.25,
-  }))
-
-  // Listing 变更日志（近 30 天 1-3 条）
-  const change_count = 1 + Math.floor(seedRand(spec.asin, 12) * 3)
-  const fieldPool: Array<[ListingChange['field'], string]> = [
-    ['title', '标题'], ['bullet', '五点描述'], ['a_plus', 'A+ 页面'],
-    ['main_image', '主图'], ['video', '主图视频'], ['description', '描述'],
-  ]
-  const listing_changes: ListingChange[] = Array.from({ length: change_count }, (_, ci) => {
-    const [field, field_name] = fieldPool[Math.floor(seedRand(spec.asin, 13 + ci) * fieldPool.length)]
-    return {
-      id: `${spec.asin}-lc-${ci}`,
-      changed_at: days[6 + Math.floor(seedRand(spec.asin, 20 + ci) * 20)],
-      field,
-      field_name,
-      old_preview: '旧版本内容……',
-      new_preview: `${field_name}已更新：优化关键词 / 调整卖点表达（mock 预览）`,
-    }
-  })
-
-  // 库存 / 入仓估算（低分/低库存倾向 out_of_stock）
-  const stock_roll = seedRand(spec.asin, 30)
-  const stock_status: MonitorPoolRecord['stock_status'] = stock_roll > 0.82 ? 'low_stock' : stock_roll > 0.92 ? 'out_of_stock' : 'in_stock'
-  const estimated_units_remaining = stock_status === 'out_of_stock'
-    ? null
-    : stock_status === 'low_stock'
-      ? Math.round(80 + seedRand(spec.asin, 31) * 400)
-      : Math.round(1500 + seedRand(spec.asin, 32) * 9000)
-
-  return {
-    id: `mon-${spec.asin}`,
-    asin: spec.asin,
-    title: spec.title,
-    brand: spec.brand,
-    main_image: spec.image,
-    marketplace: 'us',
-    currency: 'USD',
-    latest_price,
-    price_change_7d,
-    latest_bsr,
-    bsr_category: spec.desc,
-    bsr_change_7d,
-    rating: spec.rating,
-    review_count: spec.reviewCount,
-    reviews_added_7d,
-    stock_status,
-    estimated_units_remaining,
-    est_monthly_sales: spec.monthSales,
-    price_history,
-    bsr_history,
-    review_events,
-    variations,
-    listing_changes,
-    group_ids: [spec.group],
-    added_at: '2026-09-01T00:00:00Z',
-  }
-}
-
-const MOCK_RECORDS: MonitorPoolRecord[] = MOCK_SPECS.map((s, i) => buildMockRecord(s, i))
-
 // ====== Store ======
 
 export const useMonitorPoolStore = defineStore('monitorPool', () => {
-  // —— 监控池：所有竞品 ASIN 的统一清单 ——
-  const records = ref<MonitorPoolRecord[]>([...MOCK_RECORDS])
+  // —— 监控池：所有竞品 ASIN 的统一清单（后端权威源，初值空态） ——
+  const records = ref<MonitorPoolRecord[]>([])
   // —— 分组 —— 用户自建（无预设）
   const groups = ref<MonitorGroup[]>([])
-  // —— 多选池：跨面板共用的「当前圈定」ASIN 集 ——
+  // —— 加载态（供库页/大屏显示骨架或空态） ——
+  const isLoading = ref(false)
+
+  // —— 多选池：跨面板共用的「当前圈定」ASIN 集（纯内存会话态） ——
   const selectedAsins = ref<string[]>([])
 
   // —— 面板主导航（保持在哪一个 tab） ——
@@ -404,101 +299,180 @@ export const useMonitorPoolStore = defineStore('monitorPool', () => {
     return { negative, price_drop, low_stock }
   })
 
-  // ====== Actions ======
+  // ====== 加载 / 重置 ======
 
-  /** 池管理：新增/编辑一条监控 ASIN（纯前端，后端留 TODO） */
-  function upsertRecord(input: Partial<MonitorPoolRecord> & { asin: string }) {
-    const exist = records.value.find(r => r.asin === input.asin)
-    if (exist) {
-      Object.assign(exist, input)
-    } else {
-      records.value.unshift({
-        id: `mon-${input.asin}`,
-        asin: input.asin,
-        title: input.title || input.asin,
-        brand: input.brand || '',
-        main_image: input.main_image || '',
-        marketplace: input.marketplace || 'us',
-        currency: input.currency || 'USD',
-        latest_price: input.latest_price ?? 0,
-        price_change_7d: input.price_change_7d ?? 0,
-        latest_bsr: input.latest_bsr ?? 0,
-        bsr_category: input.bsr_category || '',
-        bsr_change_7d: input.bsr_change_7d ?? 0,
-        rating: input.rating ?? 0,
-        review_count: input.review_count ?? 0,
-        reviews_added_7d: 0,
-        stock_status: input.stock_status || 'in_stock',
-        estimated_units_remaining: input.estimated_units_remaining ?? null,
-        est_monthly_sales: input.est_monthly_sales ?? 0,
-        price_history: input.price_history || [],
-        bsr_history: input.bsr_history || [],
-        review_events: input.review_events || [],
-        variations: input.variations || [],
-        listing_changes: input.listing_changes || [],
-        group_ids: input.group_ids || [],
-        origin: input.origin || 'manual',
-        source_candidate_id: input.source_candidate_id,
-        owned_by: input.owned_by,
-        added_at: new Date().toISOString(),
-      })
+  let ensured = false
+
+  /**
+   * 拉取监控池 + 分组。
+   *
+   * 失败时**不清空本地数据** —— 网络抖动不该让用户看到"监控池被清空了"。
+   * 首屏 records 本来就是 `[]`；切店铺的场景由 `resetForShopSwitch()` 负责清。
+   */
+  async function fetchItems() {
+    ensured = true
+    isLoading.value = true
+    try {
+      const res = await fetchMonitors()
+      records.value = res.items || []
+      try {
+        const gres = await fetchMonitorGroups()
+        groups.value = gres.groups || []
+      } catch (e) {
+        console.warn('[MonitorPool] 分组拉取失败', e)
+      }
+    } catch (e) {
+      console.warn('[MonitorPool] 拉取监控池失败', e)
+    } finally {
+      isLoading.value = false
     }
   }
 
-  function removeRecords(asins: string[]) {
+  /**
+   * 确保至少拉取过一次。
+   *
+   * 库页/大屏 `onMounted` 调它做兜底：正常路径上 Workspace 的
+   * `watch(currentShopId)` 已经拉过（`ensured` 为 true），这里会直接返回。
+   */
+  async function ensureLoaded() {
+    if (ensured) return
+    try { await fetchItems() } catch (e) { /* 忽略 */ }
+  }
+
+  /**
+   * 切换店铺时重置。
+   *
+   * 必须同时清 `ensured` —— 它是一次性闭包标记，只清 records 的话
+   * `ensureLoaded()` 仍会因 `ensured === true` 提前返回，切店铺后不再拉取。
+   * UI 会话态（圈选/过滤）也一并回到默认，否则会残留上一个店铺的 ASIN 圈选。
+   */
+  function resetForShopSwitch() {
+    records.value = []
+    groups.value = []
+    selectedAsins.value = []
+    currentGroupId.value = '__ungrouped__'
+    currentOwnership.value = 'all'
+    ensured = false
+  }
+
+  // ====== 内部工具 ======
+
+  /** 把一条后端记录并入本地列表（同 ASIN 覆盖，新 ASIN 置顶） */
+  function mergeLocal(rec: MonitorPoolRecord) {
+    const idx = records.value.findIndex(r => r.asin === rec.asin)
+    if (idx >= 0) records.value[idx] = rec
+    else records.value.unshift(rec)
+  }
+
+  /**
+   * 批量入池公共实现。
+   *
+   * 走 `batch-upsert` 而不是循环单条 POST：后端在一次调用里就能算出
+   * added/existing 计数（前端 toast 要用），且判重逻辑只有后端一份，
+   * 不会出现"前端以为已存在、后端其实是新增"的口径分裂。
+   */
+  async function addMany(payloads: MonitorWritePayload[]): Promise<{ added: number; existing: number }> {
+    const valid = payloads
+      .filter(p => p.asin)
+      .map(p => compactPayload(p) as MonitorWritePayload)
+    if (!valid.length) return { added: 0, existing: 0 }
+    try {
+      const res = await batchUpsertMonitors(valid)
+      ;(res.items || []).forEach(mergeLocal)
+      return { added: res.added || 0, existing: res.existing || 0 }
+    } catch (e) {
+      console.warn('[MonitorPool] 批量入池失败', e)
+      return { added: 0, existing: 0 }
+    }
+  }
+
+  // ====== Actions ======
+
+  /**
+   * 池管理：新增/编辑一条监控 ASIN。
+   *
+   * 后端同店铺同 ASIN 会**合并**而非新增（唯一写入口），所以本地只需按
+   * 返回结果覆盖，不用自己判重。编辑场景传 0 有效（如把价格改成 0 不可用，
+   * 但传 `price_change_7d: 0` 表示"没变"是合法的），故此处不做 compact。
+   */
+  async function upsertRecord(input: MonitorWritePayload): Promise<MonitorPoolRecord | null> {
+    try {
+      const saved = await createMonitor(input)
+      mergeLocal(saved)
+      return saved
+    } catch (e) {
+      console.warn('[MonitorPool] 入池失败', e)
+      return null
+    }
+  }
+
+  /** 批量移出监控池（按 ASIN） */
+  async function removeRecords(asins: string[]) {
+    if (!asins.length) return
     const set = new Set(asins)
     records.value = records.value.filter(r => !set.has(r.asin))
     selectedAsins.value = selectedAsins.value.filter(a => !set.has(a))
+    try {
+      await batchDeleteMonitors(asins)
+    } catch (e) {
+      console.warn('[MonitorPool] 批量移出失败', e)
+    }
   }
 
   // —— 闭环：候选库快照入池 ——
 
-  /** 某 ASIN 是否已在监控池（选品库据此显示「前往竞品监控」） */
+  /**
+   * 某 ASIN 是否已在监控池（选品库/产品库据此显示「前往竞品监控」）。
+   *
+   * 注意：这是**本地缓存**的判断，调用前需确保已 `ensureLoaded()`，
+   * 否则刚切店铺时会误判为"未监控"（后端还有兜底合并，不会产生重复行）。
+   */
   function isAsinInPool(asin: string): boolean {
     return records.value.some(r => r.asin === asin)
   }
 
   /**
    * 选品库→开启监控：将一条候选静态快照写入监控池。
-   * 时序字段留空，模拟「本次为首采，后续后台定时采集累积」。
-   * 返回写入后的记录。
+   * 时序数据不传，由后端按 ASIN 生成 30 天基线（"首采"）。返回写入后的记录。
    */
-  function addFromCandidate(input: MonitorFromCandidateInput): MonitorPoolRecord | null {
+  async function addFromCandidate(input: MonitorFromCandidateInput): Promise<MonitorPoolRecord | null> {
     if (isAsinInPool(input.asin)) return records.value.find(r => r.asin === input.asin) || null
-    const group_ids = input.groupId ? [input.groupId] : []
-    upsertRecord({
+    return upsertRecord(compactPayload({
       asin: input.asin,
       title: input.title || input.asin,
-      brand: input.brand || '',
-      main_image: input.main_image || '',
-      latest_price: input.latest_price ?? 0,
-      latest_bsr: input.latest_bsr ?? 0,
-      rating: input.rating ?? 0,
-      review_count: input.review_count ?? 0,
-      est_monthly_sales: input.est_monthly_sales ?? 0,
-      bsr_category: input.bsr_category || '',
-      price_history: [],
-      bsr_history: [],
-      review_events: [],
-      variations: [],
-      listing_changes: [],
-      group_ids,
+      brand: input.brand,
+      main_image: input.main_image,
+      latest_price: input.latest_price,
+      latest_bsr: input.latest_bsr,
+      rating: input.rating,
+      review_count: input.review_count,
+      est_monthly_sales: input.est_monthly_sales,
+      bsr_category: input.bsr_category,
+      group_ids: input.groupId ? [input.groupId] : undefined,
       origin: 'candidate',
       source_candidate_id: input.source_candidate_id,
       owned_by: input.owned_by,
-    })
-    return records.value.find(r => r.asin === input.asin) || null
+    }) as MonitorWritePayload)
   }
 
-  /** 批量开启监控（多选候选 → 循环 addFromCandidate），返回成功 / 已存在 / 待处理计数 */
-  function addManyFromCandidates(inputs: MonitorFromCandidateInput[]): { added: number; existing: number } {
-    let added = 0
-    let existing = 0
-    inputs.forEach(i => {
-      if (isAsinInPool(i.asin)) existing++
-      else { addFromCandidate(i); added++ }
-    })
-    return { added, existing }
+  /** 批量开启监控（多选候选 → 批量入池），返回 新增 / 已存在 计数 */
+  async function addManyFromCandidates(inputs: MonitorFromCandidateInput[]): Promise<{ added: number; existing: number }> {
+    return addMany(inputs.map(i => ({
+      asin: i.asin,
+      title: i.title || i.asin,
+      brand: i.brand,
+      main_image: i.main_image,
+      latest_price: i.latest_price,
+      latest_bsr: i.latest_bsr,
+      rating: i.rating,
+      review_count: i.review_count,
+      est_monthly_sales: i.est_monthly_sales,
+      bsr_category: i.bsr_category,
+      group_ids: i.groupId ? [i.groupId] : undefined,
+      origin: 'candidate' as const,
+      source_candidate_id: i.source_candidate_id,
+      owned_by: i.owned_by,
+    })))
   }
 
   /**
@@ -506,83 +480,64 @@ export const useMonitorPoolStore = defineStore('monitorPool', () => {
    * 并打上 owned_by 归属，表示它是该项目定向跟踪的对标。origin='manual'（非候选自身）。
    * 已存在（同 ASIN 已在池）则仅补挂归属（可能归属多个项目，这里记录主归属）。
    */
-  function addFromCompetitor(input: {
-    asin: string
-    title?: string
-    brand?: string
-    main_image?: string
-    category?: string
-    marketplace?: string
-    ownedBy?: { type: 'product' | 'candidate'; asin: string; title?: string }
-  }): { record: MonitorPoolRecord | null; added: boolean } {
+  async function addFromCompetitor(input: MonitorFromCompetitorInput): Promise<{ record: MonitorPoolRecord | null; added: boolean }> {
     const exist = records.value.find(r => r.asin === input.asin)
     if (exist) {
       if (input.ownedBy && !exist.owned_by) {
-        exist.owned_by = input.ownedBy
+        const saved = await upsertRecord({ asin: input.asin, owned_by: input.ownedBy })
+        return { record: saved || exist, added: false }
       }
       return { record: exist, added: false }
     }
-    upsertRecord({
+    const saved = await upsertRecord(compactPayload({
       asin: input.asin,
       title: input.title || input.asin,
-      brand: input.brand || '',
-      main_image: input.main_image || '',
-      marketplace: input.marketplace || 'us',
-      latest_price: 0,
-      latest_bsr: 0,
-      bsr_category: input.category || '',
-      price_history: [],
-      bsr_history: [],
-      review_events: [],
-      variations: [],
-      listing_changes: [],
-      group_ids: [],
+      brand: input.brand,
+      main_image: input.main_image,
+      marketplace: input.marketplace,
+      bsr_category: input.category,
       origin: 'manual',
       owned_by: input.ownedBy,
-    })
-    return { record: records.value.find(r => r.asin === input.asin) || null, added: true }
+    }) as MonitorWritePayload)
+    return { record: saved, added: !!saved }
   }
 
   /** 批量把一批对标竞品 ASIN 纳入监控池（同一归属项目下），返回 added / existing */
-  function addManyFromCompetitors(inputs: Parameters<typeof addFromCompetitor>[0][]): { added: number; existing: number } {
-    let added = 0
-    let existing = 0
-    inputs.forEach(i => {
-      const { added: a } = addFromCompetitor(i)
-      if (a) added++
-      else existing++
-    })
-    return { added, existing }
+  async function addManyFromCompetitors(inputs: MonitorFromCompetitorInput[]): Promise<{ added: number; existing: number }> {
+    return addMany(inputs.map(i => ({
+      asin: i.asin,
+      title: i.title || i.asin,
+      brand: i.brand,
+      main_image: i.main_image,
+      marketplace: i.marketplace,
+      bsr_category: i.category,
+      origin: 'manual' as const,
+      owned_by: i.ownedBy,
+    })))
   }
 
   /**
    * 游离监控入池：蓝海随手盯 / 监控页手填 → 无 owned_by（不归属任何主品/候选项目），
-   * 独立在监控池跟踪。时序留空，首采由后台补齐。origin='manual'（非候选自身）。
+   * 独立在监控池跟踪。时序由后端补齐。
    */
-  function addFreeMonitor(input: FreeMonitorInput): { record: MonitorPoolRecord | null; added: boolean } {
+  async function addFreeMonitor(input: FreeMonitorInput): Promise<{ record: MonitorPoolRecord | null; added: boolean }> {
     const exist = records.value.find(r => r.asin === input.asin)
     if (exist) return { record: exist, added: false }
-    const group_ids = input.groupId ? [input.groupId] : []
-    upsertRecord({
+    const saved = await upsertRecord(compactPayload({
       asin: input.asin,
       title: input.title || input.asin,
-      brand: input.brand || '',
-      main_image: input.main_image || '',
-      latest_price: input.latest_price ?? 0,
-      latest_bsr: input.latest_bsr ?? 0,
-      rating: input.rating ?? 0,
-      review_count: input.review_count ?? 0,
-      est_monthly_sales: input.est_monthly_sales ?? 0,
-      bsr_category: input.bsr_category || '',
-      price_history: [],
-      bsr_history: [],
-      review_events: [],
-      variations: [],
-      listing_changes: [],
-      group_ids,
+      brand: input.brand,
+      main_image: input.main_image,
+      latest_price: input.latest_price,
+      latest_bsr: input.latest_bsr,
+      rating: input.rating,
+      review_count: input.review_count,
+      est_monthly_sales: input.est_monthly_sales,
+      bsr_category: input.bsr_category,
+      group_ids: input.groupId ? [input.groupId] : undefined,
       origin: 'manual',
-    })
-    return { record: records.value.find(r => r.asin === input.asin) || null, added: true }
+    }) as MonitorWritePayload)
+    return { record: saved, added: !!saved }
   }
 
   /** 切归属视图过滤：'all' | 'owned' | 'free' */
@@ -591,45 +546,86 @@ export const useMonitorPoolStore = defineStore('monitorPool', () => {
   }
 
   // —— 分组 Actions ——
-  function createGroup(input: { name: string; kind: PoolGroupKind; color?: string }): MonitorGroup {
-    const g: MonitorGroup = {
-      id: `grp-${Date.now()}`,
-      name: input.name.trim(),
-      kind: input.kind,
-      color: input.color || POOL_GROUP_COLORS[groups.value.length % POOL_GROUP_COLORS.length],
-      createdAt: new Date().toISOString(),
+
+  async function createGroup(input: { name: string; kind: PoolGroupKind; color?: string }): Promise<MonitorGroup | null> {
+    try {
+      const created = await createMonitorGroup({
+        name: input.name.trim(),
+        kind: input.kind,
+        color: input.color || POOL_GROUP_COLORS[groups.value.length % POOL_GROUP_COLORS.length],
+      })
+      groups.value.push(created)
+      return created
+    } catch (e) {
+      console.warn('[MonitorPool] 创建分组失败', e)
+      return null
     }
-    groups.value.push(g)
-    return g
   }
 
-  function deleteGroup(id: string) {
+  async function renameGroup(id: string, name: string) {
+    const g = groups.value.find(x => x.id === id)
+    if (g) g.name = name.trim()
+    try {
+      await updateMonitorGroup(id, { name: name.trim() })
+    } catch (e) {
+      console.warn('[MonitorPool] 重命名分组失败', e)
+    }
+  }
+
+  async function setGroupColor(id: string, color: string) {
+    const g = groups.value.find(x => x.id === id)
+    if (g) g.color = color
+    try {
+      await updateMonitorGroup(id, { color })
+    } catch (e) {
+      console.warn('[MonitorPool] 改分组颜色失败', e)
+    }
+  }
+
+  /**
+   * 删除分组。**组内 ASIN 不删**，只把它们从该分组摘掉（回落到「未分组」）。
+   * 后端同语义，本地同步摘除避免等一次往返才刷新界面。
+   */
+  async function deleteGroup(id: string) {
     groups.value = groups.value.filter(g => g.id !== id)
     records.value.forEach(r => {
       r.group_ids = r.group_ids.filter(gid => gid !== id)
     })
     if (currentGroupId.value === id) currentGroupId.value = null
-  }
-
-  function renameGroup(id: string, name: string) {
-    const g = groups.value.find(x => x.id === id)
-    if (g) g.name = name
+    try {
+      await deleteMonitorGroup(id)
+    } catch (e) {
+      console.warn('[MonitorPool] 删除分组失败', e)
+    }
   }
 
   /** 把若干 ASIN 归入某分组（追加） */
-  function assignToGroup(asins: string[], groupId: string) {
+  async function assignToGroup(asins: string[], groupId: string) {
+    if (!asins.length || !groupId) return
     records.value.forEach(r => {
       if (asins.includes(r.asin) && !r.group_ids.includes(groupId)) r.group_ids.push(groupId)
     })
+    try {
+      await assignMonitorsToGroup(asins, groupId)
+    } catch (e) {
+      console.warn('[MonitorPool] 归入分组失败', e)
+    }
   }
 
-  function unassignFromGroup(asins: string[], groupId: string) {
+  /** 把若干 ASIN 移出某分组 */
+  async function unassignFromGroup(asins: string[], groupId: string) {
+    if (!asins.length || !groupId) return
     records.value.forEach(r => {
       if (asins.includes(r.asin)) r.group_ids = r.group_ids.filter(gid => gid !== groupId)
     })
+    try {
+      await unassignMonitorsFromGroup(asins, groupId)
+    } catch (e) {
+      console.warn('[MonitorPool] 移出分组失败', e)
+    }
   }
 
-  // —— 多选池 Actions ——
+  // —— 多选池 Actions（纯内存，不持久化） ——
   function toggleSelect(asin: string) {
     const i = selectedAsins.value.indexOf(asin)
     if (i >= 0) selectedAsins.value.splice(i, 1)
@@ -652,22 +648,18 @@ export const useMonitorPoolStore = defineStore('monitorPool', () => {
     currentGroupId.value = id
   }
 
-  /** 触发一次「抓取」：纯前端本轮仅更新时间戳与微调（模拟），后续接真实抓取任务 */
-  function refresh() {
-    records.value.forEach(r => {
-      r.price_history.push({ date: today(), price: r.latest_price })
-      if (r.price_history.length > 90) r.price_history.shift()
-    })
-  }
-
   return {
+    // State
     records,
     groups,
+    isLoading,
     selectedAsins,
     activePanel,
     currentGroupId,
     currentOwnership,
     monitorQuota,
+
+    // Getters
     monitoringCount,
     quotaReached,
     totalCount,
@@ -677,11 +669,19 @@ export const useMonitorPoolStore = defineStore('monitorPool', () => {
     selectedRecords,
     selectedSet,
     alertStats,
+
+    // 加载 / 重置
+    fetchItems,
+    ensureLoaded,
+    resetForShopSwitch,
+
+    // Actions
     upsertRecord,
     removeRecords,
     createGroup,
-    deleteGroup,
     renameGroup,
+    setGroupColor,
+    deleteGroup,
     assignToGroup,
     unassignFromGroup,
     toggleSelect,
@@ -696,11 +696,5 @@ export const useMonitorPoolStore = defineStore('monitorPool', () => {
     addManyFromCandidates,
     addFromCompetitor,
     addManyFromCompetitors,
-    refresh,
   }
 })
-
-function today(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}

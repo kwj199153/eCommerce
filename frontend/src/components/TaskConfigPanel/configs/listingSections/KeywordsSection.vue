@@ -31,14 +31,17 @@
 
 <script setup lang="ts">
 import { useListingDraftStore } from '@/stores/listingDraft'
+import { bandOf } from '@/theme/bands'
 
 defineProps<{ genLoading: boolean; disabled?: boolean }>()
 defineEmits<{ (e: 'gen'): void }>()
 
 const draft = useListingDraftStore()
 
+/** 相关度 → 类名。**与关键词挖掘共用 `relevance` 口径**（原为 90/80，已统一到 90/75） */
+const REL_CLASS: Record<string, string> = { high: 'r-high', medium: 'r-mid', low: 'r-low' }
 function relClass(r: number) {
-  return r >= 90 ? 'r-high' : r >= 80 ? 'r-mid' : 'r-low'
+  return REL_CLASS[bandOf('relevance', r)] || 'r-low'
 }
 </script>
 
@@ -47,27 +50,27 @@ function relClass(r: number) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-8);
 }
-.sec-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-.sec-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
-.mini-tag { transform: scale(0.85); margin-left: 4px; }
+.sec-title { font-size: var(--font-size-13); font-weight: 600; color: var(--text-primary); }
+.sec-sub { font-size: var(--font-size-11); color: var(--text-tertiary); margin-top: var(--space-2); }
+.mini-tag { transform: scale(0.85); margin-left: var(--space-4); }
 
-.kw-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.kw-list { display: flex; flex-direction: column; gap: var(--space-6); margin-top: var(--space-10); }
 .kw-row {
   display: grid;
   grid-template-columns: auto 1fr 84px 76px 32px auto;
-  gap: 6px;
+  gap: var(--space-6);
   align-items: center;
 }
 .kw-num { width: 84px; }
 .kw-comp { width: 76px; }
 .kw-rel {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   text-align: center;
   font-weight: 600;
 }
-.r-high { color: #52c41a; }
+.r-high { color: var(--success); }
 .r-mid { color: #fa8c16; }
 .r-low { color: var(--text-tertiary); }
 </style>

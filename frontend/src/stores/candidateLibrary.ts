@@ -20,6 +20,7 @@ import {
   updateCandidateGroup,
   deleteCandidateGroup,
 } from '@/api/candidates'
+import { GROUP_PALETTE } from '@/theme/palette'
 
 // ====== 类型定义 ======
 
@@ -102,10 +103,7 @@ export const REVIEW_STATUS_MAP: Record<ReviewStatus, { label: string; color: str
   rejected: { label: '已淘汰', color: 'red' },
 }
 
-export const GROUP_COLORS = [
-  '#1890ff', '#52c41a', '#faad14', '#ff4d4f',
-  '#722ed1', '#13c2c2', '#eb2f96', '#fa8c16',
-]
+export const GROUP_COLORS: readonly string[] = GROUP_PALETTE
 
 // ====== Mock 数据（离线兜底用） ======
 
@@ -249,6 +247,19 @@ export const useCandidateLibraryStore = defineStore('candidateLibrary', () => {
     if (ensured || items.value.length) return
     ensured = true
     try { await fetchItems() } catch (e) { /* 忽略 */ }
+  }
+
+  /**
+   * 切换店铺时重置。
+   *
+   * 必须同时清 `ensured`：它是一次性闭包标记，只清 items 的话
+   * `ensureLoaded()` 仍会因 `ensured === true` 提前返回，切店铺后不再拉取。
+   */
+  function resetForShopSwitch() {
+    items.value = []
+    groups.value = []
+    currentGroupId.value = null
+    ensured = false
   }
 
   async function addItem(data: Omit<CandidateItem, 'id' | 'created_at' | 'updated_at'>): Promise<CandidateItem> {
@@ -643,6 +654,7 @@ export const useCandidateLibraryStore = defineStore('candidateLibrary', () => {
     // Actions
     fetchItems,
     ensureLoaded,
+    resetForShopSwitch,
     addItem,
     updateItem,
     isAsinInCandidate,

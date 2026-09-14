@@ -30,6 +30,12 @@ from core.logger import get_logger
 
 logger = get_logger(__name__)
 
+# 深层分层路由：子 Agent 的工具化路由层（bind_tools + LangGraph 图）。
+# 通过组合（而非继承）引入，避免与 LLMEnabledAgent 的 invoke/stream/llm 属性冲突。
+from ai_infra.base_agent import BaseAgent
+from ai_infra.sse import progress
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
 
 # ====== 数据模型 ======
 
@@ -254,6 +260,11 @@ class ListingGeneratorAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         self.agent_name = "ListingGenerator"
         self.system_prompt = LISTING_GENERATOR_SYSTEM_PROMPT
 
+        # 深层分层路由：工具化路由层（bind_tools LangGraph 图）。
+        # 懒加载：首次 invoke 时才构建，避免 __init__ 阶段触发
+        # tools → service → agent_listing 的循环导入。
+        self._router = None
+
     async def _llm_generate(self, prompt: str, max_tokens: int = 1200) -> Optional[str]:
         """
         LLM 增强：生成真实 Listing 内容。
@@ -286,8 +297,120 @@ class ListingGeneratorAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
         Returns:
             AgentResponse 包含生成的 Listing 或分析结果
+
+        深层分层路由：优先走工具化路由（LLM 自主选工具），
+        LLM 不可用或路由失败时回退到 _classify_intent 关键词表。
         """
+        router = self._get_router()
+        if router is not None:
+            result = await self._route_via_tools(query, context)
+            if result is not None:
+                return result
         return await self._process_query(query, context)
+
+    def _get_router(self):
+        """懒加载工具化路由层，返回 None 表示不可用（回退关键词表）。"""
+        if self._router is None:
+            self._router = self._build_router()
+        return self._router
+
+    def _build_router(self):
+        """构建工具化路由层（BaseAgent 实例，注入 8 个工具）。
+
+        LLM 不可用时返回 None，由调用方回退到 _classify_intent 关键词表。
+        """
+        if not (LLM_AVAILABLE and self.ENABLE_LLM):
+            return None
+        try:
+            from .tools import listing_tools
+            # 组合一个 BaseAgent 作为路由层，复用其 bind_tools + LangGraph 图。
+            return BaseAgent(
+                agent_name=f"{self.agent_name}_router",
+                system_prompt=self.system_prompt,
+                tools=listing_tools,
+                max_iterations=4,
+                metadata={"role": "sub_agent_router"},
+            )
+        except Exception as e:
+            logger.warning(f"[listing_generator] router build failed: {e}")
+            return None
+
+    async def _route_via_tools(self, query: str, context: Dict[str, Any] = None) -> Optional[AgentResponse]:
+        """工具化路由：LLM 自主选工具执行，把工具结果包装回 AgentResponse。
+
+        返回 None 表示路由失败，调用方回退 _process_query。
+        """
+        try:
+            # 把 context 注入到 query 提示里，让 LLM 有足够上下文填参。
+            # context 里的结构化数据（current_listing / title / bullets 等）
+            # 需要让 LLM 看到，才能正确填充工具的必填参数。
+            prompt = query
+            if context:
+                try:
+                    ctx_json = json.dumps(context, ensure_ascii=False)
+                    # 上下文过长时截断，避免撑爆 token
+                    if len(ctx_json) > 2000:
+                        ctx_json = ctx_json[:2000] + "..."
+                    prompt = f"{query}\n\n[上下文数据] {ctx_json}"
+                except (TypeError, ValueError):
+                    prompt = f"{query}\n\n[上下文键] {list(context.keys())}"
+
+            state = await self._router.graph.ainvoke(
+                {"messages": [HumanMessage(content=prompt)]},
+                config={"configurable": {"thread_id": f"listing-{id(self)}"}},
+            )
+
+            messages = state.get("messages", [])
+            # 提取 ToolMessage 结果 + 记录调用的工具名（用于映射 display_type）
+            tool_result = None
+            tool_name = ""
+            final_reply = ""
+            for m in messages:
+                if isinstance(m, AIMessage):
+                    if getattr(m, "tool_calls", None):
+                        for tc in m.tool_calls:
+                            if tc.get("name"):
+                                tool_name = tc["name"]
+                    if m.content:
+                        final_reply = m.content
+                elif isinstance(m, ToolMessage):
+                    tool_result = m.content
+
+            # 工具名 → display_type 映射（对齐 _process_query 的 type 语义）
+            _type_map = {
+                "generate_complete_listing": "complete_listing",
+                "optimize_listing": "listing_optimization",
+                "analyze_listing_seo": "seo_analysis",
+                "generate_ab_test_variants": "ab_test",
+                "optimize_listing_title": "title_optimization",
+                "generate_bullet_points": "bullet_points",
+                "generate_product_description": "description",
+                "generate_search_terms": "search_terms",
+            }
+
+            # 有工具结果 → 解析为结构化数据包装回 AgentResponse
+            if tool_result:
+                try:
+                    data = json.loads(tool_result)
+                    if isinstance(data, dict):
+                        # 补 type 字段，让前端 data.type 能正确识别展示类型
+                        data = {**data, "type": _type_map.get(tool_name, "listing")}
+                        return AgentResponse(
+                            content=final_reply or json.dumps(data, ensure_ascii=False, indent=2),
+                            data=data,
+                            display_type=_type_map.get(tool_name, "listing"),
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            # 无工具结果但有最终回复 → 作为纯文本返回
+            if final_reply:
+                return AgentResponse(content=final_reply, data=None, display_type="text")
+
+            return None
+        except Exception as e:
+            logger.warning(f"[listing_generator] tool routing failed: {e}")
+            return None
 
     async def stream(self, query: str, context: Dict[str, Any] = None) -> AsyncIterable[dict]:
         """流式调用，支持进度推送"""
@@ -1054,15 +1177,19 @@ class ListingGeneratorAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         流式对话（逐 token 返回 LLM 文本）。
 
         仅用于「文本生成类」意图（标题/五点/描述/通用问答），
-        结构化场景（完整 Listing、SEO 评分、A/B 变体）仍走 invoke 一次性返回。
+        结构化场景（完整 Listing、SEO 评分、A/B 变体）仍走 invoke 一次性返回，
+        但开跑前先发阶段进度，避免长任务期间「AI 正在思考…」空转。
 
         Yields:
-            文本片段（供 ai_infra.sse.sse_event_stream 包装成 SSE）
+            文本片段 / progress 事件（供 ai_infra.sse.sse_event_stream 包装成 SSE）
         """
         intent = await self._classify_intent(query)
 
         # 结构化场景不支持流式 → 退化为一次性文本
+        # 注：这里已用关键词表判过意图，直接走 _process_query（关键词分发），
+        # 不再经 invoke 的 LLM 工具化路由，避免重复选工具。
         if intent in ("seo_analysis", "ab_test"):
+            yield progress("正在做 SEO 诊断…" if intent == "seo_analysis" else "正在生成 A/B 变体…")
             result = await self._process_query(query)
             yield result.content
             return

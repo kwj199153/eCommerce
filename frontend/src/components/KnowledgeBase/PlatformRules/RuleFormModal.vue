@@ -285,6 +285,9 @@ async function handleSubmit() {
     }
     open.value = false
     emit('saved')
+  } catch (e) {
+    // 后端失败（如停服/校验不过）时保持弹窗打开，让用户能改完重试
+    message.error(`保存失败：${e instanceof Error ? e.message : '未知错误'}`)
   } finally {
     saving.value = false
   }
@@ -296,33 +299,33 @@ async function handleSubmit() {
 .validity-quick-select {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
   background: var(--bg-sidebar);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   border: 1px solid var(--border-base);
   margin-top: -8px;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
   flex-wrap: wrap;
 }
 .vqs-label {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--text-tertiary);
   white-space: nowrap;
 }
 .vqs-preview {
-  font-size: 12px;
+  font-size: var(--font-size-12);
   color: var(--primary);
   white-space: nowrap;
 }
 .form-hint {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--text-tertiary);
-  margin-top: 4px;
+  margin-top: var(--space-4);
 }
 .select-doc-platform {
   color: var(--text-tertiary);
-  font-size: 11px;
-  margin-left: 4px;
+  font-size: var(--font-size-11);
+  margin-left: var(--space-4);
 }
 </style>

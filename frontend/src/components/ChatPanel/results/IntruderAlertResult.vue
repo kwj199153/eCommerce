@@ -56,7 +56,7 @@
       <h4>🛡️ 应对策略建议</h4>
       <div v-for="(s, i) in data.response_strategies" :key="i" class="strategy-item" :class="'prio-' + s.priority.toLowerCase()">
         <div class="strat-header">
-          <a-tag :color="s.priority === 'P0' ? 'red' : s.priority === 'P1' ? 'orange' : 'blue'" style="font-size: 11px;">{{ s.priority }}</a-tag>
+          <a-tag :color="s.priority === 'P0' ? 'red' : s.priority === 'P1' ? 'orange' : 'blue'" style="font-size: var(--font-size-11);">{{ s.priority }}</a-tag>
           <strong>{{ s.target }}</strong>
           <span class="strat-type">{{ s.strategy }}</span>
         </div>
@@ -86,41 +86,41 @@ const threatLabel = (level: string) => ({ high: '高威胁', medium: '中威胁'
 </script>
 
 <style scoped>
-.intruder-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
-.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.result-header.alert-mode { background: var(--bg-elevated)1f0; margin: -16px -16px 14px; padding: 12px 16px; border-radius: 8px 8px 0 0; }
-.result-header h3 { margin: 0; font-size: 16px; }
-.threat-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
-.threat-stat { text-align: center; padding: 10px; border-radius: 8px; }
-.ts-label { display: block; font-size: 11.5px; margin-bottom: 2px; }
-.ts-value { font-size: 24px; font-weight: 700; }
-.threat-high { background: var(--bg-elevated)1f0; }
-.threat-high .ts-value { color: #cf1322; }
-.threat-medium { background: var(--bg-elevated)be6; }
-.threat-medium .ts-value { color: #d46b08; }
-.threat-low { background: #f6ffed; }
-.threat-low .ts-value { color: #389e0d; }
-.intruder-list h4 { margin: 0 0 10px; font-size: 13px; color: var(--text-primary); }
-.intruder-card { padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid; }
-.intruder-card.threat-high { background: var(--bg-elevated)1f0; border-color: #ff4d4f; }
-.intruder-card.threat-medium { background: var(--bg-elevated)be6; border-color: #faad14; }
-.intruder-card.threat-low { background: #f6ffed; border-color: #52c41a; }
-.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.threat-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
-.badge-high { background: #ff4d4f; color: #fff; }
-.badge-medium { background: #faad14; color: #fff; }
-.badge-low { background: #52c41a; color: #fff; }
-.entry-date { font-size: 11px; color: var(--text-tertiary); }
-.card-body { font-size: 13px; margin-bottom: 6px; }
-.asin-text { font-family: monospace; color: var(--text-tertiary); font-size: 11.5px; margin-left: 8px; }
-.price-text { font-weight: 600; color: #1890ff; margin-left: 8px; }
-.affected-tag { margin-left: 8px; font-size: 11.5px; }
-.reason-list { margin: 4px 0 0; padding-left: 18px; font-size: 11.5px; line-height: 1.5; color: var(--text-secondary); }
-.strategy-section { margin-top: 16px; padding: 14px; background: #e6f7ff; border-radius: 8px; }
-.strategy-section h4 { margin: 0 0 10px; font-size: 13px; }
-.strategy-item { padding: 10px; background: var(--bg-elevated); border-radius: 6px; margin-bottom: 8px; }
-.strat-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.strat-type { font-size: 11px; color: var(--text-tertiary); }
-.action-steps { margin: 0; padding-left: 20px; font-size: 12px; line-height: 1.6; }
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; margin-top: 12px; }
+.intruder-result { padding: var(--space-16); background: var(--bg-elevated); border-radius: var(--radius-8); }
+.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-14); }
+.result-header.alert-mode { background: var(--danger-bg); margin: -16px -16px var(--space-14); padding: var(--space-12) var(--space-16); border-radius: var(--radius-8) var(--radius-8) 0 0; }
+.result-header h3 { margin: 0; font-size: var(--font-size-16); }
+.threat-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-10); margin-bottom: var(--space-14); }
+.threat-stat { text-align: center; padding: var(--space-10); border-radius: var(--radius-8); }
+.ts-label { display: block; font-size: var(--font-size-11-5); margin-bottom: var(--space-2); }
+.ts-value { font-size: var(--font-size-24); font-weight: 700; }
+.threat-high { background: var(--danger-bg); }
+.threat-high .ts-value { color: var(--danger-strong); }
+.threat-medium { background: var(--warning-bg); }
+.threat-medium .ts-value { color: var(--orange-strong); }
+.threat-low { background: var(--success-bg); }
+.threat-low .ts-value { color: var(--success); }
+.intruder-list h4 { margin: 0 0 var(--space-10); font-size: var(--font-size-13); color: var(--text-primary); }
+.intruder-card { padding: var(--space-12); border-radius: var(--radius-8); margin-bottom: var(--space-10); border-left: 4px solid; }
+.intruder-card.threat-high { background: var(--danger-bg); border-color: var(--danger); }
+.intruder-card.threat-medium { background: var(--warning-bg); border-color: var(--warning); }
+.intruder-card.threat-low { background: var(--success-bg); border-color: var(--success); }
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-6); }
+.threat-badge { font-size: var(--font-size-11); font-weight: 600; padding: var(--space-2) var(--space-8); border-radius: var(--radius-10); }
+.badge-high { background: var(--danger); color: #fff; }
+.badge-medium { background: var(--warning); color: #fff; }
+.badge-low { background: var(--success); color: #fff; }
+.entry-date { font-size: var(--font-size-11); color: var(--text-tertiary); }
+.card-body { font-size: var(--font-size-13); margin-bottom: var(--space-6); }
+.asin-text { font-family: monospace; color: var(--text-tertiary); font-size: var(--font-size-11-5); margin-left: var(--space-8); }
+.price-text { font-weight: 600; color: var(--primary); margin-left: var(--space-8); }
+.affected-tag { margin-left: var(--space-8); font-size: var(--font-size-11-5); }
+.reason-list { margin: var(--space-4) 0 0; padding-left: var(--space-18); font-size: var(--font-size-11-5); line-height: 1.5; color: var(--text-secondary); }
+.strategy-section { margin-top: var(--space-16); padding: var(--space-14); background: var(--info-bg); border-radius: var(--radius-8); }
+.strategy-section h4 { margin: 0 0 var(--space-10); font-size: var(--font-size-13); }
+.strategy-item { padding: var(--space-10); background: var(--bg-elevated); border-radius: var(--radius-6); margin-bottom: var(--space-8); }
+.strat-header { display: flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-6); }
+.strat-type { font-size: var(--font-size-11); color: var(--text-tertiary); }
+.action-steps { margin: 0; padding-left: var(--space-20); font-size: var(--font-size-12); line-height: 1.6; }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); margin-top: var(--space-12); }
 </style>

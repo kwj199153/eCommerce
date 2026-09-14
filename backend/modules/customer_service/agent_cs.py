@@ -39,6 +39,17 @@ except ImportError:
         def __init__(self): pass
 
 
+from ai_infra.sse import progress
+
+
+# 结构化意图 → 阶段进度文案（stream_chat 在耗时处理前发给前端，避免空转）
+_INTENT_PROGRESS = {
+    "order_tracking": "正在查询订单状态…",
+    "ticket_create": "正在创建工单…",
+    "escalation": "正在转接人工并整理上下文…",
+}
+
+
 # ====== 数据模型 ======
 
 class AgentResponse(BaseModel):
@@ -362,15 +373,19 @@ class CustomerServiceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         """
         流式对话（逐 token 返回 LLM 文本）。
 
-        客服对话类意图走 LLM 流式；结构化意图（订单追踪/工单等）退化为一次性文本。
+        客服对话类意图走 LLM 流式；结构化意图（订单追踪/工单等）退化为一次性文本，
+        但开跑前先发阶段进度，避免长任务期间「AI 正在思考…」空转。
 
         Yields:
-            文本片段（供 ai_infra.sse.sse_event_stream 包装成 SSE）
+            文本片段 / progress 事件（供 ai_infra.sse.sse_event_stream 包装成 SSE）
         """
         intent = self._classify_intent(query)
 
         # 结构化意图：走 invoke 一次性返回（含结构化卡片数据）
+        # 注：CS 的 invoke 承载会话状态维护（add_user_turn/add_assistant_turn），
+        # 必须保留，仅在其前补一条阶段进度。
         if intent in ("order_tracking", "ticket_create", "escalation"):
+            yield progress(_INTENT_PROGRESS.get(intent, "正在处理你的请求…"))
             result = await self.invoke(query)
             yield result.content
             return

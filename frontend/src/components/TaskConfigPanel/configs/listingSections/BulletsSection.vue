@@ -37,35 +37,35 @@ const draft = useListingDraftStore()
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-8);
 }
-.sec-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-.sec-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
-.mini-tag { transform: scale(0.85); margin-left: 4px; }
+.sec-title { font-size: var(--font-size-13); font-weight: 600; color: var(--text-primary); }
+.sec-sub { font-size: var(--font-size-11); color: var(--text-tertiary); margin-top: var(--space-2); }
+.mini-tag { transform: scale(0.85); margin-left: var(--space-4); }
 
-.bl-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.bl-list { display: flex; flex-direction: column; gap: var(--space-8); margin-top: var(--space-10); }
 .bl-card {
   border: 1px solid var(--border-base);
-  border-radius: 6px;
-  padding: 8px;
+  border-radius: var(--radius-6);
+  padding: var(--space-8);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-6);
   background: var(--bg-base);
 }
-.bl-head { display: flex; align-items: center; gap: 6px; }
+.bl-head { display: flex; align-items: center; gap: var(--space-6); }
 .bl-idx {
   width: 18px;
   height: 18px;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   background: var(--bg-hover-light);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
 .bl-title { flex: 1; }
-.bl-len { font-size: 11px; color: var(--text-tertiary); text-align: right; }
+.bl-len { font-size: var(--font-size-11); color: var(--text-tertiary); text-align: right; }
 </style>

@@ -264,25 +264,25 @@ const handleDemoLogin = async () => {
 
 .login-card {
   width: 420px;
-  padding: 40px;
-  background-color: #fff;
-  border-radius: 12px;
+  padding: var(--space-40);
+  background-color: var(--bg-elevated);
+  border-radius: var(--radius-12);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
 .logo {
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: var(--space-24);
 }
 
 .logo h1 {
-  font-size: 28px;
-  color: #1890ff;
-  margin-bottom: 8px;
+  font-size: var(--font-size-28);
+  color: var(--primary);
+  margin-bottom: var(--space-8);
 }
 
 .logo p {
-  font-size: 14px;
-  color: #8c8c8c;
+  font-size: var(--font-size-14);
+  color: var(--text-tertiary);
 }
 </style>

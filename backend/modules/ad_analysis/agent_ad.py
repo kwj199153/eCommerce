@@ -25,8 +25,20 @@ import random
 from pydantic import BaseModel, Field
 
 from core.logger import get_logger
+from ai_infra.sse import progress
 
 logger = get_logger(__name__)
+
+
+# 结构化意图 → 阶段进度文案（stream_chat 在耗时分析前发给前端，避免空转）
+_INTENT_PROGRESS = {
+    "diagnosis": "正在诊断广告健康度…",
+    "search_terms": "正在分析搜索词报告…",
+    "bid_optimize": "正在生成出价建议…",
+    "competitor": "正在分析广告竞争格局…",
+    "budget": "正在优化预算分配…",
+    "anomaly": "正在检测投放异常…",
+}
 
 
 # ====== 数据模型 ======
@@ -764,15 +776,19 @@ Amazon PPC 关键指标基准（参考值）：
         """
         流式对话（逐 token 返回 LLM 文本）。
 
-        对话类意图走 LLM 流式；结构化意图（诊断/搜索词/出价等）退化为一次性文本。
+        对话类意图走 LLM 流式；结构化意图（诊断/搜索词/出价等）退化为一次性文本，
+        但开跑前先发阶段进度，避免长任务期间「AI 正在思考…」空转。
 
         Yields:
-            文本片段（供 ai_infra.sse.sse_event_stream 包装成 SSE）
+            文本片段 / progress 事件（供 ai_infra.sse.sse_event_stream 包装成 SSE）
         """
         intent = self._classify_intent(query)
 
         # 结构化意图：走 invoke 一次性返回（含图表数据，不适合流式）
+        # 注：ad_analysis 的 invoke 是关键词分发（无 LLM 工具化路由），
+        # 不存在重复选工具的开销，故此处保留 invoke 调用。
         if intent != "general":
+            yield progress(_INTENT_PROGRESS.get(intent, "正在分析广告数据…"))
             result = await self.invoke(query)
             yield result.content
             return

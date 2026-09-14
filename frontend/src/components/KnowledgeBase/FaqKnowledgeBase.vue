@@ -15,7 +15,7 @@
           <span class="tab-count">{{ kb.faq_count }}</span>
           <!-- 删除按钮（非默认库可删） -->
           <a-popconfirm
-            v-if="kb.id !== 'kb-default'"
+            v-if="!kb.is_default"
             title="删除此话术库？其下所有话术和文档将被清除。"
             @confirm="handleDeleteKb(kb.id)"
           >
@@ -40,7 +40,7 @@
     <!-- ====== 文档素材面板（可折叠） ====== -->
     <div v-show="showDocPanel" class="doc-panel">
       <div class="doc-panel-header">
-        <span class="doc-panel-title"><FileTextOutlined /> RAG 补充文档（{{ store.currentKbId === 'kb-default' ? '通用' : store.currentKnowledgeBase?.name }}）</span>
+        <span class="doc-panel-title"><FileTextOutlined /> RAG 补充文档（{{ store.currentKnowledgeBase?.is_default ? '通用' : store.currentKnowledgeBase?.name }}）</span>
         <a-space>
           <a-upload
             :show-file-list="false"
@@ -59,7 +59,7 @@
             <span class="doc-size">{{ formatSize(doc.size) }}</span>
             <span v-if="doc.description" class="doc-desc">— {{ doc.description }}</span>
           </div>
-          <a-popconfirm title="删除此文档？" @confirm="store.deleteDoc(doc.id)">
+          <a-popconfirm title="删除此文档？" @confirm="handleDeleteDoc(doc.id)">
             <a-button type="text" size="small" danger><DeleteOutlined /></a-button>
           </a-popconfirm>
         </div>
@@ -387,21 +387,44 @@ async function handleCreateKb() {
     newKbForm.icon = '📚'
     newKbForm.type = 'custom'
     newKbForm.description = ''
+  } catch (e) {
+    message.error(`创建失败：${e instanceof Error ? e.message : '未知错误'}`)
   } finally {
     creatingKb.value = false
   }
 }
 
 async function handleDeleteKb(kbId: string) {
-  await store.deleteKnowledgeBase(kbId)
-  message.success('已删除话术库')
+  try {
+    // 后端级联删除其下话术与文档，把连带删除的条数说清楚 ——
+    // 静默连删会让用户以为只删了个空文件夹
+    const res = await store.deleteKnowledgeBase(kbId)
+    const extra = res.deleted_faqs + res.deleted_docs
+    message.success(extra > 0
+      ? `已删除话术库（连带 ${res.deleted_faqs} 条话术、${res.deleted_docs} 篇文档）`
+      : '已删除话术库')
+  } catch (e) {
+    message.error(`删除失败：${e instanceof Error ? e.message : '未知错误'}`)
+  }
 }
 
 // ====== 文档上传 ======
 async function handleDocUpload(file: File) {
-  await store.uploadDoc(file)
+  try {
+    await store.uploadDoc(file)
+  } catch (e) {
+    message.error(`上传失败：${e instanceof Error ? e.message : '未知错误'}`)
+    return false
+  }
   message.success(`已上传：${file.name}`)
   return false
+}
+
+/** 删除文档（后端失败时列表保持原样，避免"看着删了其实没删"） */
+function handleDeleteDoc(docId: string) {
+  store.deleteDoc(docId)
+    .then(() => message.success('已删除文档'))
+    .catch((e: unknown) => message.error(`删除失败：${e instanceof Error ? e.message : '未知错误'}`))
 }
 
 function getDocIcon(type: string): string {
@@ -487,13 +510,21 @@ async function handleSubmit() {
       message.success('话术已添加')
     }
     modalVisible.value = false
+  } catch (e) {
+    // 后端失败时保持弹窗打开，让用户能改完重试
+    message.error(`保存失败：${e instanceof Error ? e.message : '未知错误'}`)
   } finally {
     submitting.value = false
   }
 }
 
 async function handleDelete(id: string) {
-  await store.deleteItem(id)
+  try {
+    await store.deleteItem(id)
+  } catch (e) {
+    message.error(`删除失败：${e instanceof Error ? e.message : '未知错误'}`)
+    return
+  }
   message.success('已删除')
 }
 
@@ -555,7 +586,8 @@ function statusLabel(s: string): string {
 }
 
 onMounted(() => {
-  store.fetchItems()
+  // 拉取兜底：正常由 Workspace 的 watch(currentShopId) 触发，这里防「直接进入库页」的空白
+  store.ensureLoaded()
 })
 </script>
 
@@ -564,7 +596,7 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 16px 24px;
+  padding: var(--space-16) var(--space-24);
   overflow: hidden;
 }
 
@@ -573,27 +605,27 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: var(--space-8);
+  margin-bottom: var(--space-10);
   flex-shrink: 0;
-  padding-bottom: 8px;
+  padding-bottom: var(--space-8);
   border-bottom: 1px solid var(--border-base);
 }
 
 .tabs-left {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-4);
   flex-wrap: wrap;
 }
 
 .kb-tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 16px;
-  font-size: 13px;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-12);
+  border-radius: var(--radius-16);
+  font-size: var(--font-size-13);
   cursor: pointer;
   background: var(--bg-sidebar);
   border: 1px solid var(--border-strong);
@@ -615,14 +647,14 @@ onMounted(() => {
   box-shadow: 0 2px 6px rgba(24, 144, 255, 0.3);
 }
 
-.tab-icon { font-size: 14px; }
+.tab-icon { font-size: var(--font-size-14); }
 .tab-name { font-weight: 500; }
 
 .tab-count {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   background: rgba(255,255,255,0.3);
-  padding: 1px 6px;
-  border-radius: 8px;
+  padding: var(--space-1) var(--space-6);
+  border-radius: var(--radius-8);
 }
 .kb-tab:not(.active) .tab-count {
   background: var(--border-base);
@@ -630,15 +662,15 @@ onMounted(() => {
 }
 
 .tab-close {
-  margin-left: 2px;
+  margin-left: var(--space-2);
   background: none;
   border: none;
   color: inherit;
   opacity: 0.5;
-  font-size: 14px;
+  font-size: var(--font-size-14);
   cursor: pointer;
   line-height: 1;
-  padding: 0 2px;
+  padding: 0 var(--space-2);
 }
 .tab-close:hover { opacity: 1; color: var(--danger) !important; }
 .kb-tab.active .tab-close:hover { color: #fff !important; }
@@ -647,7 +679,7 @@ onMounted(() => {
   width: 30px;
   min-width: 30px;
   justify-content: center;
-  padding: 5px 8px;
+  padding: var(--space-5) var(--space-8);
   border-style: dashed;
   color: var(--text-tertiary);
 }
@@ -665,9 +697,9 @@ onMounted(() => {
 .doc-panel {
   background: var(--bg-sidebar);
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin-bottom: 12px;
+  border-radius: var(--radius-8);
+  padding: var(--space-10) var(--space-14);
+  margin-bottom: var(--space-12);
   flex-shrink: 0;
 }
 
@@ -675,43 +707,43 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-8);
 }
 
 .doc-panel-title {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 .doc-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .doc-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 8px;
+  padding: var(--space-5) var(--space-8);
   background: var(--bg-elevated);
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--radius-4);
+  font-size: var(--font-size-12);
 }
 
 .doc-info {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
   flex: 1;
   min-width: 0;
 }
 
-.doc-icon { font-size: 15px; }
+.doc-icon { font-size: var(--font-size-15); }
 .doc-name {
   font-weight: 500;
   color: var(--text-primary);
@@ -719,73 +751,73 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.doc-size { color: var(--text-tertiary); font-size: 11px; white-space: nowrap; }
-.doc-desc { color: var(--text-tertiary); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-size { color: var(--text-tertiary); font-size: var(--font-size-11); white-space: nowrap; }
+.doc-desc { color: var(--text-tertiary); font-size: var(--font-size-11); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ====== 页面头部 ====== */
 .page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
   flex-shrink: 0;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-12);
 }
 
 .page-title {
-  font-size: 17px;
+  font-size: var(--font-size-17);
   font-weight: 600;
   margin: 0;
   color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .count-badge {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--text-tertiary);
   background: var(--bg-hover-light);
-  padding: 2px 10px;
-  border-radius: 10px;
+  padding: var(--space-2) var(--space-10);
+  border-radius: var(--radius-10);
 }
 
 .active-badge {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--success);
   background: var(--success-bg);
-  padding: 2px 10px;
-  border-radius: 10px;
+  padding: var(--space-2) var(--space-10);
+  border-radius: var(--radius-10);
 }
 
 .header-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .filter-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: var(--space-10);
+  margin-bottom: var(--space-12);
   flex-shrink: 0;
 }
 
 .cat-count {
   color: var(--text-tertiary);
-  font-size: 11px;
-  margin-left: 4px;
+  font-size: var(--font-size-11);
+  margin-left: var(--space-4);
 }
 
 .question-cell {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .q-text {
@@ -795,38 +827,38 @@ onMounted(() => {
 
 .q-keywords {
   display: flex;
-  gap: 3px;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
 .import-area {
-  padding: 8px 0;
+  padding: var(--space-8) 0;
 }
 
 .import-result {
-  margin-top: 16px;
+  margin-top: var(--space-16);
 }
 
 .error-list {
-  margin: 4px 0 0;
-  padding-left: 18px;
+  margin: var(--space-4) 0 0;
+  padding-left: var(--space-18);
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--font-size-12);
 }
 
 /* 图标选择器 */
 .icon-picker {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 .icon-btn {
   width: 36px;
   height: 36px;
-  font-size: 18px;
+  font-size: var(--font-size-18);
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--bg-elevated);
   cursor: pointer;
   transition: all 0.15s;

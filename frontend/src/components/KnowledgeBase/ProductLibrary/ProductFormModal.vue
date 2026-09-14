@@ -94,12 +94,12 @@
 
       <!-- 创建SPU（仅新增时可选） -->
       <template v-if="!editingId">
-        <a-divider orientation="left" style="margin: 16px 0 8px">
-          <span style="font-size: 13px; color: var(--text-secondary)">SPU</span>
+        <a-divider orientation="left" style="margin: var(--space-16) 0 var(--space-8)">
+          <span style="font-size: var(--font-size-13); color: var(--text-secondary)">SPU</span>
         </a-divider>
         <a-form-item label="创建SPU">
           <a-switch v-model:checked="createVariation" :disabled="editingId !== null" />
-          <span style="margin-left: 8px; font-size: 12px; color: var(--text-tertiary)">
+          <span style="margin-left: var(--space-8); font-size: var(--font-size-12); color: var(--text-tertiary)">
             开启后生成 1 个SPU + 多个SKU，SKU各自独立维护价格/库存/文案
           </span>
         </a-form-item>
@@ -128,7 +128,7 @@
                   <DeleteOutlined />
                 </a-button>
               </div>
-              <a-button type="dashed" size="small" block style="margin-top: 6px" @click="addChildVariationRow">
+              <a-button type="dashed" size="small" block style="margin-top: var(--space-6)" @click="addChildVariationRow">
                 <PlusOutlined /> 添加SKU
               </a-button>
             </div>
@@ -310,8 +310,8 @@ async function handleSubmit() {
 <style scoped>
 .var-child-row {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-8);
 }
 </style>

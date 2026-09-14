@@ -21,7 +21,10 @@ export interface ProfitResult {
   listing_price: number
   final_price: number
   fee_breakdown: FeeBreakdownItem[]
+  /** 平台与运营费用合计（不含采购/头程/包装） */
   total_fees: number
+  /** 全部成本 = 采购 + 头程 + 包装 + total_fees */
+  total_cost: number
   gross_profit: number
   net_profit: number
   profit_margin_pct: number
@@ -40,6 +43,46 @@ export interface ProfitRequest {
   target_profit?: number | null
   ad_cost?: number
   quantity?: number
+  // ===== 通用成本项（与面板 13 项表单一一对应）=====
+  shipping_cost?: number
+  packaging_cost?: number
+  return_rate_pct?: number
+  exchange_loss_pct?: number
+  /** null/undefined = 没传，走店铺折扣模板；0 = 显式无折扣 */
+  discount_pct?: number | null
+  /** 覆盖店铺费率模板；键用面板表单字段名，后端按平台翻译 */
+  overrides?: Record<string, number> | null
+}
+
+/**
+ * 面板表单（语义字段名）→ 后端利润请求。
+ *
+ * 右栏面板是利润测算的唯一输入口，对话结果卡与右栏预览共用这一份请求、
+ * 调同一个接口拿同一份结果 —— 两处绝不各自复算（那正是「一个表单两个结果」的根源）。
+ */
+export function toProfitRequest(form: Record<string, any>): ProfitRequest {
+  const num = (v: any): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+  const isReverse = form?.mode === 'reverse'
+  return {
+    product_cost: num(form?.costPrice),
+    // 正向只认售价、逆向只认目标毛利。两个都传的话后端优先走正向，
+    // 会把逆向算成「按残留售价的正向利润」（目标售价在逆向下被禁用但仍留着旧值）。
+    listing_price: isReverse ? null : (form?.sellingPrice ?? null),
+    target_profit: isReverse ? (form?.targetProfit ?? null) : null,
+    ad_cost: num(form?.adCost),
+    shipping_cost: num(form?.shippingCost),
+    packaging_cost: num(form?.packagingCost),
+    return_rate_pct: num(form?.returnRatePct),
+    exchange_loss_pct: num(form?.exchangeLossPct),
+    discount_pct: num(form?.discountPct),
+    overrides: {
+      referralFeePct: num(form?.referralFeePct),
+      fbaFee: num(form?.fbaFee),
+      storageFee: num(form?.storageFee),
+      vatRate: num(form?.vatRate),
+      withdrawalFeePct: num(form?.withdrawalFeePct),
+    },
+  }
 }
 
 export interface Store {

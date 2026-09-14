@@ -99,16 +99,16 @@ const segments = computed(() => {
 
 <style scoped>
 .dc-wrap { width: 100%; height: 100%; min-height: 120px; }
-.dc-body { display: flex; align-items: center; gap: 16px; height: 100%; min-height: 0; }
+.dc-body { display: flex; align-items: center; gap: var(--space-16); height: 100%; min-height: 0; }
 .dc-svg { flex-shrink: 0; display: block; }
 .dc-seg { transition: opacity 0.15s; }
 .dc-seg:hover { opacity: 0.82; }
-.dc-center-title { font-size: 11px; fill: var(--text-tertiary); }
-.dc-center-value { font-size: 18px; font-weight: 600; fill: var(--text-primary); }
-.dc-legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 120px; display: flex; flex-direction: column; gap: 6px; }
-.dc-li { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-.dc-dot { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+.dc-center-title { font-size: var(--font-size-11); fill: var(--text-tertiary); }
+.dc-center-value { font-size: var(--font-size-18); font-weight: 600; fill: var(--text-primary); }
+.dc-legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 120px; display: flex; flex-direction: column; gap: var(--space-6); }
+.dc-li { display: flex; align-items: center; gap: var(--space-6); font-size: var(--font-size-12); }
+.dc-dot { width: 9px; height: 9px; border-radius: var(--radius-2); flex-shrink: 0; }
 .dc-name { color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dc-val { color: var(--text-primary); font-weight: 600; }
-.dc-pct { color: var(--text-tertiary); font-size: 11px; width: 40px; text-align: right; }
+.dc-pct { color: var(--text-tertiary); font-size: var(--font-size-11); width: 40px; text-align: right; }
 </style>

@@ -167,10 +167,19 @@ const handleDelete = async (shop: Shop) => {
   } catch (e: any) { message.error(e?.response?.data?.detail || e?.message || '删除失败') }
 }
 
+/**
+ * 刷新店铺列表。
+ *
+ * 用途：**增 / 删 / 改店铺后**让列表跟上（打开弹层时也顺手刷新一次）。
+ *
+ * 注：启动期的首次加载已由 `Workspace.vue` 的 `shopStore.ensureShopsLoaded()` 负责，
+ *     这里不再是唯一填充点。此前的写法 `res.shops || res.stores` 是笔误 ——
+ *     `fetchStores()` 只返回 `{ stores, total }`，没有 `shops` 字段（恒 undefined）。
+ */
 const refreshShopList = async () => {
   try {
     const res = await fetchStores()
-    if (res && (res as any).stores) shopStore.setShopList((res as any).shops || (res as any).stores || [])
+    if (res?.stores) shopStore.setShopList(res.stores)
   } catch (e) { console.error('刷新店铺列表失败:', e) }
 }
 
@@ -181,35 +190,35 @@ onMounted(async () => { await refreshShopList() })
 .shop-popover { display: flex; flex-direction: column; gap: 0; }
 
 .popover-header {
-  display: flex; align-items: center; gap: 8px;
-  padding-bottom: 10px; border-bottom: 1px solid var(--border-base);
+  display: flex; align-items: center; gap: var(--space-8);
+  padding-bottom: var(--space-10); border-bottom: 1px solid var(--border-base);
 }
-.popover-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
-.popover-count { font-size: 11px; color: var(--text-tertiary); background: var(--bg-base); padding: 1px 6px; border-radius: 8px; }
-.popover-header :deep(.ant-btn-link) { padding: 0 4px; font-size: 12px; margin-left: auto; }
+.popover-title { font-size: var(--font-size-14); font-weight: 600; color: var(--text-primary); }
+.popover-count { font-size: var(--font-size-11); color: var(--text-tertiary); background: var(--bg-base); padding: var(--space-1) var(--space-6); border-radius: var(--radius-8); }
+.popover-header :deep(.ant-btn-link) { padding: 0 var(--space-4); font-size: var(--font-size-12); margin-left: auto; }
 
-.popover-body { max-height: 320px; overflow-y: auto; padding: 4px 0; }
+.popover-body { max-height: 320px; overflow-y: auto; padding: var(--space-4) 0; }
 .popover-shop-item {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 10px; border-radius: 6px; cursor: pointer;
-  transition: all 0.15s; border: 1px solid transparent; margin-bottom: 2px;
+  padding: var(--space-8) var(--space-10); border-radius: var(--radius-6); cursor: pointer;
+  transition: all 0.15s; border: 1px solid transparent; margin-bottom: var(--space-2);
 }
 .popover-shop-item:hover { background: var(--bg-hover-light); }
 .popover-shop-item.active { background: rgba(24, 144, 255, 0.12); border-color: var(--primary); }
 
-.item-left { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; overflow: hidden; }
-.shop-name { font-size: 13px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.item-right { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.item-left { display: flex; align-items: center; gap: var(--space-6); min-width: 0; flex: 1; overflow: hidden; }
+.shop-name { font-size: var(--font-size-13); font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item-right { display: flex; align-items: center; gap: var(--space-4); flex-shrink: 0; }
 
-.status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.status-dot.connected { background: #52c41a; }
+.status-dot { width: 6px; height: 6px; border-radius: var(--radius-circle); flex-shrink: 0; }
+.status-dot.connected { background: var(--success); }
 .status-dot.disconnected { background: #d9d9d9; }
 
-.icon-btn { width: 24px; height: 24px; border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; padding: 0; }
+.icon-btn { width: 24px; height: 24px; border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); border-radius: var(--radius-4); display: inline-flex; align-items: center; justify-content: center; font-size: var(--font-size-12); padding: 0; }
 .icon-btn:hover { background: var(--bg-hover-light); color: var(--primary); }
-.icon-btn.danger:hover { color: #ff4d4f; background: rgba(255, 77, 79, 0.1); }
+.icon-btn.danger:hover { color: var(--danger); background: rgba(255, 77, 79, 0.1); }
 
-.empty-state { display: flex; flex-direction: column; align-items: center; padding: 30px 16px; color: var(--text-tertiary); gap: 6px; }
-.empty-state p { margin: 0; font-size: 13px; }
-.empty-state span { font-size: 12px; color: var(--text-disabled); }
+.empty-state { display: flex; flex-direction: column; align-items: center; padding: 30px var(--space-16); color: var(--text-tertiary); gap: var(--space-6); }
+.empty-state p { margin: 0; font-size: var(--font-size-13); }
+.empty-state span { font-size: var(--font-size-12); color: var(--text-disabled); }
 </style>

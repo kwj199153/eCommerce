@@ -35,14 +35,21 @@ from core.profit_engine import (
 #       服务启动时（main.lifespan）把 PG 全量回灌到内存。
 from sqlalchemy import select
 from core.database import async_session_factory
-from modules.stores.db_model import StoreRecord
+from modules.stores.db_model import StoreRecord, SHOP_ORDER_BY
 
 
 async def load_stores_into_memory() -> int:
-    """启动时把 PG 里的店铺回灌到内存 _store_db。返回加载条数。"""
+    """启动时把 PG 里的店铺回灌到内存 _store_db。返回加载条数。
+
+    ⚠️ **必须显式按 `SHOP_ORDER_BY` 排序**：回灌顺序决定 dict 插入顺序，
+    而 `/api/v1/stores` 返回 `list(_store_db.values())`。若不排序，
+    它就和 `shop_tools._list_shops()` 的序号对不上 → 老板说「切到第 2 个店铺」切错店。
+    （本函数不排序时，PG 返回顺序未定义；重启前后还可能变。）
+    """
     from sqlalchemy import select as _sel
     async with async_session_factory() as session:
-        rows = (await session.execute(_sel(StoreRecord))).scalars().all()
+        q = _sel(StoreRecord).order_by(*[getattr(StoreRecord, k) for k in SHOP_ORDER_BY])
+        rows = (await session.execute(q)).scalars().all()
     _store_db.clear()
     for r in rows:
         _store_db[r.id] = _record_to_store(r)
@@ -266,6 +273,50 @@ def _build_profit_context(store: Store) -> Dict[str, Any]:
     }
 
 
+# ====== 费率模板管理接口 ======
+
+@router.get("/fee-templates", response_model=List[FeeTemplate])
+async def list_fee_templates(
+    platform_type: Optional[str] = None,
+):
+    """获取费率模板列表"""
+    templates = list(_fee_template_db.values())
+    if platform_type:
+        templates = [t for t in templates if t.platform_type == platform_type]
+    return templates
+
+
+@router.post("/fee-templates", response_model=FeeTemplate, status_code=201)
+async def create_fee_template(data: FeeTemplateCreate):
+    """创建自定义费率模板"""
+    template_id = f"fee_custom_{uuid.uuid4().hex[:8]}"
+
+    template = FeeTemplate(
+        id=template_id,
+        name=data.name,
+        platform_type=data.platform_type,
+        is_default=False,
+        **data.model_dump(exclude={"name", "platform_type", "is_default"}, exclude_none=True),
+    )
+
+    _fee_template_db[template_id] = template
+    return template
+
+
+# ====== 折扣规则接口 ======
+
+@router.get("/discount-templates")
+async def list_discount_templates():
+    """获取可用的折扣规则模板"""
+    return [
+        {
+            "id": key,
+            "name": key.replace("_", " ").title(),
+            "config": rule.model_dump(),
+        }
+        for key, rule in DEFAULT_DISCOUNT_RULES.items()
+    ]
+
 # ====== 店铺 CRUD 接口 ======
 
 @router.get("", response_model=StoreListResponse)
@@ -275,8 +326,15 @@ async def list_stores(
     request: Request = None,
     current_user=Depends(require_auth_if_enabled),
 ):
-    """获取店铺列表（生产模式按当前用户过滤）"""
-    stores = list(_store_db.values())
+    """获取店铺列表（生产模式按当前用户过滤）
+
+    ★ 顺序必须与 `shop_tools._list_shops()`（LLM 侧）一致：老板在对话里说
+    「切到第 2 个店铺」时，LLM 按工具返回的顺序数，而用户看的是本端点的顺序。
+    不一致 = 静默切错店。所以这里**不依赖 dict 插入顺序**，显式按 `SHOP_ORDER_BY`
+    排序 —— 与回灌时同一组键，构成双重保险（任一处漏改都不会错位）。
+    """
+    key = lambda s: tuple(getattr(s, k) for k in SHOP_ORDER_BY)  # noqa: E731
+    stores = sorted(_store_db.values(), key=key)
 
     # 归属过滤：生产模式下只返回当前用户名下的店铺（admin 看全部）
     if current_user is not None and current_user.role.value != "admin":
@@ -500,49 +558,6 @@ async def list_supported_markets_api():
     return result
 
 
-# ====== 费率模板管理接口 ======
-
-@router.get("/fee-templates", response_model=List[FeeTemplate])
-async def list_fee_templates(
-    platform_type: Optional[str] = None,
-):
-    """获取费率模板列表"""
-    templates = list(_fee_template_db.values())
-    if platform_type:
-        templates = [t for t in templates if t.platform_type == platform_type]
-    return templates
-
-
-@router.post("/fee-templates", response_model=FeeTemplate, status_code=201)
-async def create_fee_template(data: FeeTemplateCreate):
-    """创建自定义费率模板"""
-    template_id = f"fee_custom_{uuid.uuid4().hex[:8]}"
-
-    template = FeeTemplate(
-        id=template_id,
-        name=data.name,
-        platform_type=data.platform_type,
-        is_default=False,
-        **data.model_dump(exclude={"name", "platform_type", "is_default"}, exclude_none=True),
-    )
-
-    _fee_template_db[template_id] = template
-    return template
-
-
-# ====== 折扣规则接口 ======
-
-@router.get("/discount-templates")
-async def list_discount_templates():
-    """获取可用的折扣规则模板"""
-    return [
-        {
-            "id": key,
-            "name": key.replace("_", " ").title(),
-            "config": rule.model_dump(),
-        }
-        for key, rule in DEFAULT_DISCOUNT_RULES.items()
-    ]
 
 
 # ====== 示例数据初始化（已禁用 - 生产环境应从数据库加载）======

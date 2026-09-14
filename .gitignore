@@ -68,3 +68,7 @@ dist_verify_*/
 dist_check_*/
 *.timestamp-*.mjs
 *.tmp
+
+# ====== AI 临时截图 ======
+.shot*.png
+.shots/

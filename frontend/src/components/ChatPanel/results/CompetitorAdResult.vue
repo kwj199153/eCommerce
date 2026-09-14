@@ -70,48 +70,48 @@ const positionMap: Record<string, string> = {
 </script>
 
 <style scoped>
-.competitor-ad-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
+.competitor-ad-result { padding: var(--space-16); background: var(--bg-elevated); border-radius: var(--radius-8); }
 
 .sov-overview {
-  display: flex; align-items: center; gap: 16px;
-  padding: 16px 20px; background: linear-gradient(135deg, #f0f5ff, #d6e4ff);
-  border-radius: 12px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: var(--space-16);
+  padding: var(--space-16) var(--space-20); background: linear-gradient(135deg, #f0f5ff, #d6e4ff);
+  border-radius: var(--radius-12); margin-bottom: var(--space-16);
 }
 .sov-card { flex: 1; }
-.sov-card .label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
-.sov-card .value { display: block; font-size: 32px; font-weight: 800; color: #1890ff; }
+.sov-card .label { display: block; font-size: var(--font-size-12); color: var(--text-secondary); margin-bottom: var(--space-4); }
+.sov-card .value { display: block; font-size: var(--font-size-32); font-weight: 800; color: var(--primary); }
 
 .position-badge {
-  padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  padding: var(--space-8) var(--space-16); border-radius: var(--radius-20); font-size: var(--font-size-13); font-weight: 600;
 }
-.pos-leader { background: #ffd591; color: #ad6800; }
+.pos-leader { background: #ffd591; color: var(--warning); }
 .pos-challenger { background: #91d5ff; color: #003a8c; }
 .pos-nicher { background: #b7eb8f; color: #237804; }
 
-.section-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #f0f0f0; }
+.section-title { font-size: var(--font-size-14); font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-10); padding-bottom: var(--space-6); border-bottom: 1px solid var(--border-base); }
 
-.competitor-cards { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.competitor-cards { display: flex; flex-direction: column; gap: var(--space-10); margin-bottom: var(--space-14); }
 .comp-card {
-  border: 1px solid #f0f0f0; border-radius: 10px; padding: 14px;
+  border: 1px solid var(--border-base); border-radius: var(--radius-10); padding: var(--space-14);
   transition: box-shadow 0.2s;
 }
 .comp-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 
-.comp-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.comp-name { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.comp-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-10); }
+.comp-name { font-size: var(--font-size-15); font-weight: 600; color: var(--text-primary); }
 
-.comp-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
-.metric { text-align: center; padding: 6px; background: var(--bg-base); border-radius: 6px; }
-.m-label { display: block; font-size: 10.5px; color: var(--text-tertiary); }
-.m-value { display: block; font-size: 14px; font-weight: 600; color: var(--text-primary); margin-top: 2px; }
+.comp-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-8); margin-bottom: var(--space-10); }
+.metric { text-align: center; padding: var(--space-6); background: var(--bg-base); border-radius: var(--radius-6); }
+.m-label { display: block; font-size: var(--font-size-10-5); color: var(--text-tertiary); }
+.m-value { display: block; font-size: var(--font-size-14); font-weight: 600; color: var(--text-primary); margin-top: var(--space-2); }
 
-.comp-swot { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.swot-col ul { margin: 4px 0 0; padding-left: 16px; font-size: 11.5px; line-height: 1.6; color: var(--text-secondary); }
-.swot-label { font-size: 11px; font-weight: 600; color: var(--text-tertiary); }
+.comp-swot { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-12); }
+.swot-col ul { margin: var(--space-4) 0 0; padding-left: var(--space-16); font-size: var(--font-size-11-5); line-height: 1.6; color: var(--text-secondary); }
+.swot-label { font-size: var(--font-size-11); font-weight: 600; color: var(--text-tertiary); }
 
-.insights-box { padding: 12px; background: var(--bg-elevated)7e6; border-radius: 8px; border: 1px solid #ffd591; }
-.insights-box h4 { margin: 0 0 8px; font-size: 13px; color: #d46b08; }
-.insights-box ul { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.8; color: var(--text-secondary); }
+.insights-box { padding: var(--space-12); background: var(--orange-bg); border-radius: var(--radius-8); border: 1px solid var(--orange-border); }
+.insights-box h4 { margin: 0 0 var(--space-8); font-size: var(--font-size-13); color: var(--orange-strong); }
+.insights-box ul { margin: 0; padding-left: var(--space-18); font-size: var(--font-size-12-5); line-height: 1.8; color: var(--text-secondary); }
 
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); }
 </style>

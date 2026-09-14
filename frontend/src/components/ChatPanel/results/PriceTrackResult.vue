@@ -19,12 +19,12 @@
           <strong>${{ record.current_price?.toFixed(2) }}</strong>
         </template>
         <template v-else-if="column.key === 'price_change'">
-          <span :style="{ color: (record.price_change_pct || 0) < 0 ? '#389e0d' : '#cf1322', fontWeight: 600 }">
+          <span :style="{ color: (record.price_change_pct || 0) < 0 ? 'var(--success)' : 'var(--danger-strong)', fontWeight: 600 }">
             {{ (record.price_change_pct || 0) > 0 ? '+' : '' }}{{ record.price_change_pct?.toFixed(1) }}%
           </span>
         </template>
         <template v-else-if="column.key === 'rank_change'">
-          <span :style="{ color: (record.rank_change || 0) > 0 ? '#cf1322' : '#389e0d' }">
+          <span :style="{ color: (record.rank_change || 0) > 0 ? 'var(--danger-strong)' : 'var(--success)' }">
             {{ (record.rank_change || 0) > 0 ? '+' : '' }}{{ record.rank_change }}
           </span>
         </template>
@@ -32,7 +32,7 @@
           <a-progress
             :percent="record.competitiveness_score || 60"
             size="small"
-            :stroke-color="(record.competitiveness_score || 60) >= 75 ? '#52c41a' : (record.competitiveness_score || 60) >= 50 ? '#faad14' : '#ff4d4f'"
+            :stroke-color="bandColor('competitiveness', record.competitiveness_score || 60)"
             :width="56"
           />
         </template>
@@ -66,6 +66,7 @@
 </template>
 
 <script setup lang="ts">
+import { bandColor } from '@/theme/bands'
 defineProps<{ data: any }>()
 defineEmits<{ (e: 'close'): void }>()
 
@@ -81,19 +82,19 @@ const priceColumns = [
 </script>
 
 <style scoped>
-.price-track-result { padding: 16px; background: var(--bg-elevated); border-radius: 8px; }
-.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.result-header h3 { margin: 0; font-size: 16px; }
-.ranking-section { margin-top: 18px; padding: 14px; background: var(--bg-base); border-radius: 8px; }
-.ranking-section h4 { margin: 0 0 10px; font-size: 13px; }
-.ranking-list { display: flex; flex-direction: column; gap: 6px; }
-.rank-item { display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: var(--bg-elevated); border-radius: 6px; }
-.rank-item.top3 { background: var(--bg-elevated)be6; border: 1px solid #ffe58f; }
-.rank-num { font-weight: 700; color: #1890ff; min-width: 28px; }
-.rank-brand { flex: 1; font-size: 13px; }
+.price-track-result { padding: var(--space-16); background: var(--bg-elevated); border-radius: var(--radius-8); }
+.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-14); }
+.result-header h3 { margin: 0; font-size: var(--font-size-16); }
+.ranking-section { margin-top: var(--space-18); padding: var(--space-14); background: var(--bg-base); border-radius: var(--radius-8); }
+.ranking-section h4 { margin: 0 0 var(--space-10); font-size: var(--font-size-13); }
+.ranking-list { display: flex; flex-direction: column; gap: var(--space-6); }
+.rank-item { display: flex; align-items: center; gap: var(--space-10); padding: var(--space-6) var(--space-10); background: var(--bg-elevated); border-radius: var(--radius-6); }
+.rank-item.top3 { background: var(--warning-bg); border: 1px solid var(--warning-border); }
+.rank-num { font-weight: 700; color: var(--primary); min-width: 28px; }
+.rank-brand { flex: 1; font-size: var(--font-size-13); }
 .rank-score { font-weight: 600; color: var(--text-primary); }
-.insight-box { margin-top: 14px; padding: 12px; background: #e6f7ff; border-radius: 8px; font-size: 12.5px; line-height: 1.7; }
-.insight-box p { margin: 0 0 6px; }
-.insight-box ul { margin: 0; padding-left: 18px; }
-.result-footer { text-align: center; padding-top: 12px; border-top: 1px solid #f0f0f0; margin-top: 12px; }
+.insight-box { margin-top: var(--space-14); padding: var(--space-12); background: var(--info-bg); border-radius: var(--radius-8); font-size: var(--font-size-12-5); line-height: 1.7; }
+.insight-box p { margin: 0 0 var(--space-6); }
+.insight-box ul { margin: 0; padding-left: var(--space-18); }
+.result-footer { text-align: center; padding-top: var(--space-12); border-top: 1px solid var(--border-base); margin-top: var(--space-12); }
 </style>

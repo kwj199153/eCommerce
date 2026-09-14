@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="fXaqBy6RyQqlqPu2VGZfK9">
+<head data-page-node-id="H4tfmDoDMi6lyCoN8AMkl6">
+<meta charset="utf-8" data-page-node-id="ymp4ujDJDjfZX5kNWsysPA">
+<title>P3 主题收敛报告 · 补丁层 / 环境色 / 尺寸</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222a; --line:#2a2f3a;
+    --fg:#e6e9ef; --fg2:#a8b0bf; --fg3:#6f7887;
+    --ok:#3ecf8e; --warn:#e8b339; --bad:#ef5f5f; --acc:#5b9df9; --pur:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif}
+  .wrap{max-width:1120px;margin:0 auto;padding:40px 28px 80px}
+  h1{font-size:26px;margin:0 0 6px}
+  .sub{color:var(--fg3);font-size:13px;margin-bottom:28px}
+  h2{font-size:19px;margin:40px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:15px;margin:24px 0 10px;color:var(--fg2)}
+  p{margin:10px 0}
+  code{background:#242833;padding:1px 6px;border-radius:4px;font-size:12.5px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#c9d4e4}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:14px 16px;overflow-x:auto;font-size:12.5px;line-height:1.6;margin:12px 0}
+  pre code{background:none;padding:0}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px}
+  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--fg2);font-weight:600}
+  td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:18px 20px;margin:16px 0}
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:18px 0}
+  .kpi div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .kpi b{display:block;font-size:24px;color:var(--acc);font-variant-numeric:tabular-nums;line-height:1.3}
+  .kpi span{color:var(--fg3);font-size:12px}
+  .tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11.5px;
+    border:1px solid;line-height:1.7;margin-right:4px;white-space:nowrap}
+  .t-ok{color:var(--ok);border-color:#1f5c42;background:#12241c}
+  .t-warn{color:var(--warn);border-color:#5c4a1f;background:#241f12}
+  .t-bad{color:var(--bad);border-color:#5c2020;background:#241212}
+  .t-acc{color:var(--acc);border-color:#1f3a5c;background:#121a24}
+  .t-pur{color:var(--pur);border-color:#3f2f5c;background:#1a1224}
+  .del{color:var(--bad);text-decoration:line-through;opacity:.75}
+  .ok{color:var(--ok)}
+  .warn{color:var(--warn)}
+  .dim{color:var(--fg3)}
+  ul{margin:10px 0;padding-left:22px}
+  li{margin:5px 0}
+  .quote{border-left:3px solid var(--acc);background:#141a24;padding:10px 14px;margin:14px 0;
+    border-radius:0 6px 6px 0;color:var(--fg2);font-size:13px}
+</style>
+</head>
+<body data-page-node-id="bGw7QNHd0WlJnw1YslkYYT">
+<div class="wrap" data-page-node-id="47OtFJjA3MK0TtVTiadrgM">
+
+<h1 data-page-node-id="AbafEYtyD9zHbRtgR8CSxu">P3 · 主题收敛报告</h1>
+<div class="sub" data-page-node-id="CiFBc8KQukmoATPgaqdKKR">范围：App.vue 业务类名补丁层 / 环境色散落 / 尺寸硬编码残留　·　2026-09-13</div>
+
+<div class="kpi" data-page-node-id="m7lH4Lq4GwU9O3DTieZVZE">
+  <div data-page-node-id="H1DpsGnrzgxFJZvHGZMTXv"><b data-page-node-id="VpTNriJLAuxX9U8tm95fCm">166 → 77</b><span data-page-node-id="J0AMNG2caFUAUSDdbbD1BP">补丁层类名数（-54%）</span></div>
+  <div data-page-node-id="7iaLEXJET9ykQAIMzEx0qn"><b data-page-node-id="ab5llPdw7NtPF0qz8CVmbN">19 → 10</b><span data-page-node-id="rh1EHvL2DRp9ANAKK7wu4c">补丁声明块数</span></div>
+  <div data-page-node-id="Sj7bFdH5iAn3OXHYxLeEcO"><b data-page-node-id="zVovqYWm77Qlxohb9OlTZQ">90 处</b><span data-page-node-id="bPCFiiX8OIA00Hrzvjd8HJ">环境色 → token</span></div>
+  <div data-page-node-id="CBy8UE6bci2BezDCn5DuZb"><b data-page-node-id="vFFnII7otwgLfE0DPF9xS7">92 处</b><span data-page-node-id="NB9YPO8dAOrREMuMPvdlZi">尺寸 → ④ 层变量</span></div>
+  <div data-page-node-id="jSYuhLJDVfliPrrcA2SEfU"><b data-page-node-id="UacyyiG6hzoLHq1DWtfoH5">0 / 0</b><span data-page-node-id="4RGOoCzU4oz8iJyIbWKMNG">A/B 差异（深 / 浅）</span></div>
+</div>
+
+<div class="card" data-page-node-id="CAdh8CuJu4twBoJrSBHtOH">
+<b data-page-node-id="ZQhGL9oXOXX3nIIct6DH9e">一句话结论</b>：三项都做完了，<b class="ok" data-page-node-id="1b9zN3H4AAJB4alkBrwLqp">且全部验证为渲染零变化</b>。
+补丁层砍掉一半以上（166 → 77 个类名），其中 <b data-page-node-id="LpVttXcGKtprZrlA03uKT7">60 个是「组件源码里根本不存在的死选择器」</b>、
+<b data-page-node-id="OH1I3lYPVQNZM4t9KoRckk">32 个是「组件已用同一 token」的纯冗余</b>；环境色 7 组 hex 从 89 处降到 1 处（只剩 App.vue 的 token 定义本身）。
+</div>
+
+<h2 data-page-node-id="oSwFKIiUK0ckmgrqmdgpd8">① 补丁层：166 → 77 个类名</h2>
+
+<p data-page-node-id="8RW1LuC2ccKfTHQewlvXqt">这块是「加新主题仍要复制」的最后一块。清理前 197 行 / 19 个声明块 / 166 个唯一类名。<br data-page-node-id="bzb63F57Bv9e08DJpbymso">
+逐<b data-page-node-id="HzrNQ0iVcW34Ubiea4m9K1">选择器项</b>判定（不是整块删），把每个类名归入五态之一：</p>
+
+<table data-page-node-id="scrGbK6fmJqRCxlsTbF13P">
+<thead data-page-node-id="nSeKte8pybTeDPi5MxVMRl"><tr data-page-node-id="klVtvTjfAJFrvfKi0ivJMD"><th data-page-node-id="805xQP11y2v1M5BI0yPCly">状态</th><th class="n" data-page-node-id="dsXaVFQS1O2EQMPBxp7Elm">个数</th><th data-page-node-id="XZRQLIH67W0wZGs9tIbdTK">含义</th><th data-page-node-id="OenNDlcmLG1zuC3HqHu4Q3">处置</th></tr></thead>
+<tbody data-page-node-id="FqZyPHE1f2hMD2zxix1HBa">
+<tr data-page-node-id="wShSDmzYAODsgu9V6ewpjb"><td data-page-node-id="bHhyoQGbLmDEcvh4PrbWN9"><span class="tag t-bad" data-page-node-id="RMy290eaMxK1Je4xCt7C6J">DEAD</span></td><td class="n" data-page-node-id="qwIlkgZA7clSSoEvWwWb1A">60</td>
+    <td data-page-node-id="9mcakZBH715jCXR2gF7p4y">组件源码里以词边界搜不到该类名 —— 历史重构（S0–S5 拆分）后遗留，选择器永不命中</td>
+    <td class="del ok" data-page-node-id="3r5Hs9o5wqWnsfLo7tZF6l">删除 ✅ 零风险</td></tr>
+<tr data-page-node-id="O9gJg6qzcMOfCCUpdffgkg"><td data-page-node-id="JNEl8ouYQs8XirEEwSe2Ry"><span class="tag t-ok" data-page-node-id="do7htP5DlwGm3PRBB8evy1">TOKEN</span></td><td class="n" data-page-node-id="p4a3CUhk8vH3OrXQFOkFtG">32</td>
+    <td data-page-node-id="Sm06D63uT6EDVHYy79Qkkh">组件里该属性<b data-page-node-id="ailTPUNyKpW1Z0tf2UzhFG">全部</b>已用与补丁<b data-page-node-id="VzCqYSCutfpbxBZL2IfrVf">完全相同</b>的 token（如 <code data-page-node-id="aDMh47WvlHXCnWMbp3ujuY">.ad-diagnosis-result { background: var(--bg-elevated) }</code>）</td>
+    <td class="del ok" data-page-node-id="VHG66A0EyYfMb5x1DZZMnI">删除 ✅ 纯冗余</td></tr>
+<tr data-page-node-id="z6cL00Ud5jgbk5eGbrszqq"><td data-page-node-id="6BY6a8r9UtMcr3F8FYrgF2"><span class="tag t-warn" data-page-node-id="8rbmZbGLC0xkUDHqC4KSk9">DIFF</span></td><td class="n" data-page-node-id="z3E1p0ZIZnzYlZs3Ok5HjI">62</td>
+    <td data-page-node-id="Hi2Dd45NrWehonvQALlUeH">组件已用 var()，但 token 与补丁<b data-page-node-id="Putl6609YI6YHFtKSm3Vdw">不同</b>（如组件 <code data-page-node-id="GGsGjbdFkPKrmLdyWO1CvI">--text-secondary</code>、补丁强制 <code data-page-node-id="Lb0V4h4ArsqnyAaVDhRIA0">--text-tertiary</code>）—— 补丁是<b data-page-node-id="LMdojSf9WrL9ssdDSSJJNM">设计决策层</b></td>
+    <td class="warn" data-page-node-id="2GChUZuw1Fxd4cTAhIUagj">保留（删除=改外观）</td></tr>
+<tr data-page-node-id="3IFTupbf9jtmUj1c8i2nai"><td data-page-node-id="rc4DnW99bmWnfK0XKarofM"><span class="tag t-warn" data-page-node-id="K8eFHrSNfa5iZgiljW1oaT">LITERAL</span></td><td class="n" data-page-node-id="Uq3TqQlQW0AU7ELf81DYWz">3</td>
+    <td data-page-node-id="8dMGXQa6jRZXWBxUXz3AZA">组件里仍有颜色字面量（<code data-page-node-id="iOeZ2559yEfKD1Ch7SBkCD">#fff</code> / <code data-page-node-id="eFI5uIyRq8z2z7qaYBOaIH">#f5576c</code> 等）</td>
+    <td class="warn" data-page-node-id="tYK02mtj1sdMQdYYJMfLyl">保留</td></tr>
+<tr data-page-node-id="3qFubGfGtrFVDwtpGgtGHB"><td data-page-node-id="2TVkBIH9TAG6QU4c1pOV9b"><span class="tag t-warn" data-page-node-id="T78OOLNw52hmNpzbBE7hg4">NORULE</span></td><td class="n" data-page-node-id="ER4NsXJoOMJdDr4SomBHyG">7</td>
+    <td data-page-node-id="dsJ8APwr2cxGAQ1JCFVbL9">类名存在但组件没有该属性声明 —— 补丁管的是<b data-page-node-id="mhOe5i32M2osnJRPqojwcA">继承色</b></td>
+    <td class="warn" data-page-node-id="msBBHRByGg68jbkh8OBOoy">保留</td></tr>
+<tr data-page-node-id="VaFHobgHjVPSmndsRepVlT"><td data-page-node-id="UVWXodmUXcZmjhkJrA2MJm"><span class="tag t-acc" data-page-node-id="BgN1zyzH6B9YGAYIuVp5Gp">ANTD</span></td><td class="n" data-page-node-id="9qxDuNrDIxRCITyOPxHMsx">2</td>
+    <td data-page-node-id="83Bi6JA2X7thvG7vGWVTer"><code data-page-node-id="Xgtp4UYSu9z1Isob68ZzKP">.ant-card</code> / <code data-page-node-id="fuHX2611TTckXylfc7amVc">.ant-layout-sider</code> —— 运行时生成，源码里本就不出现</td>
+    <td class="ok" data-page-node-id="PiStkJM7Lhib027UHYAzVE">务必保留</td></tr>
+</tbody>
+</table>
+
+<h3 data-page-node-id="R1Y7FyrNgZCtaKzHjUueUW">顺带清掉的内部冗余</h3>
+<ul data-page-node-id="FiJYAJwjSEECYQC0JGTSOt">
+<li data-page-node-id="v4dl9jTH7CGJwVrnFbylph"><b data-page-node-id="c41kTG0AqeBDp2LYAxitZu">重复的 border-color 块</b>（原 211–218 行）：与第 199–210 行的属性<b data-page-node-id="AgnTJ9pFZz7um4QpHf2g3Y">完全同值</b>，整块删除</li>
+<li data-page-node-id="A6htpp9jnK5590XEh3UQ3q"><b data-page-node-id="TjVIUE2VuW6V7uozw3Qnl6">重复的 scrollbar 规则</b>：<code data-page-node-id="li2VE7Mokgfrshb01ldwNI">html.dark ::-webkit-scrollbar-thumb</code> 与全局 <code data-page-node-id="aUDILzr1xfwsZJvHx3ESVu">::-webkit-scrollbar-thumb</code> 同值同属性</li>
+<li data-page-node-id="jX38BnbsEn9LOdiI2chqAe">把 3 个全局 <code data-page-node-id="XwONwccADjl6STw1QUog3x">::-webkit-scrollbar*</code> 块从补丁段里移出（它们本来就与主题无关）</li>
+</ul>
+
+<h3 data-page-node-id="oBQjQUabbOgJRaf7ATDH66">验证：浏览器三态 A/B</h3>
+<div class="quote" data-page-node-id="AyvIl3st7KWCrH9o6WEpmj">
+不用改代码、不用重启 dev server —— 在同一个页面里做三次快照：<br data-page-node-id="dxakE107x3d8kBXmHx45HL">
+<b data-page-node-id="qvgCK1illLPusqssyvP0x5">S1</b> 当前（新补丁）→ 用 CSSOM 删掉所有「含 <code data-page-node-id="BBlxsCYkY6bSTMdTgRlF4q">html.dark</code> 且带 <code data-page-node-id="pT5NAogGm6T1M7ciGoNxSt">!important</code>」的规则 → <b data-page-node-id="FMAQqnTn2Y37r2Q8WSGRxS">S2</b>（无补丁）→ 同步 XHR 注入旧补丁 CSS → <b data-page-node-id="HCVNEEPV4GFrKD3ltfJO2y">S3</b>（旧补丁）<br data-page-node-id="FZiJzKY0FVdSCcilmz6QEI">
+<b data-page-node-id="TqL2QLNABYAVQJHqYt5TBG">S1 vs S3 = 本次清理的影响</b>
+</div>
+
+<table data-page-node-id="B1xP3HiADqcLDLam72Mjk6">
+<thead data-page-node-id="VoZVTj1kQkXo9etJPRG6R9"><tr data-page-node-id="4LZhs5ivQzrYds0y2nFQ3b"><th data-page-node-id="cnCSPJEB7rh3sJ7cxH1tnb">对比</th><th class="n" data-page-node-id="CFSYu0A3UC0hPeheFECoH7">深色差异</th><th class="n" data-page-node-id="cPDelZSNxDcv24YqcSH5BW">浅色差异</th><th data-page-node-id="H81To429sTmFJS4Sd2LD6m">结论</th></tr></thead>
+<tbody data-page-node-id="nYD9Eosv18VaNgGPFn9G6A">
+<tr data-page-node-id="drPcIlV8hW0oLpeeZAWb1x"><td data-page-node-id="enUCqRn02Xfh5VtJ3J2xFf"><b data-page-node-id="pYi8A8LWpwuCteFQtk0Dml">新补丁 vs 旧补丁</b>（= 本次删除的影响）</td><td class="n ok" data-page-node-id="UkoDmxz7ycSPS6Utq0KIZn">0 / 18</td><td class="n ok" data-page-node-id="jnD5IPelTZPXQnBK3d0QwA">0 / 18</td>
+    <td class="ok" data-page-node-id="lwYIsyEEGPwAkbD1gdIFoK">渲染零变化 ✅</td></tr>
+<tr data-page-node-id="XzTuZZJOCEojncxewnVdc3"><td data-page-node-id="0cL6EtQyFBogY7XheujhfL">新补丁 vs 无补丁（= 补丁层的净作用）</td><td class="n" data-page-node-id="b4ei5HhrRCjNT5fM9BmvyQ">9 / 18</td><td class="n" data-page-node-id="ChUrjn9DMMxY9JmJjG7DQZ">0 / 18</td>
+    <td data-page-node-id="bfu0ddjEHMkFzujiipFcSd">补丁层<b data-page-node-id="xfuBslSx2tJUnfzF22C1M3">仍在有效工作</b>（深色下 9 项元素仍被它拉回 token）；浅色下本就不生效，符合设计</td></tr>
+</tbody>
+</table>
+
+<p class="dim" data-page-node-id="PoGcJhMzUqap75W5bbj12M">探针目标：4 个结果卡根元素 + metric-card / imp-item / improvement-grid / overview-card /
+stat-card / rank-row / risk-low / risk-medium / risk-high / rationale-box / section-header / budget-card / 表格涨跌字色，共 18 项。</p>
+
+<h3 data-page-node-id="5LZt04sh0E4kh5iw6e5dFh">仍被补丁覆盖的 9 项（说明补丁确实还活着）</h3>
+<pre data-page-node-id="KgQn2Yk8sv7wpP727GQXJB"><code data-page-node-id="XZ4YOXbiWnVE1H9fFR7uY7">root-bid        bg  #1f1f1f (--bg-elevated)   ← 无补丁时是 #262626 (--bg-raised)
+root-budget     bg  #1f1f1f                   ← 无补丁时是 #262626
+imp-item        bg  #1f1f1f                   ← 无补丁时是 #262626
+rationale-box   bg  #1f1f1f                   ← 无补丁时是 #141414 (--bg-base)
+improvement-grid bg #1f1f1f                   ← 无补丁时是 rgba(24,144,255,.12) 信息蓝底
+risk-medium     bg  #1f1f1f                   ← 无补丁时是 rgba(250,173,20,.12) 警告橙底
+section-header  bg  #1f1f1f / 字 #fff         ← 无补丁时是 rgba(82,196,26,.12) + 绿字
+budget-card     bg  #1f1f1f                   ← 无补丁时是透明
+root-intruder   border #303030                ← 无补丁时未声明边框</code></pre>
+<p class="dim" data-page-node-id="nOsDX2seX137veHfZWUyqX">这些正是「组件自成一套配色、补丁统一成中性面板底」的刻意决策 —— 所以它们是 DIFF 态、必须保留。</p>
+
+<h2 data-page-node-id="NU5E38hjtJd40wwJAQdEJW">② 环境色散落 → token（90 处）</h2>
+
+<table data-page-node-id="0zPDUgftmegiOGTFIq81H9">
+<thead data-page-node-id="ibIHEak8jp5UcKCysiRFDZ"><tr data-page-node-id="BaINpqMO1iW2alX1cz0YVZ"><th data-page-node-id="IWFE0mmzmTMtLCHLgA02ei">色值</th><th data-page-node-id="15vR4E8Wk9P3CfGNbGLYoD">语义</th><th class="n" data-page-node-id="524WoyzVQ4JQQacbHG0PBn">清理前</th><th class="n" data-page-node-id="sjtiQQdqPhTYXIOcxaMfAU">清理后</th><th data-page-node-id="QjHHPwYfK9MbFrnm0LVPYT">映射到</th></tr></thead>
+<tbody data-page-node-id="M9qhTuo8vS8ivCGhQGI0Pa">
+<tr data-page-node-id="iZbNJ1tqkWVRpwscXCOJGA"><td data-page-node-id="2YUlToIBcwEQ542vb3gqP1"><code data-page-node-id="REhAnlqJFQJvnKnYwkZsQQ">#cf1322</code></td><td data-page-node-id="LYv3lCJVkzFBAFXDjSQaaw">red-7 危险文字</td><td class="n" data-page-node-id="ZDgKdPE7VyIuCQJpbmWfuk">16</td><td class="n ok" data-page-node-id="dwLn6r38XUu5j4NBkLo0zF">1</td><td data-page-node-id="VYyYGCSrDHNoTJWMqMVC8F"><code data-page-node-id="lKz50CNYCmT0Hs9WnOCx6e">--danger-strong</code></td></tr>
+<tr data-page-node-id="B0oNNOVZUoXdCsSavkZDI7"><td data-page-node-id="vV7XQlyUMrCuBKMceu8TTE"><code data-page-node-id="y1YPkAzRWKQrR1qidemcxR">#ffd591</code></td><td data-page-node-id="hOog4TRW8sEbDESu1v5AlC">orange-3 暖色边框</td><td class="n" data-page-node-id="2lx2eqvgH6BNW2MJ7SYKNh">14</td><td class="n ok" data-page-node-id="0Mr1c1oTj3NQivt0nMBBkC">2</td><td data-page-node-id="Dnx7me4MwDFESPzoYxyE17"><code data-page-node-id="ZOvXzsZH7S188m1IFvu4LS">--orange-border</code></td></tr>
+<tr data-page-node-id="maBqrJTed1BpFCAB0QOYyW"><td data-page-node-id="NC7HPvoW0qeL0fJYfZJvkt"><code data-page-node-id="rWEzhNVAhgBcxdevXR1AFX">#fff7e6</code></td><td data-page-node-id="fWU9eGM2iCqviVNgSGxmZ1">orange-1 暖色底</td><td class="n" data-page-node-id="YKVtf5nuh1q00jYjMIaCCV">13</td><td class="n ok" data-page-node-id="sNxOCDjVSIZoIJpuxr2DO0">1</td><td data-page-node-id="bFja9AF7wQpcy5a05ZqVu7"><code data-page-node-id="7laCAVZovvpLBoZKGBXNen">--orange-bg</code></td></tr>
+<tr data-page-node-id="m4hskmE8MusAsCykBIXxWP"><td data-page-node-id="3jn4XS9lxLESxzzXbfpRXZ"><code data-page-node-id="fqkvIAWjYXOu5RgFnaulfU">#0958d9</code></td><td data-page-node-id="lf18c3kHXNV2XrqdKoqqQm">blue-7 主色文字</td><td class="n" data-page-node-id="VLtvQAfWKRKgrVG2bmkWmT">12</td><td class="n ok" data-page-node-id="aPw0GGHsXE6XrvnhltKnPT">1</td><td data-page-node-id="L3PMkZPkJE87czDngMrxbP"><code data-page-node-id="dAdmgHbcWkv4kShwa9IBjx">--primary-strong</code></td></tr>
+<tr data-page-node-id="CMmbFyCm2X5uwzd5gHUpzq"><td data-page-node-id="8tsGQshI0gnIGU6otvnEQ7"><code data-page-node-id="VY61TcGuWIVKZeVHXX4fx1">#d46b08</code></td><td data-page-node-id="P6A7SdKJvW5JM7zuAW6PxD">orange-7 暖色文字</td><td class="n" data-page-node-id="VoA9uEXg12QCljZVNI4Z1i">13</td><td class="n ok" data-page-node-id="egdjS4InfmdQBRC6ceurZG">1</td><td data-page-node-id="HEyO33dTcvEVWmWowYHksY"><code data-page-node-id="LoNHNQscYHHE67fek6JDLL">--orange-strong</code><span class="dim" data-page-node-id="rQWjLx8a1wV1hjLdyMbDOc">（本轮新增）</span></td></tr>
+<tr data-page-node-id="d0hEYUYbrIuOjvkdDBcoFb"><td data-page-node-id="985fUlZQZQ93Vi6p4C59qR"><code data-page-node-id="68LyfHRdQwiffbhPH4E5WB">#ffa39e</code></td><td data-page-node-id="iGZlTKHGgyS9dcuusye5zl">red-3 风险边框</td><td class="n" data-page-node-id="ZKvucOytyvFuu7TSTxRnU4">11</td><td class="n ok" data-page-node-id="aP8KtX0sdGaSr4LFkt9rVs">1</td><td data-page-node-id="6uNgo6LjwJghTYxpb6wOKJ"><code data-page-node-id="xkhlZBUUpgTqEHyzGM2fk0">--danger-border-strong</code></td></tr>
+<tr data-page-node-id="Tcos96fGNH8thAig7DkTFu"><td data-page-node-id="j0vggiTeNU95STRPYOtLtw"><code data-page-node-id="FjUhdd4bs5L2VW4mZH4sc8">#d48806</code></td><td data-page-node-id="WJFR56zCMhWnxZzhAZVcOc">gold-7 警告文字</td><td class="n" data-page-node-id="Tb6OV6zfLPf3qbZpyDmHB1">10</td><td class="n ok" data-page-node-id="LRcTEFIQQ6irIDYrZYAAGl">1</td><td data-page-node-id="D7Tcp1JvIQS3cBAEOHoeCH"><code data-page-node-id="P3Y9OnSukc4pHgpgEOxunm">--warning-strong</code></td></tr>
+<tr data-page-node-id="2BVFus6vGwH1F956Eg5LS6"><td colspan="2" data-page-node-id="ANSYECaOEc7ZH8xSYM50iC"><b data-page-node-id="9RxyMJx7oCQ3mrA92KTbPz">合计</b></td><td class="n" data-page-node-id="hkfjVZK7m0mSmYzvjw2L5b"><b data-page-node-id="mvBLV36fdEdhp5v9fdytUl">89</b></td><td class="n ok" data-page-node-id="97MpiTpt0nc7AHuDRwz10h"><b data-page-node-id="UCHAPndim9TA22TwlZp97Z">8</b></td><td class="dim" data-page-node-id="Znl84FZvDBkLhfbYfXXhyu">其中 7 处是 App.vue 里的 token 定义本身</td></tr>
+</tbody>
+</table>
+
+<p data-page-node-id="5uNDrb4fYJTyd0ut2TrFcM">脚本另覆盖到清单外的色值（<code data-page-node-id="6oTjld9QOZChGytImtgAS7">#1890ff</code> 30 处 / <code data-page-node-id="BTv8NIg7CxzxSIYAk3wHDJ">#ff4d4f</code> 22 处 / <code data-page-node-id="FpGyWDyFm5gz35qIlTJxBD">#389e0d</code> 8 处 /
+<code data-page-node-id="1QUdI0X2QtCXxgD6Trat3Y">#ad6800</code> 6 处 / <code data-page-node-id="x1KM2HZXQGzo5Ol56WHsxt">#722ed1</code> 6 处 / <code data-page-node-id="oUrF3KcEACX2F8DrazeKR8">#bfbfbf</code> 6 处 / <code data-page-node-id="ohXm7Yoev1ApmeaRxNg9CI">#b7eb8f</code> 5 处 …），
+共 <b data-page-node-id="rFQZ2137EbCIhh03HPtsL7">90 处</b>，涉及 29 个文件。</p>
+
+<h3 data-page-node-id="3ejIyvum4Dd18K0LA65EA4">刻意跳过的三类</h3>
+<table data-page-node-id="BMasuMqT73aqU9RwXLnLJJ">
+<thead data-page-node-id="fep925FRG9YzmG4vCrFf1G"><tr data-page-node-id="BH6HHqyta87r60Gk6YJbGG"><th data-page-node-id="NDUpbTq8afJqNsmmg9fhQp">类别</th><th data-page-node-id="MwVi7vd2SJ1dezWITV67ZK">例子</th><th data-page-node-id="ybB6Llmyfezmqte9Ka7hwo">为什么不动</th></tr></thead>
+<tbody data-page-node-id="0cr3MwnNtwuppPi9TfRWvH">
+<tr data-page-node-id="V99MyG2hyJDDFYAjiZyaFg"><td data-page-node-id="bWVzrkLJEG5Bq7mUJFq3L3">图表色阶</td><td data-page-node-id="Br7RURjqJYvRk6NmLEnWTm"><code data-page-node-id="XZ4h0umzFUnJ4WVhCPiHTg">shareColor()</code> 的 <code data-page-node-id="0ZL1yJ3ZZBNHQpRiLLbznl">#cf1322/#fa8c16/#1890ff/#52c41a</code></td>
+    <td data-page-node-id="yH2xbMPEw0eHTXicqqSuLv">数据可视化调色板，与主题无关；且部分透传给 canvas，CSS 变量无效</td></tr>
+<tr data-page-node-id="o8Na2EascCuGsn620LOaWj"><td data-page-node-id="KBqj7fVHmPpbZYd4oF8PxV">平台品牌色</td><td data-page-node-id="PGTeXnHlrHfYpiks503MRl"><code data-page-node-id="bAYK7pLcjAGmjZPBtBH0tQ">#ff9900</code>(Amazon) / <code data-page-node-id="2TYRld2vAYn3dgetiIaiT6">#ee4d2d</code>(Shopee)</td>
+    <td data-page-node-id="L4YDvlGGGbRqAebtz1pzUz">品牌识别色，绝不能跟随主题</td></tr>
+<tr data-page-node-id="Uhdpb0Bn2XZny21voeXx3O"><td data-page-node-id="R1ECpVuy8LlzxHlKtxJTV6">彩色底 + 白字</td><td data-page-node-id="PzkZXTqBUkrtquFGiryUBh"><code data-page-node-id="sZjz5AtAKxBWpEwRm928vG">color: #fff</code>（41 处）</td>
+    <td data-page-node-id="BolHGL0D9Ozb0aIV67rTol">白字是<b data-page-node-id="MAHPh4xxNz1rCtGn6kSRoc">设计意图</b>（在彩色/深色块上）；映射到 <code data-page-node-id="rXDCodZUtbc6NjfKLyU8x7">--text-inverse</code> 会让深色下变黑字</td></tr>
+</tbody>
+</table>
+
+<h2 data-page-node-id="DJ8QEFmQhchLQRpHbMjvzP">③ 尺寸硬编码</h2>
+
+<table data-page-node-id="9uovRM0y5RL9QSfvzPAnzK">
+<thead data-page-node-id="Xk6Ip5yCATXKLW9jhC5qZ9"><tr data-page-node-id="gY7vYdLsygCoWPVV4OZ4wT"><th data-page-node-id="PYt3yJw6k8TKQGWz4iSaaR">区域</th><th class="n" data-page-node-id="8KFGanHeGfS6JbWMvL4L9U">处数</th><th data-page-node-id="9ohfDFC1VsqAby8Vbp4OnS">处置</th></tr></thead>
+<tbody data-page-node-id="w99vOHunFm9nkdIrGiC9Kw">
+<tr data-page-node-id="8SocFbv1IODzLAEel9xKO0"><td data-page-node-id="kV0xH3Hq42liBfBurPGAE3">&lt;style&gt; 块 · 刻度内</td><td class="n" data-page-node-id="7bL2Nb37c3Mc1uj2OZhjuJ">3437</td><td class="ok" data-page-node-id="bC2cg7cYCuxz2X4P7CfoXG">上轮 P1 已收敛</td></tr>
+<tr data-page-node-id="EEMwHjZvi22aiZL8mmvpZd"><td data-page-node-id="srl8K700saD5yGHCjdVkAa">&lt;style&gt; 块 · 刻度外</td><td class="n" data-page-node-id="aV1oWJPya8AQFyuN6kCUwG">16</td><td class="ok" data-page-node-id="6ypeegMPjOQm35SxWcvZ0A">补进刻度后全部收敛</td></tr>
+<tr data-page-node-id="0FYJku0thtFEFcEgBVLchw"><td data-page-node-id="YVuaCDxLLxkFRbHBY8o2rC">&lt;template&gt; 静态内联 style</td><td class="n" data-page-node-id="1381tePNZ0uOQRh7UKOdoz">76</td><td class="ok" data-page-node-id="eqaxm2G03AouxmZiJ6UCuF">本轮收敛（33 个文件）</td></tr>
+<tr data-page-node-id="Z3VHIRktSee6Nx3iRucAeC"><td data-page-node-id="Vh4nVpzSqBmbCb51RKnTxB">&lt;template&gt; antd 组件属性</td><td class="n" data-page-node-id="SW0NW46RnJcpIGrZmXbPyW">6</td><td class="warn" data-page-node-id="BpfACC7CqsamcuKFj2DHvk">刻意不处理 —— <code data-page-node-id="gmSiLApxxZZsLU4WTx3RNk">width="720px"</code> 是 antd Modal 的属性，需要数值，吃不了 CSS 变量</td></tr>
+<tr data-page-node-id="avaMYoFRyZYNkovdnYtQgv"><td data-page-node-id="5WxWgZQBKVeEz56FInzOF3">&lt;script&gt; 区</td><td class="n" data-page-node-id="AAXQmULh8pAXBZ9FdAnaCG">1</td><td class="dim" data-page-node-id="hf9aGGi4VJzPQVerM1giH4">一行注释，无实际尺寸</td></tr>
+</tbody>
+</table>
+
+<h3 data-page-node-id="G97q6gSIkKbO6gJVhIOwyn">本轮补进的刻度</h3>
+<pre data-page-node-id="PNuAVTbBm0nWnFD92RLyg8"><code data-page-node-id="fle3Wm37k5EzPDzFfOBKQp">--radius-15: 15px;
+--space-7 / 9 / 11 / 13 / 22 / 28 / 30 / 40 / 44
+--font-size-48: 48px;   /* 空状态大图标 */</code></pre>
+<div class="quote" data-page-node-id="qnmCZY1U2qK2vez5MmELXD">
+<b data-page-node-id="sc8l38aSD8FfJwdcolGvlU">关于「刻度外 142 处」</b>：实测统计口径下，真正「有 px 字面量但不在刻度内」的只有 16 处；
+其余 128 条是 <code data-page-node-id="AEscTWVZ46AJLFzAKrQKFb">margin: 0</code> / <code data-page-node-id="cyD88PggU7K81dtb2MT0ZW">padding: 0</code> / <code data-page-node-id="8XknkQjdrAfpOHKjAticdT">auto</code> / <code data-page-node-id="OzmQGnlfwOPe3wny7mEl9F">0.92em</code> / 负值 —— 都不是刻度问题。
+补进上述 9 个档位后，<b data-page-node-id="4TC3R8xyG2PX1o0fzpjLJx">刻度外字面量归零</b>（脚本幂等复检 = 0）。刻度已注明「7→8 / 9→8 / 11→12 / 13→12」为后续收紧密度的优先归并对象。
+</div>
+
+<h2 data-page-node-id="3JOgXt2WcIVECrat9csF45">验证：四重证据</h2>
+
+<table data-page-node-id="GrtrWxftglvfY6blUuiVnN">
+<thead data-page-node-id="iIHtOUaLGdxEC5iFgdsoTo"><tr data-page-node-id="gKrjQfOdOD6E1WZse1DrWJ"><th data-page-node-id="Qj3tgR53p2AGphjr7BLE2N">手段</th><th data-page-node-id="NPbDpG0xJs3bmZ85WlDn3N">结果</th></tr></thead>
+<tbody data-page-node-id="ZuuOLeT3JI4XJe248VLoHb">
+<tr data-page-node-id="yINENl9KKoCvzWXlHE97Zi"><td data-page-node-id="kB9ZfG2R1EVN8adZwifalH"><b data-page-node-id="rVm0LR0Gl3hJoDiIfmIqZ7">① 构造性等价证明</b><br data-page-node-id="ypEDV4e2VE8LT5Zyt1kUhk"><span class="dim" data-page-node-id="v9YQx0SUwTudyDKLjswGCt">把 token 还原成字面量后与备份逐行比对</span></td>
+    <td class="ok" data-page-node-id="KU6nSGMTUNqAx8MvYH8vAj">58 个文件 / <b data-page-node-id="8qxptNazmUl4gpN7diMOlg">137 个等价变更块 / 0 个非等价块</b></td></tr>
+<tr data-page-node-id="dxvLmX2xPHfZ5YUBFEhEpc"><td data-page-node-id="hSaUGcTiUuWzqgDMhjhgLR"><b data-page-node-id="ZiJEeRCtSANVbnW5iqiIv0">② 幂等复检</b><br data-page-node-id="HF6nMR5gUoKVMgQx8To4w7"><span class="dim" data-page-node-id="dGrCEdwVXZUpol6qTeqvYV">--apply 后再干跑一次应为 0</span></td>
+    <td class="ok" data-page-node-id="qvllrxxOwTJXStKhviI2vg">颜色 0 / 尺寸 0 / 模板 0</td></tr>
+<tr data-page-node-id="RQLwKJKtUdMybmCdI5BFrM"><td data-page-node-id="6q44yCCHSY161drrB5tMsa"><b data-page-node-id="TAclaDdic13X8h7vaxAsD9">③ 浏览器三态 A/B</b></td>
+    <td class="ok" data-page-node-id="EOVNEBi48CPwrT4lz8iLF4">深色 0 差异 / 浅色 0 差异（18 个探针目标）</td></tr>
+<tr data-page-node-id="0SVFHsKDfSuuqKwCHvLI9M"><td data-page-node-id="pthXm2B5EkE4ISqKZXKppX"><b data-page-node-id="fxDUDJ4wouKWzbDJAB0chP">④ 构建</b></td>
+    <td class="ok" data-page-node-id="roaeK0rhFw7OMyDkzZbWDV"><code data-page-node-id="KeRYAelyXx0AB8BOAXGj2e">npm run build</code> EXIT=0（<code data-page-node-id="HVB3aKgoSvJHpHn8yU3PHW">vue-tsc && vite build</code>，类型检查同时过）</td></tr>
+</tbody>
+</table>
+
+<h2 data-page-node-id="2UHqwkycbWajmvP4kNv3r9">新增 token</h2>
+
+<table data-page-node-id="kKFu8gL1rENqDruY1HILFD">
+<thead data-page-node-id="C05tCJFK9pOSRzpFqJHWMX"><tr data-page-node-id="ehRAecZ3LoU2UBT26zWSbu"><th data-page-node-id="6YlrR4iwMRbdJcHiP5SZjN">token</th><th data-page-node-id="JNqplAfiQg6dZeYAWVXLaa">浅色</th><th data-page-node-id="OsZHCraBHaAnJDttNzbqfb">深色</th><th data-page-node-id="gqiCffqqpgFMSANqZRWFNz">用途</th></tr></thead>
+<tbody data-page-node-id="VDs1JdoQcXcMewaA0HC49b">
+<tr data-page-node-id="DEG5srEWBC6BXiHjcCtdQT"><td data-page-node-id="u09uDAZYBzBybwM4mQ1d5y"><code data-page-node-id="Cs5JXncyZD6CfC3TxlGXUX">--orange-strong</code></td><td data-page-node-id="yya5gkUh6LjgiW2gy0IHIH"><code data-page-node-id="SGIUDtSd4RuS1yT5iNKmEL">#d46b08</code></td><td data-page-node-id="p45TjWVjDVgQDV5gz9dOjZ"><code data-page-node-id="mFHGQ3Uu7Jg8eA0cT3YB58">#ffa940</code></td>
+    <td data-page-node-id="fB9L9Q3JxyLkL5laAxgmAw">暖色强调<b data-page-node-id="LtDywTos7NHodojpUidLPs">文字</b>（比 <code data-page-node-id="wg7K5CHOhskxJk8NFEo1O4">--warning-strong</code> 更偏橙）；原先 13 处硬编码</td></tr>
+<tr data-page-node-id="I0LOY4JIQVrFmE5TxTQY0Z"><td data-page-node-id="EQmOQqKQEftUbKaFQJW3Tz"><code data-page-node-id="DGzBVaPMlLFC91GJLdlIyd">--radius-15</code></td><td data-page-node-id="8bh56W7KhRuEkUozqae38o"><code data-page-node-id="gJ2XZRX7BcdfwBZKY6Sqz7">15px</code></td><td data-page-node-id="SZO7OCj77IFq0yQitD8fmQ">—</td><td data-page-node-id="1kETv1cUsvyppwg8y0sVrc">ChatPanel 主容器圆角</td></tr>
+<tr data-page-node-id="BrlERXkHFHRVgoRaCfWF2j"><td data-page-node-id="ZNuFsDqrTAay7Gxj4R8GNb"><code data-page-node-id="no3xT36DT5xww5A62d3jmS">--space-7/9/11/13/22/28/30/40/44</code></td><td data-page-node-id="ZMliz0jM6eWAKV9I1MN3Aa">对应 px</td><td data-page-node-id="2B1F9CPoBPuywqD6hpEIRw">—</td><td data-page-node-id="C7Bh6vGKGHXlDQcwA9lM7d">项目实测在用的非 4 倍数档</td></tr>
+<tr data-page-node-id="pHSWsQVBo7WE2e1kyu6NMM"><td data-page-node-id="J0fqpHERxnMtWO1Q3le0JB"><code data-page-node-id="540DAg2OlECa3MK3VZfHVH">--font-size-48</code></td><td data-page-node-id="XtJhOAkeLSfTtqauHN9VwC"><code data-page-node-id="spbrIYFEnIkDItTB3YzF5S">48px</code></td><td data-page-node-id="vZC4H71CAEiGlNO8v6HjuV">—</td><td data-page-node-id="6DjvZkK51Q3p1kOGbALolk">空状态大图标</td></tr>
+</tbody>
+</table>
+
+<h2 data-page-node-id="UGc0LUH4ELOeATDwY0YuWw">剩余清单（下一轮可做）</h2>
+
+<table data-page-node-id="oi3MUST15lwAI9e2bZtYdC">
+<thead data-page-node-id="QPJBGemmFEJVPKAlqCLTDI"><tr data-page-node-id="flgMt3DiM7s24tme9qYWm5"><th data-page-node-id="KkA5vBoXWasC5OFIb4zvye">优先级</th><th data-page-node-id="61KH5n41zL3REsxa35zoJu">事项</th><th data-page-node-id="rDUn85OAgXVwF5CpeLV6kj">说明</th></tr></thead>
+<tbody data-page-node-id="SXRQDZHu1DfUqnpCTj348P">
+<tr data-page-node-id="OBdj4evJv3pUDMtSohxepo"><td data-page-node-id="56iXB0CARLUeAqHuNpHY73"><span class="tag t-bad" data-page-node-id="0QSF2Sm4Rk2Eu6eakIsf3f">需拍板</span></td>
+    <td data-page-node-id="ocw7cAVhvCkjxOkyeM8ZjP"><b data-page-node-id="MyGdu1CCDf5PIbYQ1R4etH">62 个 DIFF 类名</b></td>
+    <td data-page-node-id="Cz6FKipJWh30NFyOrAbHGK">组件已用 var() 但 token 与补丁不同。删掉补丁 = <b data-page-node-id="zlhvVXxWjDK1vDPY6MPOEu">让组件自己的 token 生效</b>，会产生一批「次级文字亮/暗一档」的微调。
+        这是「补丁层彻底清空」的关键一步，但属于主观档位决策 → 需要你过目。</td></tr>
+<tr data-page-node-id="pn18AHL4nVweuZVPuORCUW"><td data-page-node-id="LHYIHthHIzgZqdFK8XSTEl"><span class="tag t-warn" data-page-node-id="3zyuwIHD3hVfU3MMJRkBWs">P1</span></td>
+    <td data-page-node-id="8UWxPw94zNDNAQsjD4xKIt">3 个 LITERAL + 7 个 NORULE</td>
+    <td data-page-node-id="IcSbM1MQbwAv9tDRq7vAKl">LITERAL：<code data-page-node-id="MeNr4uK4OFD2LWyTiG7YSg">.item-value</code> / <code data-page-node-id="hjwIXpaTZwE9LkgR7kkFt6">.practices-box</code> / <code data-page-node-id="IjW07uZBUeUj8VsjzVYHFd">.primary</code> 仍有字面量；
+        NORULE：<code data-page-node-id="jGT3Vctmnt6LUfhoBGGYvN">.cost-row</code> / <code data-page-node-id="RkBH2Oy38W29czAbyF81uu">.currency</code> / <code data-page-node-id="AJKHy2SovmFsLhIsEV4XUE">.dkpi-val</code> / <code data-page-node-id="BSXQRwsG4lzQmZG0v8EdET">.drow</code> / <code data-page-node-id="z7mpGLxGUoAGiGdqbx25tt">.metric</code> / <code data-page-node-id="zOQXIN9qsyKYDa5yjagjD4">.section-header</code> / <code data-page-node-id="ABtq8C2mTym0ctz7m5VVPp">.workspace-container</code> ——
+        需逐个把组件补上 token 写法，补丁才能真正删干净。</td></tr>
+<tr data-page-node-id="9gCLxR1bhytzE7AHag21U7"><td data-page-node-id="C7WMjwy7jSsSrAzOmbHsqc"><span class="tag t-warn" data-page-node-id="fPAtazFhoMaBrKQZpIlZGD">P1</span></td>
+    <td data-page-node-id="nR8OUYsccPAhcAWPDzdGeL"><code data-page-node-id="2DKF1Eiwrt5SSfD575k0Hi">.position-badge</code> 配色对</td>
+    <td data-page-node-id="M3JV6Iu4nyBuCEB4pEaXIw"><code data-page-node-id="FjNGaYkukF94vVBHsP7JBc">.pos-leader/challenger/nicher</code> 是「浅色底 + 深色字」的配对标（<code data-page-node-id="TT1xHN22GzgHdhiz2yI378">#ffd591+#ad6800</code> / <code data-page-node-id="lEHWqfJpS92dfRuQNk0v4j">#91d5ff+#003a8c</code> / <code data-page-node-id="EDzGm5NRzC6KrCn70G2ZNM">#b7eb8f+#237804</code>），
+        只换底色会破坏配对可读性 —— 需要一组 <code data-page-node-id="umilDJ2O0E7FfY0eOV1QD0">--badge-*</code> token 整体设计。</td></tr>
+<tr data-page-node-id="Kb3s0hZPwM1s0UHKWFOObU"><td data-page-node-id="4kEZa4dpt78IVptCzycKtr"><span class="tag t-acc" data-page-node-id="kOJfQ3qzADF2iK1E0NuW4X">P2</span></td>
+    <td data-page-node-id="d8FZt0GiCuwoCpb7vYK99h">107 个无对应色值 / 316 次</td>
+    <td data-page-node-id="LxG2HOrwWPHoYeHAOBO5ml">主要是 <code data-page-node-id="33j0MAyNCUGrPx0mWk9syl">#52c41a</code>(34) / <code data-page-node-id="NbKmewP7PmL2PjCqX5pZVz">#faad14</code>(27) —— antd 默认成功/警告色，项目里已有更深的 <code data-page-node-id="7QGIMFN1j3c60PH1gsLQY0">--success</code>/<code data-page-node-id="4bU54UMXbOGSwn14TpHIMF">--warning</code>；
+        以及 <code data-page-node-id="iVZmsq53BDAHpxtHRWDyFU">#fa8c16</code>/<code data-page-node-id="sbWGOmwpMO0luMqfLcAqze">#bae7ff</code>/<code data-page-node-id="e4cB682SHEpqj90BxeqGMU">#d3adf7</code> 等渐变第二档。收敛它们会让浅色下整体变深一档（属「对齐调色板」，与上轮 P2 同向）。</td></tr>
+<tr data-page-node-id="FKcQ1dm6sF309GDEMixUdd"><td data-page-node-id="wvME3thVw6D4SrrmXCOV5C"><span class="tag t-pur" data-page-node-id="w1FegGAhLtKfirQdXHVHho">P2</span></td>
+    <td data-page-node-id="z5IFIZsDhU25A5eMmno8Fl">P0 <code data-page-node-id="BVK8OalxHHm0Au0wC0KQKV">themePresets.ts</code></td>
+    <td data-page-node-id="zwluqPpHGaX3J73eGO9kJ0">你已跳过，未做。</td></tr>
+</tbody>
+</table>
+
+<h2 data-page-node-id="2J7TDxdTUrEpRQMWQwgLwr">回滚点</h2>
+<ul data-page-node-id="3GeYAdqpU2WW97W4vBYmrN">
+<li data-page-node-id="06x87F0ZdCqw8EM1wuPLeC">git：<code data-page-node-id="eY9yFJLz7sFp4ERwM3rxZt">refs/checkpoints/before-p3-tokens</code> → <code data-page-node-id="0OkCitFNA0blVQgRFZvtZo">8124b7a</code></li>
+<li data-page-node-id="oB3JKlYCs1yuAADuO8FfXH">文件：<code data-page-node-id="4E1Cm0PecMAqwk760AuMxX">.workbuddy/backup/p3-tokens-20260913/src</code>（166 个文件全量备份）</li>
+</ul>
+
+<div class="card" data-page-node-id="C8dIWu4nrW1ABRkoo2h6Yh">
+<b data-page-node-id="TZL3Zt871ustsqvPct6Nxp">维护规则（已写进 App.vue 补丁段头部注释）</b><br data-page-node-id="lGkMzwrDVbxkWD6rAFOr5s">
+<span class="dim" data-page-node-id="8uqbY9qDF10NJgOiihuhA9">「每把一个组件的硬编码改成 var()，就从这里删掉对应选择器。本段清空之日，就是『加新主题要复制补丁』彻底消失之时。」</span>
+</div>
+
+</div>
+</body>
+</html>

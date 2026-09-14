@@ -6,6 +6,7 @@ SSE 流式输出回归测试
 2. SSE 响应头正确（text/event-stream）
 3. 事件协议正确：delta 增量 + done 收尾
 4. LLM 不可用时降级为规则引擎文本（不报错）
+5. progress 阶段进度事件：结构化意图应先发进度再出结果，且不计入正文
 """
 
 import json
@@ -107,3 +108,36 @@ async def test_all_stream_endpoints_respond(client, auth_off, fake_llm, path, pa
         r = await client.post(path)
     assert r.status_code == 200, f"{path} -> {r.status_code} {r.text[:200]}"
     assert "text/event-stream" in r.headers.get("content-type", ""), path
+
+
+async def test_sse_event_stream_emits_progress_without_polluting_body():
+    """progress 事件单独下发，且不进正文累积（长任务提示专用，不能污染结果文本）"""
+    from ai_infra.sse import progress, sse_event_stream
+
+    async def gen():
+        yield progress("正在挖掘蓝海品类数据…")
+        yield "正文A"
+        yield "正文B"
+
+    raw = "".join([e async for e in sse_event_stream(gen())])
+    events = _parse_sse(raw)
+    kinds = [e for e, _ in events]
+
+    assert kinds == ["progress", "delta", "delta", "done"], kinds
+    assert events[0][1]["text"] == "正在挖掘蓝海品类数据…"
+    assert events[-1][1]["text"] == "正文A正文B", "progress 文案不应被拼进最终正文"
+
+
+async def test_product_research_stream_emits_progress_before_delta(client, auth_off, fake_llm):
+    """结构化意图（蓝海）应「先发阶段进度、再出结果」，避免长任务期间零输出空转"""
+    r = await client.post(
+        "/api/v1/product-research/chat/stream",
+        json={"message": "帮我找厨房用品类的蓝海机会"},
+    )
+    assert r.status_code == 200, r.text
+
+    events = _parse_sse(r.text)
+    kinds = [e for e, _ in events]
+    assert "progress" in kinds, f"缺少 progress 事件: {kinds}"
+    assert kinds.index("progress") < kinds.index("delta"), f"progress 应先于 delta: {kinds}"
+    assert "蓝海" in events[kinds.index("progress")][1]["text"]

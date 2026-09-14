@@ -1,6 +1,13 @@
 """
 LLM + RAG 集成测试脚本
 
+⚠️ 本文件是「真实集成脚本」（会打真实 DashScope），默认被 conftest 的
+_no_real_llm 总闸阻断。要真实跑它请显式放行：
+
+    pytest tests/test_llm_rag_integration.py -m allow_real_llm
+
+也可以直接当脚本跑：
+
 测试内容：
 1. DashScope LLM 客户端连接
 2. RAG 引擎初始化和检索

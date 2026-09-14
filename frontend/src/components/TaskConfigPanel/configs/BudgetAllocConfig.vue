@@ -103,13 +103,13 @@ const handleStart = () => {
 </script>
 
 <style scoped>
-.budget-alloc-config { padding: 4px 0; }
-.config-form :deep(.ant-form-item) { margin-bottom: 14px; }
-.config-form :deep(.ant-form-item-label) { font-size: 13px; font-weight: 500; }
-.form-hint { font-size: 11px; color: #8c8c8c; margin-top: 4px; }
-.action-bar { margin-top: 16px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
-.season-hint { padding: 8px 10px; border-radius: 6px; font-size: 11.5px; margin-top: 6px; line-height: 1.5; }
-.hint-low { background: #fff7e6; color: #d46b08; border: 1px solid #ffd591; }
-.hint-high { background: #e6f7ff; color: #0958d9; border: 1px solid #91d5ff; }
-.hint-peak { background: #fff1f0; color: #cf1322; border: 1px solid #ffa39e; }
+.budget-alloc-config { padding: var(--space-4) 0; }
+.config-form :deep(.ant-form-item) { margin-bottom: var(--space-14); }
+.config-form :deep(.ant-form-item-label) { font-size: var(--font-size-13); font-weight: 500; }
+.form-hint { font-size: var(--font-size-11); color: var(--text-tertiary); margin-top: var(--space-4); }
+.action-bar { margin-top: var(--space-16); padding-top: var(--space-12); border-top: 1px solid var(--border-base); }
+.season-hint { padding: var(--space-8) var(--space-10); border-radius: var(--radius-6); font-size: var(--font-size-11-5); margin-top: var(--space-6); line-height: 1.5; }
+.hint-low { background: var(--orange-bg); color: var(--orange-strong); border: 1px solid var(--orange-border); }
+.hint-high { background: var(--info-bg); color: var(--primary-strong); border: 1px solid var(--info-border); }
+.hint-peak { background: var(--danger-bg); color: var(--danger-strong); border: 1px solid var(--danger-border-strong); }
 </style>

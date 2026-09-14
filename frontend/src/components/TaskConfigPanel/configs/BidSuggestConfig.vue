@@ -27,7 +27,7 @@
       <!-- 预算变动上限 -->
       <a-form-item label="预算变动上限">
         <a-slider v-model:value="formState.maxBudgetChange" :min="10" :max="50" :step="5" />
-        <div style="text-align: center; font-size: 12px; color: #8c8c8c;">{{ formState.maxBudgetChange }}%</div>
+        <div style="text-align: center; font-size: var(--font-size-12); color: #8c8c8c;">{{ formState.maxBudgetChange }}%</div>
       </a-form-item>
 
       <!-- 指定关键词（可选） -->
@@ -97,20 +97,20 @@ const handleStart = () => {
 </script>
 
 <style scoped>
-.bid-suggest-config { padding: 4px 0; }
-.config-form :deep(.ant-form-item) { margin-bottom: 14px; }
-.config-form :deep(.ant-form-item-label) { font-size: 13px; font-weight: 500; }
-.form-hint { font-size: 11px; color: #8c8c8c; margin-top: 4px; }
-.action-bar { margin-top: 16px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.bid-suggest-config { padding: var(--space-4) 0; }
+.config-form :deep(.ant-form-item) { margin-bottom: var(--space-14); }
+.config-form :deep(.ant-form-item-label) { font-size: var(--font-size-13); font-weight: 500; }
+.form-hint { font-size: var(--font-size-11); color: var(--text-tertiary); margin-top: var(--space-4); }
+.action-bar { margin-top: var(--space-16); padding-top: var(--space-12); border-top: 1px solid var(--border-base); }
 
 .strategy-desc {
-  padding: 10px 12px;
-  border-radius: 6px;
-  font-size: 11.5px;
+  padding: var(--space-10) var(--space-12);
+  border-radius: var(--radius-6);
+  font-size: var(--font-size-11-5);
   line-height: 1.6;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-4);
 }
-.desc-aggressive { background: #fff7e6; color: #d46b08; border: 1px solid #ffd591; }
-.desc-balanced { background: #e6f7ff; color: #0958d9; border: 1 solid #91d5ff; }
-.desc-conservative { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
+.desc-aggressive { background: var(--orange-bg); color: var(--orange-strong); border: 1px solid var(--orange-border); }
+.desc-balanced { background: var(--info-bg); color: var(--primary-strong); border: 1 solid var(--info-border); }
+.desc-conservative { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
 </style>
