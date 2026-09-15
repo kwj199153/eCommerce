@@ -1,17 +1,59 @@
 # ============================================================
-#  店管家 AI（跨境电商 AI SaaS）— 服务器一键部署
+#  店管家 AI（跨境电商 AI SaaS）— 一键部署
 # ------------------------------------------------------------
 #  用法（在项目根目录执行）：
-#    docker compose up -d           # 后台启动 PG（+可选后端/前端）
-#    docker compose ps              # 查看状态
-#    docker compose down            # 停止（保留数据卷）
-#    docker compose down -v         # 停止并删除数据（慎用）
 #
-#  默认只起 PostgreSQL；后端/前端服务按需取消注释启用。
+#    # 1. 准备后端环境变量（首次）
+#    cp backend/.env.example backend/.env
+#    #    然后编辑 backend/.env，至少填：
+#    #      DASHSCOPE_API_KEY=<你的>
+#    #      JWT_SECRET_KEY=<随机高熵字符串>
+#    #      ENVIRONMENT=production     ← 生产必须
+#    #      AUTH_REQUIRED=true         ← 生产必须（默认已是 true）
+#    #      PAYMENT_GATEWAY=...        ← 生产不能是 mock，否则拒绝启动
+#
+#    # 2. 起全套
+#    docker compose up -d --build
+#
+#    # 3. 看状态 / 日志
+#    docker compose ps
+#    docker compose logs -f backend
+#
+#    # 4. 首次初始化（已建表则跳过；回填店铺归属是必须的）
+#    docker compose exec backend python scripts/backfill_owner_id.py
+#
+#    # 5. 停止（保留数据卷）/ 连数据一起删
+#    docker compose down
+#    docker compose down -v
+#
+#  访问：
+#    前端  http://localhost:8080
+#    接口  http://localhost:8080/api/v1      （经 nginx 转发，同源无跨域）
+#    指标  http://localhost:8000/metrics     （直连回环；设了 METRICS_TOKEN 需带 Bearer）
+#    健康  http://localhost:8000/health?detail=true
+#
+#  ⚠️ 首次使用前注意（本地已有 my-postgres 在跑的情况）：
+#    本文件给 postgres 写死了 container_name: my-postgres（保持与既有习惯一致）。
+#    若该容器是**用 docker run 手工起的**（不是本 compose 起的），compose 会报
+#    "container name is already in use"。两种处理方式：
+#      a) 先接管：docker rm -f my-postgres   然后 docker compose up -d
+#         —— 数据在 pgdata 卷里，容器删掉不会丢数据；
+#      b) 或者只起需要的服务：docker compose up -d --build backend worker frontend
+#         —— 复用你已经在跑的 PG。
+#
+#  ⚠️ 生产上线前必读：
+#    1. **必须挂 HTTPS**。语音录音走浏览器 getUserMedia，HTTP 下浏览器直接拒绝；
+#       且 Token 走明文传输等于没有鉴权。在生产反代（本文件的 nginx 或外层 SLB）
+#       上配 TLS，并把 PUBLIC_BASE_URL 设为 https:// 开头的域名。
+#    2. **PAYMENT_GATEWAY 不能是 mock**。MockGateway 无条件返回支付成功，
+#       用户点一下「升级专业版」就白拿付费套餐。生产用 mock 会**拒绝启动**。
+#    3. /metrics 对外暴露前设 METRICS_TOKEN，否则 QPS/错误率/接口清单公开可读。
+#    4. 首次部署后跑 backfill_owner_id.py，否则存量店铺 owner_id 为空，
+#       生产模式下非 admin 访问业务数据一律 403。
 # ============================================================
 
 services:
-  # ========== 1. PostgreSQL（店铺/账号持久化，必需） ==========
+  # ========== 1. PostgreSQL（业务数据 + 店铺归属，必需）==========
   postgres:
     image: postgres:15-alpine
     container_name: my-postgres
@@ -21,6 +63,8 @@ services:
       POSTGRES_PASSWORD: "123456"
       POSTGRES_DB: postgres
     ports:
+      # 保持与既有习惯一致（本机工具直连 localhost:5432）。
+      # 若要收紧，改成 "127.0.0.1:5432:5432" —— 数据库不该对公网开放。
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -29,21 +73,138 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    networks: [storekeeper]
 
-  # ========== 2. 后端 API（可选，按需启用） ==========
-  # backend:
-  #   build:
-  #     context: ./backend
-  #   container_name: ecommerce-backend
-  #   restart: unless-stopped
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #   environment:
-  #     DATABASE_URL: postgresql+asyncpg://kevin:123456@postgres:5432/postgres
-  #     # 注意：容器内连 PG 用服务名 postgres，不是 localhost
-  #   ports:
-  #     - "8000:8000"
+  # ========== 2. Redis（Celery broker + 限流 + 缓存）==========
+  #  ★ 为什么必须要它（而不只是 PG）：
+  #    - Celery 的 broker 与 result backend 都需要它（P1-5 异步任务的依赖）
+  #    - 限流中间件优先用 Redis 做跨进程计数；缺了会**降级为进程内计数** ——
+  #      单副本还能用，多副本时每个副本各算一份，实际限额被放大 N 倍
+  #    - 缺 Redis 时服务**仍能启动**（fail-open 设计），所以漏配不会报错，
+  #      只会让限流悄悄失效、异步任务全部报错 —— 这正是要写进 compose 的理由
+  redis:
+    image: redis:7-alpine
+    container_name: my-redis
+    restart: unless-stopped
+    # appendonly：开 AOF 持久化。限流计数与缓存在重启后清零会造成瞬时放量。
+    # maxmemory-policy allkeys-lru：满了淘汰最久未用的 key，而不是写入报错。
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - allkeys-lru
+    ports:
+      # 只绑回环：Redis 无鉴权，绝不能对公网开放
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [storekeeper]
+
+  # ========== 3. 后端 API ==========
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: storekeeper-api:latest
+    container_name: storekeeper-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    environment:
+      # ★ 容器内连 PG/Redis 必须用**服务名**，不是 localhost。
+      #   写 localhost 会连到容器自己的回环，表现为「compose 明明起来了却连不上库」。
+      #   这里显式覆盖 .env 里的本地地址，让本地与容器两种环境共用同一份 .env。
+      DATABASE_URL: postgresql+asyncpg://kevin:123456@postgres:5432/postgres
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      # 容器里日志由 Docker 负责收集/轮转 → 出 JSON 便于采集
+      LOG_JSON: "true"
+    ports:
+      # 只开回环：公网一律经前端 nginx（同源 + 反代），不把后端裸暴露成可跨域目标
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # AIGC 素材产物落盘（重建容器不丢），后端经 /static 对外暴露
+      - uploads:/app/uploads
+      - logs:/app/logs
+    networks: [storekeeper]
+
+  # ========== 4. Celery Worker（异步任务）==========
+  # 与 backend 共用镜像：任务代码就是业务代码，不必单独打包。
+  # worker.py 里已声明队列 default,ai_tasks,data_export 与并发度 4。
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: storekeeper-api:latest
+    container_name: storekeeper-worker
+    restart: unless-stopped
+    # 覆盖 CMD：同一镜像跑 worker 而不是 uvicorn
+    command: ["python", "worker.py"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://kevin:123456@postgres:5432/postgres
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      LOG_JSON: "true"
+    volumes:
+      - uploads:/app/uploads
+      - logs:/app/logs
+    networks: [storekeeper]
+
+  # ========== 5. 前端（nginx 托管 dist + 反代 /api、/static）==========
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # ★ Vite 变量是**构建期**注入（编译进 bundle），不是运行期读取。
+        #   改这里的值必须 `docker compose up -d --build` 重建，重启容器无效。
+        VITE_DEMO_MODE: "false"
+        VITE_VOICE_CLONE_ENABLED: "false"
+    image: storekeeper-web:latest
+    container_name: storekeeper-web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    networks: [storekeeper]
+
+networks:
+  storekeeper:
+    driver: bridge
 
 volumes:
+  # ★★ pgdata 必须写死这个**裸卷名**：现有运行中的 my-postgres 挂的就是
+  #    `pgdata`（docker inspect 实测）。若让 compose 按项目名自动加前缀
+  #    （变成 elcommerce_pgdata 之类），compose 会挂一个空卷 → PG 起来是空库，
+  #    现象是「所有店铺/用户都不见了」，极易误判成数据丢失。
   pgdata:
+    name: pgdata
+  redisdata:
+    name: ecommerce_redisdata
+  uploads:
+    name: ecommerce_uploads
+  logs:
+    name: ecommerce_logs

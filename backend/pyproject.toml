@@ -1,0 +1,129 @@
+# ============================================================
+#  后端工程配置（2026-09-15 新增）
+# ------------------------------------------------------------
+#  为什么要有这个文件：
+#    此前后端**没有任何工程级配置** —— 没有 ruff/mypy 配置、没有项目元数据。
+#    结果是「想加静态检查时无从下手」，而且 ruff 会在任意目录生成默认配置。
+#
+#  ★ 重要说明：本文件**不包含 [tool.pytest.ini_options]**。
+#    测试配置在 `pytest.ini` 里。pytest 的配置优先级是
+#      pytest.ini > pyproject.toml > tox.ini > setup.cfg
+#    两处都写会造成「改了 pyproject 却不生效」的静默困惑，因此只保留 pytest.ini 一处。
+#
+#  ⚠️ 静态检查的接入状态（如实标注，避免「配置存在 ≠ 门禁在执行」）：
+#    - ruff：配置已就绪，但 **CI 尚未调用**。首次接入必须先生成基线
+#      （见文末命令），否则一次性几千条告警没人会看，最后又变成死配置。
+#    - mypy：同上。本项目大量使用 SQLAlchemy 2.0 Mapped[] 与 pydantic，
+#      严格模式会误报很多，默认用宽松档。
+# ============================================================
+
+[project]
+name = "ecommerce-ai-saas-backend"
+version = "0.1.0"
+description = "店管家 AI —— 一站式 AI 原生跨境电商全链路 SaaS 后端"
+requires-python = ">=3.11"
+readme = "README.md"
+
+# 依赖以 requirements.txt 为唯一真源。
+# 不在这里重复声明 dependencies（两处声明必然漂移，
+# 而运维和 CI 装的都是 requirements.txt —— 漂移时出问题的永远是"另一个文件"）。
+dependencies = []
+
+# ==================== Ruff（linter + formatter）====================
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+# 排除：迁移脚本（自动生成）、本地数据、构建产物
+exclude = [
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
+    "alembic/versions",
+    "uploads",
+    "logs",
+    "scripts/generate_amazon_mock_data*.json",
+]
+
+[tool.ruff.lint]
+# 选的规则集说明：
+#   E/W  pycodestyle  —— 基础风格（缩进、空白）
+#   F    pyflakes     —— 未使用导入/变量、未定义名（**性价比最高，先开这个**）
+#   I    isort        —— 导入排序
+#   B    bugbear      —— 常见陷阱（可变默认参数、except 里 raise 丢栈等）
+#   UP   pyupgrade    —— 过时写法升级
+#   ASYNC             —— async 用法错误（在 await 里做阻塞调用等）
+#   S    bandit       —— 安全问题（硬编码密码、assert 用作校验等）
+select = ["E", "W", "F", "I", "B", "UP", "ASYNC", "S"]
+
+# 忽略项 + 忽略理由（不加理由的 ignore 会变成"永久性黑洞"）
+ignore = [
+    "E501",    # 行太长 —— line-length 已由 formatter 兜底，linter 不必重复报
+    "B008",    # 函数默认值里调函数 —— FastAPI 的 Depends()/Query() 就靠这个写法
+    "S101",    # 使用 assert —— 测试里大量使用；业务代码由 S 规则其他项覆盖
+    "S104",    # 绑定 0.0.0.0 —— 容器里必须绑 0.0.0.0，不是问题
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试文件放宽：允许 assert、允许魔法值、允许私有成员访问
+"tests/**" = ["S101", "S105", "S106", "SLF001"]
+# 脚本/种子数据：允许 print（本来就该往控制台输出进度）
+"scripts/**" = ["T201"]
+"modules/**/seed.py" = ["T201"]
+# 迁移脚本自动生成，不参与风格检查
+"alembic/**" = ["E", "W", "F", "I", "B", "UP", "S"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["core", "modules", "platforms", "ai_infra", "models"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+# ==================== mypy（宽松档）====================
+
+[tool.mypy]
+python_version = "3.11"
+# 不以「零错误」为目标启动 —— 先只抓「能确定是 bug」的类别
+ignore_missing_imports = true
+follow_imports = "silent"
+# SQLAlchemy / pydantic 的插件化类型推断在这里收益有限、噪声很大，先不开
+plugins = []
+# 不要对全部函数强制标注（存量代码没有标注，开了就是几千条）
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+# 但这些「能真抓 bug」的检查打开：
+warn_redundant_casts = true
+warn_unused_ignores = false   # 存量有大量 # type: ignore，开启会刷屏
+warn_return_any = false
+no_implicit_optional = true   # 默认值 None 必须标 Optional —— 真能抓 bug
+strict_equality = true        # 不同类型比较给出警告 —— 抓过 ||/&& 写错
+show_error_codes = true
+exclude = [
+    "alembic/versions",
+    "uploads",
+    "logs",
+]
+
+# ==================== 接入静态检查的操作步骤 ====================
+#
+# 1) 装依赖：
+#      pip install ruff mypy
+#
+# 2) 先生成基线（看看到底有多少问题，不要直接修）：
+#      cd backend
+#      ruff check . --statistics
+#      ruff check . --select F --output-format=concise   # 先只修 F（未使用/未定义）
+#
+# 3) 按「风险从高到低」分批修：F → B → ASYNC → S → E/W → UP
+#    F 类里 `F821 undefined name` 和 `F401 unused import` 是真 bug 或死代码，
+#    而 `F841 unused variable` 经常是"忘写后续逻辑"的信号 —— 都值得逐个看。
+#
+# 4) 修完再在 .github/workflows/ci.yml 的 backend job 里加一步：
+#      - name: Ruff
+#        run: ruff check . && ruff format --check .
+#
+# ★ 顺序不能反：先上 CI、再修问题 = 门禁一亮红就被人 --no-verify 绕过，
+#   最后变成「有 CI 但没人信」。必须先让基线干净，再把它设成门禁。

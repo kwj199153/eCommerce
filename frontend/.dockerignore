@@ -1,0 +1,51 @@
+# ============================================================
+#  frontend/.dockerignore —— 构建上下文排除清单
+# ------------------------------------------------------------
+#  最大的一条：**node_modules**。它有几万个文件、几百 MB，
+#  拷进构建上下文会让 `docker build` 在 "Sending build context" 阶段
+#  卡几分钟（而且第二阶段镜像里本就不需要它，靠 npm ci 在镜像内装）。
+#
+#  ⚠️ .env.* 不排除 —— Vite 靠这些文件在**构建期**注入变量，
+#     排掉了会构建出一个 VITE_DEMO_MODE 未定义、行为不可预期的包。
+#
+#  ★ 例外：`.env.local` / `.env.*.local` **必须排除**。
+#    它们是开发者本机的覆盖文件（本项目 .env.local 里写的是 VITE_DEMO_MODE=true）。
+#    Vite 的加载顺序是 .env → .env.local → .env.[mode] → .env.[mode].local，
+#    虽然 .env.production 优先级更高、当前不会被覆盖，但这属于「碰巧安全」：
+#    一旦谁建了 .env.production.local，生产包就会带着演示模式直通上线。
+#    直接排除，不留这个可能性。
+# ============================================================
+
+.env.local
+.env.*.local
+
+node_modules/
+dist/
+dist-ssr/
+dist_check_*/
+dist_verify_*/
+
+# Vite 生成的临时配置快照（每次 dev server 启动都会生成新的一份）
+*.timestamp-*.mjs
+
+# 日志与本地状态
+logs/
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.vite/
+
+# 编辑器与 VCS
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# 其它
+coverage/
+*.tsbuildinfo
+README.md

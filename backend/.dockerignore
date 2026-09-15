@@ -1,0 +1,55 @@
+# ============================================================
+#  backend/.dockerignore —— 构建上下文排除清单
+# ------------------------------------------------------------
+#  为什么必须要有：`docker build ./backend` 会把整个目录当上下文传给
+#  daemon。backend/ 下有 uploads/（AIGC 素材图，可能几百 MB）、logs/、
+#  __pycache__/、本地 .env（含真实密钥）。
+#
+#  ★ 安全要点：`.env` 必须在排除列表里 —— 否则密钥会被 COPY 进镜像层，
+#    任何拿到镜像的人 `docker history` 或解包都能读到。
+#    容器里要用环境变量，请用 `--env-file` 或 compose 的 environment。
+# ============================================================
+
+# 密钥与本地配置（★ 绝不能进镜像）
+.env
+.env.*
+!.env.example
+
+# 本地数据与产物
+uploads/
+logs/
+*.db
+*.sqlite3
+ecommerce.db
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.egg-info/
+
+# 虚拟环境
+venv/
+.venv/
+ENV/
+
+# 大体积测试/生成数据（构建镜像不需要）
+scripts/*.json
+tests/
+
+# 编辑器与 VCS
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# 文档
+docs/
+*.md
