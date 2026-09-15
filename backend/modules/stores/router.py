@@ -34,6 +34,9 @@ from core.profit_engine import (
 #       PG 表 `stores_store` 是权威存储。写操作双写内存+DB，
 #       服务启动时（main.lifespan）把 PG 全量回灌到内存。
 from sqlalchemy import select
+# IntegrityError：外键 RESTRICT 拒绝删除时由 SQLAlchemy 抛出（包装 asyncpg 的
+# ForeignKeyViolationError）。delete_store 需要捕获它并翻译成 409。
+from sqlalchemy.exc import IntegrityError
 from core.database import async_session_factory
 from modules.stores.db_model import StoreRecord, SHOP_ORDER_BY
 
@@ -436,11 +439,38 @@ async def delete_store(
     store_id: str,
     current_user=Depends(require_auth_if_enabled),
 ):
-    """删除店铺"""
-    store = _get_store(store_id)  # 验证存在性
+    """删除店铺。
+
+    ★ 顺序：先删 PG（权威存储），成功后再清内存缓存。
+
+    反过来（先 `del _store_db[...]` 再删 PG）有个静默缺陷：PG 删除失败时
+    内存里的店铺已经消失、库里却还在 —— 两边不一致，且要等下次服务重启
+    回灌才会"自己好"。期间用户看到的是"已删除"，但数据仍在（刷新后又回来）。
+    这类"假成功"比直接报错难排查得多。
+
+    ★ 外键约束（迁移 d5e6f7a8b9c0）：该店铺下若还有业务数据
+    （spus / assets / candidates / monitors / knowledge_* / platform_rules ...），
+    数据库会以 RESTRICT 拒绝删除。这里把它翻译成 409 + 可操作文案，
+    而不是让它冒成未处理的 500。
+
+    为什么用 RESTRICT 而不是 CASCADE：删店是低频高风险操作，
+    "误点一下连带删掉一家店的全部数据" 的代价，远高于 "删店时被提示先清理数据"。
+    """
+    store = _get_store(store_id)  # 验证存在性（不存在直接 404）
     _check_store_owner(store, current_user)
-    del _store_db[store_id]
-    await _delete_store_db(store_id)  # 从 PG 删除
+
+    try:
+        await _delete_store_db(store_id)  # 先删权威存储
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"店铺 {store_id} 下仍有业务数据（商品/素材/选品/监控/知识库/平台规则等），"
+                "已拒绝删除以避免产生孤儿数据。请先清理该店铺的数据，或将店铺置为停用。"
+            ),
+        ) from exc
+
+    _store_db.pop(store_id, None)  # 成功后才清内存缓存
     return {"message": "店铺已删除", "store_id": store_id}
 
 

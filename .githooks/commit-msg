@@ -1,0 +1,67 @@
+#!/bin/sh
+# ============================================================
+#  commit-msg —— 校验提交信息格式（Conventional Commits）
+# ------------------------------------------------------------
+#  为什么值得校验：
+#    本项目历史提交已在用这个格式（feat(aigc): ... / fix(billing): ...），
+#    但全靠自觉。格式统一后：
+#      - 能从 git log 直接看出「改了哪一类、影响哪个模块」
+#      - 将来接语义化版本 / changelog 生成时不用回头补历史
+#
+#  格式：<type>(<scope>): <subject>
+#    type   ∈ feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert
+#    scope  可选，如 (aigc)、 (billing)
+#    subject 中文或英文均可
+#
+#  放行：Merge / Revert 开头的自动提交；空信息交给 git 自己拦。
+#  绕过：git commit --no-verify
+# ============================================================
+
+set -u
+
+MSG_FILE="$1"
+[ -f "$MSG_FILE" ] || exit 0
+
+# 取第一条非注释、非空行作为 subject
+subject=$(sed -e 's/#.*$//' "$MSG_FILE" 2>/dev/null | sed -e '/^[[:space:]]*$/d' 2>/dev/null | head -n 1)
+
+case "$subject" in
+  ''|Merge*|merge*|Revert*|revert*|fixup*|squash*)
+    exit 0
+    ;;
+esac
+
+if printf '%s' "$subject" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+'; then
+  exit 0
+fi
+
+cat <<'EOT'
+
+✖ commit-msg 校验未通过
+
+  提交信息第一行不符合 Conventional Commits 格式：
+
+      <type>(<可选 scope>): <描述>
+
+  可用的 type：
+      feat      新功能
+      fix       修 bug
+      docs      文档
+      style     格式（不影响语义）
+      refactor  重构（不改行为）
+      perf      性能
+      test      测试
+      build     构建/依赖
+      ci        CI 配置
+      chore     杂项
+      revert    回滚
+
+  示例：
+      feat(aigc): AIGC 长任务异步化
+      fix(billing): 并发行锁补 populate_existing
+      chore(hooks): 新增 pre-commit 门禁
+
+  确要跳过：git commit --no-verify
+
+EOT
+exit 1

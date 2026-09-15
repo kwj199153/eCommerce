@@ -1,0 +1,107 @@
+#!/bin/sh
+# ============================================================
+#  pre-commit —— 只做「快且确定」的检查
+# ------------------------------------------------------------
+#  为什么只查这几项（设计原则，改这个文件前请先读）：
+#    1) 必须在 1 秒内跑完。慢 hook 的唯一结局是被 --no-verify 绕过，
+#       等于不存在，还额外让人养成绕过习惯。
+#    2) 只拦「进 git 历史后不可逆 / 代价高」的问题：
+#       - 密钥进历史：轮换都洗不干净，必须重写历史
+#       - 大文件进历史：clone 永远变慢，且很难彻底移除
+#    3) 类型检查 / 跑测试**故意不做** —— vue-tsc 要 30s+，
+#       那是 CI 的活（见 .github/workflows/ci.yml）。
+#
+#  本项目为什么需要它（结合历史事故）：
+#    - backend/.env 含真实 DASHSCOPE_API_KEY，被 .gitignore 挡住，
+#      但「挡住」只在 add 时不生效时会静默失败一次
+#    - 历史上误入过 frontend/Backend（记事本碎片）、
+#      backend/tests/_all.txt（测试输出）、backend/_probe_worker.log
+# ============================================================
+
+set -u
+
+# 只看新增/修改/改名（排除删除），没有就放行
+FILES=$(git diff --cached --name-only --diff-filter=ACM)
+if [ -z "$FILES" ]; then
+  exit 0
+fi
+
+fail=0
+msg=""
+
+# ---------- 1. 敏感文件：密钥 / 证书 ----------
+for f in $FILES; do
+  case "$f" in
+    *.pem|*.key|*.p12|*.keystore|*id_rsa*|*id_ed25519*)
+      msg="${msg}\n  [密钥]      $f  —— 私钥/证书禁止入库"
+      fail=1
+      ;;
+    .env|*/.env|.env.local|*/.env.local|.env.production|*/.env.production|.env.development|*/.env.development)
+      msg="${msg}\n  [密钥]      $f  —— 含真实密钥，只应提交 .env.example"
+      fail=1
+      ;;
+  esac
+done
+
+# ---------- 2. 大文件（>2MB）：仓库变重后很难瘦回来 ----------
+for f in $FILES; do
+  if [ -f "$f" ]; then
+    sz=$(git cat-file -s ":$f" 2>/dev/null || echo 0)
+    case "$sz" in
+      ''|*[!0-9]*) sz=0 ;;
+    esac
+    if [ "$sz" -gt 2097152 ]; then
+      msg="${msg}\n  [大文件]    $f  —— $((sz / 1024 / 1024)) MB（阈值 2 MB）"
+      fail=1
+    fi
+  fi
+done
+
+# ---------- 3. 临时 / 调试 / 构建产物 ----------
+for f in $FILES; do
+  case "$f" in
+    .workbuddy/*|*/.workbuddy/*)
+      msg="${msg}\n  [本地目录]  $f  —— .workbuddy 是本地工作区，不入库"
+      fail=1
+      ;;
+    tests/_*.txt|*/tests/_*.txt)
+      msg="${msg}\n  [测试输出]  $f  —— pytest 输出文件不入库"
+      fail=1
+      ;;
+    *_probe_*.log|*_probe_*.py|*_probe_*.txt|_probe_*)
+      msg="${msg}\n  [调试残留]  $f  —— 探针/临时脚本不入库（放 .workbuddy/ 下）"
+      fail=1
+      ;;
+    dist/*|*/dist/*|dist_verify_*/*|dist_check_*/*|*/node_modules/*|node_modules/*)
+      msg="${msg}\n  [构建产物]  $f"
+      fail=1
+      ;;
+    *.log|*.tmp|*.timestamp-*.mjs)
+      msg="${msg}\n  [日志/临时] $f"
+      fail=1
+      ;;
+  esac
+done
+
+# ---------- 4. 合并冲突标记残留（提交了就是语法错误） ----------
+# ★ 必须锚定行首（紧跟 diff 的 + 号）：冲突标记永远在第 1 列。
+#   写成 '^\+.*(<<<<<<<|>>>>>>>)' 会把「代码/注释里提到这些标记」的行也算进来 ——
+#   实测它连本 hook 自己的源码行都拦（自我误报），提交写有说明文字的迁移也会被拦。
+#   一个会误报的门禁，结局就是被 --no-verify 绕过。
+conflict=$(git diff --cached -U0 2>/dev/null | grep -cE '^\+(<<<<<<<|>>>>>>>)( |$)' 2>/dev/null)
+case "$conflict" in
+  ''|*[!0-9]*) conflict=0 ;;
+esac
+if [ "$conflict" -gt 0 ]; then
+  msg="${msg}\n  [冲突标记]  暂存内容里有 ${conflict} 处 <<<<<<< 或 >>>>>>>"
+  fail=1
+fi
+
+if [ "$fail" -ne 0 ]; then
+  printf "\n✖ pre-commit 已拦截本次提交："
+  printf "%b\n" "$msg"
+  printf "\n  确认要强行提交：git commit --no-verify\n\n"
+  exit 1
+fi
+
+exit 0

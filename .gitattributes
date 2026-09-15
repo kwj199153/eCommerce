@@ -1,0 +1,40 @@
+# ============================================================
+#  .gitattributes —— 统一换行策略（2026-09-15 新增）
+# ------------------------------------------------------------
+#  为什么需要它：
+#    Windows 上 `core.autocrlf` 常为 true，会把检出的文本文件
+#    转成 CRLF。对 shell 脚本这是致命的 —— CRLF 的脚本会被
+#    sh 报 "bad interpreter: /bin/sh^M"，而 git hook 全是 shell。
+#    （本项目此前 `git diff --stat` 数字被 CRLF 放大的困扰同源。）
+#
+#  ★ 有意不加 `* text=auto eol=lf`：那会让仓库里已有的 CRLF
+#    文件在下次 checkout 时批量重写，产生一个几百文件的"假改动"
+#    提交。这里只对「必须精确控制换行」的类型下规则。
+# ============================================================
+
+# shell 脚本必须 LF，否则 git hook 直接报 bad interpreter
+*.sh text eol=lf
+.githooks/* text eol=lf
+
+# Windows 批处理必须 CRLF，否则 cmd 可能解析异常
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制：不做任何换行/文本处理（避免 git 试图"修正"它们）
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.xlsx binary
+*.xls  binary
+*.docx binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.mp3  binary
+*.mp4  binary
+
+# lock 文件：体积大且机械生成，不参与 diff 展示
+package-lock.json -diff linguist-generated
