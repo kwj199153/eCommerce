@@ -6,7 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core.billing.usage_tracker import meter_agent_chat
-from core.tenant.middleware import get_current_shop_id
+# ★ 用 `_optional` 变体而不是 `get_current_shop_id`：本端点是 **POST 但属对话入口**，
+#   不是业务数据写入口。用严格版会让「刚注册、还没有店铺」的用户一进来就被 400
+#   挡住 —— 而这时候他恰恰只能靠店秘书去创建第一家店铺。
+#   详见 `get_current_shop_id_optional` 的 docstring 使用边界。
+from core.tenant.middleware import get_current_shop_id_optional
 from modules.secretary.agent import route
 
 router = APIRouter(prefix="/api/v1/orchestrator", tags=["店秘书"])
@@ -53,7 +57,7 @@ class OrchestratorResponse(BaseModel):
 @router.post("/chat", response_model=OrchestratorResponse, summary="店秘书对话（意图路由）")
 async def secretary_chat(
     request: OrchestratorRequest,
-    shop_id: Optional[str] = Depends(get_current_shop_id),
+    shop_id: Optional[str] = Depends(get_current_shop_id_optional),
     _meter=Depends(meter_agent_chat),
 ):
     """

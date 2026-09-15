@@ -264,6 +264,18 @@ async def get_tenant_from_query(
 
 # ====== 轻量店铺 ID 依赖（数据层隔离用） ======
 
+# 写方法集合：只有这些方法才强制要求店铺上下文。
+# ★ 为什么按 method 而非按端点白名单：84 个端点里 63 个是写、
+#   21 个是读，逐个登记必然漂移（新端点会被漏掉）；method 是**未来新写端点
+#   自动纳入**的收敛口径。
+WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+MISSING_SHOP_DETAIL = (
+    "缺少店铺上下文：写操作必须携带 X-Shop-ID 请求头。"
+    "请先在界面左上角选择一个店铺再重试。"
+)
+
+
 async def get_current_shop_id(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -283,10 +295,27 @@ async def get_current_shop_id(
         修复后：config.auth_required=True（生产模式）时强制校验
           stores_store.owner_id == 当前用户 id；不符一律 403；admin 放行。
 
+    ★★★ 空值守卫（P0 修复 2026-09-15，多租户隔离）
+        **写方法（POST/PUT/PATCH/DELETE）+ 缺失/空白 X-Shop-ID ⇒ 400。**
+        修复前实测（探针 r51-before-write-no-shop）：
+          写端点不带头 → 入库 shop_id="" → 被外键
+          fk_<表>_shop_id_stores_store 拒绝 → **500，且响应体把 SQLAlchemy
+          报错与约束名原样返回给客户端**（信息泄露 + 用户看到"服务器内部错误"）。
+        修复后：400 + 可读原因，零数据库往返（守卫在依赖解析阶段就拦下）。
+        读方法保持原契约（返回 None → 端点回空列表），前端「未选店铺看空列表」
+        的既有体验不受影响。
+
+        ★ 为什么按 method 而不是登记 63 个写端点：登记式必然漂移，
+          方法分流是**未来新写端点自动纳入**的收敛口径。
+        ★ 需要「写方法但不要求店铺」的对话/导航类入口请显式改用
+          `get_current_shop_id_optional`（见其 docstring 的使用边界）。
+
     ⚠️ 三个设计取舍：
       1. 用 403 不用 404 —— 404 会泄露「该店铺 ID 是否存在」，帮攻击者枚举。
       2. 演示模式（auth_required=False）require_auth_if_enabled 返回 None，
          不做校验，行为与修复前一致 ⇒ 本地演示/联调不受影响。
+         **注意：空值守卫不受演示模式影响**（它是请求形状校验，与"你是谁"无关）
+         —— 演示模式下同样禁止空 shop 写入。
       3. 存量无主店铺（owner_id IS NULL）生产模式下非 admin 一律拒绝
          ⇒ 上线前须跑 scripts/backfill_owner_id.py 回填归属。
 
@@ -297,17 +326,65 @@ async def get_current_shop_id(
                 q = q.where(Record.shop_id == shop_id)
             else:
                 return {"items": [], "total": 0}  # 未选店铺返回空
+
+        @router.post("/products")   # 写端点不用写守卫：缺 X-Shop-ID 自动 400
+        async def create_product(shop_id: Optional[str] = Depends(get_current_shop_id)):
+            ...
     """
-    shop_id = request.headers.get(TENANT_HEADER)
-    if not shop_id:
+    return await _resolve_current_shop_id(request, db, require_for_write=True)
+
+
+async def get_current_shop_id_optional(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Optional[str]:
+    """
+    与 `get_current_shop_id` 同源，但**不对写方法强制要求店铺上下文**。
+
+    ★ 仅允许「对话 / 导航类」入口使用（当前唯一使用者：
+      `POST /api/v1/orchestrator/chat` 店秘书）。
+      理由：用户刚注册、一家店铺都还没有时，店秘书恰恰是他唯一能求助的入口
+      （「帮我创建一个店铺」）——此时 400 会把求助路径本身堵死。
+      而这类入口拿不到 `shop_id` 时也不会落业务数据：它只是把 `None` 传下去，
+      产品选择类工具会回「产品库为空」而不是写入。
+
+    ★ 反过来讲：**任何会落业务数据的端点都不许用这个依赖**，
+      否则就是给本次修复开了一个后门。
+    """
+    return await _resolve_current_shop_id(request, db, require_for_write=False)
+
+
+async def _resolve_current_shop_id(
+    request: Request,
+    db: AsyncSession,
+    *,
+    require_for_write: bool,
+) -> Optional[str]:
+    """上面两个依赖的共用实现（唯一逻辑源，避免两份各自漂移）。"""
+    raw = request.headers.get(TENANT_HEADER) or ""
+    # ★ `.strip()`：HTTP 头解析不保证调用方不发纯空白值，
+    #   "   " 若原样放行会被当成合法店铺 ID 带去查库 → 空匹配 → 静默写空分区。
+    shop_id = raw.strip() or None
+
+    # ① 空值守卫（P0 修复 2026-09-15）
+    #    修复前实测：写端点不带头 → 入库 shop_id="" → 被
+    #    `fk_<表>_shop_id_stores_store` 外键拒绝 → **500，且响应体把
+    #    SQLAlchemy 报错与约束名原样吐给客户端**（见探针 r51-before-write-no-shop）。
+    #    修复后：同一个请求得到 400 + 可读原因，且不产生任何数据库往返。
+    if shop_id is None:
+        if require_for_write and request.method.upper() in WRITE_METHODS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=MISSING_SHOP_DETAIL,
+            )
         return None
 
-    # ① 认证（你是谁）。演示模式返回 None → 放行，保持原有行为
+    # ② 认证（你是谁）。演示模式返回 None → 放行，保持原有行为
     current_user = await require_auth_if_enabled(request, db)
     if current_user is None:
         return shop_id
 
-    # ② 授权（这东西归不归你）—— 修复前缺失的就是这一段
+    # ③ 授权（这东西归不归你）—— 修复前缺失的就是这一段
     from modules.stores.db_model import StoreRecord  # 函数内导入，避免循环依赖
 
     result = await db.execute(select(StoreRecord).where(StoreRecord.id == shop_id))
