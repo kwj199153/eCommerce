@@ -270,14 +270,40 @@ async def change_plan(
     #   （mock 瞬时完成；接真实网关若是同步 HTTP，需评估持锁时长，
     #   必要时改为「先建 pending 账单 → 释放锁 → 收 webhook」的两段式，
     #   见 core/billing/payment_gateway.py 顶部接入清单第 5 条）。
+    # ★★ `.execution_options(populate_existing=True)` 不能省（P1-5 收尾修复 2026-09-15）
+    #
+    #   行锁只在**数据库**层面把并发请求串行化；但 SQLAlchemy 的 identity map 会把
+    #   「本 session 里已经加载过的那份 Subscription」原样返回，**不使用锁后重读到
+    #   的新值覆盖已加载属性**（除非显式 populate_existing）。
+    #   而 `User.subscription` 是 `lazy="selectin"`（models.py:62）——
+    #   即 `get_current_user` 查 User 时，已经把这条订阅行连同**旧值**装进了
+    #   identity map。于是「串行化之后后到的请求会读到新状态」这条设计前提不成立。
+    #
+    #   实测（4 并发双击同一套餐）：
+    #     · 语句确实阻塞串行了（阶梯等待 71 / 266 / 468 / 671ms，见
+    #       .workbuddy/probes/project-audit-20260915/script-lock_probe.py）
+    #     · 但 4 个请求全部读到加锁前的旧状态 ⇒ 算出**同一个**幂等键
+    #       ⇒ 3 个撞 `invoices.idempotency_key` 唯一约束
+    #       ⇒ 走到下面的 IntegrityError 分支（本该 200 + charged=False）
+    #   ⇒ 判据：**门禁语句存在 ≠ 门禁在生效**。加锁查询必须同时要求 ORM 重新装载，
+    #     否则锁保护的是数据库行，业务读到的仍是内存里的旧对象。
     result = await db.execute(
         select(Subscription)
         .where(Subscription.user_id == current_user.id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     sub = result.scalar_one_or_none()
 
     now = datetime.utcnow()
+
+    # ★ 先把「日志/异常要用」的标量取出来（P1-5 收尾修复 2026-09-15）。
+    #   理由见下面 IntegrityError 分支：`await db.rollback()` 会 expire 本 session
+    #   内所有 ORM 对象，之后任何属性读取都会触发隐式懒加载，而纯 async 上下文里
+    #   没有 greenlet ⇒ `MissingGreenlet: greenlet_spawn has not been called`。
+    #   ★ 判据：凡是「rollback 之后还要用」的值，必须在 rollback 之前落成标量。
+    _user_id = current_user.id
+    _plan_id = plan.id
 
     # ---- 守卫：同套餐同周期重复提交 → 不扣款、不开票 ----
     if is_duplicate_submission(sub, plan.id, billing_cycle):
@@ -373,9 +399,16 @@ async def change_plan(
         #   所以这里不重建状态，直接 409 让前端刷新（此时前一个请求已提交成功，
         #   刷新后看到的订阅状态是正确的）。
         await db.rollback()
+        # ★ 这里只能用**回滚前取好的标量**（_user_id / _plan_id），不能读 ORM 属性：
+        #   rollback() 已经把 session 内所有对象 expire，此时读 `current_user.id`
+        #   触发隐式懒加载 → 纯 async 上下文没有 greenlet ⇒ 抛
+        #   `MissingGreenlet: greenlet_spawn has not been called`，
+        #   本该 409「重复提交」的响应会变成 500 + 一串 SQLAlchemy 堆栈。
+        #   ★ 另外 loguru 用 `{}` 占位：写成 `%s` 不报错，但会把字面量 `%s`
+        #   打进日志并**丢掉全部参数**（本行原先就是错的）。
         _log.warning(
-            "账单幂等键冲突，按重复提交拒绝 user=%s plan=%s cycle=%s key=%s",
-            current_user.id, plan.id, billing_cycle, idem_key,
+            "账单幂等键冲突，按重复提交拒绝 user={} plan={} cycle={} key={}",
+            _user_id, _plan_id, billing_cycle, idem_key,
         )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
