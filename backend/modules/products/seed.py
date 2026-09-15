@@ -408,6 +408,23 @@ async def seed_products_if_empty() -> int:
                 )
                 session.add(spu)
 
+                # ★★ 必须先 flush 再插入 SKU —— 否则全新库上必然 FK 违约。
+                #
+                # 为什么：`SkuRecord.spu_id` 只在列上声明了 ForeignKey("spus.id")，
+                # **没有 `relationship()`**。SQLAlchemy 的 unit-of-work 是依据
+                # mapper 之间的 relationship 推导插入顺序的；没有关系声明 ⇒ 它
+                # 不知道 skus 依赖 spus ⇒ 两个表的 INSERT 同批执行时，skus 的
+                # executemany 可能先于 spus ⇒
+                #     ForeignKeyViolationError: insert or update on table "skus"
+                #       violates foreign key constraint "skus_spu_id_fkey"
+                #       DETAIL: Key (spu_id)=(prod-000-s1) is not present in table "spus"
+                # （实测证据：探针 script-r51_seed_fresh_db.py 在空库 + 1 店铺下跑出）
+                #
+                # 为什么以前没暴露：本函数开头有 `if count > 0: return 0` 守卫，
+                # 开发库的 spus 表早就非空 ⇒ 这段插入路径**从未真正执行过**
+                # （正是 test_seed_shop_ids.py 文件头警告的那颗「定时炸弹」）。
+                await session.flush()
+
                 # 有变体清单则拆成对应 SKU；否则生成一条无规格的默认 SKU
                 variations = data.get("variations") or []
                 if variations:

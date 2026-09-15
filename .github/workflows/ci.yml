@@ -13,6 +13,14 @@
 #    本项目的记忆里明确记着这条：PG/Redis DOWN → pytest 大量 F/E
 #    是**环境问题不是代码问题**。
 #
+#  ★★ 后端 job 的「建库」链路（2026-09-15 补齐，缺一条都会让门禁失真）：
+#      ① `alembic upgrade head`        —— schema 由迁移建（这才是迁移验证）
+#      ② 迁移链自检（单一 head / 往返 / alembic check）
+#                                         —— ORM 改了没写迁移 → 立刻红
+#      ③ `scripts/bootstrap_db.py`     —— 基础数据（与 main.py lifespan 同源）
+#      ④ `pytest`                      —— 此时库 == 「应用首次启动后应有的状态」
+#    ①②③ 缺任何一个，「本地全绿」都推不出「CI 全绿」——本仓库三者都曾缺失。
+#
 #  ⚠️ 未接入（有意保留，避免「声明了却没生效」的假门禁）：
 #    - 前端 ESLint：package.json 里有 lint 脚本，但 devDependencies 里
 #      **没有 eslint**。加进 CI 会直接失败。要么先补依赖，要么删脚本。
@@ -111,6 +119,41 @@ jobs:
 
       - name: 确认 app 可导入（抓循环导入 / 配置校验误拦）
         run: python -c "import main; print('routes =', len(main.app.routes))"
+
+      - name: 建库（跑迁移 —— 不用 create_all）
+        # ★★ 为什么必须是 alembic，而不是 create_all：
+        #    create_all 直接按 ORM 的 metadata 建表，**永远不会发现**迁移断链、
+        #    漏表、依赖顺序错误 —— 也就是说它根本不构成「迁移验证」。
+        #    本仓库此前正是「init 迁移 5fe72f9a9520 的 upgrade() 只有 pass」
+        #    + 全靠 dev 环境 create_all 兜底 ⇒ 空库 upgrade 必炸；
+        #    而 CI 连建库步骤都没有 ⇒ 这是一个**从未真正绿过的假门禁**。
+        run: python -m alembic upgrade head
+
+      - name: 迁移链完整性自检
+        # 三条独立断言，任一失败即红。
+        # 命令序列已在本机全新空库上实测通过（探针 script-r51_ci_migration_dryrun.py，
+        # 该探针本身也抓到过一个真 bug：drop_table 不删 PG ENUM 类型 ⇒ 往返必炸）。
+        run: |
+          set -e
+          echo "--- ① 单一 head（有分叉时 upgrade head 会歧义）"
+          heads=$(python -m alembic heads 2>/dev/null | grep -c '(head)')
+          test "$heads" -eq 1
+          echo "--- ② 往返：downgrade base -> upgrade head（验证降级真的可用，不是摆设）"
+          python -m alembic downgrade base
+          python -m alembic upgrade head
+          echo "--- ③ ORM 与迁移一致性：模型改了却没生成迁移 -> 这里红"
+          python -m alembic check
+
+      - name: 灌基础数据（与 main.py 启动路径同源）
+        # ★★ 为什么必须有这一步：CI 的 PG 是**全新空容器**，而本地 pytest 跑的是
+        #    **有数据的开发库** ⇒「本地全绿」推不出「CI 全绿」。
+        #    实测（探针 script-r51_ci_e2e.py）：只建表不灌数据时直接跑 pytest，
+        #    注册/订阅链路因 subscription_plans 空表而外键失败，大面积 ERROR：
+        #      ForeignKeyViolationError: subscriptions ... plan_id=1
+        #        is not present in table "subscription_plans"
+        #    本步骤与 main.py 的 lifespan 共用 core/bootstrap.py（唯一真源），
+        #    所以不会出现「启动会灌、CI 不灌」两套清单各自漂移。
+        run: python scripts/bootstrap_db.py
 
       - name: 跑测试
         run: pytest tests/ -q --no-header

@@ -57,73 +57,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         _log.warning("⚠️ 店铺加载跳过: {}", e)
 
-    # 启动时：产品库种子数据（首次启动预置演示数据）
-    try:
-        from modules.products.seed import seed_products_if_empty
-        seeded = await seed_products_if_empty()
-        if seeded:
-            _log.info("✅ 产品库种子数据已预置 {} 条", seeded)
-    except Exception as e:
-        _log.warning("⚠️ 产品库种子数据跳过: {}", e)
-
-    # 启动时：素材库种子数据（首次启动预置演示数据）
-    try:
-        from modules.assets.seed import seed_assets_if_empty
-        seeded = await seed_assets_if_empty()
-        if seeded:
-            _log.info("✅ 素材库种子数据已预置 {} 条", seeded)
-    except Exception as e:
-        _log.warning("⚠️ 素材库种子数据跳过: {}", e)
-
-    # 启动时：候选选品库种子数据（首次启动预置演示数据）
-    try:
-        from modules.candidates.seed import seed_candidates_if_empty
-        seeded = await seed_candidates_if_empty()
-        if seeded:
-            _log.info("✅ 候选选品库种子数据已预置 {} 条", seeded)
-    except Exception as e:
-        _log.warning("⚠️ 候选选品库种子数据跳过: {}", e)
-
-    # 启动时：竞品监控池种子数据（首次启动预置演示数据）
-    # 注意：本 seed 不硬编码 shop_id，而是查 stores 表取真实店铺 id 逐个灌。
-    # 2026-09-12 起 candidates / products 的 seed 也已统一此写法 —— 真实租户 id 是
-    # X-Shop-ID 里的 store_xxxxxxxx，写死 "shop-1" 会导致那批数据任何请求都查不到。
-    try:
-        from modules.monitors.seed import seed_monitors_if_empty
-        seeded = await seed_monitors_if_empty()
-        if seeded:
-            _log.info("✅ 竞品监控池种子数据已预置 {} 条", seeded)
-    except Exception as e:
-        _log.warning("⚠️ 竞品监控池种子数据跳过: {}", e)
-
-    # 启动时：平台规则库种子数据（首次启动预置演示数据：6 条规则 + 5 篇带正文的文档）
-    try:
-        from modules.platform_rules.seed import seed_platform_rules_if_empty
-        seeded = await seed_platform_rules_if_empty()
-        if seeded:
-            _log.info("✅ 平台规则库种子数据已预置 {} 条", seeded)
-    except Exception as e:
-        _log.warning("⚠️ 平台规则库种子数据跳过: {}", e)
-
-    # 启动时：业务话术库种子数据（每个店铺各一份默认库 + 6 条通用问答）
-    try:
-        from modules.knowledge_base.seed import seed_knowledge_if_empty
-        seeded = await seed_knowledge_if_empty()
-        if seeded:
-            _log.info("✅ 业务话术库种子数据已预置 {} 条", seeded)
-    except Exception as e:
-        _log.warning("⚠️ 业务话术库种子数据跳过: {}", e)
-
-    # 启动时：订阅套餐基础数据（free/pro/enterprise）
-    # 缺失会导致注册接口 500：创建默认订阅时 plan_id=1 触发外键约束失败
-    try:
-        from core.billing.usage_tracker import init_default_plans
-        from core.database import get_async_session
-        async with get_async_session() as session:
-            await init_default_plans(session)
-        _log.info("✅ 订阅套餐基础数据已就绪")
-    except Exception as e:
-        _log.warning("⚠️ 订阅套餐初始化跳过: {}", e)
+    # ============================================================
+    # 基础/演示数据：全部收敛到 `core/bootstrap.py`（唯一真源）
+    #
+    # ★ 为什么从这里搬走：这 7 段 seed 本来只存在于本 lifespan 里，
+    #   而 CI（.github/workflows/ci.yml）**一条都没有** ⇒ 「本地全绿」
+    #   推不出「CI 全绿」。实测（探针 script-r51_ci_e2e.py）：空库直接跑
+    #   pytest 会大面积 ERROR，根因是 subscription_plans 空表导致
+    #   `subscriptions.plan_id` 外键失败。
+    # ⇒ 抽成一处，lifespan 与 `scripts/bootstrap_db.py`（CI 用）共用；
+    #   以后新增基础数据**只改 core/bootstrap.py**。
+    # ============================================================
+    from core.bootstrap import seed_base_data
+    seeded_map = await seed_base_data()
+    _log.info("✅ 基础数据引导完成: {}", seeded_map)
 
     yield  # 应用运行中...
 
