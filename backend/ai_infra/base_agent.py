@@ -92,6 +92,10 @@ class LLMCallResult:
     # RAG 来源（原实现以 `_sources=` 传入，但 dataclass 无此字段 →
     # 成功路径必抛 TypeError 并被 except 吞掉，症状是「RAG 问答永远降级成普通 LLM」）
     sources: List[Dict] = field(default_factory=list)
+    # RAG 综合置信度（RAGResponse.confidence 早已算好 = sources 平均分，但旧
+    # `llm_rag_answer` 从不往外传 ⇒ 消费端 `getattr(r,'confidence',0)` 恒为 0，
+    # 前端看到的 RAG 置信度永远是 0。★ 与 sources 同源：生产者不传=消费者静默 0）
+    confidence: float = 0.0
 
 
 # ====== Agent 状态定义 ======
@@ -460,6 +464,7 @@ class BaseAgent:
                 raw_text=rag_response.answer,
                 fallback=rag_response.fallback,
                 latency_ms=latency,
+                confidence=rag_response.confidence,
                 sources=[
                     {"doc_id": s.document.doc_id, "score": s.score, "source": s.source}
                     for s in rag_response.sources

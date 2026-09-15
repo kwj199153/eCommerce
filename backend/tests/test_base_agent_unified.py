@@ -1,6 +1,6 @@
 """唯一基类 BaseAgent 收敛后的结构性验收。
 
-本文件钉住四件事，每条都对应一个**曾经真实存在**的缺陷：
+本文件钉住五件事，每条都对应一个**曾经真实存在**的缺陷：
 
 1. 6 个业务 agent 都是 `BaseAgent` 子类
    —— 此前它们的基类是三元表达式 `LLMEnabledAgent if LLM_AVAILABLE else object`，
@@ -19,7 +19,15 @@
       从不调 `record_llm_usage`；测试之所以绿，是因为 conftest 的离线桩**自己**记了账。
       真实 `ChatOpenAI` 的 token 因此只进日志、不进 `subscriptions` 表，
       走图路径的「店秘书」与「router 层」消耗全部漏计。
+
+5. **RAG 链路的「生产者 ↔ 消费者」字段名双向一致**
+   —— 这条链上曾同时存在三层独立的失配，任一层坏掉都表现为「RAG 静默降级」：
+      ① 生产者写 `LLMCallResult(_sources=...)`，dataclass 无该字段 ⇒ TypeError ⇒ except 降级
+      ② 消费者读 `hasattr(rag_result, '_sources')`，真名是 `sources` ⇒ 恒 False ⇒ 引用来源恒空
+      ③ 消费者读 `sentiment.level`，`SentimentAnalysis` 的字段是 `sentiment`
+         ⇒ AttributeError ⇒ 外层 except 吞掉 ⇒ **RAG 路径从未真正生效过**
 """
+
 
 import pathlib
 
@@ -226,3 +234,109 @@ def test_llm_with_tools_raises_explicitly_when_llm_unavailable():
     with pytest.raises(RuntimeError) as ei:
         _ORIGINAL_LLM_WITH_TOOLS(agent)
     assert "LangChain 模型" in str(ei.value)
+
+
+# ---------------------------------------------------------------- 6. RAG 契约双向门禁
+
+# 门禁必须**双向**：既断言生产者把字段带出来，也**真跑消费者**断言未静默降级。
+# 只断言前者 = 上一轮那 19 项测试的形态（测试全绿而 RAG 从未生效）。
+
+
+def test_llm_call_result_declares_rag_contract_fields():
+    """生产者侧：字段名必须与消费者的读取名一致。"""
+    from ai_infra.base_agent import LLMCallResult
+
+    fields = set(LLMCallResult.__dataclass_fields__)
+    assert "sources" in fields, "缺 sources ⇒ 消费者读不到引用来源"
+    assert "confidence" in fields, "缺 confidence ⇒ 消费者读到恒 0"
+    # 反向：带下划线的私有名是历史错误形态，不得再出现
+    assert "_sources" not in fields, "字段名不得退回 `_sources`（消费者按 `sources` 读）"
+    assert "_confidence" not in fields
+
+
+def test_agent_cs_does_not_read_nonexistent_attributes():
+    """消费者侧（静态）：不得再读不存在的属性。
+
+    ★ 剥注释后断言 —— 否则讲解「原写法」的注释会把本用例绊倒。
+    """
+    src = (BACKEND / "modules" / "customer_service" / "agent_cs.py").read_text(
+        encoding="utf-8"
+    )
+    code = "\n".join(
+        ln for ln in src.splitlines()
+        if ln.strip() and not ln.strip().startswith("#")
+    )
+    assert "_sources" not in code, (
+        "agent_cs 仍读 `_sources`：LLMCallResult 无该属性 ⇒ hasattr 恒 False "
+        "⇒ 引用来源恒空、静默丢失"
+    )
+    assert "sentiment.level" not in code, (
+        "agent_cs 仍读 `sentiment.level`：SentimentAnalysis 无该字段 "
+        "⇒ AttributeError ⇒ 整条 RAG 路径静默降级到关键词匹配"
+    )
+    # 正向锚：必须读到真名
+    assert "rag_result.sources" in code, "应直读 `rag_result.sources`"
+    assert "rag_result.confidence" in code, "应直读 `rag_result.confidence`"
+
+
+@pytest.mark.asyncio
+async def test_customer_service_rag_path_does_not_silently_degrade():
+    """消费者侧（行为）：真跑 `_handle_faq_query`，必须走 RAG 而非静默降级。
+
+    ★ 本组核心门禁 —— 一次性覆盖上文三层失配。
+      反向注入：把任一层改回旧写法，本用例必红。
+    """
+    from ai_infra.rag import Document, RAGResponse, RetrievalResult
+    from modules.customer_service.agent_cs import (
+        ConversationContext,
+        CustomerServiceAgent,
+    )
+
+    class _StubRAG:
+        """桩 RAG 引擎：不碰网络/embedding，只回一个带 sources + confidence 的结果。"""
+
+        async def answer(self, query, llm_client=None, system_prompt=None, top_k=3):
+            return RAGResponse(
+                answer="订单在支付成功后 24-48 小时内发货。",
+                sources=[
+                    RetrievalResult(
+                        document=Document(
+                            page_content="订单发货需要多长时间？", doc_id="d1"
+                        ),
+                        score=0.91,
+                        source="hybrid",
+                    ),
+                    RetrievalResult(
+                        document=Document(
+                            page_content="如何查看物流信息？", doc_id="d2"
+                        ),
+                        score=0.83,
+                        source="hybrid",
+                    ),
+                ],
+                query=query,
+                confidence=0.87,
+                fallback=False,
+            )
+
+    agent = CustomerServiceAgent()
+    # 短路懒加载属性，避免真调 embedding / LLM
+    agent._rag_engine = _StubRAG()
+    agent._llm_client = object()
+    agent._rag_initialized = True
+
+    resp = await agent._handle_faq_query(
+        "订单多久发货？",
+        None,
+        ConversationContext(conversation_id="unified-rag-test"),
+        agent._analyze_sentiment("订单多久发货？"),
+    )
+
+    assert resp.data.get("source") == "rag_hybrid", (
+        f"未走 RAG 路径（实际 source={resp.data.get('source')!r}）"
+        " —— RAG 链路又被静默降级了"
+    )
+    assert resp.data["sources"], "引用来源为空 ⇒ 消费者没读到 sources"
+    assert resp.data["confidence"] == 0.87, "置信度没传到消费者"
+    assert resp.data["type"] == "rag_answer"
+    assert "参考了 2 条知识库文献" in resp.content

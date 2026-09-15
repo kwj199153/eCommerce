@@ -670,9 +670,12 @@ class CustomerServiceAgent(BaseAgent):
         )
 
         # 构建响应
-        sources_info = []
-        if hasattr(rag_result, '_sources') and rag_result._sources:
-            sources_info = rag_result._sources
+        # ★ 原写法 `hasattr(rag_result, '_sources')` —— 该属性在 LLMCallResult 上
+        # 从来不存在（字段名是 `sources`，无下划线前缀）。hasattr 恒 False ⇒
+        # sources_info 恒 [] ⇒ 「参考了 N 条知识库文献」永不追加，RAG 引用来源
+        # 静默丢失（不报错、不降级、测试全绿）。改为直接读真实字段：字段若改名会
+        # 立刻 AttributeError，而不是悄悄退化成空列表。
+        sources_info = list(rag_result.sources or [])
 
         reply = rag_result.content
 
@@ -681,9 +684,14 @@ class CustomerServiceAgent(BaseAgent):
             reply += "\n\n---\n*📚 参考了 {} 条知识库文献*".format(len(sources_info))
 
         # 根据情感调整语气后缀
-        if sentiment.level == "negative":
+        # ★ 原写法 `sentiment.level` —— SentimentAnalysis 没有该字段（字段是
+        # `sentiment`，取值 positive/neutral/negative/angry）。此处必抛
+        # AttributeError，被 _handle_faq_query 的 except 吞掉 ⇒ 每次客服 FAQ 都
+        # 静默降级到关键词匹配，RAG 路径从未真正生效。同文件 1126 行用的就是
+        # 正确的 `sentiment.sentiment`。
+        if sentiment.sentiment == "negative":
             reply += "\n\n如果您的问题没有得到解决，可以点击下方「转人工」按钮。"
-        elif sentiment.level == "angry":
+        elif sentiment.sentiment == "angry":
             reply += "\n\n非常抱歉给您带来不好的体验，我已将您的问题标记为紧急，会有专人尽快跟进。"
 
         return AgentResponse(
@@ -691,7 +699,7 @@ class CustomerServiceAgent(BaseAgent):
             data={
                 "type": "rag_answer",
                 "query": query,
-                "confidence": getattr(rag_result, 'confidence', 0),
+                "confidence": rag_result.confidence,
                 "sources": sources_info,
                 "fallback": rag_result.fallback,
                 "source": "rag_hybrid",  # 标记为 RAG 来源
