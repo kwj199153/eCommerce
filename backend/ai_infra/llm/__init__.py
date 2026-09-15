@@ -12,6 +12,8 @@ from .dashscope_client import (
     get_llm,
     cleanup_llm,
     PROMPT_TEMPLATES,
+    register_prompt_template,
+    get_prompt_template,
 )
 
 __all__ = [
@@ -24,4 +26,6 @@ __all__ = [
     "get_llm",
     "cleanup_llm",
     "PROMPT_TEMPLATES",
+    "register_prompt_template",
+    "get_prompt_template",
 ]

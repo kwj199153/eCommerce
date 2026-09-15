@@ -91,14 +91,16 @@ async for chunk in llm.chat_stream("讲一个关于电商的故事"):
 ### RAG 检索增强
 
 ```python
-from ai_infra.rag import HybridRAGEngine, KnowledgeBaseBuilder
+from ai_infra.rag import HybridRAGEngine
+# 业务语料在业务模块（原 ai_infra.rag.KnowledgeBaseBuilder）
+from modules.customer_service.knowledge import build_customer_service_kb
 
 # 创建引擎
 engine = HybridRAGEngine(domain="customer_service")
 await engine.initialize()
 
 # 加载知识库
-await KnowledgeBaseBuilder.build_customer_service_kb(engine)
+await build_customer_service_kb(engine)
 
 # 检索
 results = await engine.search("如何退货？", top_k=3)

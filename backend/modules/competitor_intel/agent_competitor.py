@@ -120,6 +120,8 @@ class IntruderAlert:
 # LLM 能力（可用性判据 / 降级 / RAG）已统一到唯一基类 BaseAgent：
 # 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
 from ai_infra.base_agent import BaseAgent
+# 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
+from modules.competitor_intel import prompts as _prompts  # noqa: F401
 
 
 class CompetitorIntelligenceAgent(BaseAgent):

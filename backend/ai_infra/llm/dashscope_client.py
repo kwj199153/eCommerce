@@ -115,76 +115,48 @@ class UsageStats:
     errors: int = 0
 
 
-# ====== Prompt 模板 ======
-PROMPT_TEMPLATES: Dict[str, str] = {
-    # 选品分析
-    "product_research": """你是一位资深的跨境电商选品分析师，专注于 {market} 市场。
-你的任务是帮助卖家发现高潜力产品机会、评估市场竞争力。
+# ====== Prompt 模板注册表（基础设施层只放**机制**，不放**内容**）======
+# ★ 原先这里硬编码了 6 份业务提示词（选品 / Listing / 广告 / 客服 / 竞品 / AIGC），
+#   等于把业务语义放在 `ai_infra`。现已下移到各业务模块的 `prompts.py`，
+#   由它们在 **import 时**调用 `register_prompt_template()` 注册。
+#   本模块只提供：注册表 + 读写接口（业务内容见 `modules/*/prompts.py`）。
+PROMPT_TEMPLATES: Dict[str, str] = {}
 
-分析原则：
-1. 数据驱动：基于搜索量、竞争度、利润率等量化指标
-2. 趋势洞察：识别季节性趋势和新兴需求
-3. 风险意识：标注潜在风险（专利、合规、物流等）
 
-请用中文回答，输出结构化结果。""",
+def register_prompt_template(name: str, template: str) -> None:
+    """注册一个 Prompt 模板（供业务模块在 import 时调用）。
 
-    # Listing 生成
-    "listing_generator": """你是一位 Amazon Listing 优化专家，精通 SEO 和转化率优化。
-你的任务是生成高质量的 Amazon 产品标题、五点描述、搜索词等。
+    Args:
+        name: 模板键（如 ``"customer_service"``）
+        template: 模板正文（可含 ``{var}`` 占位符）
+    """
+    if not name or not template:
+        raise ValueError("register_prompt_template: name / template 均不能为空")
+    PROMPT_TEMPLATES[name] = template
 
-优化原则：
-1. 关键词前置：核心关键词放在标题前 80 字符内
-2. 可读性优先：避免关键词堆砌，自然融入
-3. 卖点突出：强调差异化优势和价值主张
-4. 合规要求：遵守 Amazon ToS，不使用夸大宣传
 
-语言：{language}
-市场：{market}""",
+def get_prompt_template(name: str, **kwargs) -> str:
+    """按名取模板并填充占位符。
 
-    # 广告分析
-    "ad_analysis": """你是 Amazon PPC 广告分析专家。
-你的任务是诊断广告账户表现、识别浪费机会、提供优化建议。
+    ★ 未注册时**抛 KeyError**，不再返回空串。
+      返回空串会让调用方拿着**空 system prompt** 去请求 LLM —— 不报错、不降级，
+      症状是「回答风格突变 / 答非所问」，属静默失效。
+      触发原因通常是：业务模块的 `prompts.py` 没被 import（注册未发生）。
+    """
+    if name not in PROMPT_TEMPLATES:
+        raise KeyError(
+            f"Prompt 模板 {name!r} 未注册。业务提示词在各业务模块的 `prompts.py`，"
+            f"需 import 该模块以触发注册。当前已注册: {sorted(PROMPT_TEMPLATES)}"
+        )
+    template = PROMPT_TEMPLATES[name]
+    if kwargs:
+        try:
+            return template.format(**kwargs)
+        except KeyError as e:
+            # 保留原语义：变量缺失只告警并返回未填充模板（不因少一个变量就整段失败）
+            logger.warning(f"Missing template variable: {e}")
+    return template
 
-分析维度：
-- ACoS / RoAS / TACoS 表现
-- 关键词表现分级（高效/浪费/机会/低量）
-- 竞价策略建议
-- 预算分配优化
-- 异常检测（花费激增/转化下降）""",
-
-    # 客服
-    "customer_service": """你是跨境电商平台的智能客服助手。
-你的职责是快速准确地回答客户问题，提升客户满意度。
-
-服务原则：
-1. 专业友好：语气专业但不生硬
-2. 准确第一：不确定的信息不要编造
-3. 解决导向：每次回复都要推进问题解决
-4. 情感感知：识别客户情绪并适当回应
-
-知识库范围：订单、物流、退换货、售后政策、常见 FAQ。""",
-
-    # 竞品监控
-    "competitor_intel": """你是竞品情报分析专家。
-你的任务是监控竞争对手动态、分析市场格局、提供竞争策略建议。
-
-分析维度：
-- 价格策略与变动趋势
-- Listing 变化（图片、标题、描述）
-- 评论情感与痛点
-- 新进入者威胁
-- Buy Box 竞争态势""",
-
-    # AIGC 媒体
-    "aigc_media": """你是电商内容创作专家，擅长 AI 辅助的营销内容生成。
-你的任务是生成高质量的产品文案、品牌故事、营销素材。
-
-创作原则：
-1. 转化导向：所有内容以促进购买为目标
-2. 品牌一致性：保持统一的品牌调性和视觉风格
-3. 本地化适配：针对目标市场文化优化表达
-4. 合规安全：符合平台规则和广告法""",
-}
 
 
 class DashScopeLLM:
@@ -395,14 +367,13 @@ class DashScopeLLM:
         return response.content
 
     def get_prompt_template(self, name: str, **kwargs) -> str:
-        """获取并填充 Prompt 模板"""
-        template = PROMPT_TEMPLATES.get(name, "")
-        if template and kwargs:
-            try:
-                return template.format(**kwargs)
-            except KeyError as e:
-                logger.warning(f"Missing template variable: {e}")
-        return template
+        """获取并填充 Prompt 模板。
+
+        ★ 委托给模块级 `get_prompt_template()`，保证「缺键 → KeyError」的语义
+          只有**一处**实现（原先类方法用 `.get(name, "")` 返回空串，与模块级
+          函数会形成两套语义 ⇒ 又是「同一指标多套」）。
+        """
+        return get_prompt_template(name, **kwargs)
 
     # ====== 内部方法 ======
 

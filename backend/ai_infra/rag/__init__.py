@@ -12,7 +12,6 @@ from .hybrid_engine import (
     SKLearnVectorStore,
     KeywordRetriever,
     HybridRAGEngine,
-    KnowledgeBaseBuilder,
 )
 
 __all__ = [
@@ -25,5 +24,4 @@ __all__ = [
     "SKLearnVectorStore",
     "KeywordRetriever",
     "HybridRAGEngine",
-    "KnowledgeBaseBuilder",
 ]

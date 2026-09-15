@@ -32,21 +32,24 @@ BaseAgent 基类 - **所有业务 Agent 的唯一基类**
 使用方式：
     from ai_infra.base_agent import BaseAgent
 
-    class ProductResearchAgent(BaseAgent):
+    class MyAgent(BaseAgent):
         DEFAULT_MODEL = "qwen-max"
 
-        def __init__(self, platform: str = "amazon"):
+        def __init__(self):
             super().__init__(                 # 全部参数均有默认值
-                agent_name="ProductResearcher",
-                system_prompt=PRODUCT_SYSTEM_PROMPT,
-                tools=[blue_ocean_analysis, pain_point_mining, ...],
+                agent_name="MyAgent",
+                system_prompt=MY_SYSTEM_PROMPT,
+                tools=[my_tool_a, my_tool_b, ...],
                 hitl_tools=["export_report"],  # 需要人工审批的工具
             )
 
-        async def invoke(self, query: str) -> AgentResponse:
+        async def invoke(self, query: str):
             # 用 LLM 原语（走 DashScopeLLM）
             r = await self.llm_chat(query, system_prompt=self.system_prompt)
             ...
+
+★ 本文件与业务无关：`ai_infra` 不 import `modules.*`；业务提示词、业务知识语料、
+  业务维度（如 shop_id）都归业务模块。分层门禁见 `tests/test_infra_layering.py`。
 """
 
 import json
@@ -103,15 +106,13 @@ class AgentState(MessagesState):
     """Agent 状态 Schema"""
     # 结构化响应（用于返回标准化结果）
     structured_response: Optional[dict] = None
-    # 元数据
-    metadata: dict = {
-        "agent_name": "",
-        "tenant_id": "",
-        "shop_id": "",
-        "created_at": "",
-        "token_usage": {},
-        "cost_estimate": 0.0,
-    }
+    # 元数据：**自由字典**。基类只保证 `agent_name` / `created_at`；
+    # 租户、店铺等维度由调用方经 `invoke(..., metadata={...})` 注入。
+    #
+    # ★ 原先这里硬编码了 `tenant_id` / `shop_id` / `token_usage` / `cost_estimate`
+    #   四个键 —— 基类因此认识了「店铺」这一电商业务概念；而且这些键**只写不读**
+    #   （全仓 0 处读 `state["metadata"]`），属死重量而非真耦合。
+    metadata: dict = {}
 
 
 class BaseAgent:
@@ -132,7 +133,7 @@ class BaseAgent:
     DEFAULT_MODEL: str = "qwen-plus"     # 默认模型（均衡性能）
     ANALYSIS_MODEL: str = "qwen-max"     # 复杂分析任务模型
     ENABLE_LLM: bool = True              # 总开关（关闭则全部走降级）
-    ENABLE_RAG: bool = False             # 是否启用 RAG（客服等场景）
+    ENABLE_RAG: bool = False             # 是否启用 RAG（通用检索增强，业务按需开启）
     FALLBACK_TO_MOCK: bool = True        # LLM 失败时是否降级
 
     def __init__(
@@ -304,10 +305,20 @@ class BaseAgent:
         return self._rag_engine
 
     async def initialize_rag(self, faq_items: List[Dict] = None):
-        """初始化 RAG 引擎并加载知识库。
+        """初始化 RAG 引擎，并（可选）载入**调用方提供的**知识条目。
+
+        ★ 基类只做两件事：把检索能力准备好 + 把**传入的**知识灌进去；
+          **不预置任何业务语料**。
+
+        原先这里还有一个 `else` 分支去调
+        `KnowledgeBaseBuilder.build_customer_service_kb(...)` —— 基类因此认识
+        「客服」这个业务域，而且该分支**不可达**：唯一调用点
+        `modules/customer_service/agent_cs.py` 永远传 `faq_items`。
+        业务知识库现归属 `modules/customer_service/knowledge.py`。
 
         Args:
-            faq_items: FAQ 列表 [{"question": "...", "answer": "...", "category": "..."}]
+            faq_items: FAQ 列表 [{"question": "...", "answer": "...", "category": "..."}]；
+                       None 表示只初始化引擎、不载入知识。
         """
         if not self.ENABLE_RAG or not self.rag_engine:
             return
@@ -318,16 +329,6 @@ class BaseAgent:
             if faq_items:
                 count = await self.rag_engine.add_faq_knowledge_base(faq_items)
                 logger.info(f"[{self.agent_name}] RAG loaded {count} FAQ entries")
-            else:
-                from ai_infra.rag import KnowledgeBaseBuilder
-
-                if hasattr(KnowledgeBaseBuilder, "CUSTOMER_SERVICE_FAQ"):
-                    count = await KnowledgeBaseBuilder.build_customer_service_kb(
-                        self.rag_engine
-                    )
-                    logger.info(
-                        f"[{self.agent_name}] RAG loaded default KB: {count} entries"
-                    )
         except Exception as e:
             logger.error(f"[{self.agent_name}] RAG init error: {e}")
 
@@ -497,16 +498,19 @@ class BaseAgent:
     # ---- Prompt 模板管理 ----
 
     def get_prompt_template(self, name: str, **kwargs) -> str:
-        """获取 Prompt 模板"""
-        try:
-            from ai_infra.llm import PROMPT_TEMPLATES
+        """获取并填充业务 Prompt 模板（委派给 `ai_infra.llm` 的注册表）。
 
-            template = PROMPT_TEMPLATES.get(name, "")
-            if template and kwargs:
-                return template.format(**kwargs)
-            return template
-        except ImportError:
-            return ""
+        ★ 三处同名方法（本方法 / `DashScopeLLM.get_prompt_template` /
+          模块级 `get_prompt_template`）现在**共用同一实现**，「缺键」只会
+          抛 `KeyError`，不再有「某一处返回空串」的第二套语义。
+          原实现 `.get(name, "")` 返回空串 ⇒ 拿着空 system prompt 请求 LLM，
+          不报错不降级，属静默失效。
+
+        业务提示词在各业务模块的 `prompts.py`，由该模块 import 时注册。
+        """
+        from ai_infra.llm import get_prompt_template as _get
+
+        return _get(name, **kwargs)
 
     # ---- 降级与统计 ----
 
@@ -844,8 +848,7 @@ class BaseAgent:
         self,
         query: str,
         context_id: str,
-        tenant_id: str = "",
-        shop_id: str = "",
+        metadata: Optional[dict] = None,
     ) -> dict:
         """
         同步调用 Agent
@@ -853,8 +856,11 @@ class BaseAgent:
         Args:
             query: 用户输入
             context_id: 会话 ID（= checkpointer 的 thread_id，用于多轮持久化）
-            tenant_id: 租户 ID
-            shop_id: 店铺 ID
+            metadata: 额外元数据。★ 基类**不认识任何业务维度** —— 原先这里硬编码了
+                      `tenant_id` / `shop_id` 两个参数，让基类认识了「店铺」这一
+                      电商概念。业务键现由调用方自行注入，例如::
+
+                          await agent.invoke(q, ctx, metadata={"shop_id": shop_id})
 
         Returns:
             结构化响应字典
@@ -862,18 +868,17 @@ class BaseAgent:
         # checkpointer 已在编译期绑定，config 只传 thread_id
         graph_config = {"configurable": {"thread_id": context_id}}
 
-        # 更新元数据
-        metadata = {
+        # 元数据：基类只保证 agent_name / created_at，其余由调用方注入
+        merged_metadata = {
             **self.default_metadata,
-            "tenant_id": tenant_id,
-            "shop_id": shop_id,
             "created_at": datetime.now().isoformat(),
+            **(metadata or {}),
         }
 
         # 执行工作流
         inputs = {
             "messages": [HumanMessage(content=query)],
-            "metadata": metadata,
+            "metadata": merged_metadata,
         }
 
         result = await self.graph.ainvoke(inputs, config=graph_config)
@@ -888,8 +893,7 @@ class BaseAgent:
         self,
         query: str,
         context_id: str,
-        tenant_id: str = "",
-        shop_id: str = "",
+        metadata: Optional[dict] = None,
     ) -> AsyncIterable[dict]:
         """
         流式调用 Agent（支持进度推送）
@@ -903,16 +907,16 @@ class BaseAgent:
         """
         graph_config = {"configurable": {"thread_id": context_id}}
 
-        metadata = {
+        # 同 invoke：基类只保证 agent_name / created_at，业务键由调用方注入
+        merged_metadata = {
             **self.default_metadata,
-            "tenant_id": tenant_id,
-            "shop_id": shop_id,
             "created_at": datetime.now().isoformat(),
+            **(metadata or {}),
         }
 
         inputs = {
             "messages": [HumanMessage(content=query)],
-            "metadata": metadata,
+            "metadata": merged_metadata,
         }
 
         async for event in self.graph.astream_events(

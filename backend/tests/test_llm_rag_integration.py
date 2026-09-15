@@ -85,11 +85,12 @@ async def test_rag_engine():
         from ai_infra.rag import (
             HybridRAGEngine,
             SKLearnVectorStore,
-            KnowledgeBaseBuilder,
             Document,
             DocumentProcessor,
             RAGConfig,
         )
+        # ★ 客服语料已下移到业务模块（原在 ai_infra.rag.KnowledgeBaseBuilder）
+        from modules.customer_service.knowledge import build_customer_service_kb
 
         # 创建引擎
         engine = HybridRAGEngine(domain="test_customer_service")
@@ -97,7 +98,7 @@ async def test_rag_engine():
         print(f"✅ RAG 引擎初始化成功")
 
         # 加载预置 FAQ 知识库
-        count = await KnowledgeBaseBuilder.build_customer_service_kb(engine)
+        count = await build_customer_service_kb(engine)
         print(f"✅ 知识库加载完成: {count} 条 FAQ")
 
         # 测试向量检索
