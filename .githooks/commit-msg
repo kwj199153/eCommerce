@@ -15,15 +15,43 @@
 #
 #  放行：Merge / Revert 开头的自动提交；空信息交给 git 自己拦。
 #  绕过：git commit --no-verify
+#
+#  ★★★ 本文件**只用 shell 内建**，不调用任何外部命令
+#      （sed / head / grep / cat / tr / awk 一律不用）。
+#  为什么这是硬约束（血泪）：git 执行 hook 时的 PATH 不一定含 coreutils ——
+#  本机实测 hook 内 `head`、`grep`、`cat` 全部 command not found。
+#  一旦依赖它们，「拿不到命令」会静默变成「校验结果为空」，
+#  而空结果恰好落进放行分支 ⇒ 门禁「看起来在、实际从不拦人」，
+#  比没有门禁更糟（它还会让人以为有保护）。
+#  改成内建后，「解析不到」只可能是消息文件里真的没有内容。
 # ============================================================
 
 set -u
 
-MSG_FILE="$1"
+MSG_FILE="${1:-}"
 [ -f "$MSG_FILE" ] || exit 0
 
 # 取第一条非注释、非空行作为 subject
-subject=$(sed -e 's/#.*$//' "$MSG_FILE" 2>/dev/null | sed -e '/^[[:space:]]*$/d' 2>/dev/null | head -n 1)
+# （逐行读 + 参数展开，不经过 sed / head 管道）
+subject=""
+while IFS= read -r line || [ -n "$line" ]; do
+  line=${line%%#*}            # 去行尾注释
+  while :; do                 # 裁尾部空白（含 CR，兼容 Windows 检出）
+    case "$line" in
+      *[[:space:]]) line=${line%?} ;;
+      *) break ;;
+    esac
+  done
+  while :; do                 # 裁首部空白
+    case "$line" in
+      [[:space:]]*) line=${line#?} ;;
+      *) break ;;
+    esac
+  done
+  [ -n "$line" ] || continue
+  subject=$line
+  break
+done < "$MSG_FILE"
 
 case "$subject" in
   ''|Merge*|merge*|Revert*|revert*|fixup*|squash*)
@@ -31,37 +59,40 @@ case "$subject" in
     ;;
 esac
 
-if printf '%s' "$subject" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+'; then
-  exit 0
-fi
+# 等价于正则 ^(type)(\(scope\))?!?: .+ —— 用 case 表达，不用 grep -E
+#   "type": 描述
+#   "type"(scope): 描述
+#   "type"!: 描述
+#   "type"(scope)!: 描述
+for _t in feat fix docs style refactor perf test build ci chore revert; do
+  case "$subject" in
+    "$_t":\ ?*|"$_t"\(?*\):\ ?*|"$_t"!:\ ?*|"$_t"\(?*\)!:\ ?*)
+      exit 0
+      ;;
+  esac
+done
 
-cat <<'EOT'
-
-✖ commit-msg 校验未通过
-
-  提交信息第一行不符合 Conventional Commits 格式：
-
-      <type>(<可选 scope>): <描述>
-
-  可用的 type：
-      feat      新功能
-      fix       修 bug
-      docs      文档
-      style     格式（不影响语义）
-      refactor  重构（不改行为）
-      perf      性能
-      test      测试
-      build     构建/依赖
-      ci        CI 配置
-      chore     杂项
-      revert    回滚
-
-  示例：
-      feat(aigc): AIGC 长任务异步化
-      fix(billing): 并发行锁补 populate_existing
-      chore(hooks): 新增 pre-commit 门禁
-
-  确要跳过：git commit --no-verify
-
-EOT
+printf '\n'
+printf '%s\n' '✖ commit-msg 校验未通过'
+printf '\n'
+printf '%s\n' \
+  '  提交信息第一行不符合 Conventional Commits 格式：' '' \
+  '      <type>(<可选 scope>): <描述>' '' \
+  '  可用的 type：' \
+  '      feat      新功能' \
+  '      fix       修 bug' \
+  '      docs      文档' \
+  '      style     格式（不影响语义）' \
+  '      refactor  重构（不改行为）' \
+  '      perf      性能' \
+  '      test      测试' \
+  '      build     构建/依赖' \
+  '      ci        CI 配置' \
+  '      chore     杂项' \
+  '      revert    回滚' '' \
+  '  示例：' \
+  '      feat(aigc): AIGC 长任务异步化' \
+  '      fix(billing): 并发行锁补 populate_existing' \
+  '      chore(hooks): 新增 pre-commit 门禁' '' \
+  '  确要跳过：git commit --no-verify' ''
 exit 1
