@@ -3,15 +3,15 @@ schema 一致性：**外键只在迁移里，不在 ORM 里** —— 这条缝�
 
 本文件守护的不变量
 ------------------
-> 凡是带 `shop_id` 列的表，都必须有一条 `shop_id → stores_store` 的外键。
+> 凡是带 `shop_id` 列的表，都必须有一条 `shop_id -> stores_store` 的外键。
 
 不变量是**从库自身结构推导**的，不依赖任何硬编码表名清单：
 将来新增一张带 `shop_id` 的表，它会被自动纳入检查；漏建外键会立刻红。
 
 为什么值得单独一个文件
 ----------------------
-这 16 条外键**只由 alembic 迁移 `d5e6f7a8b9c0` 建立**，ORM `db_model.py` 里
-根本没声明（建库历史上靠 `create_all`，而 `create_all` 只认 ORM）。
+这 16 条外键**只由 alembic 迁移建立**，ORM `db_model.py` 里根本没声明
+（建库历史上靠 `create_all`，而 `create_all` 只认 ORM）。
 
 ⇒ 任何"从零建库"的路径只要走 `create_all`，就会**静默**得到一个没有外键的库。
    后果不是报错，而是「删店铺时不再被拦」——16 张业务表的行留成孤儿，
@@ -20,37 +20,26 @@ schema 一致性：**外键只在迁移里，不在 ORM 里** —— 这条缝�
    这就是「门禁存在 ≠ 在执行」在 schema 层的形态：迁移文件躺在仓库里，
    不等于它出现在每一个被使用的库里。
 
-当前状态（2026-09-15 实测，证据脚本见下方）
-------------------------------------------
-| 环境 | shop_id 列 | 有外键 | 本用例 |
-|---|---|---|---|
-| 本地开发库 | 16 | 16 | 通过 |
-| CI 的库 | 16 | 0 | 失败 |
+修复经过（本用例曾是 `xfail(strict=False)`，现已转正为**硬门禁**）
+----------------------------------------------------------------
+原缺口：init 迁移 `5fe72f9a9520` 的 `upgrade()` 是 `pass`（autogenerate 对着
+"已被 create_all 建好表"的库跑出来的，diff 为空）⇒ 全新库没有任何一条可用的
+供给路径；CI 又只 `create_all` 不跑迁移 ⇒ CI 的库里 16 张带 `shop_id` 的表
+**外键 0 条**，而用例只在本地能过 ⇒ 长期以 XPASS 形态存在（披着绿的外衣）。
 
-CI 侧为什么修不了：**CI 跑不了 `alembic upgrade head`**。实测（临时库上执行）：
+两条修复均已落地：
+  - `be5abf1` squash 迁移成全薪基线 → 空库 `alembic upgrade head` 可跑通
+  - `1b3fa59` CI 建库链路补齐：① `alembic upgrade head`
+           ② 迁移链自检（单一 head / 往返 / `alembic check`）
+           ③ `scripts/bootstrap_db.py` ④ `pytest`
 
-  1. 空库直接 `upgrade head` →
-     `ProgrammingError: relation "products" does not exist`
-     （`330c6bbf4c9e` 的 `ALTER TABLE products ADD COLUMN parent_content JSON`）
-  2. 先 `create_all` 再 `upgrade head` → 同样死在同一句（create_all 今天建的是
-     spus/skus，`products` 已不在 ORM 里）
-  3. 生产环境（`ENVIRONMENT=production`）`create_all` 被跳过 → 什么表都没有
+实测证据（2026-09-15，`.workbuddy/probes/project-audit-20260915/r69x-freshdb-fk.txt`）：
+  临时全新空库 `alembic upgrade head` -> returncode=0
+    （`baseline: full schema (squashed)` -> `a506249ae3e3`）
+  有 `shop_id` 列的表 = 16 / 有外键的表 = 16 / `missing = []`
 
-  根因：init 迁移 `5fe72f9a9520` 的 `upgrade()` 是 `pass` —— 它是
-  autogenerate 对着"已被 create_all 建好表"的库跑出来的，diff 为空。
-  ⇒ **全新库没有任何一条可用的供给路径。**
-
-  证据脚本：`.workbuddy/tmp/p6_migration_fresh_db_probe.py`（路径 1、3）、
-           `.workbuddy/tmp/p6_devpath_probe.py`（路径 2）
-
-所以本用例暂时标 `xfail(strict=False)`
---------------------------------------
-- 本地通过 → 报 XPASS（**不算失败**），提示"这个已知缺口还没修"
-- CI 失败 → 报 xfail，不阻塞流水线，但失败信息完整保留在输出里
-
-目的是让缺口**在测试输出里可见**，而不是靠人记得。
-迁移链修好后（补一条真正的 baseline 迁移 / 把 init 迁成 squash 基线），
-去掉 `xfail` 标记即可变成硬门禁。
+⇒ 故**摘掉 `xfail` 标记**。本用例现在是硬门禁：任何让库丢掉这些外键的改动
+  （例如把建库路径换回 `create_all`）都会直接变红。
 """
 
 import pytest
@@ -91,11 +80,6 @@ async def _schema_sets() -> tuple[set[str], set[str]]:
     return with_shop_id, with_fk
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="已知缺口：外键只在 alembic 迁移里，CI 的库由 create_all 建表因此没有外键；"
-           "根因是 init 迁移为空（pass）导致全新库无法 upgrade head。见本文件头部说明。",
-)
 async def test_every_shop_id_column_has_fk_to_stores():
     """
     ★ 核心不变量：有 `shop_id` 列的表，必须有 `shop_id → stores_store` 外键。
