@@ -216,6 +216,26 @@ from core.auth.dependencies import require_auth_if_enabled
 
 BUSINESS_AUTH = [Depends(require_auth_if_enabled)] if config.auth_required else []
 
+# ====== 配额护栏（★ P0 安全修复 2026-09-15）======
+#
+# 背景：check_quota / check_api_quota / check_agent_chat_quota 三个函数
+#       定义齐全（含 429 抛错），但全项目**调用点 0 处** ⇒ 套餐限额纯展示，
+#       用户开基础版可以把 LLM / AIGC 无限用下去 —— 直接烧钱。
+#
+# 挂载原则：**只挂真正烧钱的端点**（会调 LLM / 出图 / 声音复刻这些按次
+#   计费的第三方 API）。纯 CRUD（products / assets / candidates / monitors /
+#   platform_rules / knowledge_base / stores / conversation）**不挂** ——
+#   它们不烧钱，挂了只会误伤：用户翻几页资料库就把 API 额度耗光。
+#
+# 演示模式：两个 check_* 内部都会先调 require_auth_if_enabled，返回 None
+#   （演示模式）时直接 return，不计量不拦截 ⇒ 本地演示零影响。
+from core.billing.usage_tracker import check_api_quota, check_agent_chat_quota
+
+# API 调用配额：LLM 生成 / 出图 / 视频 / 声音复刻
+API_QUOTA = [Depends(check_api_quota)]
+# Agent 对话配额：店秘书等多轮对话入口
+CHAT_QUOTA = [Depends(check_agent_chat_quota)]
+
 # 认证模块（登录/注册，必须保持开放，否则拿不到 Token）
 from modules.user_subscription.router import router as auth_router
 app.include_router(auth_router, prefix="/api/v1")
@@ -230,27 +250,27 @@ app.include_router(billing_router, prefix="/api/v1")
 
 # 选品分析模块 (Phase 2)（自带 get_current_user 鉴权）
 from modules.product_research.router import router as product_research_router
-app.include_router(product_research_router, prefix="/api/v1")
+app.include_router(product_research_router, prefix="/api/v1", dependencies=API_QUOTA)
 
 # Listing 生成优化模块 (Phase 3)
 from modules.listing_generator.router import router as listing_generator_router
-app.include_router(listing_generator_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
+app.include_router(listing_generator_router, dependencies=BUSINESS_AUTH + API_QUOTA)  # 路由已包含 /api/v1 前缀
 
 # 广告分析模块 (Phase 4)
 from modules.ad_analysis.router import router as ad_analysis_router
-app.include_router(ad_analysis_router, prefix="/api/v1", dependencies=BUSINESS_AUTH)
+app.include_router(ad_analysis_router, prefix="/api/v1", dependencies=BUSINESS_AUTH + API_QUOTA)
 
 # 智能客服模块 (Phase 5)
 from modules.customer_service.router import router as customer_service_router
-app.include_router(customer_service_router, prefix="/api/v1", dependencies=BUSINESS_AUTH)
+app.include_router(customer_service_router, prefix="/api/v1", dependencies=BUSINESS_AUTH + API_QUOTA)
 
 # 竞品情报监控模块 (Phase 6)
 from modules.competitor_intel.router import router as competitor_intel_router
-app.include_router(competitor_intel_router, prefix="/api/v1", dependencies=BUSINESS_AUTH)
+app.include_router(competitor_intel_router, prefix="/api/v1", dependencies=BUSINESS_AUTH + API_QUOTA)
 
 # AIGC 媒体生成模块 (Phase 7)
 from modules.aigc_media.router import router as aigc_media_router
-app.include_router(aigc_media_router, prefix="/api/v1", dependencies=BUSINESS_AUTH)
+app.include_router(aigc_media_router, prefix="/api/v1", dependencies=BUSINESS_AUTH + API_QUOTA)
 
 # 店铺群管理 + 动态利润测算模块 (Phase 10)
 from modules.stores.router import router as stores_router
@@ -282,7 +302,7 @@ app.include_router(knowledge_base_router, dependencies=BUSINESS_AUTH)  # 路由�
 
 # 店秘书（主 Agent / 编排层）
 from modules.secretary.router import router as secretary_router
-app.include_router(secretary_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
+app.include_router(secretary_router, dependencies=BUSINESS_AUTH + CHAT_QUOTA)  # 路由已包含 /api/v1 前缀
 
 # 会话持久化（决策层 B：跨会话记忆）
 from modules.conversation.router import router as conversation_router
@@ -296,7 +316,7 @@ app.include_router(conversation_router, prefix="/api/v1", dependencies=BUSINESS_
 # 打开方式：.env 里设 VOICE_CLONE_ENABLED=true，并配好 PUBLIC_BASE_URL（样本需公网可回源）。
 if config.voice_clone_enabled:
     from modules.voice_clone.router import router as voice_clone_router
-    app.include_router(voice_clone_router, prefix="/api/v1", dependencies=BUSINESS_AUTH)
+    app.include_router(voice_clone_router, prefix="/api/v1", dependencies=BUSINESS_AUTH + API_QUOTA)
     print("🔌 附加模块已启用：语音克隆（/api/v1/voice-clone）")
 else:
     print("🔌 附加模块未启用：语音克隆（VOICE_CLONE_ENABLED=false）")

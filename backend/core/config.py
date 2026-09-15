@@ -34,6 +34,36 @@ class Settings(BaseSettings):
             self.checkpoint_database_url = self.database_url.replace("+asyncpg", "")
         return self
 
+    @model_validator(mode="after")
+    def _enforce_production_safety(self):
+        """
+        生产环境安全护栏（★ P0 安全修复 2026-09-15）
+
+        修复前三处默认值全部朝「不安全」方向倒，且漏设时**没有任何报错**：
+          1. auth_required 默认 False      → 鉴权整个关掉
+          2. jwt_secret_key 沿用占位默认密钥 → 任何人可伪造 token
+          3. debug 默认虽 False 但无人校验  → 生产环境可能带着调试模式上线
+
+        现在：environment == "production" 时逐条强制校验，不满足直接拒绝启动。
+        ★ 判据：「启动失败」是显式且立刻可见的；「静默放行」是隐式且要等出事。
+        """
+        if self.environment != "production":
+            return self
+
+        errors = []
+        if not self.auth_required:
+            errors.append("AUTH_REQUIRED 必须为 true（生产环境不能关闭鉴权）")
+        if not self.jwt_secret_key or "change-in-production" in self.jwt_secret_key:
+            errors.append("JWT_SECRET_KEY 必须设为独立的高强度随机值（不能沿用占位默认密钥）")
+        if self.debug:
+            errors.append("DEBUG 必须为 false（生产环境不能开启调试模式）")
+
+        if errors:
+            raise ValueError(
+                "生产环境安全校验未通过，请修正以下配置后重启：\n  - " + "\n  - ".join(errors)
+            )
+        return self
+
     # ====== 服务器配置 ======
     api_host: str = Field(default="0.0.0.0", description="API 监听地址")
     api_port: int = Field(default=8000, description="API 端口")
@@ -64,12 +94,19 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = Field(default=60, description="Access Token 过期时间(分钟)")
     jwt_refresh_token_expire_days: int = Field(default=7, description="Refresh Token 过期时间(天)")
 
-    # 业务接口强制鉴权开关
-    # False（默认）= 演示模式，业务接口不校验 Token，方便本地演示与联调
-    # True          = 生产模式，全部业务接口要求 Bearer Token，未登录返回 401
+    # 业务接口强制鉴权开关（★ P0 安全修复 2026-09-15：默认 False → True）
+    # True （默认）= 生产模式，全部业务接口要求 Bearer Token，未登录返回 401
+    # False        = 演示模式，业务接口不校验 Token，方便本地演示与联调
+    #
+    # ★★ 为什么默认是 True（fail-closed）而不是 False：
+    #     修复前默认 False ⇒ 部署时漏设环境变量 = 鉴权整个关掉，而且
+    #     **没有任何报错**，等于把客户数据摆在公网上（实测：非 owner 带
+    #     有效 token 可读全部业务数据，6/6 端点 200）。
+    #     改默认 True 后：「忘记配置」= 安全（接口 401，立刻发现）；
+    #     「要演示」= 显式设 AUTH_REQUIRED=false（一行，是有意为之）。
     auth_required: bool = Field(
-        default=False,
-        description="是否强制业务接口鉴权（演示模式默认关闭，生产环境必须开启）",
+        default=True,
+        description="是否强制业务接口鉴权（默认开启，fail-closed；本地演示可显式设 false）",
     )
 
     # ====== LLM (DashScope/Qwen) ======

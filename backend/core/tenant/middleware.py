@@ -264,15 +264,31 @@ async def get_tenant_from_query(
 
 # ====== 轻量店铺 ID 依赖（数据层隔离用） ======
 
-async def get_current_shop_id(request: Request) -> Optional[str]:
+async def get_current_shop_id(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Optional[str]:
     """
     从请求头提取当前选中店铺 ID（stores_store.id，格式 store_xxx）。
+    用于业务数据（spus/candidates/assets/monitors/rules）的 shop_id 过滤。
 
     与 get_tenant_from_header 的区别：
     - 前者查 shops 表（user_subscription，UUID），用于订阅/归属校验；
-    - 本依赖直接返回 header 里的 store_xxx 字符串，用于业务数据（spus/
-      candidates/assets）的 shop_id 过滤，不做表校验（stores_store 目前
-      无 owner 概念，归属由后续 tenant_id 补全）。
+    - 本依赖查 stores_store 表，做归属校验后返回原始 ID 字符串。
+
+    ★★★ 归属校验（P0 安全修复 2026-09-15，OWASP API Security #1 BOLA）
+        修复前：直接 `return request.headers.get(TENANT_HEADER)`，零校验
+        ⇒ 任何带有效 token 的用户改一下 X-Shop-ID 就能读别人全部业务数据
+          （实测 6/6 端点 200：SPU/候选品/素材/监控/规则/音色）。
+        修复后：config.auth_required=True（生产模式）时强制校验
+          stores_store.owner_id == 当前用户 id；不符一律 403；admin 放行。
+
+    ⚠️ 三个设计取舍：
+      1. 用 403 不用 404 —— 404 会泄露「该店铺 ID 是否存在」，帮攻击者枚举。
+      2. 演示模式（auth_required=False）require_auth_if_enabled 返回 None，
+         不做校验，行为与修复前一致 ⇒ 本地演示/联调不受影响。
+      3. 存量无主店铺（owner_id IS NULL）生产模式下非 admin 一律拒绝
+         ⇒ 上线前须跑 scripts/backfill_owner_id.py 回填归属。
 
     用法：
         @router.get("/products")
@@ -282,7 +298,31 @@ async def get_current_shop_id(request: Request) -> Optional[str]:
             else:
                 return {"items": [], "total": 0}  # 未选店铺返回空
     """
-    return request.headers.get(TENANT_HEADER)
+    shop_id = request.headers.get(TENANT_HEADER)
+    if not shop_id:
+        return None
+
+    # ① 认证（你是谁）。演示模式返回 None → 放行，保持原有行为
+    current_user = await require_auth_if_enabled(request, db)
+    if current_user is None:
+        return shop_id
+
+    # ② 授权（这东西归不归你）—— 修复前缺失的就是这一段
+    from modules.stores.db_model import StoreRecord  # 函数内导入，避免循环依赖
+
+    result = await db.execute(select(StoreRecord).where(StoreRecord.id == shop_id))
+    store = result.scalar_one_or_none()
+
+    if current_user.role.value != "admin":
+        # 不存在 / 无主 / 归属他人 —— 统一 403，不区分，避免探测有效 ID
+        if store is None or store.owner_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="无权访问该店铺",
+            )
+
+    # admin 放行（超管可跨租户）
+    return shop_id
 
 
 # ====== 权限检查 ======
