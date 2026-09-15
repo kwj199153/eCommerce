@@ -99,6 +99,13 @@ class Subscription(Base):
     # 是否「周期结束后取消」（cancel_at_period_end）：true 表示用户已发起取消，
     # 但当前周期内仍可用，到期后自动转为 cancelled。
     cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
+    # ★ P1-4 补充（2026-09-15）：计费周期必须落库。
+    #   修复前周期只存在于 change_plan 的局部变量里，订阅行上查不到，
+    #   于是「用户点了两次升级」无法判断第二次是不是同一周期的重复提交，
+    #   只能按金额/天数反推（monthly≈30 天、yearly≈365 天）——这种推断在
+    #   促销周期、试用期上必然出错。落库后 is_duplicate_submission() 才能
+    #   精确判等，做到「同套餐同周期重复提交不重复扣款」。
+    billing_cycle: Mapped[str] = mapped_column(String(10), default="monthly", server_default="monthly")
     current_period_start: Mapped[datetime] = mapped_column(DateTime)
     current_period_end: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
@@ -153,6 +160,16 @@ class Invoice(Base):
     issued_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     pdf_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    # ★ P1-4 补充（2026-09-15）：账单幂等键 + 唯一约束。
+    #   实测（09-支付链路-实测证据.txt 第 [8] 段）：连续两次 POST /billing/subscribe
+    #   会产生 2 张账单；接真实网关后 = 真的扣两次钱。
+    #   服务端业务守卫（core.billing.pricing.is_duplicate_submission）能拦住
+    #   绝大多数情况，但**拦不住并发双击**——两个请求都读到「尚未订阅」就会
+    #   各建一张单。唯一约束是最后一道闸，它不依赖任何应用层判断。
+    #   可为 NULL（历史数据、人工补录账单不走订阅链路），PG 允许多个 NULL。
+    idempotency_key: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True, unique=True, index=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

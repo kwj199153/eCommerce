@@ -35,6 +35,8 @@ export interface UsageInfo {
 export interface Subscription {
   id: string
   status: 'active' | 'past_due' | 'cancelled' | 'trialing' | 'expired'
+  /** 计费周期（后端 subscriptions.billing_cycle，旧数据由迁移填 'monthly'） */
+  billing_cycle: 'monthly' | 'yearly'
   plan: SubscriptionPlan
   usage: UsageInfo
   period: {
@@ -79,10 +81,22 @@ export async function fetchPlans(): Promise<{ plans: SubscriptionPlan[] }> {
   return get('/billing/plans')
 }
 
-/** 升级/切换套餐 */
+/**
+ * 升级/切换套餐
+ *
+ * ★ 返回 HTTP 200 **不等于**已收款，必须看 `charged`：
+ *   - charged=true  本次真的走了扣款
+ *   - charged=false 未扣款（命中「同套餐同周期重复提交」或金额为 0）
+ *   后端为防重复扣款加了这层幂等，前端不能把「请求成功」当「已扣款」，
+ *   否则会把「未重复扣款」也提示成「已切换套餐」，用户会以为被多收了钱。
+ */
 export async function changePlan(planId: string, billingCycle: 'monthly' | 'yearly'): Promise<{
   subscription: Subscription
   client_secret: string  // Stripe payment intent
+  charged: boolean
+  already_subscribed?: boolean
+  skipped_reason?: string
+  message?: string
 }> {
   return post('/billing/subscribe', { plan_id: planId, billing_cycle: billingCycle })
 }

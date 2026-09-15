@@ -5,25 +5,43 @@
 
 契约说明：本路由的响应字段与前端 `frontend/src/api/billing.ts` 严格对齐。
   - 套餐 `id` 输出为字符串（`str(plan.id)`），前端按字符串比较做「当前套餐」高亮
-  - 套餐补全 `price_yearly`（后端无该列，按「年付 = 月付 × 10」近似）、
+  - 套餐补全 `price_yearly`（后端无该列，按「年付 = 月付 × 10」折算）、
     `limits` 嵌套对象、`features` 字符串数组（后端存 JSON 字符串，此处解析）
-  - 订阅补全 `cancel_at_period_end`、`usage.ai_gen_*`（AIGC 复用 API 额度口径）
+  - 订阅补全 `billing_cycle`、`cancel_at_period_end`、`usage.ai_gen_*`（AIGC 复用 API 额度口径）
+
+★ P1-4（2026-09-15）价目口径收敛
+  「年付价」公式原先在本文件出现**两次**（`_serialize_plan` 用于展示、
+  `change_plan` 用于真实扣款），两处各自硬编码 `* 10`。
+  现已全部改为调用 `core.billing.pricing`——展示与收款共用同一个函数，
+  杜绝「页面写一个价、结算扣另一个价」。改价格只改 pricing.py。
 """
 
 import json
 import uuid
-from datetime import datetime, timedelta
-from typing import Optional, Literal
+from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.logger import get_logger
+
 from core.database import get_db
-from core.auth.dependencies import get_current_user, get_admin_user, require_auth_if_enabled
+from core.auth.dependencies import get_current_user, get_admin_user
 from core.billing.usage_tracker import UsageTracker, init_default_plans
 from core.billing.payment_gateway import get_gateway, ChargeIntent
+from core.billing.pricing import (
+    build_idempotency_key,
+    is_duplicate_submission,
+    normalize_cycle,
+    period_end,
+    plan_amount,
+    subscription_state_fingerprint,
+    yearly_price,
+)
 from modules.user_subscription.models import (
     User,
     Subscription,
@@ -34,6 +52,8 @@ from modules.user_subscription.models import (
 
 
 router = APIRouter(prefix="/billing", tags=["计费与用量"])
+
+_log = get_logger("billing")
 
 
 # ====== 请求体 schema ======
@@ -64,8 +84,10 @@ def _serialize_plan(plan: SubscriptionPlan) -> dict:
     except (json.JSONDecodeError, TypeError):
         features = []
 
-    # 后端无 price_yearly 列，按「年付 ≈ 月付 × 10」近似（与「年付省 17%」体验一致）
-    price_yearly = round(plan.price_monthly * 10, 2)
+    # ★ 后端无 price_yearly 列，按统一价目口径折算。
+    #   ★★ 与 change_plan 的扣款金额共用 `yearly_price()`——这是「展示价 == 收款价」
+    #   的硬保证。此处**不允许**再写一遍 `* 10`（改价时必须两处同改 = 迟早出事）。
+    price_yearly = yearly_price(plan.price_monthly)
 
     return {
         "id": str(plan.id),
@@ -93,6 +115,9 @@ def _serialize_subscription(sub: Subscription) -> dict:
     return {
         "id": sub.id,
         "status": sub.status,
+        # 计费周期（P1-4 新增落库字段）。旧数据由迁移填 'monthly'，
+        # 故这里兜底 None 以免老行序列化出 null 让前端类型不符。
+        "billing_cycle": normalize_cycle(getattr(sub, "billing_cycle", None)),
         "plan": _serialize_plan(plan),
         "usage": {
             "api_calls_used": sub.api_calls_used,
@@ -185,11 +210,31 @@ async def change_plan(
     支付流程：面向 `PaymentGateway` 协议编程（见 core/billing/payment_gateway.py），
     扣款由当前配置的网关完成（默认 mock 模拟支付成功）。
     接入 Stripe / 支付宝 / 微信时改 config.payment_gateway 即可，无需改动此端点。
+
+    返回：{ subscription, client_secret, charged, already_subscribed? }
+      - charged=True  本次真的走了扣款
+      - charged=False 未扣款（命中「同套餐同周期重复提交」或金额为 0）
+      ★ 前端不得把「HTTP 200」等同于「已收款」，必须看 charged。
+
+    ★ P1-4 修复的三处行为（实测证据见
+      .workbuddy/probes/project-audit-20260915/09-支付链路-实测证据.txt）
+
+      1) 金额口径：原先内联 `price_monthly * 10`，与 _serialize_plan 各写一遍。
+         现统一走 core.billing.pricing.plan_amount()。
+
+      2) 重复提交不重复扣款：原先无论当前是什么套餐，只要调用就重新扣款 ——
+         实测连点两次「升级」得到 2 张账单（真实网关下 = 扣两次钱）。
+         现在同套餐 + 同计费周期 + 仍在有效期内 ⇒ 直接返回现状、不扣款、不开票。
+         续费（周期已过期）不受影响，因为 is_period_active() 会返回 False。
+
+      3) 顺序：原先「先改订阅 → 再扣款」。虽然失败时不 commit 也回滚得掉，
+         但一旦接真实网关（扣款成功后再写 DB 失败），就会出现「钱收了、
+         订阅没生效」。现在改为「先扣款 → 成功后再改订阅」——钱动了才有状态变更。
+         ★ 判据：让不可回滚的那一步（收钱）尽可能晚、尽可能靠后，
+           把可回滚的 DB 写入放在它后面。
     """
     plan_id = body.plan_id
-    billing_cycle = body.billing_cycle
-    if billing_cycle not in ("monthly", "yearly"):
-        billing_cycle = "monthly"
+    billing_cycle = normalize_cycle(body.billing_cycle)
 
     if not plan_id:
         raise HTTPException(status_code=400, detail="缺少 plan_id")
@@ -209,13 +254,77 @@ async def change_plan(
         if not plan:
             raise HTTPException(status_code=404, detail="套餐不存在")
 
-    # 取或建订阅
+    # 取订阅（可能不存在）。
+    #
+    # ★★ `with_for_update()` 是并发重复扣款的第一道闸（P1-4）：
+    #   它把「同一用户的订阅变更」串行化——第二个并发请求会**阻塞**到
+    #   第一个提交完，然后读到已更新的订阅状态，被下面的
+    #   `is_duplicate_submission()` 判定为重复提交而直接返回，
+    #   既不会重复扣款，也不需要在异常分支里重建 session 状态。
+    #
+    #   ★ 为什么需要它：业务守卫是「读-判断-写」模式，天生有竞态窗口；
+    #     只靠应用层判断 + 事后唯一约束，会在「无订阅可锁」时不成立。
+    #     行锁把竞态窗口直接关掉，唯一约束退化为兜底。
+    #
+    #   ⚠️ 锁只覆盖**当前用户自己那一行**，且事务内还包含一次网关调用
+    #   （mock 瞬时完成；接真实网关若是同步 HTTP，需评估持锁时长，
+    #   必要时改为「先建 pending 账单 → 释放锁 → 收 webhook」的两段式，
+    #   见 core/billing/payment_gateway.py 顶部接入清单第 5 条）。
     result = await db.execute(
-        select(Subscription).where(Subscription.user_id == current_user.id)
+        select(Subscription)
+        .where(Subscription.user_id == current_user.id)
+        .with_for_update()
     )
     sub = result.scalar_one_or_none()
 
     now = datetime.utcnow()
+
+    # ---- 守卫：同套餐同周期重复提交 → 不扣款、不开票 ----
+    if is_duplicate_submission(sub, plan.id, billing_cycle):
+        return {
+            "subscription": _serialize_subscription(sub),
+            "client_secret": "",
+            "charged": False,
+            "already_subscribed": True,
+            "message": "当前已在所选套餐的有效周期内，未重复扣款",
+        }
+
+    # ---- 先扣款（不可回滚的一步），成功后再改订阅 ----
+    amount = plan_amount(plan, billing_cycle)
+    # 幂等键基底 = 「本次变更的起点状态」，见 pricing.subscription_state_fingerprint
+    idem_key = build_idempotency_key(
+        current_user.id, plan.id, billing_cycle, subscription_state_fingerprint(sub)
+    )
+    gateway = get_gateway()
+    try:
+        charge = await gateway.charge(ChargeIntent(
+            user_id=current_user.id,
+            amount=amount,
+            currency="CNY",
+            description=f"{plan.display_name}{'年付' if billing_cycle == 'yearly' else '月付'}",
+            billing_cycle=billing_cycle,
+            plan=plan,
+            idempotency_key=idem_key,
+        ))
+    except NotImplementedError as exc:
+        # 配置里写了一个「已知但未接入」的真实网关（stripe/alipay/wechat）。
+        # ★ 用 501 而不是 500：500 会被当成服务端 bug 去翻栈，
+        #   501 直说「这个能力还没实现」，并把整改指引带在 detail 里。
+        #   也**不能**降级成 mock 支付成功 —— 那是「用户白拿套餐」。
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=str(exc),
+        ) from exc
+
+    if not charge.success:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=charge.error or "支付失败，请重试",
+        )
+
+    # ---- 扣款成功：写订阅状态 + 落账单 ----
     if sub is None:
         # 首次订阅：新建
         sub = Subscription(
@@ -223,56 +332,65 @@ async def change_plan(
             user_id=current_user.id,
             plan_id=plan.id,
             status="active",
+            billing_cycle=billing_cycle,
             cancel_at_period_end=False,
             current_period_start=now,
-            current_period_end=None,  # 简化：不设到期（免费/试用）——年付设一年
+            current_period_end=period_end(now, billing_cycle),
         )
         db.add(sub)
     else:
-        # 切套餐：更新 plan、重置周期、清除取消标记
+        # 切套餐 / 续费：更新 plan、周期、清除取消标记
         sub.plan_id = plan.id
         sub.status = "active"
+        sub.billing_cycle = billing_cycle
         sub.cancel_at_period_end = False
         sub.current_period_start = now
-        sub.current_period_end = None
-
-    if billing_cycle == "yearly":
-        sub.current_period_end = now + timedelta(days=365)
-    else:
-        sub.current_period_end = now + timedelta(days=30)
+        sub.current_period_end = period_end(now, billing_cycle)
 
     sub.updated_at = now
 
-    # 通过支付网关扣款（默认 mock 模拟成功；真实网关替换配置即可）
-    amount = round(plan.price_monthly * 10, 2) if billing_cycle == "yearly" else plan.price_monthly
-    gateway = get_gateway()
-    result = await gateway.charge(ChargeIntent(
-        user_id=current_user.id,
-        amount=amount,
-        currency="CNY",
-        description=f"{plan.display_name}{'年付' if billing_cycle == 'yearly' else '月付'}",
-        billing_cycle=billing_cycle,
-        plan=plan,
-    ))
+    # 落账单（零元时网关返回 invoice=None，此处自然跳过）
+    if charge.invoice is not None:
+        db.add(charge.invoice)
 
-    if not result.success:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=result.error or "支付失败，请重试",
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        # ★ 兜底闸：只有「同一用户此前没有任何订阅」时才会走到这里。
+        #   那时没有行可锁，两个并发请求都可能判定「不是重复提交」并各建一张单，
+        #   于是 invoices.idempotency_key 的唯一约束兜住其中一个。
+        #
+        #   ⚠️ 只吞「idempotency_key 冲突」，其他完整性错误（外键、number 撞车）
+        #   必须原样抛出，否则会把真 bug 伪装成「重复提交」静默吞掉。
+        if "idempotency_key" not in str(getattr(exc, "orig", exc)):
+            raise
+        # ★★ 回滚后**立刻结束请求**，不再对这个 session 做任何 DB 操作。
+        #   实测踩坑：回滚后继续 `db.execute(...)` 会在连接池 checkout 的
+        #   pre-ping 阶段抛 `MissingGreenlet: greenlet_spawn has not been called`
+        #   —— 顶层 greenlet 上下文已经随异常一起退出，而 pre-ping 是同步路径
+        #   里的 `await_only`。同一个 `except IntegrityError` 分支里既回滚又读库，
+        #   在 async SQLAlchemy 上是走不通的组合。
+        #   所以这里不重建状态，直接 409 让前端刷新（此时前一个请求已提交成功，
+        #   刷新后看到的订阅状态是正确的）。
+        await db.rollback()
+        _log.warning(
+            "账单幂等键冲突，按重复提交拒绝 user=%s plan=%s cycle=%s key=%s",
+            current_user.id, plan.id, billing_cycle, idem_key,
         )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="检测到重复提交，请刷新后查看当前订阅状态",
+        ) from exc
 
-    # 支付成功：落账单
-    if result.invoice is not None:
-        db.add(result.invoice)
-
-    await db.commit()
     await db.refresh(sub)
 
     return {
         "subscription": _serialize_subscription(sub),
         # 前端 changePlan 返回里含 client_secret（Stripe 支付意图）。
         # mock 下无真实 secret，返回网关透传值（空串占位）。
-        "client_secret": result.client_secret,
+        "client_secret": charge.client_secret,
+        "charged": charge.invoice is not None,
+        "skipped_reason": charge.skipped_reason,
     }
 
 

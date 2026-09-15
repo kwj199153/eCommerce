@@ -558,10 +558,18 @@ async function confirmSwitchPlan() {
   switchingPlanId.value = selectedPlanForUpgrade.value.id
 
   try {
-    await changePlan(selectedPlanForUpgrade.value.id, billingCycle.value)
-    message.success(
-      billingCycle.value === 'yearly' ? '已切换为年付套餐' : '已切换为月付套餐'
-    )
+    const res = await changePlan(selectedPlanForUpgrade.value.id, billingCycle.value)
+    // ★ 200 不等于已扣款：charged=false 表示后端按幂等处理了（同套餐同周期重复提交，
+    //   或金额为 0 无需支付）。此时若还提示「已切换」，用户会以为自己被重复扣了钱。
+    if (res.charged) {
+      message.success(
+        billingCycle.value === 'yearly' ? '已切换为年付套餐' : '已切换为月付套餐'
+      )
+    } else if (res.already_subscribed) {
+      message.info(res.message || '当前已在所选套餐的有效周期内，未重复扣款')
+    } else {
+      message.info(res.skipped_reason || '无需支付，套餐已更新')
+    }
     showUpgradeModal.value = false
     await loadSubscription()
   } catch (err: any) {
@@ -628,6 +636,11 @@ function handleAddPayment() {
 }
 
 // ====== Mock 数据（API 不可用时兜底）======
+//
+// ★ price_yearly 必须遵循与后端**同一口径**：年付 = 月付 × 10
+//   （后端真源在 core/billing/pricing.py，展示与收款共用同一个函数）。
+//   这里原本写的是 999 / 2999，与月付 99 / 299 不成比例，
+//   演示模式下会显示一个后端永远不会收的价，属于口径分叉的翻版。
 const mockPlans: SubscriptionPlan[] = [
   {
     id: 'plan-free',
@@ -643,7 +656,7 @@ const mockPlans: SubscriptionPlan[] = [
     name: 'pro',
     display_name: '专业版',
     price_monthly: 99,
-    price_yearly: 999,
+    price_yearly: 990,   // = 99 × 10（与后端 plan_amount 同口径）
     features: ['全部 AI 工具解锁', '5 个店铺绑定', '每月 5000 次 API 调用', '利润测算全功能', '优先技术支持'],
     limits: { api_calls_per_month: 5000, agent_chats_per_month: 500, shops_limit: 5, team_members: 3, ai_generations: 200 },
     recommended: true,
@@ -653,7 +666,7 @@ const mockPlans: SubscriptionPlan[] = [
     name: 'enterprise',
     display_name: '企业版',
     price_monthly: 299,
-    price_yearly: 2999,
+    price_yearly: 2990,   // = 299 × 10（与后端 plan_amount 同口径）
     features: ['无限 API 调用', '无限店铺绑定', '专属客户成功经理', '自定义模型接入', 'SLA 保障', '私有化部署选项'],
     limits: { api_calls_per_month: 99999, agent_chats_per_month: 99999, shops_limit: 999, team_members: 50, ai_generations: 99999 },
   },
