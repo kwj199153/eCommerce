@@ -29,7 +29,10 @@
 #  访问：
 #    前端  http://localhost:8080
 #    接口  http://localhost:8080/api/v1      （经 nginx 转发，同源无跨域）
-#    指标  http://localhost:8000/metrics     （直连回环；设了 METRICS_TOKEN 需带 Bearer）
+#    指标  http://localhost:8000/metrics     （API 进程；设了 METRICS_TOKEN 需带 Bearer）
+#    Worker 指标/健康  http://localhost:9100/metrics  ·  /health
+#           ★ 单看 8000/metrics 是不够的：任务类指标（aigc_tasks_total /
+#             celery_task_results_total）只在 **worker 进程**里自增，必须查这个端口。
 #    健康  http://localhost:8000/health?detail=true
 #
 #  ⚠️ 首次使用前注意（本地已有 my-postgres 在跑的情况）：
@@ -142,9 +145,10 @@ services:
       - logs:/app/logs
     networks: [storekeeper]
 
-  # ========== 4. Celery Worker（异步任务）==========
-  # 与 backend 共用镜像：任务代码就是业务代码，不必单独打包。
-  # worker.py 里已声明队列 default,ai_tasks,data_export 与并发度 4。
+# ========== 4. Celery Worker（异步任务）==========
+# 与 backend 共用镜像：任务代码就是业务代码，不必单独打包。
+# worker.py 里已声明队列 default,ai_tasks,data_export；默认池是 threads（见该文件
+# 顶部说明：任务的指标注册表是进程内的，prefork 下子进程的计数不会出现在 /metrics 里）。
   worker:
     build:
       context: ./backend
@@ -167,6 +171,24 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       LOG_JSON: "true"
+      # 指标/健康端口（worker.py 里默认就是 9100，这里显式写出便于运维一眼看到）
+      WORKER_METRICS_PORT: "9100"
+    ports:
+      # 只绑回环：这个端口没有任何鉴权（/metrics 会暴露任务量与错误率）
+      - "127.0.0.1:9100:9100"
+    healthcheck:
+      # ★ 为什么必须用 /health 而不是 "进程还在"：worker 卡在「已启动但未 ready」
+      #   时进程是活的，容器状态也是 Up，而队列里的任务会一直排队。
+      #   worker.py 的 /health 在未 ready 时返回 503 ⇒ 这里的 healthcheck 真的能判不可用。
+      # 用 python 而不是 curl：镜像里没有 curl（少装一个包 = 少一处 CVE）。
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:9100/health', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     volumes:
       - uploads:/app/uploads
       - logs:/app/logs

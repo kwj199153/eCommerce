@@ -232,13 +232,135 @@ export interface AssetGenerationData {
 }
 
 /**
- * 静态素材批量出图（面板驱动）。
+ * 静态素材批量出图 —— **异步任务版（前端唯一路径）**。
+ *
+ * ⚠️ 为什么不再用同步端点 `/aigc/asset/generate`：
+ *   那条会整段阻塞出图过程。实测参数（后端代码常量）：单张 15-25s、内部并发 2
+ *   （3 并发会被服务端 429）、单次最多 8 张、单张超时 180s
+ *   ⇒ 最坏 8/2 × 180s = **720s**，而 axios 侧为了它不得不把超时放宽到 **300s**。
+ *   720 > 300 ⇒ 极端情况下用户看到「请求超时」，但后端仍在出图、
+ *   DashScope 已按张计费（≈¥0.14/张）—— **钱花了，结果丢了**。
+ *
+ * 现在改为：提交 → 立即拿到 job_id → 轮询状态。
+ *   - 再也不会有「HTTP 超时但钱已花」的情形：任务状态在服务端持久化，
+ *     **前端断线、刷新、关标签页都不会丢**（可在任务列表里找回）。
+ *   - 连点两次不会重复出图：同入参的进行中任务由后端去重（重复提交 = 重复花钱）。
+ *   - 同步端点仍保留在服务端（`generateAssets` 已从前端移除），
+ *     供脚本 / 调试 / 无 worker 环境使用；**执行内核是同一个**，出图口径不会分叉。
+ */
+export type AigcJobStatus = 'pending' | 'running' | 'succeeded' | 'failed'
+
+export interface AigcJob {
+  id: string
+  kind: string
+  kind_label: string
+  status: AigcJobStatus
+  /** true = 已结束（succeeded/failed），不必再轮询 */
+  is_terminal: boolean
+  assets_count: number
+  error: string
+  /** UTC 且带 Z 后缀 —— 用 new Date(s).toLocaleString('zh-CN') 折算本地时区 */
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  elapsed_ms: number | null
+  result?: AssetGenerationData | null
+}
+
+interface AigcJobSubmitResponse {
+  success: boolean
+  job: AigcJob
+  /** true = 命中去重，返回的是已有的进行中任务（未重复提交、不重复计费） */
+  deduplicated: boolean
+  message: string
+}
+
+/** 提交一个 AIGC 长任务，立即返回（不阻塞出图过程） */
+export async function submitAigcJob(
+  kind: 'asset_generate' | 'image_generate',
+  params: Record<string, unknown>,
+): Promise<AigcJobSubmitResponse> {
+  return request.post('/aigc/jobs', { kind, params }, { silent: true })
+}
+
+/** 查询任务状态 */
+export async function getAigcJob(jobId: string): Promise<{ job: AigcJob }> {
+  return request.get(`/aigc/jobs/${jobId}`, { silent: true, silentError: true })
+}
+
+/** 我的任务列表（前端刷新后能找回刚提交的任务） */
+export async function listAigcJobs(limit = 20): Promise<{ jobs: AigcJob[]; total: number }> {
+  return request.get(`/aigc/jobs?limit=${limit}`, { silent: true, silentError: true })
+}
+
+export interface AigcJobWaitResult {
+  job: AigcJob
+  /** true = 已等到终态；false = 等待超时，任务仍在后台继续执行（不是失败） */
+  settled: boolean
+  /** 因 429（限流）而延长等待的次数 —— 排查「为什么等久了」用 */
+  throttled: number
+}
+
+/**
+ * 提交并轮询到终态。
+ *
+ * ★ 三条与后端限流/健壮性直接相关的设计（都是实测踩出来的）：
+ *  1. **轮询间隔 2.5s**：后端限流是 60 次/分钟/IP。0.5s 轮询 = 120 次/分钟，
+ *     会直接把状态查询打成 429（实测）。
+ *  2. **429 必须当成「继续等」而不是失败**：429 只说明查得太快，
+ *     任务本身没出问题。这里对被限流做指数退避（2.5s → 5s → 10s → 上限 15s），
+ *     并计入 `throttled`。
+ *  3. **等到超时不等于失败**：任务在服务端继续跑，状态落库。
+ *     返回 `settled: false` 让调用方给出「仍在后台生成」的提示，
+ *     而不是谎报失败（这正是同步端点最糟的地方）。
+ */
+export async function submitAndWaitAigcJob(
+  kind: 'asset_generate' | 'image_generate',
+  params: Record<string, unknown>,
+  options: { maxWaitMs?: number; pollIntervalMs?: number } = {},
+): Promise<AigcJobWaitResult> {
+  const maxWaitMs = options.maxWaitMs ?? 240_000
+  const baseInterval = options.pollIntervalMs ?? 2_500
+
+  const submitted = await submitAigcJob(kind, params)
+  const jobId = submitted.job.id
+
+  const deadline = Date.now() + maxWaitMs
+  let interval = baseInterval
+  let throttled = 0
+  let last: AigcJob = submitted.job
+
+  // 已经是终态（例如命中去重的任务刚好已完成）→ 直接返回
+  if (last.is_terminal) return { job: last, settled: true, throttled }
+
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, interval))
+    try {
+      const res = await getAigcJob(jobId)
+      last = res.job
+      interval = baseInterval // 成功后恢复正常节奏
+      if (last.is_terminal) return { job: last, settled: true, throttled }
+    } catch (err: any) {
+      const status = err?.response?.status
+      if (status === 429) {
+        throttled += 1
+        interval = Math.min(interval * 2, 15_000)
+        continue
+      }
+      // 其他错误（网络抖动 / 404 等）不立即判失败：记一次并继续，
+      // 由外层超时兜底 —— 任务可能已经成功，不该因为一次查询失败就报错。
+      interval = Math.min(interval * 2, 15_000)
+    }
+  }
+
+  return { job: last, settled: false, throttled }
+}
+
+/**
+ * 静态素材批量出图（面板驱动，异步）。
  *
  * 与 `/aigc/image/generate` 的区别：那条是**对话驱动**、Agent 可先追问缺参；
  * 这条是**面板驱动** —— 表单里点「开始生成素材」就该出图，不做缺参拦截。
- *
- * ⚠️ 出图是**长任务**：单张 15-25s、后端并发上限 3、最多 8 张 → 必须单独放宽超时，
- * 否则会被 axios 实例默认的 30s 掐断（表现成「莫名超时」而看不出原因）。
  */
 export async function generateAssets(data: {
   product_name: string
@@ -253,6 +375,6 @@ export async function generateAssets(data: {
    * 留空则后端退回文生图。
    */
   source_image?: string
-}): Promise<{ success: boolean; response: AssetGenerationData; message: string }> {
-  return request.post('/aigc/asset/generate', data, { timeout: 300000, silent: true })
+}): Promise<AigcJobWaitResult> {
+  return submitAndWaitAigcJob('asset_generate', { ...data }, { maxWaitMs: 240_000 })
 }

@@ -113,6 +113,8 @@ async def init_db():
     # 附加模块：语音克隆（独立表 shop_voice，不 ALTER 任何既有表）
     # 无条件导入以完成 metadata 注册；是否真正启用由 config.voice_clone_enabled 决定
     from modules.voice_clone.db_model import ShopVoice
+    # AIGC 异步任务表（aigc_jobs）—— 长任务的状态权威源
+    from modules.aigc_media.db_model import AIGCJobRecord
 
     async with engine.begin() as conn:
         # 2026-09-09: 已迁移到 Alembic（backend/alembic）
@@ -151,6 +153,8 @@ async def init_db():
             await conn.run_sync(KnowledgeDocRecord.metadata.create_all)
             # 附加模块：客服音色表（开关关闭时依然建表 —— 表结构无害，避免开关切换时丢数据）
             await conn.run_sync(ShopVoice.metadata.create_all)
+            # AIGC 异步任务表
+            await conn.run_sync(AIGCJobRecord.metadata.create_all)
             print("✅ 数据库表创建完成（注意：已迁移到 Alembic，已有表请走 `alembic upgrade head`）")
 
 

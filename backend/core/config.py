@@ -249,6 +249,19 @@ class Settings(BaseSettings):
         default=0.0, description="Sentry 性能追踪采样率，0=只上报错误"
     )
 
+    # ====== AIGC 异步任务（★ P1-5 补充 2026-09-15）======
+    #
+    # 为什么要有「同时进行中任务数」上限：
+    #   出图按张计费（≈¥0.14/张），而 worker 并发有限。一个用户连点 10 次就会把
+    #   队列占满、其他用户全部排队 —— 拦在入口比为别的用户事后排队便宜得多。
+    # 为什么必须可配而不是写死：
+    #   这是**配额**，不同套餐/不同客户等级需要不同值；写死常数意味着改配额要改代码 + 重新发布。
+    #   上限口径见 modules/aigc_media/job_service.py::count_inflight（只数 pending/running）。
+    aigc_max_inflight_per_user: int = Field(
+        default=3,
+        description="同一用户同时进行中（pending/running）的 AIGC 任务数上限，超出返回 429",
+    )
+
     # ====== Amazon SP-API ======
     spapi_lwa_client_id: str = Field(default="", description="LWA Client ID")
     spapi_lwa_client_secret: str = Field(default="", description="LWA Client Secret")

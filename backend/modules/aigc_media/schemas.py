@@ -450,3 +450,29 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="用户消息")
     session_id: Optional[str] = Field(default=None, description="会话ID")
     context: Optional[Dict[str, Any]] = Field(default=None, description="上下文信息")
+
+
+# ============================================================
+# 异步任务（长任务不阻塞 HTTP）
+# ============================================================
+
+class AigcJobSubmitRequest(BaseModel):
+    """异步任务提交请求。
+
+    设计：``kind`` + ``params`` 两段式，而不是「一种任务一个提交端点」。
+
+    - ``params`` 的校验由路由层按 ``kind`` 找到对应的请求模型再 ``model_validate``，
+      所以**校验强度与同步端点完全一致**（不是把 dict 原样塞进消息队列）。
+    - 加一种新长任务只需：在 ``job_service.ALLOWED_KINDS`` 登记 +
+      在 ``tasks._dispatch`` 加一个分支 + 在这里加一条映射，
+      **不需要新增提交/查询端点**（否则每加一种任务就复制一遍轮询协议）。
+    """
+
+    kind: str = Field(
+        ...,
+        description="任务类型：asset_generate（静态素材批量出图）/ image_generate（单张产品图）",
+    )
+    params: Dict[str, Any] = Field(
+        default_factory=dict, description="任务入参，结构由 kind 决定（见对应同步端点的请求体）"
+    )
+

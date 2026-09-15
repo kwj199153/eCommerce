@@ -1248,9 +1248,12 @@ export const executePitfalls = async (params: any): Promise<any> => {
 
 // ========== AIGC 媒体生成器 Mock 执行函数 ==========
 
-// 执行静态素材生成 —— **真实出图**（通义万相文生图，走 /aigc/asset/generate）
+// 执行静态素材生成 —— **真实出图**（通义万相，走异步任务 /aigc/jobs）
 //
-// 这里已不是 mock：单张约 15-25s，后端并发出图后返回 /static 长期链接。
+// 这里已不是 mock：单张约 15-25s。走「提交任务 → 轮询状态」而不是同步阻塞请求，
+// 原因见 api/aigcMedia.ts 里 generateAssets 的注释（同步版最坏 720s，前端超时 300s
+// ⇒ 会出现「HTTP 超时但钱已花、结果丢失」）。
+//
 // 失败时**显式降级并把原因带出去**，绝不用 picsum 之类的随机图凑数 ——
 // 拿假图顶上去会让老板以为「生成的就是这个产品」（空状态优于虚构默认）。
 export const executeStaticAssetGen = async (params: any): Promise<any> => {
@@ -1273,7 +1276,7 @@ export const executeStaticAssetGen = async (params: any): Promise<any> => {
   }
 
   try {
-    const res: any = await generateAssets({
+    const waited: any = await generateAssets({
       product_name: productName,
       image_types: imageTypes,
       category,
@@ -1285,7 +1288,53 @@ export const executeStaticAssetGen = async (params: any): Promise<any> => {
       source_image: params.source_image || '',
     })
 
-    const data = res?.response || {}
+    const job = waited?.job || {}
+    const jobId: string = job.id || ''
+    const throttleNote = waited?.throttled
+      ? `（轮询期间被限流 ${waited.throttled} 次，已自动退避，未影响任务）`
+      : ''
+
+    // ★ 等待超时 ≠ 失败：任务仍在服务端继续跑，状态已落库。
+    //   宁可如实说「还在生成」，也不要谎报失败让老板重跑一次（那就是重复花钱）。
+    if (!waited?.settled) {
+      return {
+        type: 'static_asset_gen',
+        params,
+        product_name: productName,
+        generated_assets: [],
+        failed: [],
+        degraded: true,
+        degraded_reason:
+          `任务仍在后台执行（已等待约 4 分钟，尚未完成）${throttleNote}` +
+          `。任务不会因关闭页面而丢失，可稍后在「我的任务」里查看结果。`,
+        pending_job_id: jobId,
+        job_status: job.status || 'running',
+        generation_params: { mode: 'text2image', types: imageTypes, total_generated: 0 },
+        tips: [
+          `任务编号：${jobId}（在任务列表里按此编号可查到结果）`,
+          '不要把「仍在生成」当成失败重跑 —— 同一入参的进行中任务会被后端去重，但换参数重跑会真的再出一次图（按张计费）',
+        ],
+      }
+    }
+
+    if (job.status !== 'succeeded') {
+      // 后端已明确失败：把原因原样带出（任务记录里也有同一条 reason）
+      const reason = job.error || '出图任务失败（后端未给出原因）'
+      return {
+        type: 'static_asset_gen',
+        params,
+        product_name: productName,
+        generated_assets: [],
+        failed: [],
+        degraded: true,
+        degraded_reason: `素材生成失败：${reason}`,
+        pending_job_id: jobId,
+        job_status: job.status,
+        generation_params: { mode: 'text2image', types: imageTypes, total_generated: 0 },
+      }
+    }
+
+    const data = job.result || {}
     const generatedAssets = (data.assets || []).map((a: any) => ({
       id: a.id,
       url: a.url,
@@ -1304,12 +1353,16 @@ export const executeStaticAssetGen = async (params: any): Promise<any> => {
       degraded: Boolean(data.degraded),
       degraded_reason: data.degraded_reason || null,
       notice: data.notice,
+      job_id: jobId,
+      elapsed_ms: job.elapsed_ms ?? null,
       generation_params: {
         mode: data.mode || 'text2image',
         model: data.model,
         source_image_used: Boolean(data.source_image_used),
         types: imageTypes,
         total_generated: generatedAssets.length,
+        // 让老板能看见「这次是真的排队跑了多久」，而不是一个黑盒
+        job_elapsed_ms: job.elapsed_ms ?? null,
       },
       tips: [
         '确认满意后，点结果卡片「归档到素材库」手动保存（可选择分组、绑定产品）',
@@ -1320,8 +1373,15 @@ export const executeStaticAssetGen = async (params: any): Promise<any> => {
     }
   } catch (error: any) {
     // 显式降级：给出可读原因，不用随机图凑数
+    const status = error?.response?.status
     const detail =
       error?.response?.data?.detail || error?.message || '后端不可用或出图服务异常'
+    const hint =
+      status === 503
+        ? '（异步执行器未启动：请确认 Redis 与 Celery worker 已运行）'
+        : status === 429
+          ? '（任务提交过于频繁或轮询过快，请稍后重试）'
+          : ''
     return {
       type: 'static_asset_gen',
       params,
@@ -1329,7 +1389,7 @@ export const executeStaticAssetGen = async (params: any): Promise<any> => {
       generated_assets: [],
       failed: [],
       degraded: true,
-      degraded_reason: `素材生成失败：${detail}`,
+      degraded_reason: `素材生成失败：${detail}${hint}`,
       generation_params: { mode: 'text2image', types: imageTypes, total_generated: 0 },
     }
   }

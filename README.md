@@ -120,8 +120,10 @@ curl -s localhost:8000/metrics | head -20
 |---|---|---|
 | 前端 | http://localhost:8080 | Nginx 托管，反代 `/api` 与 `/static` |
 | 后端 | http://localhost:8000 | 只绑回环，公网请走前端 Nginx |
-| 指标 | http://localhost:8000/metrics | 设了 `METRICS_TOKEN` 需带 `Authorization: Bearer` |
+| 指标（API） | http://localhost:8000/metrics | 设了 `METRICS_TOKEN` 需带 `Authorization: Bearer` |
+| 指标（Worker） | http://localhost:9100/metrics | ★ 任务类指标**只在 worker 进程**自增，只在 8000 上看会全是 0 |
 | 健康 | http://localhost:8000/health?detail=true | 含 PG / Redis / LLM 探活 |
+| Worker 健康 | http://localhost:9100/health | 未 ready 时返回 503，供 compose healthcheck 使用 |
 
 > ⚠️ **关于 `my-postgres` 已存在的情况**
 > compose 里给 postgres 写死了 `container_name: my-postgres` 且卷名固定为 `pgdata`
@@ -151,6 +153,10 @@ curl -s localhost:8000/metrics | head -20
 | `SENTRY_DSN` | 空 | 为空则完全跳过 Sentry（不 import、零开销） |
 | `LOG_JSON` | `false` | 出逐行 JSON，便于 Filebeat / Promtail / SLS 采集 |
 | `VOICE_CLONE_ENABLED` | `false` | 附加模块开关，前端入口与后端路由同时受其控制 |
+| `WORKER_METRICS_PORT` | `9100` | worker 的指标/健康端口，`0` = 关闭。未鉴权，只绑回环 |
+| `WORKER_POOL` | `threads` | worker 执行池。**不要轻易改回 `prefork`**（原因见下） |
+| `WORKER_CONCURRENCY` | `4` | worker 并发度（`solo` 池下忽略） |
+| `AIGC_MAX_INFLIGHT_PER_USER` | `3` | 单用户同时进行中的 AIGC 任务上限，超出返回 429 |
 
 ### 生产环境启动期安全校验
 
@@ -185,6 +191,40 @@ curl -s localhost:8000/metrics | head -20
 
 > ★ **前端注意**：`POST /billing/subscribe` 返回 **200 不等于已扣款**，必须读 `charged`。
 > `charged=false` 表示命中幂等（同一套餐同一周期重复提交）或金额为 0。
+
+### 异步任务（AIGC 长任务）
+
+出图是**分钟级**操作：单张 15~25s，`MAX_CONCURRENCY=2` 且最多 8 张，最坏 **720s**。
+原先它跑在请求线程里，而前端 axios 超时是 250s/300s —— 720 > 300，结果是
+**「钱花了、结果丢了」**（图已生成并计费，接口却已超时）。现在这条链路走异步：
+
+```
+POST /api/v1/aigc/jobs  ──► aigc_jobs 表（pending）──► Redis(default 队列)
+                                    │                        │
+                       前端轮询 GET /aigc/jobs/{id}      worker 消费
+                                    │                        │
+                                    └──── 终态（succeeded / failed）◄──┘
+```
+
+| 关注点 | 口径 |
+|---|---|
+| 提交 | `POST /api/v1/aigc/jobs`，体为 `{kind, params}`，成功返回 **202** + `{job, deduplicated}` |
+| `kind` | `asset_generate`（静态素材批量）/ `image_generate`（商品图） |
+| 查询 | `GET /api/v1/aigc/jobs/{job_id}`；列表 `GET /api/v1/aigc/jobs?limit=20`（不含 result，避免响应过大） |
+| 状态源 | **PostgreSQL 表 `aigc_jobs`**，不是 Celery result backend（后者 1 小时就过期，而 `/static` 图是长期链接） |
+| 去重 | 同用户 + 同参数 + 仍在 `pending/running` → 命中已有任务，返回 `deduplicated: true`，**不重复计费** |
+| 进行中上限 | `AIGC_MAX_INFLIGHT_PER_USER`（默认 3），超出 **429** |
+| 越权 | 按 `user_id` 归属过滤；别人的任务返回 **404**（不是 403 —— 403 会泄露 job_id 是否存在） |
+| 投递失败 | broker 不可用时任务落 `failed` 并返回 **503**，**不会**停在 pending 假装排队 |
+| 前端等待 | `submitAndWaitAigcJob()` 最长 240s、2.5s 一次轮询，且**容忍 429**（429 = 查得太快，≠ 任务失败） |
+| 超时未完成 | 返回 `settled: false` + `pending_job_id`，提示「可稍后在『我的任务』查看」，**不谎报失败**（谎报会诱导用户重跑 = 重复花钱） |
+
+> ★ **为什么 worker 默认用 `threads` 池而不是 Celery 默认的 `prefork`**：
+> 任务类指标（`aigc_tasks_total` / `celery_task_results_total`）是**进程内**内存注册表。
+> `prefork` 下任务跑在 billiard 子进程里，父进程的 `/metrics` 永远是 0 ——
+> 「指标定义了、暴露了、永远是 0」，排查时会误判成「任务从没跑过」。
+> `threads` 池下任务与 `/metrics` 同进程，数字是真的；本项目的瓶颈也在等 IO 而非算 CPU。
+> 需要改回 `prefork` 时请同时接受这个指标缺口，或改用支持多进程聚合的指标后端。
 
 ---
 
