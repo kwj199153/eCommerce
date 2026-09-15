@@ -32,7 +32,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Index, Integer, JSON, String, Text, text
+from sqlalchemy import DateTime, Index, Integer, JSON, String, Text, text, ForeignKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
@@ -77,6 +77,12 @@ class AIGCJobRecord(Base):
         #
         # 只对 inflight 状态生效（部分唯一索引）：
         #   终态任务不参与去重，否则用户第二次生成同样的素材会被历史记录永久挡住。
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_aigc_jobs_shop_id_stores_store",
+        ),
         Index(
             "uq_aigc_jobs_inflight",
             "user_id",
@@ -97,20 +103,20 @@ class AIGCJobRecord(Base):
     #: pending / running / succeeded / failed
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default=STATUS_PENDING, index=True
-    )
+    , server_default='pending')
 
     # ====== 归属（授权用，不只用于统计）======
     # ★ 按 P0-1 教训：任何「按 ID 取单条」的新端点都必须按归属过滤，
     #   否则拿到 job_id 的人就能读到别人店铺的素材链接（BOLA/IDOR）。
-    user_id: Mapped[str] = mapped_column(String(36), default="", index=True)
-    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    user_id: Mapped[str] = mapped_column(String(36), default="", index=True, server_default='')
+    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True, server_default='')
 
     #: 发起请求的 request_id —— 让「一次点击」在 API 日志与 worker 日志里能串起来。
     #: ★ ContextVar 跨进程读不到，必须在入队时**显式带上**（见 observability/context.py 的注意事项）。
-    request_id: Mapped[str] = mapped_column(String(64), default="")
+    request_id: Mapped[str] = mapped_column(String(64), default="", server_default='')
 
     #: 去重指纹（由 kind + payload 稳定序列化得出，见 job_service.build_dedupe_key）
-    dedupe_key: Mapped[str] = mapped_column(String(128), default="", index=True)
+    dedupe_key: Mapped[str] = mapped_column(String(128), default="", index=True, server_default='')
 
     #: 任务的完整入参。★ 任务函数**只收 job_id**，参数从本列读 ——
     #: 原因：图生图的 source_image 是 base64 data URI，可达数 MB；
@@ -121,16 +127,16 @@ class AIGCJobRecord(Base):
     result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     #: 失败原因（人可读）。**禁止静默失败**：宁可显式报错也不要留空。
-    error: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str] = mapped_column(Text, default="", server_default='')
 
     #: Celery 侧任务 ID（排查时用于在 worker 日志/Flower 里定位）
-    celery_task_id: Mapped[str] = mapped_column(String(64), default="")
+    celery_task_id: Mapped[str] = mapped_column(String(64), default="", server_default='')
 
     #: 成功产出的素材张数（列表页展示用，省得把 result 整个拉出来）
-    assets_count: Mapped[int] = mapped_column(Integer, default=0)
+    assets_count: Mapped[int] = mapped_column(Integer, default=0, server_default='0')
 
     #: 重试次数（Celery 侧 retries，落库便于判断「一直失败」是不是可恢复错误）
-    retries: Mapped[int] = mapped_column(Integer, default=0)
+    retries: Mapped[int] = mapped_column(Integer, default=0, server_default='0')
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False

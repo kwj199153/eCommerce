@@ -21,7 +21,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Text, Integer, Float, JSON, UniqueConstraint
+from sqlalchemy import String, Text, Integer, Float, JSON, UniqueConstraint, ForeignKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
@@ -32,6 +32,12 @@ class MonitorRecord(Base):
     __tablename__ = "monitors"
     __table_args__ = (
         # 同一店铺内同一 ASIN 只允许一条监控记录（重复开启监控走 upsert 合并，不新增行）
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_monitors_shop_id_stores_store",
+        ),
         UniqueConstraint("shop_id", "asin", name="uq_monitor_shop_asin"),
     )
 
@@ -93,6 +99,15 @@ class MonitorGroupRecord(Base):
     这两张表都是「原样吐给前端」的轻量配置表，不做下划线转换。
     """
     __tablename__ = "monitor_groups"
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_monitor_groups_shop_id_stores_store",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # mgrp-xxx
     name: Mapped[str] = mapped_column(String(128), nullable=False)

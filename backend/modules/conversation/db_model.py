@@ -14,7 +14,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Boolean, DateTime, Text, Integer, Index
+from sqlalchemy import String, Boolean, DateTime, Text, Integer, Index, ForeignKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
@@ -23,6 +23,15 @@ from core.database import Base
 class ConversationRecord(Base):
     """会话表（一个 sessionId = 一次连续对话）"""
     __tablename__ = "conversations"
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_conversations_shop_id_stores_store",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # session_xxx / uuid
     # 归属：用户 + 店铺（沿用 stores_store 的 owner_id 语义）

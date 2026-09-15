@@ -32,7 +32,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Text, Integer, Boolean, JSON
+from sqlalchemy import String, Text, Integer, Boolean, JSON, ForeignKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
@@ -46,6 +46,15 @@ class KnowledgeBaseRecord(Base):
     """知识库容器表（/api/v1/knowledge-base 数据源）"""
 
     __tablename__ = "knowledge_bases"
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_knowledge_bases_shop_id_stores_store",
+        ),
+    )
 
     # `kb-default-{shop_id}` / `kb-{ts}-{rand}-{shop_id}`
     id: Mapped[str] = mapped_column(String(160), primary_key=True)
@@ -69,6 +78,15 @@ class KnowledgeFaqRecord(Base):
     """话术条目表（/api/v1/knowledge-base/faqs 数据源）"""
 
     __tablename__ = "knowledge_faqs"
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_knowledge_faqs_shop_id_stores_store",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(160), primary_key=True)
     shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)
@@ -101,6 +119,15 @@ class KnowledgeDocRecord(Base):
     """
 
     __tablename__ = "knowledge_docs"
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_knowledge_docs_shop_id_stores_store",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(160), primary_key=True)
     shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)

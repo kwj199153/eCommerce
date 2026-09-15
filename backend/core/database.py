@@ -92,29 +92,57 @@ get_db_session = get_db
 
 
 # ====== 生命周期管理 ======
-async def init_db():
-    """初始化数据库（创建表结构）"""
-    # 导入所有模型，确保它们被注册到 metadata 中
-    from modules.user_subscription.models import User, SubscriptionPlan, Subscription, Shop
-    from modules.stores.db_model import StoreRecord
-    from modules.products.db_model import SpuRecord, SkuRecord, ProductGroupRecord
-    from modules.assets.db_model import AssetRecord, AssetGroupRecord
-    from modules.candidates.db_model import CandidateRecord, CandidateGroupRecord
-    from modules.amazon_sp.db_model import (
-        AmazonCredential, AmazonAuthLog, DailySales,
-        AdMetric, ListingSnapshot, ReportTask, InventoryHealth,
+# ====== ORM 模型注册（唯一真源） ======
+def register_all_models() -> None:
+    """导入全部 ORM 模型，确保它们被注册到 `Base.metadata`。
+
+    ★★ 为什么必须是唯一真源：
+      本清单有**两个消费者** —— `init_db()`（开发期 create_all 兜底）与
+      `alembic/env.py`（autogenerate 比对 `target_metadata`）。
+      历史上两处各写一份，`env.py` 那份漏了 monitors / platform_rules /
+      knowledge_base / voice_clone / aigc_media 共 5 个模块 ⇒ `target_metadata`
+      里少 9 张表 ⇒ autogenerate 生成的迁移**静默漏表**（不报错、不告警，
+      只在全新库上表现为「表不存在」）。
+
+    ⇒ 新增业务模块时**只改这里**，两处自动同步。
+    """
+    from modules.user_subscription.models import (  # noqa: F401
+        User, SubscriptionPlan, Subscription, Shop, Invoice, PaymentMethod,
     )
-    from modules.conversation.db_model import ConversationRecord, ConversationMessageRecord
-    from modules.monitors.db_model import MonitorRecord, MonitorGroupRecord
-    from modules.platform_rules.db_model import PlatformRuleRecord, PlatformRuleDocRecord
-    from modules.knowledge_base.db_model import (
+    from modules.stores.db_model import StoreRecord  # noqa: F401
+    from modules.products.db_model import (  # noqa: F401
+        SpuRecord, SkuRecord, ProductGroupRecord,
+    )
+    from modules.assets.db_model import (  # noqa: F401
+        AssetRecord, AssetGroupRecord,
+    )
+    from modules.candidates.db_model import (  # noqa: F401
+        CandidateRecord, CandidateGroupRecord,
+    )
+    from modules.amazon_sp.db_model import (  # noqa: F401
+        AmazonCredential, AmazonAuthLog, DailySales, AdMetric,
+        ListingSnapshot, ReportTask, InventoryHealth, CompetitorSnapshot,
+    )
+    from modules.conversation.db_model import (  # noqa: F401
+        ConversationRecord, ConversationMessageRecord,
+    )
+    from modules.monitors.db_model import MonitorRecord, MonitorGroupRecord  # noqa: F401
+    from modules.platform_rules.db_model import (  # noqa: F401
+        PlatformRuleRecord, PlatformRuleDocRecord,
+    )
+    from modules.knowledge_base.db_model import (  # noqa: F401
         KnowledgeBaseRecord, KnowledgeFaqRecord, KnowledgeDocRecord,
     )
     # 附加模块：语音克隆（独立表 shop_voice，不 ALTER 任何既有表）
     # 无条件导入以完成 metadata 注册；是否真正启用由 config.voice_clone_enabled 决定
-    from modules.voice_clone.db_model import ShopVoice
+    from modules.voice_clone.db_model import ShopVoice  # noqa: F401
     # AIGC 异步任务表（aigc_jobs）—— 长任务的状态权威源
-    from modules.aigc_media.db_model import AIGCJobRecord
+    from modules.aigc_media.db_model import AIGCJobRecord  # noqa: F401
+
+
+async def init_db():
+    """初始化数据库（创建表结构）"""
+    register_all_models()
 
     async with engine.begin() as conn:
         # 2026-09-09: 已迁移到 Alembic（backend/alembic）
@@ -122,39 +150,11 @@ async def init_db():
         # - 改 schema 后：`alembic revision --autogenerate -m "..."` 生成迁移 + 确认 diff + `alembic upgrade head`
         # - create_all 仅作「全新空数据库」的兜底（不会给已有表加列！）
         if config.environment == "development":
-            # 以下 fallback 仅在数据库完全为空时生效
-            # 已有数据库请走 alembic 升级
-            await conn.run_sync(User.metadata.create_all)
-            # 以下表挂在 core.database.Base 上，需单独建表
-            await conn.run_sync(StoreRecord.metadata.create_all)
-            await conn.run_sync(SpuRecord.metadata.create_all)
-            await conn.run_sync(SkuRecord.metadata.create_all)
-            await conn.run_sync(AssetRecord.metadata.create_all)
-            await conn.run_sync(CandidateRecord.metadata.create_all)
-            # Amazon SP-API 表
-            await conn.run_sync(AmazonCredential.metadata.create_all)
-            await conn.run_sync(AmazonAuthLog.metadata.create_all)
-            await conn.run_sync(DailySales.metadata.create_all)
-            await conn.run_sync(AdMetric.metadata.create_all)
-            await conn.run_sync(ListingSnapshot.metadata.create_all)
-            await conn.run_sync(ReportTask.metadata.create_all)
-            await conn.run_sync(InventoryHealth.metadata.create_all)
-            # 会话持久化表（决策层 B）
-            await conn.run_sync(ConversationRecord.metadata.create_all)
-            await conn.run_sync(ConversationMessageRecord.metadata.create_all)
-            # 竞品监控池表
-            await conn.run_sync(MonitorRecord.metadata.create_all)
-            await conn.run_sync(MonitorGroupRecord.metadata.create_all)
-            await conn.run_sync(PlatformRuleRecord.metadata.create_all)
-            await conn.run_sync(PlatformRuleDocRecord.metadata.create_all)
-            # 业务话术库表
-            await conn.run_sync(KnowledgeBaseRecord.metadata.create_all)
-            await conn.run_sync(KnowledgeFaqRecord.metadata.create_all)
-            await conn.run_sync(KnowledgeDocRecord.metadata.create_all)
-            # 附加模块：客服音色表（开关关闭时依然建表 —— 表结构无害，避免开关切换时丢数据）
-            await conn.run_sync(ShopVoice.metadata.create_all)
-            # AIGC 异步任务表
-            await conn.run_sync(AIGCJobRecord.metadata.create_all)
+            # ★ 全部模型共用本模块的 Base ⇒ 一次 create_all 即建出**全部**表。
+            #   历史上这里逐个模型调用了一次（20+ 行），每个都是 no-op ——
+            #   因为 `X.metadata` 就是 `Base.metadata`，第一次调用已经建完了全部。
+            #   合并成一次调用，避免「逐类调用看起来各建一张表」的误导。
+            await conn.run_sync(Base.metadata.create_all)
             print("✅ 数据库表创建完成（注意：已迁移到 Alembic，已有表请走 `alembic upgrade head`）")
 
 

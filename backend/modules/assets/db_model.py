@@ -10,7 +10,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Boolean, Text, Integer, JSON
+from sqlalchemy import String, Boolean, Text, Integer, JSON, ForeignKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
@@ -19,6 +19,15 @@ from core.database import Base
 class AssetRecord(Base):
     """营销素材表（/api/v1/assets 数据源）"""
     __tablename__ = "assets"
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_assets_shop_id_stores_store",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # asset-xxx
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -38,7 +47,7 @@ class AssetRecord(Base):
     groups: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     # 归属店铺（多租户隔离）：store_xxx，绑定 stores_store.id
-    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True, server_default='')
     createdAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
     updatedAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
 
@@ -47,10 +56,19 @@ class AssetGroupRecord(Base):
     """素材库分组表"""
     __tablename__ = "asset_groups"
 
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_asset_groups_shop_id_stores_store",
+        ),
+    )
+
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # asset-group-xxx
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     color: Mapped[str] = mapped_column(String(16), default="#1890ff")
     # 归属店铺（多租户隔离）
-    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True, server_default='')
     createdAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
     updatedAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())

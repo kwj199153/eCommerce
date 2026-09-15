@@ -12,7 +12,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Text, Integer, Float, JSON
+from sqlalchemy import String, Text, Integer, Float, JSON, ForeignKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
@@ -21,6 +21,15 @@ from core.database import Base
 class CandidateRecord(Base):
     """候选选品库表（/api/v1/candidates 数据源）"""
     __tablename__ = "candidates"
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_candidates_shop_id_stores_store",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # cand-xxx
     asin: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
@@ -86,10 +95,19 @@ class CandidateGroupRecord(Base):
     """候选选品库分组表"""
     __tablename__ = "candidate_groups"
 
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_candidate_groups_shop_id_stores_store",
+        ),
+    )
+
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # cgroup-xxx
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     color: Mapped[str] = mapped_column(String(16), default="#1890ff")
     # 归属店铺（多租户隔离）
-    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True, server_default='')
     createdAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
     updatedAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())

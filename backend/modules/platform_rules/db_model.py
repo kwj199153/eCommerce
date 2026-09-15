@@ -23,7 +23,7 @@ AI 拆分是「取整篇文档 → 让 LLM 提取结构化规则」的**整体�
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Text, Integer, JSON
+from sqlalchemy import String, Text, Integer, JSON, ForeignKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
@@ -32,6 +32,15 @@ from core.database import Base
 class PlatformRuleRecord(Base):
     """平台规则表（/api/v1/platform-rules 数据源）"""
     __tablename__ = "platform_rules"
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_platform_rules_shop_id_stores_store",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     # 租户隔离维度（空串 = 无租户上下文）
@@ -69,6 +78,15 @@ class PlatformRuleDocRecord(Base):
     """
 
     __tablename__ = "platform_rule_docs"
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_platform_rule_docs_shop_id_stores_store",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)

@@ -48,7 +48,9 @@ class StoreRecord(Base):
     # 店铺归属用户（打通用户→店铺归属，数据隔离最后一环）
     # nullable：存量店铺无主（回填脚本统一处理）；新建店铺从登录用户注入
     owner_id: Mapped[Optional[str]] = mapped_column(
-        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+        String(36), ForeignKey(
+            "users.id", ondelete="SET NULL", name="fk_stores_store_owner_id_users"
+        ), nullable=True, index=True
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     platform: Mapped[str] = mapped_column(String(32), nullable=False)

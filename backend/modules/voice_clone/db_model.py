@@ -15,7 +15,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Text, Integer
+from sqlalchemy import String, Text, Integer, Index, ForeignKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
@@ -24,6 +24,19 @@ from core.database import Base
 class ShopVoice(Base):
     """店铺客服音色表（/api/v1/voice-clone 数据源）"""
     __tablename__ = "shop_voice"
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 删店铺是低频高风险：宁可提示先清理，不连带删业务数据
+            name="fk_shop_voice_shop_id_stores_store",
+        ),
+        # 业务约束：一个店铺一条音色记录（MVP 单店铺单音色）
+        # ★ 原只写在手写迁移 a8c9d0e1f2b3 的裸 SQL 里，ORM 未声明 ⇒ squash 后会丢。
+        Index("uq_shop_voice_shop", "shop_id", unique=True),
+
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # voice-xxx
     # 归属店铺（多租户隔离）：store_xxx，绑定 stores_store.id。一个店铺一条。

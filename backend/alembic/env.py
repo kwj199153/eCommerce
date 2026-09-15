@@ -44,29 +44,14 @@ if config.config_file_name is not None:
 # 把项目根加进 path，方便 import
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.database import Base  # noqa: E402
+from core.database import Base, register_all_models  # noqa: E402
 
-# 导入所有模型，确保它们被注册到 metadata
-from modules.user_subscription.models import (  # noqa: E402,F401
-    User, SubscriptionPlan, Subscription, Shop,
-)
-from modules.stores.db_model import StoreRecord  # noqa: E402,F401
-from modules.products.db_model import (  # noqa: E402,F401
-    SpuRecord, SkuRecord, ProductGroupRecord,
-)
-from modules.assets.db_model import (  # noqa: E402,F401
-    AssetRecord, AssetGroupRecord,
-)
-from modules.candidates.db_model import (  # noqa: E402,F401
-    CandidateRecord, CandidateGroupRecord,
-)
-from modules.amazon_sp.db_model import (  # noqa: E402,F401
-    AmazonCredential, AmazonAuthLog, DailySales,
-    AdMetric, ListingSnapshot, ReportTask, InventoryHealth,
-)
-from modules.conversation.db_model import (  # noqa: E402,F401
-    ConversationRecord, ConversationMessageRecord,
-)
+# ★★ 模型清单只在 `core.database.register_all_models()` 维护一份，这里绝不重复列举。
+#    历史事故：本文件曾自己列了一遍清单，但漏了 monitors / platform_rules /
+#    knowledge_base / voice_clone / aigc_media 共 5 个模块 ⇒ `target_metadata`
+#    少 9 张表 ⇒ autogenerate 生成的迁移**静默漏表**（不报错），
+#    表现为全新库 upgrade 时报「relation xxx does not exist」。
+register_all_models()
 
 target_metadata = Base.metadata
 

@@ -98,7 +98,7 @@ class Subscription(Base):
     status: Mapped[str] = mapped_column(String(20), default="active")  # active / cancelled / expired / past_due / trialing
     # 是否「周期结束后取消」（cancel_at_period_end）：true 表示用户已发起取消，
     # 但当前周期内仍可用，到期后自动转为 cancelled。
-    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')
     # ★ P1-4 补充（2026-09-15）：计费周期必须落库。
     #   修复前周期只存在于 change_plan 的局部变量里，订阅行上查不到，
     #   于是「用户点了两次升级」无法判断第二次是不是同一周期的重复提交，
@@ -114,8 +114,8 @@ class Subscription(Base):
     agent_chats_used: Mapped[int] = mapped_column(Integer, default=0)
 
     # LLM 消耗计量（由 core/billing/llm_meter.py 按调用累积落库）
-    llm_tokens_used: Mapped[int] = mapped_column(Integer, default=0)          # 累计 token 数
-    llm_cost_used: Mapped[float] = mapped_column(Float, default=0.0)          # 累计成本（元）
+    llm_tokens_used: Mapped[int] = mapped_column(Integer, default=0, server_default='0')          # 累计 token 数
+    llm_cost_used: Mapped[float] = mapped_column(Float, default=0.0, server_default='0')          # 累计成本（元）
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
