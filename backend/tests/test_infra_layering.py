@@ -10,6 +10,20 @@
 | L3 | `ai_infra/llm/dashscope_client.py` | `PROMPT_TEMPLATES` 6 份业务提示词 | **4 份被真实消费（9 个调用点）** |
 | L4 | `base_agent.invoke()/stream()` + `AgentState.metadata` | 硬编码 `tenant_id` / `shop_id` | 只写不读（0 消费者） |
 
+★ L4 的后续（R66）：`invoke()` / `stream()` **已被删除** —— 不只是收敛签名。
+  全量测试带运行时 spy（全量 620 项）实测其**动态可达性 = 0**：21 处
+  `agent.invoke(` 调用点的 receiver 全部在子类重写了同名方法（分派永远落子类），
+  而真正继承它的 3 个 Agent（aigc / competitor / secretary）**一处调用点都没有**。
+  ★ **「有调用点」≠「方法可达」**：只数调用点会得出「人人都在用」的错觉。
+  留下的不是「统一入口」而是「契约地雷」：基类返回 `dict`、业务返回
+  `AgentResponse`，真分派过去就 `AttributeError`。
+  图驱动方的两种真实用法都直接用 `self.graph`（返回**原始 state**，不预设结构）：
+    ① 继承式：secretary 的 `agent.graph.ainvoke(...)`；
+    ② 组合式：listing / product_research 各自 new 一个裸 BaseAgent 当 router 子层
+       （`metadata={"role": "sub_agent_router"}`）后 `_router.graph.ainvoke`。
+  两条用法都需要原始 messages 流自行组装业务响应 —— 而 `invoke()` 恰好把它换成
+  `structured_response`，拿走的正是唯一需要的东西。
+
 ★ 判据要点（本文件为什么这么写）
   ① **反向 import 是硬红线**，但只查它远远不够（L1~L4 都不违反它）。
   ② 查业务词必须**剥注释与 docstring** 再统计，否则会把讲解性文字判成泄漏；
@@ -185,6 +199,42 @@ def test_agent_state_metadata_is_free_form_dict():
     )
 
 
+# ---------------------- 4b. 基类不得暴露与业务契约冲突的调用入口
+
+def scan_public_methods(source: str, cls_name: str):
+    """返回类体内**直接定义**的方法名集合（含 property / staticmethod）。
+
+    只扫类体第一层，不递归内部类 —— 与 `type(BaseAgent).__dict__` 语义一致。
+    """
+    tree = ast.parse(source)
+    for n in ast.walk(tree):
+        if isinstance(n, ast.ClassDef) and n.name == cls_name:
+            return {m.name for m in n.body
+                    if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    return set()
+
+
+def test_base_agent_exposes_no_conflicting_entry():
+    """★ 基类不得再长出 `invoke` / `stream`（防回流）。
+
+    背景：「基类提供统一调用入口」这个想法在本仓**从未成立**。业务 Agent 的入口是
+    `invoke(query, context=None) -> AgentResponse`（Pydantic），而基类曾提供的
+    `invoke(query, context_id, metadata) -> dict` 是**另一套契约**：
+      · 同名 ⇒ 子类遮蔽，基类实现永远不执行（动态可达性 = 0）；
+      · 契约不同 ⇒ 一旦真分派过去，调用方把 `dict` 当 `AgentResponse` 用，
+        `response.content` 直接 `AttributeError`。
+    「没人调」比「调了炸」安全，但那份安全是巧合 ⇒ 删掉并防回流。
+    需要图驱动的一方请直接用 `self.graph`（不预设返回结构）。
+    """
+    src = (AI_INFRA / "base_agent.py").read_text(encoding="utf-8")
+    methods = scan_public_methods(src, "BaseAgent")
+    offenders = sorted(methods & {"invoke", "stream", "stream_chat"})
+    assert not offenders, (
+        f"BaseAgent 又出现了统一入口 {offenders}：它与业务契约（AgentResponse）冲突，"
+        f"会产生同名遮蔽 + 静默 AttributeError。图驱动请直接用 `self.graph`。"
+    )
+
+
 # ------------------------------- 5. 提示词机制在 infra、内容在业务模块（L3）
 
 def test_prompt_registry_lives_in_infra_but_is_empty_by_default():
@@ -260,3 +310,8 @@ def test_layering_gate_is_not_vacuous():
     clean = 'from typing import Dict\nPROMPT_TEMPLATES: Dict[str, str] = {}\n'
     assert not scan_business_strings(clean)
     assert not scan_reverse_imports(clean)
+
+    # ⑥ 类方法扫描（防「基类又长出 invoke」那条门禁恒绿）
+    fake_cls = 'class BaseAgent:\n    async def invoke(self):\n        pass\n'
+    assert 'invoke' in scan_public_methods(fake_cls, 'BaseAgent'), "类方法扫描漏报"
+    assert scan_public_methods('class Other:\n    pass\n', 'BaseAgent') == set()

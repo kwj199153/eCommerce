@@ -43,6 +43,7 @@ BaseAgent 基类 - **所有业务 Agent 的唯一基类**
                 hitl_tools=["export_report"],  # 需要人工审批的工具
             )
 
+        # ★ 基类**不提供** invoke/stream —— 入口契约由各业务模块自定义
         async def invoke(self, query: str):
             # 用 LLM 原语（走 DashScopeLLM）
             r = await self.llm_chat(query, system_prompt=self.system_prompt)
@@ -54,7 +55,6 @@ BaseAgent 基类 - **所有业务 Agent 的唯一基类**
 
 import json
 import time
-from collections.abc import AsyncIterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
@@ -842,119 +842,48 @@ class BaseAgent:
         # 如果有工具调用，继续执行
         return "tool_node"
 
-    # ====== 公开接口 ======
-
-    async def invoke(
-        self,
-        query: str,
-        context_id: str,
-        metadata: Optional[dict] = None,
-    ) -> dict:
-        """
-        同步调用 Agent
-
-        Args:
-            query: 用户输入
-            context_id: 会话 ID（= checkpointer 的 thread_id，用于多轮持久化）
-            metadata: 额外元数据。★ 基类**不认识任何业务维度** —— 原先这里硬编码了
-                      `tenant_id` / `shop_id` 两个参数，让基类认识了「店铺」这一
-                      电商概念。业务键现由调用方自行注入，例如::
-
-                          await agent.invoke(q, ctx, metadata={"shop_id": shop_id})
-
-        Returns:
-            结构化响应字典
-        """
-        # checkpointer 已在编译期绑定，config 只传 thread_id
-        graph_config = {"configurable": {"thread_id": context_id}}
-
-        # 元数据：基类只保证 agent_name / created_at，其余由调用方注入
-        merged_metadata = {
-            **self.default_metadata,
-            "created_at": datetime.now().isoformat(),
-            **(metadata or {}),
-        }
-
-        # 执行工作流
-        inputs = {
-            "messages": [HumanMessage(content=query)],
-            "metadata": merged_metadata,
-        }
-
-        result = await self.graph.ainvoke(inputs, config=graph_config)
-
-        # 返回结构化响应
-        return result.get("structured_response", {
-            "status": "error",
-            "message": "无法获取响应",
-        })
-
-    async def stream(
-        self,
-        query: str,
-        context_id: str,
-        metadata: Optional[dict] = None,
-    ) -> AsyncIterable[dict]:
-        """
-        流式调用 Agent（支持进度推送）
-
-        Yields:
-            - {type: "thinking", content: "正在分析..."}
-            - {type: "tool_call", tool_name: "...", content: "..."}
-            - {type: "tool_result", content: "..."}
-            - {type: "hitl_required", tool_name: "...", args: {...}}
-            - {type: "final", response: {...}}
-        """
-        graph_config = {"configurable": {"thread_id": context_id}}
-
-        # 同 invoke：基类只保证 agent_name / created_at，业务键由调用方注入
-        merged_metadata = {
-            **self.default_metadata,
-            "created_at": datetime.now().isoformat(),
-            **(metadata or {}),
-        }
-
-        inputs = {
-            "messages": [HumanMessage(content=query)],
-            "metadata": merged_metadata,
-        }
-
-        async for event in self.graph.astream_events(
-            inputs,
-            config=graph_config,
-            version="v2",
-        ):
-            event_type = event.get("event")
-
-            if event_type == "on_chat_model_start":
-                yield {"type": "thinking", "content": "正在思考..."}
-
-            elif event_type == "on_chat_model_stream":
-                chunk = event.get("data", {}).get("chunk", {})
-                if hasattr(chunk, 'content') and chunk.content:
-                    yield {"type": "streaming", "content": chunk.content}
-
-            elif event_type == "on_tool_start":
-                tool_name = event.get("name", "unknown")
-                yield {
-                    "type": "tool_call",
-                    "tool_name": tool_name,
-                    "content": f"正在调用工具: {tool_name}",
-                }
-
-            elif event_type == "on_tool_end":
-                output = event.get("data", {}).get("output", "")
-                yield {
-                    "type": "tool_result",
-                    "content": str(output)[:1000],  # 截断过长输出
-                }
-
-        # 最终响应
-        final_state = await self.graph.aget_state(graph_config)
-        yield {
-            "type": "final",
-            "response": final_state.values.get("structured_response"),
-        }
+    # ====== 关于「统一调用入口」 ======
+    #
+    # ★ 本类**故意不提供** `invoke()` / `stream()`。
+    #
+    # 6 个业务 Agent 都是「不成为一张图」的 Agent —— 它们把本类当**原语提供者**
+    # 用（LLM / 工具 / RAG / 提示词 / SSE），入口契约由各业务模块自定义：
+    #
+    #     async def invoke(self, query, context=None) -> AgentResponse
+    #
+    # 旧版本曾在此提供 `invoke(query, context_id, metadata) -> dict`（内部驱动
+    # `self.graph`）。那套入口的**动态可达性为 0**，实测（r71-why.txt）：
+    #   · 全仓 21 处 `agent.invoke(` 调用点的 receiver 全部在子类重写了同名
+    #     方法 ⇒ 分派永远落子类，基类实现从不执行；
+    #   · 而真正继承它的 3 个 Agent（aigc / competitor / secretary）恰好
+    #     **一处 `invoke` 调用点都没有**（前者只调 stream_chat，后者直接
+    #     用 `agent.graph.ainvoke`）。
+    #   · ★ 「有调用点」≠「方法可达」：只数调用点会得出「人人都在用」的错觉。
+    #
+    # 更危险的是**契约冲突**：基类返回 `dict`（`structured_response`），业务返回
+    # `AgentResponse`（Pydantic），调用方按后者取字段 ⇒ 一旦真分派到基类实现，
+    # `response.content` 立刻 `AttributeError`。**"没人调"比"调了炸"安全，
+    # 但这份安全是巧合**，所以删掉而不是留着。
+    #
+    # 需要图驱动的一方**直接用 `self.graph`** —— 它返回**原始 state**，不预设返回
+    # 结构，因此对不同业务契约都成立。本仓现有两种用法（均实测在跑）：
+    #
+    #   ① 继承式：secretary 直接
+    #        state = await agent.graph.ainvoke(
+    #            {"messages": [...]},
+    #            config={"configurable": {"thread_id": ...}},
+    #        )
+    #   ② 组合式：listing / product_research 各自 `_build_router()` **new 一个裸
+    #      BaseAgent 实例**当路由子层（`metadata={"role": "sub_agent_router"}`），
+    #      再 `self._router.graph.ainvoke(...)`，自己解析 messages 组装业务响应。
+    #
+    # ★ 为什么 `invoke()` 的抽象层级是错的：①② 都需要**原始 state（messages
+    #   流）**来自行组装业务响应，而 `invoke()` 恰好把 state 换成了
+    #   `structured_response` —— 拿走的正是它们唯一需要的东西。所以不是
+    #   「忘了用」，而是**用不上**。
+    #
+    # 防回流门禁：`tests/test_infra_layering.py` 的
+    #             `test_base_agent_exposes_no_conflicting_entry`。
 
 
 __all__ = ["BaseAgent", "LLMCallResult", "AgentState"]
