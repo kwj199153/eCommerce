@@ -31,8 +31,9 @@ from core.logger import get_logger
 logger = get_logger(__name__)
 
 # 深层分层路由：子 Agent 的工具化路由层（bind_tools + LangGraph 图）。
-# 通过组合（而非继承）引入，避免与 LLMEnabledAgent 的 invoke/stream/llm 属性冲突。
-from ai_infra.base_agent import BaseAgent
+# 深层分层路由：工具化路由层（bind_tools + LangGraph 图），以**组合**方式引入。
+# 本类继承 BaseAgent 只为拿 LLM 原语；router 是本类内部一个独立的 BaseAgent 实例，
+# 让「分析逻辑」与「工具编排」各归其位（而非让本类自己成为一张图）。
 from ai_infra.sse import progress
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
@@ -200,18 +201,12 @@ class EmotionType(str, Enum):
 
 # ====== Listing Agent 实现 ======
 
-# 导入 LLM 集成能力
-try:
-    from ai_infra.llm.integration import LLMEnabledAgent, LLMCallResult
-    LLM_AVAILABLE = True
-except ImportError:
-    LLM_AVAILABLE = False
-    class LLMEnabledAgent:
-        ENABLE_LLM = False
-        def __init__(self): pass
+# LLM 能力（可用性判据 / 降级 / RAG）已统一到唯一基类 BaseAgent：
+# 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
+from ai_infra.base_agent import BaseAgent
 
 
-class ListingGeneratorAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
+class ListingGeneratorAgent(BaseAgent):
     """
     Listing 生成优化 Agent
 
@@ -252,8 +247,7 @@ class ListingGeneratorAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             platform: 目标平台（默认 amazon）
         """
         # 初始化 LLM 基类
-        if LLM_AVAILABLE:
-            super().__init__()
+        super().__init__()
 
         self.platform = platform
         self.adapter = get_platform_adapter(platform)
@@ -271,7 +265,7 @@ class ListingGeneratorAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
         LLM 不可用或失败时返回 None，由调用方降级到模板/规则生成。
         """
-        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+        if not (self.ENABLE_LLM and self.llm_client):
             return None
         try:
             result = await self.llm_chat(
@@ -319,7 +313,7 @@ class ListingGeneratorAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
         LLM 不可用时返回 None，由调用方回退到 _classify_intent 关键词表。
         """
-        if not (LLM_AVAILABLE and self.ENABLE_LLM):
+        if not (self.ENABLE_LLM):
             return None
         try:
             from .tools import listing_tools
@@ -1218,7 +1212,7 @@ class ListingGeneratorAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             )
 
         # LLM 可用则流式；否则降级到规则引擎一次性文本
-        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+        if not (self.ENABLE_LLM and self.llm_client):
             result = await self._process_query(query)
             yield result.content
             return

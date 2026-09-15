@@ -22,8 +22,9 @@ from core.config import config
 # 背景（实测）：本后端存在**两套彼此独立的 LLM 栈**——
 #   栈 A：`ai_infra.base_agent.BaseAgent._llm_with_tools()` → LangChain `ChatOpenAI`
 #         （走 OpenAI 兼容端点，工具路由/多轮 ReAct 用）
-#   栈 B：`ai_infra.llm.integration.LLMEnabledAgent.llm_stream/llm_chat()`
+#   栈 B：`ai_infra.base_agent.BaseAgent.llm_stream/llm_chat()`
 #         → `ai_infra.llm.dashscope_client.DashScopeLLM`（原生 httpx 流式，正文生成用）
+#         （两栈现已同属唯一基类 BaseAgent：原 LLMEnabledAgent 已并入）
 #
 # 原先的 `fake_llm` 夹具**只补丁了栈 B 的 `DashScopeLLM.chat`**，于是：
 #   - 栈 A 从未被拦截 → 真实调用 DashScope
@@ -73,11 +74,11 @@ def _no_real_llm(request, monkeypatch):
     # 上面的 `AsyncClient.send` 拦不到（实测：`/listing/chat` 仍耗时 9.5s）。
     # 这里直接把 BaseAgent 取 LLM 的入口换成离线桩，从源头断掉出网。
     #
-    # ⚠️ 桩必须**照常上报 `usage_metadata` 并记入计量器**。原因：
+    # ⚠️ 桩必须**照常上报 `usage_metadata`**。原因：
     # `/listing/chat` 这类端点的正文完全由本栈产出，真实 `ChatOpenAI` 会在
-    # `AIMessage.usage_metadata` 里带回 token 数，`_llm_call_node` 读到后
-    # 经 `record_llm_usage` 落到订阅表。若桩不报，`test_billing_metering` 的
-    # 「LLM token/成本落库」断言就会假失败（实测踩过）。
+    # `AIMessage.usage_metadata` 里带回 token 数，`BaseAgent._llm_call_node`
+    # 读到后经 `record_llm_usage` 落到订阅表。桩只需**如实上报 token 数**，
+    # **不要自己记账** —— 那会与节点记账双计。
     from langchain_core.messages import AIMessage
 
     from ai_infra import base_agent as _ba
@@ -85,15 +86,9 @@ def _no_real_llm(request, monkeypatch):
     _STUB_TEXT = "[测试桩] LLM 已离线，本响应由桩生成。"
 
     def _stub_message() -> AIMessage:
-        from core.billing.llm_meter import record_llm_usage
-
-        input_tokens, output_tokens, cost = 120, 80, 0.0036
-        record_llm_usage(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cost=cost,
-            model="qwen-max",
-        )
+        # 只上报 token，**不记账**：记账由 `BaseAgent._llm_call_node` 统一负责。
+        # （改造前该节点没有记账逻辑，桩是临时替代品；两者并存会双计。）
+        input_tokens, output_tokens = 120, 80
         return AIMessage(
             content=_STUB_TEXT,
             usage_metadata={
@@ -128,7 +123,7 @@ def _no_real_llm(request, monkeypatch):
         _ba.BaseAgent, "_llm_with_tools", lambda self: _OfflineChat(), raising=False
     )
 
-    # 栈 B：`LLMEnabledAgent.llm_chat/llm_stream` → `DashScopeLLM.chat/chat_stream`。
+    # 栈 B：`BaseAgent.llm_chat/llm_stream` → `DashScopeLLM.chat/chat_stream`。
     # 这里补丁**最底层的客户端方法**（而不是上层 wrapper），好处：
     #   1. `llm_chat` 的返回组装、`_update_stats` 的**计量上报**全都保持真实，
     #      `test_billing_metering` 的「LLM token/成本落库」断言依然有效；

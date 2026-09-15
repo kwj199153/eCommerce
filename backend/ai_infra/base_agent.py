@@ -1,5 +1,5 @@
 """
-BaseAgent 基类 - 所有业务 Agent 的共享基础架构
+BaseAgent 基类 - **所有业务 Agent 的唯一基类**
 
 设计思路（融合两个参考项目）：
 - 推理循环：参考项目2 (A2A LangGraph-a2a/common/base_agent.py)
@@ -11,38 +11,87 @@ BaseAgent 基类 - 所有业务 Agent 的共享基础架构
 - 记忆管理：PostgreSQL Checkpoint 持久化
 - Token 统计 & 成本控制
 
+★ 本类同时提供「两套 LLM 槽位」，二者**不可互相替代**（实测方法集合交集为空）：
+
+    self.llm         → LangChain ``BaseChatModel``（ChatOpenAI 指向 DashScope 兼容端点）
+                       • 能力: bind_tools() / ainvoke() / astream_events()
+                       • 用途: LangGraph 图内核 —— 工具路由、多轮 ReAct
+                       • 产出: AIMessage.tool_calls
+
+    self.llm_client  → 自研 ``DashScopeLLM``（原生 httpx）
+                       • 能力: chat() / structured_chat() / chat_stream()
+                       • 用途: RAG 检索问答、纯文本/结构化生成
+                       • 产出: LLMCallResult
+
+历史背景：这两套能力原先分裂在两个互不继承的类里——
+``base_agent.BaseAgent``（图编排）与 ``llm.integration.LLMEnabledAgent``（LLM 原语），
+业务 Agent 只继承后者，于是拿不到工具循环与 HITL；而后者内部又有一份
+对 LangChain 侧无用的转发壳。本文件把它们收敛为**单一基类**，
+业务 Agent 继承本类即同时获得两种能力，按需使用。
+
 使用方式：
     from ai_infra.base_agent import BaseAgent
 
     class ProductResearchAgent(BaseAgent):
-        def __init__(self):
-            super().__init__(
+        DEFAULT_MODEL = "qwen-max"
+
+        def __init__(self, platform: str = "amazon"):
+            super().__init__(                 # 全部参数均有默认值
+                agent_name="ProductResearcher",
                 system_prompt=PRODUCT_SYSTEM_PROMPT,
                 tools=[blue_ocean_analysis, pain_point_mining, ...],
                 hitl_tools=["export_report"],  # 需要人工审批的工具
             )
+
+        async def invoke(self, query: str) -> AgentResponse:
+            # 用 LLM 原语（走 DashScopeLLM）
+            r = await self.llm_chat(query, system_prompt=self.system_prompt)
+            ...
 """
 
+import json
+import time
 from collections.abc import AsyncIterable
-from typing import Any, Optional
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
-    SystemMessage,
-    HumanMessage,
     AIMessage,
+    HumanMessage,
+    SystemMessage,
     ToolMessage,
 )
-from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
-from langgraph.graph import MessagesState, StateGraph, START, END
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from core.config import config
 from core.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+# ====== LLM 调用结果 ======
+@dataclass
+class LLMCallResult:
+    """LLM 调用结果。
+
+    原定义在 ``ai_infra.llm.integration``（随该壳一起并入本模块）。
+    """
+    success: bool
+    content: Union[str, Dict, List] = ""
+    raw_text: str = ""
+    tokens_used: int = 0
+    cost: float = 0.0
+    latency_ms: float = 0.0
+    fallback: bool = False       # 是否使用了降级响应
+    error: Optional[str] = None
+    # RAG 来源（原实现以 `_sources=` 传入，但 dataclass 无此字段 →
+    # 成功路径必抛 TypeError 并被 except 吞掉，症状是「RAG 问答永远降级成普通 LLM」）
+    sources: List[Dict] = field(default_factory=list)
 
 
 # ====== Agent 状态定义 ======
@@ -63,21 +112,30 @@ class AgentState(MessagesState):
 
 class BaseAgent:
     """
-    所有业务 Agent 的基类
+    所有业务 Agent 的**唯一**基类
 
     提供通用能力：
     1. LangGraph 推理循环（LLM → Tool → LLM → ... → Respond）
     2. HITL 人工审批机制（可选工具级别）
     3. PostgreSQL Checkpoint 持久化
-    4. Token 用量统计 & 成本估算
+    4. Token 用量统计 & 成本估算（含请求级计费上报）
     5. 错误处理 & 重试机制
+    6. **LLM 可用性判据 / 降级 / RAG**（原 LLMEnabledAgent 的能力）
+       —— 见 `llm_client` / `rag_engine` / `llm_chat` / `_mock_result`
     """
+
+    # ====== LLM 配置（子类可覆盖）======
+    DEFAULT_MODEL: str = "qwen-plus"     # 默认模型（均衡性能）
+    ANALYSIS_MODEL: str = "qwen-max"     # 复杂分析任务模型
+    ENABLE_LLM: bool = True              # 总开关（关闭则全部走降级）
+    ENABLE_RAG: bool = False             # 是否启用 RAG（客服等场景）
+    FALLBACK_TO_MOCK: bool = True        # LLM 失败时是否降级
 
     def __init__(
         self,
-        agent_name: str,
-        system_prompt: str,
-        tools: list[BaseTool],
+        agent_name: Optional[str] = None,
+        system_prompt: str = "",
+        tools: Optional[list[BaseTool]] = None,
         llm: Optional[BaseChatModel] = None,
         hitl_tools: Optional[list[str]] = None,
         max_iterations: int = 10,
@@ -87,17 +145,20 @@ class BaseAgent:
         """
         初始化 Agent
 
+        ★ 所有参数都有默认值，因此子类可以 `super().__init__()` 无参调用
+          （业务 Agent 自己设置 agent_name / system_prompt 并覆盖类配置）。
+
         Args:
-            agent_name: Agent 名称（用于日志和标识）
+            agent_name: Agent 名称（用于日志和标识），缺省取类名
             system_prompt: 系统 Prompt（业务专属，由子类定义）
             tools: 工具列表（业务专属，由子类定义）
-            llm: LLM 实例（默认使用 DashScope Qwen）
+            llm: LangChain 模型实例（默认懒加载 DashScope Qwen 兼容端点）
             hitl_tools: 需要 HITL 审批的工具名列表
             max_iterations: 最大推理迭代次数（防止死循环）
             metadata: 额外元数据
             checkpointer: LangGraph checkpointer（PostgreSQL 持久化，None 则内存态）
         """
-        self.agent_name = agent_name
+        self.agent_name = agent_name or self.__class__.__name__
         self.system_prompt = system_prompt
         self.max_iterations = max_iterations
         # ★ 可变默认参数的经典坑：`def f(x=[])` 的默认对象在**函数定义时创建一次**，
@@ -109,30 +170,64 @@ class BaseAgent:
         metadata = dict(metadata) if metadata else {}
         self.hitl_tool_names = set(hitl_tools)
         self.checkpointer = checkpointer
+        self._metadata_extra = metadata
 
-        # 配置 LLM（默认使用 Qwen-max）
-        self.llm = llm or self._get_default_llm()
+        # ---- LLM 槽位 ①：LangChain 模型（图内核）----
+        # ★ 懒解析，不在 __init__ 立即创建。原因（实测）：
+        #   缺 DASHSCOPE_API_KEY 时 ChatOpenAI(...) **构造即抛 OpenAIError**，
+        #   原实现 `self.llm = llm or self._get_default_llm()` 会让「走图路径的
+        #   Agent」在实例化阶段就崩；而不用图的业务 Agent 却要白白付这个风险。
+        #   改为首次访问才解析 + 失败返回 None（由 _llm_with_tools 显式报错）。
+        self._llm_override = llm
+        self._llm_default: Optional[BaseChatModel] = None
+        self._llm_resolved = False
 
-        # 处理 HITL 工具包装
-        self.tools = self._wrap_hitl_tools(tools)
-
-        # 元数据
-        self.default_metadata = {
-            "agent_name": agent_name,
-            **metadata,
+        # ---- LLM 槽位 ②：DashScopeLLM（RAG / 纯文本）+ RAG 引擎（懒加载）----
+        self._llm_client = None
+        self._rag_engine = None
+        self._llm_stats = {
+            "total_calls": 0,
+            "llm_calls": 0,
+            "mock_calls": 0,
+            "errors": 0,
+            "total_tokens": 0,
+            "total_cost": 0.0,
         }
 
-        # 构建 LangGraph 工作流
-        self.graph = self._build_graph()
+        # 处理 HITL 工具包装
+        self.tools = self._wrap_hitl_tools(list(tools) if tools else [])
+
+        # ---- LangGraph 图懒构建 ----
+        # ★ 不在 __init__ 建图：业务 Agent 只用 LLM 原语、不成为一张图，
+        #   没有理由为它们付 ToolNode/StateGraph 的构建成本。
+        #   需要图的一方（secretary、router 层）首次访问 `self.graph` 时构建。
+        self._graph: Optional[Any] = None
+
+        # 前向兼容：当前 MRO 的下一环是 object（无副作用）；保留此调用可确保
+        # 未来若引入 mixin，基类初始化链不会断在中间。
+        super().__init__()
 
         logger.info(
-            f"✅ Agent 初始化完成: {agent_name} | "
+            f"✅ Agent 初始化完成: {self.agent_name} | "
             f"工具数: {len(self.tools)} | "
             f"HITL工具: {hitl_tools}"
         )
 
+    # ====== 元数据 ======
+
+    @property
+    def default_metadata(self) -> dict:
+        """默认元数据。
+
+        用 property 而非实例属性：子类常在 `super().__init__()` **之后**才设置
+        `self.agent_name`，若在 __init__ 里固化成 dict，会一直挂着构造时的旧值。
+        """
+        return {"agent_name": self.agent_name, **self._metadata_extra}
+
+    # ====== LLM 槽位 ①：LangChain 模型（图内核） ======
+
     def _get_default_llm(self) -> BaseChatModel:
-        """获取默认 LLM（DashScope Qwen）"""
+        """获取默认 LLM（DashScope Qwen 兼容端点）"""
         from langchain_openai import ChatOpenAI
 
         return ChatOpenAI(
@@ -143,6 +238,328 @@ class BaseAgent:
             max_tokens=config.llm_max_tokens,
             timeout=config.llm_timeout_seconds,
         )
+
+    @property
+    def llm(self) -> Optional[BaseChatModel]:
+        """LangChain 模型（懒加载，图内核专用）。
+
+        返回 None 表示不可用（未启用 LLM / 缺 key / 初始化失败）——
+        由 `_llm_with_tools` 在真正需要时给出显式错误，而不是在构造期抛异常。
+        """
+        if self._llm_override is not None:
+            return self._llm_override
+        if not self._llm_resolved:
+            self._llm_resolved = True
+            if not self.ENABLE_LLM:
+                self._llm_default = None
+            else:
+                try:
+                    self._llm_default = self._get_default_llm()
+                except Exception as e:
+                    logger.warning(
+                        f"[{self.agent_name}] LangChain LLM 初始化失败，图路径不可用: {e}"
+                    )
+                    self._llm_default = None
+        return self._llm_default
+
+    # ====== LLM 槽位 ②：DashScopeLLM（原 LLMEnabledAgent 能力） ======
+
+    @property
+    def llm_client(self):
+        """懒加载 DashScopeLLM 客户端（RAG / 纯文本场景）。"""
+        if self._llm_client is None and self.ENABLE_LLM:
+            try:
+                from ai_infra.llm import get_llm
+
+                self._llm_client = get_llm(model=self.DEFAULT_MODEL)
+            except Exception as e:
+                logger.warning(f"[{self.agent_name}] LLM init failed: {e}")
+        return self._llm_client
+
+    @property
+    def rag_engine(self):
+        """懒加载 RAG 引擎（仅当 ENABLE_RAG=True 时）。"""
+        if self._rag_engine is None and self.ENABLE_RAG:
+            try:
+                from ai_infra.rag import HybridRAGEngine
+
+                domain = (self.agent_name or "default").replace(" ", "_")
+                self._rag_engine = HybridRAGEngine(domain=domain)
+
+                # 若事件循环未在运行，顺手同步初始化；在运行时由调用方 await。
+                import asyncio
+
+                try:
+                    loop = asyncio.get_event_loop()
+                    if not loop.is_running():
+                        loop.run_until_complete(self._rag_engine.initialize())
+                except RuntimeError:
+                    pass  # 事件循环未运行，稍后初始化
+            except Exception as e:
+                logger.warning(f"[{self.agent_name}] RAG init failed: {e}")
+        return self._rag_engine
+
+    async def initialize_rag(self, faq_items: List[Dict] = None):
+        """初始化 RAG 引擎并加载知识库。
+
+        Args:
+            faq_items: FAQ 列表 [{"question": "...", "answer": "...", "category": "..."}]
+        """
+        if not self.ENABLE_RAG or not self.rag_engine:
+            return
+
+        try:
+            await self.rag_engine.initialize()
+
+            if faq_items:
+                count = await self.rag_engine.add_faq_knowledge_base(faq_items)
+                logger.info(f"[{self.agent_name}] RAG loaded {count} FAQ entries")
+            else:
+                from ai_infra.rag import KnowledgeBaseBuilder
+
+                if hasattr(KnowledgeBaseBuilder, "CUSTOMER_SERVICE_FAQ"):
+                    count = await KnowledgeBaseBuilder.build_customer_service_kb(
+                        self.rag_engine
+                    )
+                    logger.info(
+                        f"[{self.agent_name}] RAG loaded default KB: {count} entries"
+                    )
+        except Exception as e:
+            logger.error(f"[{self.agent_name}] RAG init error: {e}")
+
+    # ---- 核心 LLM 调用方法 ----
+
+    async def llm_chat(
+        self,
+        user_message: str,
+        system_prompt: str = None,
+        model: str = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+        **kwargs,
+    ) -> LLMCallResult:
+        """标准 LLM 对话调用。
+
+        Returns:
+            LLMCallResult (success/content/fallback/error)
+        """
+        start_time = time.time()
+        self._llm_stats["total_calls"] += 1
+
+        if not self.ENABLE_LLM or not self.llm_client:
+            return self._mock_result(user_message, "LLM disabled")
+
+        try:
+            response = await self.llm_client.chat(
+                user_message,
+                system_prompt=system_prompt,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
+
+            latency = (time.time() - start_time) * 1000
+            self._update_llm_stats(response.total_tokens, response.cost, latency)
+
+            return LLMCallResult(
+                success=True,
+                content=response.content,
+                raw_text=response.content,
+                tokens_used=response.total_tokens,
+                cost=response.cost,
+                latency_ms=latency,
+                fallback=False,
+            )
+
+        except Exception as e:
+            logger.error(f"[{self.agent_name}] LLM call error: {e}")
+            self._llm_stats["errors"] += 1
+
+            if self.FALLBACK_TO_MOCK:
+                return self._mock_result(user_message, str(e))
+            return LLMCallResult(
+                success=False,
+                error=str(e),
+                latency_ms=(time.time() - start_time) * 1000,
+            )
+
+    async def llm_structured(
+        self,
+        user_message: str,
+        system_prompt: str,
+        output_format: str = "json",
+        model: str = None,
+        **kwargs,
+    ) -> LLMCallResult:
+        """结构化输出调用（JSON/表格/列表）。
+
+        Returns:
+            LLMCallResult (content 是解析后的 dict/list)
+        """
+        if not self.ENABLE_LLM or not self.llm_client:
+            return self._mock_result(user_message, "LLM disabled", structured=True)
+
+        try:
+            result = await self.llm_client.structured_chat(
+                user_message=user_message,
+                system_prompt=system_prompt,
+                output_format=output_format,
+                model=model or self.ANALYSIS_MODEL,
+                **kwargs,
+            )
+
+            return LLMCallResult(
+                success=True,
+                content=result,
+                raw_text=(
+                    json.dumps(result, ensure_ascii=False)
+                    if isinstance(result, (dict, list))
+                    else str(result)
+                ),
+                fallback=False,
+            )
+
+        except Exception as e:
+            logger.error(f"[{self.agent_name}] Structured LLM error: {e}")
+            self._llm_stats["errors"] += 1
+
+            if self.FALLBACK_TO_MOCK:
+                return self._mock_result(user_message, str(e), structured=True)
+            return LLMCallResult(success=False, error=str(e))
+
+    async def llm_rag_answer(
+        self,
+        query: str,
+        system_prompt: str = None,
+        top_k: int = 3,
+    ) -> LLMCallResult:
+        """RAG 增强回答（先检索再生成）。
+
+        仅在 ENABLE_RAG=True 且 RAG 引擎已初始化时生效，否则退化为普通 LLM 调用。
+        """
+        start_time = time.time()
+        self._llm_stats["total_calls"] += 1
+
+        if not self.ENABLE_RAG or not self.rag_engine:
+            return await self.llm_chat(query, system_prompt=system_prompt)
+
+        try:
+            rag_response = await self.rag_engine.answer(
+                query=query,
+                llm_client=self.llm_client,
+                system_prompt=system_prompt,
+                top_k=top_k,
+            )
+
+            latency = (time.time() - start_time) * 1000
+
+            return LLMCallResult(
+                success=True,
+                content=rag_response.answer,
+                raw_text=rag_response.answer,
+                fallback=rag_response.fallback,
+                latency_ms=latency,
+                sources=[
+                    {"doc_id": s.document.doc_id, "score": s.score, "source": s.source}
+                    for s in rag_response.sources
+                ],
+            )
+
+        except Exception as e:
+            logger.error(f"[{self.agent_name}] RAG answer error: {e}")
+            # 降级到普通 LLM
+            return await self.llm_chat(query, system_prompt=system_prompt)
+
+    async def llm_stream(self, user_message: str, **kwargs):
+        """流式输出（返回异步迭代器）。
+
+        Usage:
+            async for chunk in agent.llm_stream("讲个故事"):
+                print(chunk, end="")
+        """
+        if not self.ENABLE_LLM or not self.llm_client:
+            yield "[LLM 未启用，使用模拟响应]"
+            return
+
+        try:
+            async for chunk in self.llm_client.chat_stream(user_message, **kwargs):
+                yield chunk
+        except Exception as e:
+            logger.error(f"[{self.agent_name}] Stream error: {e}")
+            yield f"[错误: {e}]"
+
+    # ---- Prompt 模板管理 ----
+
+    def get_prompt_template(self, name: str, **kwargs) -> str:
+        """获取 Prompt 模板"""
+        try:
+            from ai_infra.llm import PROMPT_TEMPLATES
+
+            template = PROMPT_TEMPLATES.get(name, "")
+            if template and kwargs:
+                return template.format(**kwargs)
+            return template
+        except ImportError:
+            return ""
+
+    # ---- 降级与统计 ----
+
+    def _mock_result(
+        self, original_query: str, reason: str, structured: bool = False
+    ) -> LLMCallResult:
+        """生成降级结果（LLM 不可用 / 调用失败时）。
+
+        ★ 关键：`success=False`（不是 True）。
+
+        降级结果**不是一次成功的分析**，而是「LLM 本次不可用」这一事实的显式表达。
+        原实现在此返回 `success=True` + `"[模拟响应] 由于 …"` 文案，会让调用方把
+        「LLM 挂了」误判成「分析成功」，属于项目判据明令禁止的「静默 mock」。
+        另外原实现有个 `_generate_mock_response` 钩子，但 6 个业务 Agent
+        **无一实现它** ⇒ 该分支永远走不到，等同于没有兜底。
+
+        现在统一为：成功与否由 `success` 诚实表达，失败原因走 `error`，
+        内容留空（空状态优于虚构默认），由调用方决定如何对外降级。
+        """
+        self._llm_stats["mock_calls"] += 1
+        logger.warning(f"[{self.agent_name}] LLM 降级（{reason}）")
+
+        return LLMCallResult(
+            success=False,
+            content="",
+            raw_text="",
+            fallback=True,
+            error=f"LLM 不可用：{reason}",
+        )
+
+    def _update_llm_stats(self, tokens: int, cost: float, latency: float):
+        """更新统计"""
+        self._llm_stats["llm_calls"] += 1
+        self._llm_stats["total_tokens"] += tokens
+        self._llm_stats["total_cost"] += cost
+
+    @property
+    def llm_stats(self) -> Dict:
+        """获取 LLM 使用统计"""
+        return {
+            **self._llm_stats,
+            "agent_name": self.agent_name,
+            "llm_enabled": self.ENABLE_LLM,
+            "rag_enabled": self.ENABLE_RAG,
+        }
+
+    def reset_stats(self):
+        """重置统计"""
+        self._llm_stats = {
+            "total_calls": 0,
+            "llm_calls": 0,
+            "mock_calls": 0,
+            "errors": 0,
+            "total_tokens": 0,
+            "total_cost": 0.0,
+        }
+
+    # ====== HITL 工具包装 ======
 
     def _wrap_hitl_tools(self, tools: list[BaseTool]) -> list[BaseTool]:
         """
@@ -162,6 +579,15 @@ class BaseAgent:
 
         return wrapped_tools
 
+    # ====== LangGraph 图（懒构建） ======
+
+    @property
+    def graph(self):
+        """LangGraph 工作流（懒构建，首次访问时编译）。"""
+        if self._graph is None:
+            self._graph = self._build_graph()
+        return self._graph
+
     def _build_graph(self) -> StateGraph:
         """
         构建 LangGraph 工作流
@@ -176,7 +602,7 @@ class BaseAgent:
         # 创建状态图
         workflow = StateGraph(AgentState)
 
-        # 添加节点
+        # 添加节点（tools 为空时 ToolNode 仍可构建，实测 tools_by_name={}）
         workflow.add_node("llm_call", self._llm_call_node)
         workflow.add_node("tool_node", ToolNode(self.tools))
         workflow.add_node("respond", self._respond_node)
@@ -299,10 +725,33 @@ class BaseAgent:
 
         response = await self._llm_with_tools().ainvoke(messages)
 
-        # 记录 Token 使用量
-        if hasattr(response, 'usage_metadata'):
-            token_usage = response.usage_metadata
-            logger.debug(f"Token 使用: {token_usage}")
+        # ★ 记录 Token 使用量 + 计入请求级计费计量器。
+        # 原实现**只写 logger.debug、不落库**（测试之所以绿，是因为 conftest 的
+        # 离线桩**自己**调了 record_llm_usage 顶替了这一行）。真实 ChatOpenAI 返回的
+        # token 因此只进日志、不进 subscriptions 表 —— 店秘书与 router 层的消耗从未计费。
+        # ChatOpenAI 的 usage_metadata 键名是 input_tokens/output_tokens/total_tokens；
+        # LangChain 在 on_llm_end 时挂上，ainvoke 返回的 AIMessage 亦带该属性。
+        usage = getattr(response, "usage_metadata", None)
+        if usage:
+            try:
+                in_tok = int(usage.get("input_tokens") or 0)
+                out_tok = int(usage.get("output_tokens") or 0)
+                meta = getattr(response, "response_metadata", None) or {}
+                model_name = meta.get("model_name") or self.DEFAULT_MODEL
+
+                # 复用 DashScopeLLM 的定价口径（唯一真源），不另写一套单价表
+                from ai_infra.llm.dashscope_client import DashScopeLLM
+                from core.billing.llm_meter import record_llm_usage
+
+                record_llm_usage(
+                    input_tokens=in_tok,
+                    output_tokens=out_tok,
+                    cost=DashScopeLLM._compute_cost(model_name, in_tok, out_tok),
+                    model=model_name,
+                )
+            except Exception as e:  # 记账失败不得影响主流程
+                logger.warning(f"[{self.agent_name}] LLM 用量记账失败: {e}")
+            logger.debug(f"Token 使用: {usage}")
 
         # 关键修复：达到 max_iterations 时，本次 LLM 输出会触发 _should_continue → "respond"
         # 但响应里的 tool_calls 没有对应的 ToolMessage → 下次 invoke 时 checkpointer 恢复
@@ -328,9 +777,16 @@ class BaseAgent:
         关键：必须 bind_tools，否则 LLM 永不输出 tool_calls，
         _should_continue 永远走 "respond"，工具循环形同虚设。
         """
+        llm = self.llm
+        if llm is None:
+            raise RuntimeError(
+                f"[{self.agent_name}] 图路径需要 LangChain 模型，但当前不可用"
+                f"（ENABLE_LLM={self.ENABLE_LLM}，或 DASHSCOPE_API_KEY 未配置/初始化失败）。"
+                "若只想用 LLM 原语，请改用 llm_chat / llm_structured。"
+            )
         if not self.tools:
-            return self.llm
-        return self.llm.bind_tools(self.tools)
+            return llm
+        return llm.bind_tools(self.tools)
 
     async def _respond_node(self, state: AgentState) -> dict:
         """
@@ -490,3 +946,6 @@ class BaseAgent:
             "type": "final",
             "response": final_state.values.get("structured_response"),
         }
+
+
+__all__ = ["BaseAgent", "LLMCallResult", "AgentState"]

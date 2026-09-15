@@ -46,20 +46,15 @@ from core.logger import get_logger
 #   接上统一日志出口后，这些降级日志也会带上 request_id 落进日志文件。
 logger = get_logger("product_research.agent")
 
-# 导入 LLM 集成能力
-try:
-    from ai_infra.llm.integration import LLMEnabledAgent, LLMCallResult
-    LLM_AVAILABLE = True
-except ImportError:
-    LLM_AVAILABLE = False
-    class LLMEnabledAgent:
-        ENABLE_LLM = False
-        def __init__(self): pass
+# LLM 能力（可用性判据 / 降级 / RAG）已统一到唯一基类 BaseAgent：
+# 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
+from ai_infra.base_agent import BaseAgent
 
 
 # 深层分层路由：子 Agent 的工具化路由层（bind_tools + LangGraph 图）。
-# 通过组合（而非继承）引入，避免与 LLMEnabledAgent 的 invoke/stream/llm 属性冲突。
-from ai_infra.base_agent import BaseAgent
+# 深层分层路由：工具化路由层（bind_tools + LangGraph 图），以**组合**方式引入。
+# 本类继承 BaseAgent 只为拿 LLM 原语；router 是本类内部一个独立的 BaseAgent 实例，
+# 让「分析逻辑」与「工具编排」各归其位（而非让本类自己成为一张图）。
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 
@@ -209,7 +204,7 @@ _ASIN_RE = r"[Bb]0[0-9A-Za-z]{8}"
 
 # ====== 选品 Agent 实现 ======
 
-class ProductResearchAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
+class ProductResearchAgent(BaseAgent):
     """
     选品分析 Agent
 
@@ -240,8 +235,7 @@ class ProductResearchAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             platform: 目标平台（默认 amazon）
         """
         # 初始化 LLM 基类
-        if LLM_AVAILABLE:
-            super().__init__()
+        super().__init__()
 
         self.platform = platform
         self.adapter = get_platform_adapter(platform)
@@ -348,7 +342,7 @@ class ProductResearchAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
     def _build_router(self):
         """构建工具化路由层（BaseAgent 实例，注入 4 个工具）。"""
-        if not (LLM_AVAILABLE and self.ENABLE_LLM):
+        if not (self.ENABLE_LLM):
             return None
         try:
             from .tools import product_research_tools
@@ -501,7 +495,7 @@ class ProductResearchAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         self, query: str, context_id: Optional[str] = None
     ) -> AsyncIterable[str]:
         """闲聊流式（带本轮会话语境；LLM 不可用时退化为能力引导文案）。"""
-        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+        if not (self.ENABLE_LLM and self.llm_client):
             result = await self._general_chat(query)
             yield result.get("response", "")
             return
@@ -730,7 +724,7 @@ class ProductResearchAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         self._session(context_id)["last_blue_ocean"] = result
 
         # ====== LLM 增强：智能总结与建议 ======
-        if LLM_AVAILABLE and self.ENABLE_LLM:
+        if self.ENABLE_LLM:
             try:
                 llm_result = await self.llm_structured(
                     user_message=f"""

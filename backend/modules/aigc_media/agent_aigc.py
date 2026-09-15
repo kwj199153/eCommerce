@@ -210,18 +210,12 @@ class VideoScript:
 # 核心 Agent 类
 # ============================================================
 
-# 导入 LLM 集成能力
-try:
-    from ai_infra.llm.integration import LLMEnabledAgent, LLMCallResult
-    LLM_AVAILABLE = True
-except ImportError:
-    LLM_AVAILABLE = False
-    class LLMEnabledAgent:
-        ENABLE_LLM = False
-        def __init__(self): pass
+# LLM 能力（可用性判据 / 降级 / RAG）已统一到唯一基类 BaseAgent：
+# 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
+from ai_infra.base_agent import BaseAgent
 
 
-class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
+class AIGCMediaAgent(BaseAgent):
     """
     AIGC 媒体生成 Agent
 
@@ -243,8 +237,7 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
     def __init__(self):
         # 初始化 LLM 基类
-        if LLM_AVAILABLE:
-            super().__init__()
+        super().__init__()
 
         self.agent_name = "AIGC 媒体生成器"
         self.version = "2.0.0"  # 升级版本号
@@ -344,7 +337,7 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         temperature 默认 0.8（文案创作需要发挥）；**翻译类调用要显式压低**（如 0.2），
         否则同一个词每次译法都不一样。
         """
-        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+        if not (self.ENABLE_LLM and self.llm_client):
             return None
         try:
             result = await self.llm_chat(
@@ -1615,7 +1608,7 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             return
 
         # 对话类：走 LLM 流式
-        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+        if not (self.ENABLE_LLM and self.llm_client):
             yield (
                 "我是 AIGC 媒体生成助手，可以帮您：\n"
                 "- 🎨 AI 产品图片生成\n- 📝 A+/EBC 内容生成\n"

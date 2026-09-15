@@ -117,18 +117,12 @@ class IntruderAlert:
     our_product_affected: bool = False
 
 
-# 导入 LLM 集成能力
-try:
-    from ai_infra.llm.integration import LLMEnabledAgent, LLMCallResult
-    LLM_AVAILABLE = True
-except ImportError:
-    LLM_AVAILABLE = False
-    class LLMEnabledAgent:
-        ENABLE_LLM = False
-        def __init__(self): pass
+# LLM 能力（可用性判据 / 降级 / RAG）已统一到唯一基类 BaseAgent：
+# 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
+from ai_infra.base_agent import BaseAgent
 
 
-class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
+class CompetitorIntelligenceAgent(BaseAgent):
     """
     竞品情报监控 Agent
 
@@ -153,8 +147,7 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
     def __init__(self):
         # 初始化 LLM 基类
-        if LLM_AVAILABLE:
-            super().__init__()
+        super().__init__()
 
         self.agent_name = "competitor_intel"
         self._initialize_mock_data()
@@ -165,7 +158,7 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
         LLM 不可用或失败时返回 None，由调用方降级到规则生成。
         """
-        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+        if not (self.ENABLE_LLM and self.llm_client):
             return None
         try:
             result = await self.llm_chat(
@@ -789,7 +782,7 @@ class CompetitorIntelligenceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             return
 
         # 对话类：走 LLM 流式
-        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+        if not (self.ENABLE_LLM and self.llm_client):
             result = await self._general_analysis(query)
             yield result.get("message", "")
             return

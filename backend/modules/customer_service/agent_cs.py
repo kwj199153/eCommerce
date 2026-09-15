@@ -33,17 +33,9 @@ logger = get_logger("customer_service.agent")
 
 from pydantic import BaseModel, Field
 
-# 导入 LLM 集成能力
-try:
-    from ai_infra.llm.integration import LLMEnabledAgent, LLMCallResult
-    LLM_AVAILABLE = True
-except ImportError:
-    LLM_AVAILABLE = False
-    # 定义空基类作为降级
-    class LLMEnabledAgent:
-        ENABLE_LLM = False
-        ENABLE_RAG = False
-        def __init__(self): pass
+# LLM 能力（可用性判据 / 降级 / RAG）已统一到唯一基类 BaseAgent：
+# 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
+from ai_infra.base_agent import BaseAgent
 
 
 from ai_infra.sse import progress
@@ -278,7 +270,7 @@ MOCK_FAQ_DB: List[Dict[str, Any]] = [
 
 # ====== 智能客服 Agent 主类 ======
 
-class CustomerServiceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
+class CustomerServiceAgent(BaseAgent):
     """
     跨境电商 AI 智能客服 Agent
 
@@ -299,8 +291,7 @@ class CustomerServiceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
 
     def __init__(self):
         # 初始化 LLM 基类
-        if LLM_AVAILABLE:
-            super().__init__()
+        super().__init__()
 
         self.agent_name = "智能客服"
         self.agent_role = "跨境电商 AI 客服专家"
@@ -398,7 +389,7 @@ class CustomerServiceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             return
 
         # 对话类：走 LLM 流式（RAG 客服优先用 RAG 回答，此处简化走 LLM）
-        if not (LLM_AVAILABLE and self.ENABLE_LLM and self.llm_client):
+        if not (self.ENABLE_LLM and self.llm_client):
             result = await self.invoke(query)
             yield result.content
             return
@@ -579,7 +570,7 @@ class CustomerServiceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         """处理 FAQ 查询（支持 RAG + LLM 增强）"""
 
         # ====== 升级：优先使用 RAG + LLM ======
-        if LLM_AVAILABLE and self.ENABLE_RAG and self.rag_engine:
+        if self.ENABLE_RAG and self.rag_engine:
             try:
                 return await self._handle_faq_with_rag(query, context, conv, sentiment)
             except Exception as e:
@@ -638,7 +629,7 @@ class CustomerServiceAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
             )
 
         # 4. 无匹配：尝试 LLM 或生成通用回复
-        if LLM_AVAILABLE and self.llm_client:
+        if self.llm_client:
             try:
                 llm_result = await self.llm_chat(
                     user_message=query,
