@@ -70,18 +70,20 @@ async def _purge(*shop_ids: str) -> None:
 
 
 @pytest_asyncio.fixture
-async def shop_headers():
+async def shop_headers(ensure_shop):
     """只属于本次测试的店铺 id；用例跑完清掉该店铺的全部容器/话术/文档"""
-    sid = f"store_pytest_kb_{uuid.uuid4().hex[:8]}"
+    # ensure_shop：把自造的 shop_id 在 stores_store 里建出真实行
+    # （迁移 d5e6f7a8b9c0 之后 shop_id 必须真实存在，否则外键拒绝写入）
+    sid = await ensure_shop(f"store_pytest_kb_{uuid.uuid4().hex[:8]}")
     yield {"X-Shop-ID": sid}
     await _purge(sid)
 
 
 @pytest_asyncio.fixture
-async def two_shop_headers():
+async def two_shop_headers(ensure_shop):
     """两个互不相干的店铺（验证租户隔离）"""
-    a = f"store_pytest_kba_{uuid.uuid4().hex[:6]}"
-    b = f"store_pytest_kbb_{uuid.uuid4().hex[:6]}"
+    a = await ensure_shop(f"store_pytest_kba_{uuid.uuid4().hex[:6]}")
+    b = await ensure_shop(f"store_pytest_kbb_{uuid.uuid4().hex[:6]}")
     yield ({"X-Shop-ID": a}, {"X-Shop-ID": b})
     await _purge(a, b)
 

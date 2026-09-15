@@ -33,9 +33,10 @@ from modules.monitors.snapshot import build_time_series, derive_baseline
 # ====== 夹具 ======
 
 @pytest_asyncio.fixture
-async def shop_headers():
+async def shop_headers(ensure_shop):
     """只属于本次测试的店铺 id；用例跑完清掉该店铺的全部监控数据"""
-    sid = f"store_pytest_{uuid.uuid4().hex[:8]}"
+    # ensure_shop：自造 shop_id 必须在 stores_store 里真实存在（迁移 d5e6f7a8b9c0 的外键）
+    sid = await ensure_shop(f"store_pytest_{uuid.uuid4().hex[:8]}")
     yield {"X-Shop-ID": sid}
     async with async_session_factory() as session:
         await session.execute(delete(MonitorRecord).where(MonitorRecord.shop_id == sid))
@@ -44,10 +45,10 @@ async def shop_headers():
 
 
 @pytest_asyncio.fixture
-async def two_shop_headers():
+async def two_shop_headers(ensure_shop):
     """两个互不相干的店铺（验证租户隔离）"""
-    a = f"store_pytest_a_{uuid.uuid4().hex[:6]}"
-    b = f"store_pytest_b_{uuid.uuid4().hex[:6]}"
+    a = await ensure_shop(f"store_pytest_a_{uuid.uuid4().hex[:6]}")
+    b = await ensure_shop(f"store_pytest_b_{uuid.uuid4().hex[:6]}")
     yield ({"X-Shop-ID": a}, {"X-Shop-ID": b})
     async with async_session_factory() as session:
         for sid in (a, b):

@@ -305,3 +305,203 @@ def fake_llm(monkeypatch):
     monkeypatch.setattr(dc.DashScopeLLM, "chat", fake_chat)
     monkeypatch.setattr(dc.DashScopeLLM, "chat_stream", fake_chat_stream)
     return {"response": _make_response}
+
+
+# ====== 业务店铺上下文（需要 X-Shop-ID 的端点测试共用） ======
+#
+# 背景：spus / skus / assets / candidates / monitors / knowledge_* / *_groups …
+# 全部按 shop_id 过滤（`get_current_shop_id` 从 `X-Shop-ID` 头取）。
+# 所以凡是要写业务数据的端点测试，都得先有一个"当前店铺"，
+# 且用例结束后必须把它连同其下数据一起清掉，否则开发库里会堆测试垃圾。
+
+_TABLES_WITH_SHOP_ID_SQL = """
+    SELECT c.table_name
+    FROM information_schema.columns c
+    JOIN pg_class t ON t.relname = c.table_name
+    JOIN pg_namespace n ON n.oid = t.relnamespace AND n.nspname = 'public'
+    WHERE c.column_name = 'shop_id' AND c.table_schema = 'public'
+"""
+
+_FK_EDGES_SQL = """
+    SELECT src.relname AS child, ref.relname AS parent
+    FROM pg_constraint con
+    JOIN pg_class src ON src.oid = con.conrelid
+    JOIN pg_class ref ON ref.oid = con.confrelid
+    WHERE con.contype = 'f'
+"""
+
+
+async def _shop_scoped_delete_order(session):
+    """
+    返回「带 shop_id 的表」的删除顺序：**先子表、后父表**。
+
+    不硬编码表名：从 information_schema 取表，从 pg_constraint 取外键边，
+    再拓扑排序。将来新增带 shop_id 的表（以及新的外键）会自动纳入。
+
+    为什么不能随便顺序删：`skus.spu_id -> spus.id` 这类外键真实存在，
+    先删 spus 会被数据库拒绝（子行还在），清理就失败了。
+    """
+    from sqlalchemy import text
+
+    tables = set((await session.execute(text(_TABLES_WITH_SHOP_ID_SQL))).scalars().all())
+    edges = (await session.execute(text(_FK_EDGES_SQL))).all()
+
+    parents_of = {t: set() for t in tables}
+    for child, parent in edges:
+        if child in tables and parent in tables:
+            parents_of[child].add(parent)
+
+    order, remaining = [], set(tables)
+    while remaining:
+        # 「被其它剩余表引用」的表要往后放；先删没有被引用的
+        referenced = {p for t in remaining for p in parents_of[t] if p in remaining}
+        ready = sorted(remaining - referenced)
+        if not ready:  # 出现环（正常 schema 不该有）→ 兜底，交给事务整体回滚
+            ready = sorted(remaining)
+        order.extend(ready)
+        remaining -= set(ready)
+    return order
+
+
+# ====== 合成测试店铺（外键前提） ======
+#
+# 测试套件长期用「合成 shop_id」做分区隔离，例如 test_platform_rules.py 里
+# `build_rule_record({"title": "T"}, shop_id="s1")`。这些 id 只是分区键，
+# 过去不需要真实存在。
+#
+# 但迁移 d5e6f7a8b9c0（2026-09-15）给 16 张业务表加了 shop_id -> stores_store
+# 外键后，合成 id 不再是"合法"值：写入会被数据库拒绝。
+# 实测一次性打破 49 个用例 / 709 处外键违例。
+#
+# 这里在会话开始时为这些 id 建出真实店铺行，结束时清掉。
+# 保留原有隔离语义（每个文件仍用自己的 id 分区），只是补上"必须真实存在"这一前提。
+#
+# ★ 新增合成 shop_id 时必须登记到下面这张表，否则那条用例会以外键违例失败。
+#   （p9b_enum_shop_ids.py 可以机械枚举出全部字面量）
+SYNTHETIC_TEST_SHOP_IDS = (
+    "s1",                          # test_knowledge_base / test_platform_rules / test_auth_and_tenant
+    "s2",                          # test_auth_and_tenant
+    "store_1",                     # test_secretary_intent_shortcut
+    "store_test",                  # test_aigc_jobs
+    "store_x",                     # test_monitors
+    "store_unittest_delprobe",     # test_voice_clone_isolation
+    "store_unittest_enrollguard",
+    "store_unittest_forceprobe",
+    "store_unittest_novoice",
+    "store_unittest_speak",
+    "store_unittest_speakclip",
+    "store_unittest_speakempty",
+)
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def _synthetic_test_shops():
+    """
+    为 `SYNTHETIC_TEST_SHOP_IDS` 建出真实店铺行（会话级，自动生效）。
+
+    只写 PG、不写内存 `_store_db`：
+    这些是"租户上下文"，不是用户看得见的店铺；写进内存会让
+    `GET /api/v1/stores`（读内存）凭空多出 12 家店。
+    需要它们的用例都走 `X-Shop-ID` 头，命中点只在 PG 侧。
+    """
+    from sqlalchemy import text
+    from core.database import async_session_factory
+    from modules.stores.db_model import StoreRecord
+
+    async with async_session_factory() as session:
+        existing = set((await session.execute(
+            text("SELECT id FROM stores_store WHERE id = ANY(:ids)"),
+            {"ids": list(SYNTHETIC_TEST_SHOP_IDS)},
+        )).scalars().all())
+        for sid in SYNTHETIC_TEST_SHOP_IDS:
+            if sid in existing:
+                continue
+            session.add(StoreRecord(
+                id=sid,
+                name=f"[test] {sid}",
+                platform="amazon_us",
+                tenant_id="default_tenant",
+            ))
+        await session.commit()
+
+    yield
+
+    # 结束清理：先清这些 id 名下的业务数据（外键 RESTRICT 会拦住直接删店铺），
+    # 复用 _shop_scoped_delete_order 的拓扑排序，保证「先子表后父表」。
+    async with async_session_factory() as session:
+        for table in await _shop_scoped_delete_order(session):
+            await session.execute(
+                text('DELETE FROM "%s" WHERE shop_id = ANY(:ids)' % table),
+                {"ids": list(SYNTHETIC_TEST_SHOP_IDS)},
+            )
+        await session.execute(
+            text("DELETE FROM stores_store WHERE id = ANY(:ids)"),
+            {"ids": list(SYNTHETIC_TEST_SHOP_IDS)},
+        )
+        await session.commit()
+
+
+@pytest_asyncio.fixture
+async def ensure_shop():
+    """
+    合成 shop_id 的「真实化」工厂：`sid = await ensure_shop(sid)`。
+
+    为什么需要
+    ----------
+    迁移 d5e6f7a8b9c0 给 16 张业务表加了 `shop_id -> stores_store` 外键。
+    而测试里常见写法是先造一个分区键、再塞进 X-Shop-ID 头：
+
+        sid = f"store_pytest_kb_{uuid.uuid4().hex[:8]}"
+        yield {"X-Shop-ID": sid}
+
+    这个 id 只是分区键，`stores_store` 里并没有对应行 ⇒ 写入被外键拒绝
+    （实测一次性打破 49 个用例）。
+
+    把生成表达式包一层 `await ensure_shop(...)` 即可：它在 PG 里为该 id
+    建出真实店铺行（幂等），用例结束后按外键依赖倒序清掉。
+
+    注意
+    ----
+    只写 PG、不写内存 `_store_db`：这些是"租户上下文"，不是用户可见的店铺，
+    进内存会让 `GET /api/v1/stores`（读内存）凭空多出店铺。
+
+    需要"店铺属于某个用户"的场景（生产模式下 `get_current_shop_id` 会校验
+    `stores_store.owner_id`）不适用本夹具 —— 那种情况请直接插入带 owner_id
+    的 StoreRecord，例如 test_aigc_jobs.py 的 `job_user`。
+    """
+    from sqlalchemy import text
+    from core.database import async_session_factory
+    from modules.stores.db_model import StoreRecord
+
+    created: list = []
+
+    async def _ensure(sid: str) -> str:
+        if not sid or sid in created:
+            return sid
+        async with async_session_factory() as session:
+            exists = (await session.execute(
+                text("SELECT 1 FROM stores_store WHERE id = :sid"), {"sid": sid}
+            )).scalar()
+            if not exists:
+                session.add(StoreRecord(
+                    id=sid, name=f"[test] {sid}",
+                    platform="amazon_us", tenant_id="default_tenant",
+                ))
+                await session.commit()
+        created.append(sid)
+        return sid
+
+    yield _ensure
+
+    if not created:
+        return
+    async with async_session_factory() as session:
+        for table in await _shop_scoped_delete_order(session):
+            await session.execute(
+                text('DELETE FROM "%s" WHERE shop_id = ANY(:ids)' % table),
+                {"ids": created},
+            )
+        await session.execute(
+            text("DELETE FROM stores_store WHERE id = ANY(:ids)"), {"ids": created}
+        )
+        await session.commit()

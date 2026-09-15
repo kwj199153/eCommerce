@@ -60,12 +60,29 @@ async def job_user(client):
             await db.execute(select(User.id).where(User.email == email))
         ).scalar_one()
 
-    payload = {"email": email, "token": token, "user_id": uid, "headers": {"Authorization": f"Bearer {token}"}}
+    # ★ 在该用户名下建一个真实店铺，并把 id 放进 X-Shop-ID 头。两个原因：
+    #   ① 迁移 d5e6f7a8b9c0 后 aigc_jobs.shop_id 有指向 stores_store 的外键；
+    #      不带头时 shop_id 落成空串 "" ⇒ 写入被数据库直接拒绝
+    #   ② 生产模式（auth_on）下 get_current_shop_id 会校验
+    #      stores_store.owner_id == 当前用户 ⇒ 店铺必须属于这个测试用户
+    from modules.stores.db_model import StoreRecord
+    shop_id = f"store_aigc_{uuid.uuid4().hex[:8]}"
+    async with get_async_session() as db:
+        db.add(StoreRecord(id=shop_id, name=f"[test] {shop_id}", platform="amazon_us",
+                           tenant_id="default_tenant", owner_id=uid))
+        await db.commit()
+
+    payload = {
+        "email": email, "token": token, "user_id": uid, "shop_id": shop_id,
+        "headers": {"Authorization": f"Bearer {token}", "X-Shop-ID": shop_id},
+    }
 
     yield payload
 
     async with get_async_session() as db:
+        # 先删任务行（子），再删店铺（父）—— 外键是 RESTRICT，反序删不掉
         await db.execute(text("DELETE FROM aigc_jobs WHERE user_id = :u"), {"u": uid})
+        await db.execute(text("DELETE FROM stores_store WHERE id = :s"), {"s": shop_id})
         await db.execute(text("DELETE FROM subscriptions WHERE user_id = :u"), {"u": uid})
         await db.execute(text("DELETE FROM users WHERE id = :u"), {"u": uid})
         await db.commit()
