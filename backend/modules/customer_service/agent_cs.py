@@ -24,6 +24,13 @@ from datetime import datetime, timedelta
 import random
 import hashlib
 
+from core.logger import get_logger
+
+# ★ 同 product_research：3 处 logger.warning 全在 except 里且未定义。
+#   其中 `stream_chat failed` 那条最严重 —— 流式失败后本该回退到
+#   `self.invoke(query)` 再答一次，NameError 会让回退根本不执行。
+logger = get_logger("customer_service.agent")
+
 from pydantic import BaseModel, Field
 
 # 导入 LLM 集成能力

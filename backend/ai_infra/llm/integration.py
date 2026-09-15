@@ -338,7 +338,9 @@ class LLMEnabledAgent:
                 if structured and isinstance(content, str):
                     try:
                         content = json.loads(content)
-                    except:
+                    except (json.JSONDecodeError, TypeError):
+                        # 只兜「不是合法 JSON」，不要把 KeyboardInterrupt / SystemExit
+                        # 这类也不小心吃掉（裸 except 会一并捕获）
                         content = {"raw_text": content}
                 return LLMCallResult(
                     success=True,

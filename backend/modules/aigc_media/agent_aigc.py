@@ -393,7 +393,6 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
     @staticmethod
     def _clean_translation(raw: str) -> str:
         """兜底清洗：模型偶尔仍会包 ``` 或加「译文：」前缀。"""
-        import re
         s = (raw or "").strip()
         s = re.sub(r"^```[a-zA-Z]*\s*\n?", "", s)
         s = re.sub(r"\n?```\s*$", "", s)
@@ -929,7 +928,9 @@ class AIGCMediaAgent(LLMEnabledAgent if LLM_AVAILABLE else object):
         # 模块4：规格参数表
         if specifications:
             modules.append(APlusModule(
-                module_id=M006,
+                # ★ 修复：同族模块都用字符串（"M001"/"M002"/"M007"），
+                #   且 APlusModule.module_id 声明为 str ⇒ 裸 M006 是 NameError。
+                module_id="M006",
                 module_type="text_table",
                 title="产品规格",
                 content=self._format_specifications(specifications),

@@ -38,6 +38,14 @@ from platforms.base import (
 )
 from ai_infra.sse import progress
 
+from core.logger import get_logger
+
+# ★ 本文件此前有 9 处 `logger.warning(...)`，但**从未定义 logger** ——
+#   而它们全在 except 分支里，意味着「LLM/工具调用失败时本该降级」的路径
+#   会自己抛 `NameError: name 'logger' is not defined`，把可恢复错误变成 500。
+#   接上统一日志出口后，这些降级日志也会带上 request_id 落进日志文件。
+logger = get_logger("product_research.agent")
+
 # 导入 LLM 集成能力
 try:
     from ai_infra.llm.integration import LLMEnabledAgent, LLMCallResult

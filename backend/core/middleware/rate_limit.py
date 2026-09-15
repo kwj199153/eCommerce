@@ -31,9 +31,12 @@ from core.config import config
 
 logger = logging.getLogger(__name__)
 
-# 放行路径：健康检查与文档不应消耗限流额度
+# 放行路径：健康检查、指标采集与文档不应消耗限流额度
+#   ★ /metrics 必须放行：Prometheus 默认 15s 抓一次，若计入限流额度，
+#     单靠监控采集就能把用户的每分钟请求额度吃掉（limit=60/min 时占 25%）。
 DEFAULT_EXEMPT_PATHS = frozenset({
     "/health",
+    "/metrics",
     "/favicon.ico",
     "/docs",
     "/redoc",

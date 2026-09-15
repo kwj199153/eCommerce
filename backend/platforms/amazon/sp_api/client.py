@@ -27,6 +27,10 @@ from .models import (
     SearchTermReportRow,
     CompetitorListing,
     BuyBoxData,
+    # ★ 2026-09-15 补：解析 Offers 时会 `Offer(**offer_raw)`，
+    #   但此前没导入 → 只要响应里真带 Offers 就 NameError。
+    #   单测用空 Offers 走不到这行，所以一直没暴露。
+    Offer,
 )
 
 logger = logging.getLogger(__name__)

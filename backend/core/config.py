@@ -6,9 +6,20 @@
 """
 
 from functools import lru_cache
-from typing import Optional
+
 from pydantic_settings import BaseSettings
 from pydantic import Field, model_validator
+
+
+# ★ 已知但尚未接入实现的真实支付网关名（P1-4，2026-09-15）
+#
+# 定义放在这里而不是 core/billing/payment_gateway.py，是为了**避免循环导入**
+# （payment_gateway 需要 import config）。payment_gateway 反过来 import 本常量，
+# 于是「哪些网关算未接入」只有一处定义，不会出现两份清单各自漂移。
+#
+# 用途：生产环境护栏据此判定「配了一个只是占位名的网关」→ 拒绝启动。
+# 见 Settings._enforce_production_safety() 与 payment_gateway.UnimplementedGateway。
+KNOWN_UNIMPLEMENTED_GATEWAYS = ("stripe", "alipay", "wechat", "wechatpay", "paypal")
 
 
 class Settings(BaseSettings):
@@ -57,6 +68,27 @@ class Settings(BaseSettings):
             errors.append("JWT_SECRET_KEY 必须设为独立的高强度随机值（不能沿用占位默认密钥）")
         if self.debug:
             errors.append("DEBUG 必须为 false（生产环境不能开启调试模式）")
+        # ★ P1-4 补充（2026-09-15）：生产环境不能拿模拟支付网关收钱。
+        #   MockGateway 的 charge() 是「无条件返回支付成功」，也就是说
+        #   用户点一下「升级到专业版」就直接变成付费用户，一分钱不收。
+        #   这是「收了钱没到账」的反向事故，必须拦住。
+        gw = (self.payment_gateway or "").strip().lower()
+        if gw == "mock":
+            errors.append(
+                "PAYMENT_GATEWAY 不能为 mock（模拟网关无条件支付成功 ⇒ 用户白拿付费套餐）。"
+                "接入真实网关后把 PAYMENT_GATEWAY 改为对应实现名"
+            )
+        elif gw in KNOWN_UNIMPLEMENTED_GATEWAYS:
+            # ★ 这条与上一条方向相反，却是同一个道理的背面：
+            #   把网关填成 stripe/alipay/wechat 只是**填了个名字**，
+            #   实现还没写。这类配置在开发环境看起来一切正常（应用能起、
+            #   页面能开），生产环境则会「第一笔支付就 500」。
+            #   启动期拦住，比等第一个客户付款失败要好。
+            errors.append(
+                f"PAYMENT_GATEWAY='{gw}' 尚未接入实现（只是占位名）。"
+                f"请先按 core/billing/payment_gateway.py 顶部「真实网关接入清单」"
+                f"完成 6 步接入，再把该值改为 '{gw}'"
+            )
 
         if errors:
             raise ValueError(
@@ -189,6 +221,32 @@ class Settings(BaseSettings):
     voice_clone_enabled: bool = Field(
         default=False,
         description="是否启用语音克隆附加模块（默认关闭）",
+    )
+
+    # ====== 可观测性（★ P1-8 补充 2026-09-15）======
+    #
+    # 日志：已有 loguru 全局配置（core/logger.py），这里只暴露两个可调项。
+    #   - log_dir 必须可配：容器里 CWD 未必是项目根，写死 "logs" 会让日志
+    #     落到意料之外的位置（或因只读挂载直接写入失败）。
+    #   - log_json 打开后逐行 JSON，供 Filebeat / Promtail / SLS 采集；
+    #     本地开发保持彩色单行，人眼看。
+    log_dir: str = Field(default="logs", description="日志目录（相对 CWD 或绝对路径）")
+    log_level: str = Field(default="", description="日志级别，留空=按 debug 自动（debug→DEBUG，否则 INFO）")
+    log_json: bool = Field(default=False, description="是否输出 JSON 结构化日志（生产采集建议 true）")
+
+    # 指标：/metrics 按 Prometheus 文本格式暴露（自研，零新依赖）。
+    #   - metrics_enabled=false 时不注册该路由（404 语义）
+    #   - metrics_token 非空时要求 `Authorization: Bearer <token>`；
+    #     留空则不鉴权 —— ★ 生产环境暴露裸 /metrics 会把 QPS/错误率/接口清单
+    #     告诉任何扫到它的人，因此「生产 + 无 token」会在启动时告警。
+    metrics_enabled: bool = Field(default=True, description="是否注册 /metrics 指标端点")
+    metrics_token: str = Field(default="", description="/metrics 访问令牌，留空=不鉴权")
+
+    # Sentry：留空则完全不初始化（不 import、不发网络请求、零开销）。
+    #   填了 DSN 但没装 sentry-sdk → 启动时打 WARNING 说明缺哪个包（显式降级，不静默）。
+    sentry_dsn: str = Field(default="", description="Sentry DSN，留空=不上报")
+    sentry_traces_sample_rate: float = Field(
+        default=0.0, description="Sentry 性能追踪采样率，0=只上报错误"
     )
 
     # ====== Amazon SP-API ======

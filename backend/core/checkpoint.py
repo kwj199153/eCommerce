@@ -66,12 +66,36 @@ def get_checkpointer() -> Optional[AsyncPostgresSaver]:
 
 
 async def close_checkpoint() -> None:
-    """关闭 checkpointer 连接池。"""
+    """
+    关闭 checkpointer 连接池。
+
+    ★ 修复（2026-09-15）：原实现直接 `isinstance(conn, AsyncConnectionPool)`，
+      但 `AsyncConnectionPool` 只在 `setup_checkpoint()` **函数内** import ——
+      模块作用域根本没有这个名字 ⇒ 只要 `_checkpointer` 非空，
+      `close_checkpoint()` 必然抛 `NameError`，连接池**从来没被真正关闭过**。
+      这个 bug 之所以长期不可见，是因为调用点被
+      `except Exception: pass` 吞掉了（见 main.py lifespan，已一并修）。
+
+    psycopg_pool 保持**延迟导入**（不提到模块顶层）：它是可选依赖，
+    只有启用 checkpoint 的场景才会装；顶层导入会让未装该包的部署起不来。
+    """
     global _checkpointer
-    if _checkpointer is not None:
-        conn = _checkpointer.conn
-        if isinstance(conn, AsyncConnectionPool):
-            await conn.close()
-        elif hasattr(conn, "close"):
-            await conn.close()
+    if _checkpointer is None:
+        return
+
+    conn = getattr(_checkpointer, "conn", None)
+    if conn is None:
         _checkpointer = None
+        return
+
+    try:
+        from psycopg_pool import AsyncConnectionPool
+
+        is_pool = isinstance(conn, AsyncConnectionPool)
+    except ImportError:
+        # 理论上到不了这里（能建出 pool 就说明装了），但不让清理路径再抛异常
+        is_pool = False
+
+    if (is_pool or hasattr(conn, "close")) and hasattr(conn, "close"):
+        await conn.close()
+    _checkpointer = None

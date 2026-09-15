@@ -78,7 +78,10 @@ def main():
             "generated_at": __import__("datetime").datetime.now().isoformat(),
             "source_type": "mock",
             "store_name": "TechHome Pro",
-            "seller_id": SELLER_ID if 'SELLER_ID' in dir() else "A1B2C3D4E5F6G7",
+            # ★ 原来写的是 `SELLER_ID if "SELLER_ID" in dir() else "A1B2C3D4E5F6G7"`:一个「看起来在防 NameError」的守卫。
+            #   dir() 在函数作用域里返回**局部名**，永远不含 SELLER_ID，所以实际总是走 else 分支 ——
+            #   能用，但纯属巧合，且让静态检查无法证明这个名字有效（ruff 会一直报 F821）。直接写字面量。
+            "seller_id": "A1B2C3D4E5F6G7",
             "marketplace": "us",
             "date_range": {"start": date_from.isoformat(), "end": date_to.isoformat(), "days": args.days},
             "product_count": len(set(s["asin"] for s in daily_sales)),

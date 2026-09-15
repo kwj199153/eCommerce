@@ -79,9 +79,9 @@ class BaseAgent:
         system_prompt: str,
         tools: list[BaseTool],
         llm: Optional[BaseChatModel] = None,
-        hitl_tools: list[str] = [],
+        hitl_tools: Optional[list[str]] = None,
         max_iterations: int = 10,
-        metadata: dict = {},
+        metadata: Optional[dict] = None,
         checkpointer: Optional[AsyncPostgresSaver] = None,
     ):
         """
@@ -100,6 +100,13 @@ class BaseAgent:
         self.agent_name = agent_name
         self.system_prompt = system_prompt
         self.max_iterations = max_iterations
+        # ★ 可变默认参数的经典坑：`def f(x=[])` 的默认对象在**函数定义时创建一次**，
+        #   所有调用者共享同一个 list/dict。原写法 `hitl_tools=[]` / `metadata={}`
+        #   意味着任意 Agent 实例对它们的改动会传染给后续所有实例 ——
+        #   在「一个进程内建多个 Agent」的场景下会串数据。
+        #   改用 None 哨兵 + 进函数体后新建，彻底切断共享。
+        hitl_tools = list(hitl_tools) if hitl_tools else []
+        metadata = dict(metadata) if metadata else {}
         self.hitl_tool_names = set(hitl_tools)
         self.checkpointer = checkpointer
 

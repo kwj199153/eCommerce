@@ -16,9 +16,65 @@ import pytest
 # ====== 鉴权开关 ======
 
 async def test_health_is_open(client):
+    """
+    健康检查必须免鉴权。
+
+    ★ 2026-09-15 语义更新：/health 由「恒返回 ok」改为**真实探活依赖**，
+      因此 status 只保证落在三个合法值里（ok / degraded / unhealthy）。
+      本测试的意图是「这条路径不需要 Token」，不是「服务一定全健康」——
+      测试环境通常没有 Redis，degraded 才是正确结果。
+      （修复前的写法 `== "ok"` 会让「Redis 挂了」这种真实状态把测试跑红，
+        而它跟本测试要验证的鉴权无关。）
+    """
     r = await client.get("/health")
     assert r.status_code == 200
-    assert r.json()["status"] == "ok"
+    assert r.json()["status"] in ("ok", "degraded", "unhealthy")
+
+
+async def test_health_detail_exposes_dependencies(client):
+    """?detail=true 时返回各依赖探活结果（不含敏感信息）"""
+    r = await client.get("/health?detail=true")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] in ("ok", "degraded", "unhealthy")
+    deps = body["dependencies"]
+    # postgres 是必需依赖，测试环境应可用
+    assert deps["postgres"]["up"] is True
+    assert "latency_ms" in deps["postgres"]
+    # redis / llm 只校验结构，不假设环境状态
+    assert "up" in deps["redis"]
+    assert "up" in deps["llm"]
+
+
+async def test_metrics_endpoint_available(client):
+    """
+    /metrics 暴露 Prometheus 文本格式，且不消耗限流额度。
+
+    这是「可观测性从 0 到 1」的回归保护：一旦有人把该路由删掉或改坏格式，
+    监控采集会静默断流（比报错更难发现）。
+    """
+    r = await client.get("/metrics")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/plain")
+    body = r.text
+    assert "process_uptime_seconds" in body
+    assert "http_requests_total" in body
+    # 路径标签必须是归一化后的模板，不能出现原始 UUID
+    assert "http_request_duration_ms_bucket" in body
+
+
+async def test_request_id_is_returned_and_propagated(client):
+    """
+    每个响应都带 X-Request-ID；上游透传的 ID 必须被原样沿用。
+
+    ★ 透传（而不是每次新生成）是链路追踪的前提：网关/前端已经生成了 ID，
+      服务端再换一个就会把链路切断。
+    """
+    r = await client.get("/health")
+    assert r.headers.get("X-Request-ID")
+
+    r2 = await client.get("/health", headers={"X-Request-ID": "trace-abc-123"})
+    assert r2.headers["X-Request-ID"] == "trace-abc-123"
 
 
 async def test_business_endpoint_401_without_token(client, auth_on):
