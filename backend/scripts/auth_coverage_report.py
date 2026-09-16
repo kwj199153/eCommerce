@@ -26,6 +26,16 @@ from main import app  # noqa: E402
 from fastapi.routing import APIRoute  # noqa: E402
 
 # 认定为「认证/授权」的依赖函数名
+#
+# ★ P1-c（2026-09-16）维护说明：
+#   - 删掉 `require_shop_owner` —— 那是**账户侧**（shops 表 / UUID）的
+#     权限工厂，已随账户侧实体整体删除。留着一个不存在的名字只会让
+#     报告看起来"有一类依赖"，实际永远命中不到。
+#   - 加上 `_current_user` —— `core/auth/accounts_router.py` 的
+#     fail-closed 身份门（无身份一律 401）。不登记它，整个
+#     `/api/v1/accounts` 模块会在报告里显示成"无鉴权"，与事实相反。
+#   ★ 判据：这份清单必须与实际存在的依赖函数名保持一致；
+#     名字写错**不会报错**，只会让覆盖率数字静默失真。
 AUTH_DEPENDENCY_NAMES = {
     "get_current_user",
     "get_current_active_user",
@@ -33,7 +43,7 @@ AUTH_DEPENDENCY_NAMES = {
     "require_auth_if_enabled",
     "require_permissions",
     "require_admin",
-    "require_shop_owner",
+    "_current_user",
     "get_current_tenant",
 }
 

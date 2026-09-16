@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.billing.usage_tracker import meter_agent_chat
+from core.metering.usage_tracker import meter_agent_chat
 from core.database import get_db
 from core.observability.context import current_request_id
 from core.tenant.middleware import get_current_shop_id
@@ -19,7 +19,7 @@ import logging
 from ai_infra.sse import sse_event_stream
 
 from core.auth.dependencies import require_auth_if_enabled
-from modules.user_subscription.models import User
+from core.identity.models import User
 
 from . import job_service
 

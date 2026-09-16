@@ -53,7 +53,7 @@ async def job_user(client):
     from sqlalchemy import select, text
 
     from core.database import get_async_session
-    from modules.user_subscription.models import User
+    from core.identity.models import User
 
     async with get_async_session() as db:
         uid = (
@@ -330,7 +330,7 @@ async def _make_other_user(client):
     from sqlalchemy import select
 
     from core.database import get_async_session
-    from modules.user_subscription.models import User
+    from core.identity.models import User
 
     async with get_async_session() as db:
         uid = (await db.execute(select(User.id).where(User.email == email))).scalar_one()

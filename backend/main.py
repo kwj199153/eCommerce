@@ -117,11 +117,11 @@ def _audit_insecure_settings() -> None:
     """
     if config.environment != "production":
         return
-    if config.metrics_enabled and not (config.metrics_token or "").strip():
-        _log.warning(
-            "生产环境 /metrics 未设 METRICS_TOKEN：QPS、错误率、接口清单将对"
-            "任何扫到该路径的人可见。建议设 METRICS_TOKEN 或关掉 METRICS_ENABLED"
-        )
+    # ★ P1-d（2026-09-16）：此处原先只打 WARNING 说「/metrics 未设 METRICS_TOKEN」。
+    #   该检查已上移为**启动期硬拒绝**（core/config.py::_enforce_production_safety）
+    #   —— 于是生产环境下这条 WARNING 变成**永远不可达**的死代码。
+    #   保留它反而有害：会让人以为「不设 token 也是能跑的选择」。
+    #   故删除，单一判据只留在 config.py 一处。
     if config.public_base_url and not config.public_base_url.startswith("https://"):
         _log.warning(
             "PUBLIC_BASE_URL 非 HTTPS（{}）：浏览器 getUserMedia（语音录音）"
@@ -321,8 +321,15 @@ if config.metrics_enabled:
         Prometheus 文本格式指标（自研轻量注册表，零额外依赖）。
 
         鉴权：config.metrics_token 非空时要求 `Authorization: Bearer <token>`。
-        ★ 生产环境务必设 METRICS_TOKEN —— 裸暴露会把 QPS、错误率、接口清单
-          告诉任何扫到它的人。未设时启动阶段会打 WARNING 提示。
+
+        ★ P1-d（2026-09-16）：原先「生产 + 未设 token」只打一句 WARNING，
+          属于「门禁存在 ≠ 在执行」—— 漏配的后果是**安静暴露**指标。
+          现上移为启动期硬拒绝（core/config.py::_enforce_production_safety）：
+          生产环境 METRICS_ENABLED=true 而 METRICS_TOKEN 为空 ⇒ 进程拒绝启动。
+          不需要指标端点请显式设 METRICS_ENABLED=false。
+          ★ 本端点的 401 只负责「token 配了但请求带错」这一种情形；
+            「token 压根没配」由启动护栏拦住，不在这里再判一次
+            （避免同一判据两处实现、各自漂移）。
         """
         token = (config.metrics_token or "").strip()
         if token and authorization.strip() != f"Bearer {token}":
@@ -358,7 +365,7 @@ BUSINESS_AUTH = [Depends(require_auth_if_enabled)] if config.auth_required else 
 #
 # 演示模式：两个 check_* 内部都会先调 require_auth_if_enabled，返回 None
 #   （演示模式）时直接 return，不计量不拦截 ⇒ 本地演示零影响。
-from core.billing.usage_tracker import check_api_quota, check_agent_chat_quota
+from core.metering.usage_tracker import check_api_quota, check_agent_chat_quota
 
 # API 调用配额：LLM 生成 / 出图 / 视频 / 声音复刻
 API_QUOTA = [Depends(check_api_quota)]
@@ -366,15 +373,42 @@ API_QUOTA = [Depends(check_api_quota)]
 CHAT_QUOTA = [Depends(check_agent_chat_quota)]
 
 # 认证模块（登录/注册，必须保持开放，否则拿不到 Token）
-from modules.user_subscription.router import router as auth_router
+from core.identity.router import router as auth_router
 app.include_router(auth_router, prefix="/api/v1")
 
-# 店铺管理模块（自带 get_current_user 鉴权）
-from modules.user_subscription.shop_router import router as shop_router
-app.include_router(shop_router, prefix="/api/v1")
+# 账号安全模块（★ P1-b 2026-09-16）：邮箱验证 / 忘记密码 / 重置密码 /
+# 修改密码 / 登出（真撤销）/ 登出所有设备。
+# ★ 同样**不挂** BUSINESS_AUTH：里面既有必须开放给未登录用户的端点
+#   （verify-email / forgot-password / reset-password），
+#   也有需要登录的（change-password / logout / resend）。
+#   若整批挂上统一鉴权，"忘记密码"这条**用户进不去时才用**的路就被堵死了
+#   —— 必须由各端点自己声明依赖。
+from core.identity.security_router import router as security_router
+app.include_router(security_router, prefix="/api/v1")
+
+# ★ P1-c 收拢（2026-09-16）：原 `core/identity/shop_router.py`
+#   （7 个 `/api/v1/shops` 端点，挂在账户侧 `shops` 表 / UUID 主键上）
+#   **已整体删除**。实测该模块生产 0 调用点（前端只调 `/api/v1/stores`），
+#   且用它建出来的店在业务侧不可用 —— UUID 放进 `X-Shop-ID` 查
+#   `stores_store` 查不到 ⇒ 403，即「会安静地生产一批废店」。
+#   账户管理由下面的 `/api/v1/accounts` 承担；归属/权限判定的唯一真源是
+#   `core/auth/accounts.py`。
+
+# 账户与成员管理（★ P1-c 2026-09-16）：account → store 层级的 HTTP 面
+# （账户 CRUD + 成员/角色矩阵）。自带 `_current_user`（fail-closed：无身份一律 401）。
+# ★ 不挂 BUSINESS_AUTH：那条依赖的语义是「业务数据按 X-Shop-ID 分区时的鉴权」，
+#   而本模块管的是**账户本身** —— 层级更高，且用户可能一家店都还没有，
+#   拿不到店铺上下文。层级判定一律走 core/auth/accounts.py 的能力表。
+from core.auth.accounts_router import router as accounts_router
+app.include_router(accounts_router, prefix="/api/v1")
+
+# 用户自助管理（个人资料 / 头像 / API 密钥 / 通知偏好）—— ★ 第 100 轮
+# 补的是 Settings.vue 那 7 个一直 404 的 `/users/*` 路径。
+from core.identity.users_router import router as users_router
+app.include_router(users_router, prefix="/api/v1")
 
 # 计费模块（自带鉴权）
-from modules.user_subscription.billing_router import router as billing_router
+from modules.billing.router import router as billing_router
 app.include_router(billing_router, prefix="/api/v1")
 
 # 选品分析模块 (Phase 2)（自带 get_current_user 鉴权）

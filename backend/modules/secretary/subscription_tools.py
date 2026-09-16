@@ -17,7 +17,7 @@
 from langchain_core.tools import StructuredTool
 
 from core.database import get_db
-from modules.user_subscription.models import Subscription, SubscriptionPlan
+from modules.billing.models import Subscription, SubscriptionPlan
 from sqlalchemy import select
 
 

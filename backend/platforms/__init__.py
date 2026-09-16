@@ -19,6 +19,10 @@
     - Shopify (Phase 5+: 骨架预留)
 """
 
+# 注：支付网关（platforms/payment/）与下面这些电商平台适配器同属本层 ——
+#     它们都是「对接外部系统、对内提供统一接口」的适配器。
+#     为避免符号名混淆（get_gateway vs get_platform_adapter），此处不聚合
+#     导出，请直接从 platforms.payment 导入。
 from platforms.base import (
     PlatformAdapter,
     PlatformType,

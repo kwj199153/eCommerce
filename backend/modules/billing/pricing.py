@@ -3,9 +3,9 @@
 
 背景（实测发现）：
     「年付价」这个数字在本项目里曾被**两处独立实现**：
-      · modules/user_subscription/billing_router.py::_serialize_plan
+      · modules/billing/router.py::_serialize_plan
             price_yearly = round(plan.price_monthly * 10, 2)     ← 给前端看
-      · modules/user_subscription/billing_router.py::change_plan
+      · modules/billing/router.py::change_plan
             amount       = round(plan.price_monthly * 10, 2)     ← 真正扣的钱
     两处各自硬编码同一个魔法系数 10。今天两边值一样（pro: 2990），但只要
     有人改一处（例如把年付改成「9 折」），就会出现
@@ -20,7 +20,7 @@
     不允许自己算第二遍。
 
 用法：
-    from core.billing.pricing import plan_amount, yearly_price, cycle_days
+    from modules.billing.pricing import plan_amount, yearly_price, cycle_days
 
     amount = plan_amount(plan, "yearly")     # 展示与扣费共用同一个函数
     days   = cycle_days("yearly")            # 周期长度也同源

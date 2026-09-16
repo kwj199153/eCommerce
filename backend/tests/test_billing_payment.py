@@ -13,6 +13,7 @@
 另外两条护栏测试：
   5. 未接入的真实网关必须 501，**不得**静默降级为「支付成功」
   6. 生产环境用 mock 网关必须拒绝启动（正向/反向各一次）
+  7. 兜底闸：唯一约束命中时必须 409 而非 500；其他完整性错误不得被吞
 
 ★ 这些用例的价值不在于「跑通流程」，而在于**锁住方向**：
   上面 3、4 两条的 bug 方向都是「多收用户的钱 / 少收平台的钱」，
@@ -24,7 +25,7 @@ import asyncio
 import pytest
 from sqlalchemy import select, text
 
-from core.billing.pricing import (
+from modules.billing.pricing import (
     build_idempotency_key,
     is_duplicate_submission,
     normalize_cycle,
@@ -34,7 +35,7 @@ from core.billing.pricing import (
 )
 from core.config import KNOWN_UNIMPLEMENTED_GATEWAYS, config
 from core.database import get_async_session
-from modules.user_subscription.models import Subscription, SubscriptionPlan
+from modules.billing.models import Subscription, SubscriptionPlan
 
 
 # ====== 工具 ======
@@ -233,23 +234,101 @@ async def test_concurrent_duplicate_submission_creates_single_invoice(
       · `SELECT ... FOR UPDATE` 行锁：把同一用户的订阅变更串行化，
         后来的请求阻塞到前一个提交完，再读到新状态 ⇒ 被业务守卫判为重复提交
         ⇒ 200 + charged=False（用户视角是一次正常点击，不该看到报错）。
+        ★ 判据：业务守卫是「读-判断-写」模式，天生有竞态窗口；只靠应用层判断
+          + 事后唯一约束，会在「无订阅可锁」时不成立。行锁把竞态窗口直接关掉，
+          唯一约束退化为兜底。
       · `invoices.idempotency_key` 唯一约束：只兜「此前没有任何订阅行可锁」的
         首购竞态，那种情况下无法串行化。
+
+    ★★ 只加行锁是不够的：`.execution_options(populate_existing=True)` 不能省
+      （P1-5 收尾修复 2026-09-15；原注释在 change_plan 函数体内，已外迁至此）
+
+      行锁只在**数据库**层面把并发请求串行化；但 SQLAlchemy 的 identity map 会把
+      「本 session 里已经加载过的那份 Subscription」原样返回，**不使用锁后重读到
+      的新值覆盖已加载属性**（除非显式 populate_existing）。
+      而 `User.subscription` 是 `lazy="selectin"`（models.py:62）——
+      即 `get_current_user` 查 User 时，已经把这条订阅行连同**旧值**装进了
+      identity map。于是「串行化之后后到的请求会读到新状态」这条设计前提不成立。
+
+      实测（4 并发双击同一套餐）：
+        · 语句确实阻塞串行了（阶梯等待 71 / 266 / 468 / 671ms，见
+          .workbuddy/probes/project-audit-20260915/script-lock_probe.py）
+        · 但 4 个请求全部读到加锁前的旧状态 ⇒ 算出**同一个**幂等键
+          ⇒ 3 个撞 `invoices.idempotency_key` 唯一约束
+          ⇒ 走到 IntegrityError 分支（本该 200 + charged=False）
+
+      ★ 判据：**门禁语句存在 ≠ 门禁在生效**。加锁查询必须同时要求 ORM 重新装载，
+        否则锁保护的是数据库行，业务读到的仍是内存里的旧对象。
+
+    ★ 为什么必须用 `asyncio.Barrier` 对齐，而不能只写 `asyncio.gather`（实测 2026-09-16）
+      裸 gather 的 4 个请求**并不会重叠在这个临界区**。实测时间轴
+      （.workbuddy/probes/project-audit-20260915/r78m-authtiming.txt）：
+        · 4 个请求确实同时进入（鉴权入口跨度仅 15ms）
+        · 但**鉴权本身耗时 94~187ms**（User 连带 selectin 装 shops / subscription），
+          而先到的那个请求走完「选套餐 → 加锁 → 扣款 → 提交」只要 ~60ms
+        · 于是后到请求是在**鉴权期间**错过窗口的：等它走到加锁查询时，
+          上一个请求早已提交，它读到的本来就是新值
+      ⇒ 裸 gather 版本实际只考了「顺序重复提交」，`populate_existing` 一次都没被触发
+        （反向注入 V4 证实：去掉它，该用例仍绿）。
+      这里用 Barrier 把 4 个请求对齐到「鉴权完成（旧值已进 identity map）之后、
+      加锁查询之前」—— 这正是真实高并发下双击的形态，也是本用例要守的那个窗口。
+      ★ 判据：一个「证明竞态存在」的用例，必须**先证明该用例自己制造的窗口真实存在**；
+        窗口不成立时它会静默退化成顺序用例，反向注入也证不伪（假绿）。
+
+    ★ 本用例就是上面两种病态的门禁：把 `.execution_options(populate_existing=True)`
+      去掉即红（反向注入见 .workbuddy/probes/project-audit-20260915/r78h-reverse.txt）。
+
+    ⚠️ 锁只覆盖**当前用户自己那一行**，且事务内还包含一次网关调用
+      （mock 瞬时完成；接真实网关若是同步 HTTP，需评估持锁时长，
+      必要时改为「先建 pending 账单 → 释放锁 → 收 webhook」的两段式，
+      见 platforms/payment/gateway.py 顶部接入清单第 5 条）。
     """
-    rs = await asyncio.gather(
-        *[_subscribe(client, auth_headers, "3", "yearly") for _ in range(4)],
-        return_exceptions=True,
-    )
+    from fastapi import Depends, Request
+
+    from core.auth.dependencies import get_current_user, oauth2_scheme
+    from core.database import get_db
+    from main import app
+
+    n = 4
+    gate = asyncio.Barrier(n)
+
+    async def _synced_auth(
+        request: Request,
+        token: str = Depends(oauth2_scheme),
+        db=Depends(get_db),
+    ):
+        """照常鉴权（订阅行连同旧值进 identity map），再对齐到临界区入口。"""
+        # ★ P0-2：`request` 是 get_current_user 的**必填首参**，且必须是裸
+        #   `Request` 注解（`Optional[Request]` 会被 FastAPI 当 Pydantic 字段，
+        #   路由注册期就抛 FastAPIError —— 见该函数 docstring）。
+        u = await get_current_user(request=request, token=token, db=db)
+        await gate.wait()
+        return u
+
+    app.dependency_overrides[get_current_user] = _synced_auth
+    try:
+        rs = await asyncio.wait_for(
+            asyncio.gather(
+                *[_subscribe(client, auth_headers, "3", "yearly") for _ in range(n)],
+                return_exceptions=True,
+            ),
+            timeout=60,
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
     codes = [r.status_code if not isinstance(r, Exception) else repr(r) for r in rs]
-    assert all(c == 200 for c in codes), f"并发请求出现非 200：{codes}"
+    assert all(c == 200 for c in codes), (
+        f"并发请求出现非 200：{codes} —— 若为 409，说明后到请求读到了旧的订阅状态"
+        f"（即 populate_existing 没生效或窗口没对齐）"
+    )
 
     bodies = [r.json() for r in rs if not isinstance(r, Exception)]
-    assert sum(1 for b in bodies if b["charged"]) == 1, (
-        f"4 个并发请求只应有 1 次真正扣款，实际 {sum(1 for b in bodies if b['charged'])}"
-    )
+    charged = sum(1 for b in bodies if b["charged"])
+    assert charged == 1, f"{n} 个并发请求只应有 1 次真正扣款，实际 {charged}"
 
     rows = await _invoices_of(user["user_id"])
-    assert len(rows) == 1, f"4 个并发请求只应建 1 张账单，实际 {len(rows)}: {rows}"
+    assert len(rows) == 1, f"{n} 个并发请求只应建 1 张账单，实际 {len(rows)}: {rows}"
 
 
 def test_idempotency_key_follows_start_state_not_wall_clock():
@@ -370,25 +449,16 @@ def test_known_unimplemented_list_is_non_empty_and_lowercase():
 
 
 # ====== 6. 生产护栏（正向 + 反向） ======
+#
+# ★ 合规基线**不在本文件里**：`prod_settings_kwargs` 夹具（tests/conftest.py）
+#   是唯一来源。原因见该夹具的注释 —— 同一件事（新护栏上线把各处独立基线
+#   打红）已经发生过三次，最后收敛成一处。
 
-def _prod_settings(**over):
-    """构造一个 production Settings 实例（validator 只在实例化时跑）"""
+def test_production_guard_accepts_compliant_config(prod_settings_kwargs):
+    """正向：合规配置必须放行（否则护栏变成「生产永远起不来」）。"""
     from core.config import Settings
 
-    base = dict(
-        environment="production",
-        auth_required=True,
-        jwt_secret_key="a-very-strong-random-secret-9f2c8e1b7d4a6035",
-        debug=False,
-        payment_gateway="internal",   # 既非 mock 也非未接入清单，用于证明护栏不过宽
-    )
-    base.update(over)
-    return Settings(**base)
-
-
-def test_production_guard_accepts_compliant_config():
-    """正向：合规配置必须放行（否则护栏变成「生产永远起不来」）。"""
-    _prod_settings()   # 不抛异常即通过
+    Settings(**prod_settings_kwargs())   # 不抛异常即通过
 
 
 @pytest.mark.parametrize(
@@ -401,13 +471,37 @@ def test_production_guard_accepts_compliant_config():
         ({"payment_gateway": "stripe"}, "尚未接入实现"),
         ({"payment_gateway": "alipay"}, "尚未接入实现"),
         ({"payment_gateway": "wechat"}, "尚未接入实现"),
+        # ★ P1-d（2026-09-16）：/metrics 漏配令牌。
+        #   修复前这里只有 main.py 一句 WARNING（"门禁存在 ≠ 在执行"），
+        #   漏配的后果是 QPS/错误率/接口清单**安静地**对外开放。
+        ({"metrics_token": ""}, "METRICS_TOKEN"),
+        ({"metrics_token": "   "}, "METRICS_TOKEN"),   # 纯空白必须与空串同待遇
     ],
 )
-def test_production_guard_rejects(over, keyword):
-    """反向：7 种违规配置逐一必须拒绝启动，且错误文案要指出是哪个配置项。"""
+def test_production_guard_rejects(prod_settings_kwargs, over, keyword):
+    """反向：每一种违规配置逐一必须拒绝启动，且错误文案要指出是哪个配置项。
+
+    ★ 刻意不写「N 种」：样本表会增长，写死的数字必然过期
+      （过期文档比没有文档更误导）。
+    """
+    from core.config import Settings
+
     with pytest.raises(Exception) as ei:
-        _prod_settings(**over)
+        Settings(**prod_settings_kwargs(**over))
     assert keyword in str(ei.value), f"错误信息里应出现 {keyword!r}：{ei.value}"
+
+
+def test_production_guard_allows_disabling_metrics_entirely(prod_settings_kwargs):
+    """
+    正向：不需要指标端点时显式关掉即可 —— 证明护栏不过宽。
+
+    ★ 这条是必需的「反向保护」：没有它，把 METRICS_TOKEN 写成无条件必填
+      也能让上面两条反向用例变绿，但会把「不需要监控的部署」一起挡在门外。
+    """
+    from core.config import Settings
+
+    s = Settings(**prod_settings_kwargs(metrics_enabled=False, metrics_token=""))
+    assert s.metrics_enabled is False
 
 
 def test_production_guard_not_applied_outside_production():
@@ -416,3 +510,180 @@ def test_production_guard_not_applied_outside_production():
 
     s = Settings(environment="development", payment_gateway="mock", auth_required=False)
     assert s.environment == "development"
+
+
+# ====== 7. 兜底闸：唯一约束命中 → 409（不是 500），且只吞幂等键冲突 ======
+#
+# 这一节接收 change_plan 里 `except IntegrityError` 分支外迁的踩坑知识。
+# ★ 为什么要给它单独一节：该分支原先是「注释 16 行 + 代码 5 行」，
+#   而它守的是**最容易写歪**的一条 —— 把 `except IntegrityError` 写成
+#   「回滚 + 重建状态 + 返回 409」看起来更友好，在 async SQLAlchemy 上却是
+#   必崩的组合；反过来写成「一律 409」则会把真 bug 伪装成重复提交。
+#   两个方向都只有跑起来才知道，所以必须有对应用例。
+
+async def test_first_purchase_race_returns_409_not_500(
+    client, auth_on, user, auth_headers, monkeypatch
+):
+    """
+    兜底闸命中时必须是 409，**不允许**退化成 500。
+
+    ★ 1) 为什么需要兜底闸 —— 行锁并非万能
+        行锁只能在「该用户已经有订阅行」时串行化；注册流程虽会建默认订阅，
+        但「无行可锁」仍可能出现在删号重建 / 数据迁移 / 人工补数据之后。
+        那时两个并发请求都判定「不是重复提交」⇒ 各建一张单
+        ⇒ `invoices.idempotency_key` 唯一约束兜住其中一个。
+
+    ★ 2) 回滚后**立刻结束请求**，不再对这个 session 做任何 DB 操作
+        实测踩坑：rollback 后继续 `db.execute(...)` 会在连接池 checkout 的
+        pre-ping 阶段抛 `MissingGreenlet: greenlet_spawn has not been called`
+        —— 顶层 greenlet 上下文已随异常一起退出，而 pre-ping 走的是同步路径里的
+        `await_only`。同一个 `except IntegrityError` 分支里既回滚又读库，
+        在 async SQLAlchemy 上是走不通的组合。
+        所以这里不重建状态，直接 409 让前端刷新（前一个请求已提交成功，
+        刷新后看到的订阅状态是正确的）。
+
+    ★ 3) 这里只能用**回滚前取好的标量**（_user_id / _plan_id），不能读 ORM 属性
+        `rollback()` 已经把 session 内所有对象 expire，此时读 `current_user.id`
+        会触发隐式懒加载 → 纯 async 上下文没有 greenlet ⇒ 同样抛
+        `MissingGreenlet`，本该 409 的响应变成 500 + 一串 SQLAlchemy 堆栈。
+        ★ 判据：凡是「rollback 之后还要用」的值，必须在 rollback 之前落成标量。
+        ★ 同一行的日志占位必须是 loguru 的 `{}`：写成 `%s` 不报错，
+          但会把字面量 `%s` 打进日志并**丢掉全部参数**（该行原先就是错的）。
+
+    测试手法：注册流程本身会建默认订阅，无法自然地制造「无行可锁」，
+    因此这里显式把业务守卫短路掉 + 预置一条同键账单，
+    等价于「另一个并发请求已经先赢下这一单」。
+    """
+    import uuid
+
+    from modules.billing.pricing import build_idempotency_key, subscription_state_fingerprint
+
+    r0 = await _subscribe(client, auth_headers, "2", "yearly")
+    assert r0.status_code == 200 and r0.json()["charged"] is True, r0.text
+
+    # 预置冲突账单：幂等键 = 下一次请求将要算出的那个键
+    async with get_async_session() as db:
+        sub = (
+            await db.execute(
+                select(Subscription).where(Subscription.user_id == user["user_id"])
+            )
+        ).scalar_one()
+        key = build_idempotency_key(
+            sub.user_id,
+            sub.plan_id,
+            sub.billing_cycle,
+            subscription_state_fingerprint(sub),
+        )
+        await db.execute(
+            text(
+                # ★ created_at / issued_at 必须显式给：模型上的 default=datetime.utcnow
+                #   是 Python 侧默认值，只在走 ORM 时生效；原生 SQL 会直接撞 NOT NULL。
+                "INSERT INTO invoices (id, user_id, number, amount, currency, status, "
+                "description, issued_at, created_at, idempotency_key) VALUES "
+                "(:id, :u, :n, 1.0, 'CNY', 'paid', '并发赢家占位', now(), now(), :k)"
+            ),
+            {
+                "id": str(uuid.uuid4()),
+                "u": user["user_id"],
+                "n": f"INV-RACE-{uuid.uuid4().hex[:8].upper()}",
+                "k": key,
+            },
+        )
+        await db.commit()
+
+    # 短路业务守卫：让请求走到 commit，交给唯一约束兜底
+    from modules.billing import router as _br
+
+    monkeypatch.setattr(_br, "is_duplicate_submission", lambda *a, **k: False)
+
+    r = await _subscribe(client, auth_headers, "2", "yearly")
+
+    assert r.status_code == 409, f"兜底闸命中应返回 409，实际 {r.status_code} {r.text}"
+    assert "重复提交" in r.json()["detail"]
+
+    rows = await _invoices_of(user["user_id"])
+    placeholders = [r for r in rows if r[0].startswith("INV-RACE-")]
+    assert len(placeholders) == 1, f"占位账单应恰好 1 张，实际 {placeholders}"
+    assert len(rows) == 2, (
+        f"冲突的那张不得落库（应只有首购 1 张 + 占位 1 张），实际 {rows}"
+    )
+
+
+async def test_other_integrity_errors_are_not_swallowed(
+    client, auth_on, user, auth_headers, monkeypatch
+):
+    """
+    `except IntegrityError` 只允许吞幂等键冲突，其他完整性错误必须原样抛出。
+
+    ★ 反向验证的必要性：「兜底闸」极易退化成
+      `except IntegrityError: rollback(); return 409` —— 那样外键违例
+      （如套餐被删）、账单号撞车都会伪装成「检测到重复提交」，
+      真实的完整性缺陷被静默吞掉，只能等对账时才暴露。
+      判据：只吞自己明确知道含义的那一种错误，其余一律向上抛。
+
+    测试手法：把网关换成「返回一条 number 已经被占用的账单」的桩，
+    制造一次**非**幂等键的冲突，断言它穿透端点向上抛。
+
+    ★ 顺带锁住一个容易写歪的细节：「是不是幂等键冲突」必须用驱动层错误
+      `exc.orig` 判别。用 `str(exc)` 判别会失效 —— 它把整条 INSERT 语句都
+      带上了，列名里天然含 `idempotency_key`，于是**所有**完整性错误都会被
+      误判成幂等键冲突吞掉（详见用例内的行内注释）。
+    """
+    import uuid
+
+    from sqlalchemy.exc import IntegrityError as _IE
+
+    from platforms.payment.gateway import ChargeResult, InvoiceDraft
+
+    taken_number = f"INV-{uuid.uuid4().hex[:12].upper()}"
+    async with get_async_session() as db:
+        await db.execute(
+            text(
+                "INSERT INTO invoices (id, user_id, number, amount, currency, status, "
+                "description, issued_at, created_at) VALUES "
+                "(:id, :u, :n, 1.0, 'CNY', 'paid', '占用了这个账单号', now(), now())"
+            ),
+            {"id": str(uuid.uuid4()), "u": user["user_id"], "n": taken_number},
+        )
+        await db.commit()
+
+    class _NumberCollisionGateway:
+        name = "number-collision-stub"
+
+        async def charge(self, intent):
+            from datetime import datetime as _dt
+
+            now = _dt.utcnow()
+            # ★ 网关返回的是纯数据草案（InvoiceDraft），不是 ORM 实体。
+            #   落库由 modules/billing/router.py::_invoice_from_draft 负责。
+            return ChargeResult(
+                success=True,
+                invoice=InvoiceDraft(
+                    id=str(uuid.uuid4()),
+                    user_id=intent.user_id,
+                    number=taken_number,          # ← 故意撞号
+                    amount=float(intent.amount),
+                    currency="CNY",
+                    status="paid",
+                    description="撞号账单",
+                    issued_at=now,
+                    paid_at=now,
+                    idempotency_key=intent.idempotency_key or None,
+                ),
+            )
+
+    from modules.billing import router as _br
+
+    monkeypatch.setattr(_br, "get_gateway", lambda: _NumberCollisionGateway())
+
+    with pytest.raises(_IE) as ei:
+        await _subscribe(client, auth_headers, "2", "yearly")
+
+    orig = str(getattr(ei.value, "orig", ei.value))
+    assert "invoices_number_key" in orig, f"抛出的应是账单号唯一约束冲突：{orig}"
+    # ★ 陷阱（本用例顺带锁住）：判别「是不是幂等键冲突」只能用 `exc.orig`。
+    #   SQLAlchemy 的 `str(exc)` 会把整条 INSERT 语句一起渲染出来，而列名里
+    #   天然含 `idempotency_key` —— 若写成 `if "idempotency_key" not in str(exc): raise`，
+    #   这类账单号冲突会被**误判**成幂等键冲突而静默吞掉，伪装成 409「重复提交」，
+    #   真实缺陷只能等对账时才暴露。当前实现用的是 `exc.orig`，判别正确。
+    #   两种字符串的实际差异见 .workbuddy/probes/project-audit-20260915/r78g-*.txt

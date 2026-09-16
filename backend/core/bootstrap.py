@@ -73,7 +73,7 @@ async def seed_base_data() -> Dict[str, int]:
     # ① 订阅套餐（free / pro / enterprise）—— 必须在最前
     #    缺失会导致注册接口 500：创建默认订阅时 plan_id=1 触发外键约束失败
     try:
-        from core.billing.usage_tracker import init_default_plans
+        from core.metering.usage_tracker import init_default_plans
         from core.database import get_async_session
 
         async with get_async_session() as session:

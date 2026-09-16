@@ -17,7 +17,7 @@ LLM 客户端内部逻辑回归测试
 import pytest
 
 from ai_infra.llm.dashscope_client import DashScopeLLM, LLMConfig, LLMResponse
-from core.billing.llm_meter import reset_meter, snapshot
+from core.metering.llm_meter import reset_meter, snapshot
 
 # 本文件全程用假 http 客户端，不需要真实出网，但要真实的解析实现
 pytestmark = pytest.mark.allow_real_llm
@@ -64,7 +64,7 @@ def test_update_stats_writes_to_meter():
 
 def test_update_stats_safe_without_meter():
     """未开启计量器时，_update_stats 不应报错"""
-    from core.billing import llm_meter
+    from core.metering import llm_meter
 
     token = llm_meter._meter_var.set(None)
     try:

@@ -12,7 +12,7 @@
 ★ P1-4（2026-09-15）价目口径收敛
   「年付价」公式原先在本文件出现**两次**（`_serialize_plan` 用于展示、
   `change_plan` 用于真实扣款），两处各自硬编码 `* 10`。
-  现已全部改为调用 `core.billing.pricing`——展示与收款共用同一个函数，
+  现已全部改为调用 `modules.billing.pricing`——展示与收款共用同一个函数，
   杜绝「页面写一个价、结算扣另一个价」。改价格只改 pricing.py。
 """
 
@@ -31,9 +31,9 @@ from core.logger import get_logger
 
 from core.database import get_db
 from core.auth.dependencies import get_current_user, get_admin_user
-from core.billing.usage_tracker import UsageTracker, init_default_plans
-from core.billing.payment_gateway import get_gateway, ChargeIntent
-from core.billing.pricing import (
+from core.metering.usage_tracker import UsageTracker, init_default_plans
+from platforms.payment.gateway import get_gateway, ChargeIntent
+from modules.billing.pricing import (
     build_idempotency_key,
     is_duplicate_submission,
     normalize_cycle,
@@ -42,18 +42,40 @@ from core.billing.pricing import (
     subscription_state_fingerprint,
     yearly_price,
 )
-from modules.user_subscription.models import (
-    User,
-    Subscription,
-    SubscriptionPlan,
-    Invoice,
-    PaymentMethod,
-)
+from core.identity.models import User
+from modules.billing.models import Subscription, SubscriptionPlan, Invoice, PaymentMethod
 
 
 router = APIRouter(prefix="/billing", tags=["计费与用量"])
 
 _log = get_logger("billing")
+
+
+# ====== 网关 DTO -> ORM 的转换 ======
+
+def _invoice_from_draft(draft) -> Invoice:
+    """把支付网关返回的账单草案（纯数据 InvoiceDraft）转成 ORM 实体。
+
+    ★ 为什么转换点在这个层，而不是让网关直接返回 Invoice：
+      `platforms/payment/` 是**外部适配层**，只依赖 DTO。若它 import 业务 ORM
+      实体（历史上确实如此：适配层曾直接 import 计费业务模块的 Invoice /
+      SubscriptionPlan），适配层就反向耦合了业务模型 —— 独立部署 webhook
+      服务、或换一家网关时，会被业务模型一起拖走。
+      转换点全项目只有这一处，改动收敛在这里。
+    """
+    return Invoice(
+        id=draft.id or str(uuid.uuid4()),
+        user_id=draft.user_id,
+        number=draft.number,
+        amount=draft.amount,
+        currency=draft.currency,
+        status=draft.status,
+        description=draft.description,
+        issued_at=draft.issued_at or datetime.utcnow(),
+        paid_at=draft.paid_at,
+        pdf_url=draft.pdf_url,
+        idempotency_key=draft.idempotency_key,
+    )
 
 
 # ====== 请求体 schema ======
@@ -207,7 +229,7 @@ async def change_plan(
 
     plan_id 为套餐表主键的字符串形式（与 /plans 返回的 id 一致）。
 
-    支付流程：面向 `PaymentGateway` 协议编程（见 core/billing/payment_gateway.py），
+    支付流程：面向 `PaymentGateway` 协议编程（见 platforms/payment/gateway.py），
     扣款由当前配置的网关完成（默认 mock 模拟支付成功）。
     接入 Stripe / 支付宝 / 微信时改 config.payment_gateway 即可，无需改动此端点。
 
@@ -216,22 +238,19 @@ async def change_plan(
       - charged=False 未扣款（命中「同套餐同周期重复提交」或金额为 0）
       ★ 前端不得把「HTTP 200」等同于「已收款」，必须看 charged。
 
-    ★ P1-4 修复的三处行为（实测证据见
-      .workbuddy/probes/project-audit-20260915/09-支付链路-实测证据.txt）
+    ★ P1-4 收敛的三处「钱」行为（口径统一 / 重复提交不重复扣款 / 先扣款后改订阅）
+      不变量由 tests/test_billing_payment.py 守护，改动前先跑那一组。
+      ★ 判据：让不可回滚的那一步（收钱）尽可能晚、尽可能靠后，
+        把可回滚的 DB 写入放在它后面。
 
-      1) 金额口径：原先内联 `price_monthly * 10`，与 _serialize_plan 各写一遍。
-         现统一走 core.billing.pricing.plan_amount()。
-
-      2) 重复提交不重复扣款：原先无论当前是什么套餐，只要调用就重新扣款 ——
-         实测连点两次「升级」得到 2 张账单（真实网关下 = 扣两次钱）。
-         现在同套餐 + 同计费周期 + 仍在有效期内 ⇒ 直接返回现状、不扣款、不开票。
-         续费（周期已过期）不受影响，因为 is_period_active() 会返回 False。
-
-      3) 顺序：原先「先改订阅 → 再扣款」。虽然失败时不 commit 也回滚得掉，
-         但一旦接真实网关（扣款成功后再写 DB 失败），就会出现「钱收了、
-         订阅没生效」。现在改为「先扣款 → 成功后再改订阅」——钱动了才有状态变更。
-         ★ 判据：让不可回滚的那一步（收钱）尽可能晚、尽可能靠后，
-           把可回滚的 DB 写入放在它后面。
+    ★ 本函数体内的实现细节注释已全部外迁到测试的 docstring
+      （理由：注释只有被测试锁住才不会腐化；本文件的读者关心契约，
+        测试的读者关心坑。实测证据见
+        .workbuddy/probes/project-audit-20260915/09-支付链路-实测证据.txt）：
+        · 行锁 + populate_existing   → test_concurrent_duplicate_submission_creates_single_invoice
+        · rollback 前落标量 / 只吞幂等键冲突
+                                     → test_first_purchase_race_returns_409_not_500
+                                       test_other_integrity_errors_are_not_swallowed
     """
     plan_id = body.plan_id
     billing_cycle = normalize_cycle(body.billing_cycle)
@@ -255,38 +274,9 @@ async def change_plan(
             raise HTTPException(status_code=404, detail="套餐不存在")
 
     # 取订阅（可能不存在）。
-    #
-    # ★★ `with_for_update()` 是并发重复扣款的第一道闸（P1-4）：
-    #   它把「同一用户的订阅变更」串行化——第二个并发请求会**阻塞**到
-    #   第一个提交完，然后读到已更新的订阅状态，被下面的
-    #   `is_duplicate_submission()` 判定为重复提交而直接返回，
-    #   既不会重复扣款，也不需要在异常分支里重建 session 状态。
-    #
-    #   ★ 为什么需要它：业务守卫是「读-判断-写」模式，天生有竞态窗口；
-    #     只靠应用层判断 + 事后唯一约束，会在「无订阅可锁」时不成立。
-    #     行锁把竞态窗口直接关掉，唯一约束退化为兜底。
-    #
-    #   ⚠️ 锁只覆盖**当前用户自己那一行**，且事务内还包含一次网关调用
-    #   （mock 瞬时完成；接真实网关若是同步 HTTP，需评估持锁时长，
-    #   必要时改为「先建 pending 账单 → 释放锁 → 收 webhook」的两段式，
-    #   见 core/billing/payment_gateway.py 顶部接入清单第 5 条）。
-    # ★★ `.execution_options(populate_existing=True)` 不能省（P1-5 收尾修复 2026-09-15）
-    #
-    #   行锁只在**数据库**层面把并发请求串行化；但 SQLAlchemy 的 identity map 会把
-    #   「本 session 里已经加载过的那份 Subscription」原样返回，**不使用锁后重读到
-    #   的新值覆盖已加载属性**（除非显式 populate_existing）。
-    #   而 `User.subscription` 是 `lazy="selectin"`（models.py:62）——
-    #   即 `get_current_user` 查 User 时，已经把这条订阅行连同**旧值**装进了
-    #   identity map。于是「串行化之后后到的请求会读到新状态」这条设计前提不成立。
-    #
-    #   实测（4 并发双击同一套餐）：
-    #     · 语句确实阻塞串行了（阶梯等待 71 / 266 / 468 / 671ms，见
-    #       .workbuddy/probes/project-audit-20260915/script-lock_probe.py）
-    #     · 但 4 个请求全部读到加锁前的旧状态 ⇒ 算出**同一个**幂等键
-    #       ⇒ 3 个撞 `invoices.idempotency_key` 唯一约束
-    #       ⇒ 走到下面的 IntegrityError 分支（本该 200 + charged=False）
-    #   ⇒ 判据：**门禁语句存在 ≠ 门禁在生效**。加锁查询必须同时要求 ORM 重新装载，
-    #     否则锁保护的是数据库行，业务读到的仍是内存里的旧对象。
+    # ★★ `with_for_update()` 与 `.execution_options(populate_existing=True)` 缺一不可
+    #   （少任一个 = 门禁从未生效）。坑与实测数据见：
+    #   tests/test_billing_payment.py::test_concurrent_duplicate_submission_creates_single_invoice
     result = await db.execute(
         select(Subscription)
         .where(Subscription.user_id == current_user.id)
@@ -297,11 +287,8 @@ async def change_plan(
 
     now = datetime.utcnow()
 
-    # ★ 先把「日志/异常要用」的标量取出来（P1-5 收尾修复 2026-09-15）。
-    #   理由见下面 IntegrityError 分支：`await db.rollback()` 会 expire 本 session
-    #   内所有 ORM 对象，之后任何属性读取都会触发隐式懒加载，而纯 async 上下文里
-    #   没有 greenlet ⇒ `MissingGreenlet: greenlet_spawn has not been called`。
-    #   ★ 判据：凡是「rollback 之后还要用」的值，必须在 rollback 之前落成标量。
+    # ★ 落成标量：rollback 之后还要用的值，必须在 rollback 之前取出。
+    #   tests/test_billing_payment.py::test_first_purchase_race_returns_409_not_500
     _user_id = current_user.id
     _plan_id = plan.id
 
@@ -329,14 +316,13 @@ async def change_plan(
             currency="CNY",
             description=f"{plan.display_name}{'年付' if billing_cycle == 'yearly' else '月付'}",
             billing_cycle=billing_cycle,
-            plan=plan,
+            plan_name=plan.name,
             idempotency_key=idem_key,
         ))
     except NotImplementedError as exc:
         # 配置里写了一个「已知但未接入」的真实网关（stripe/alipay/wechat）。
-        # ★ 用 501 而不是 500：500 会被当成服务端 bug 去翻栈，
-        #   501 直说「这个能力还没实现」，并把整改指引带在 detail 里。
-        #   也**不能**降级成 mock 支付成功 —— 那是「用户白拿套餐」。
+        # ★ 为什么是 501 而非 500、且绝不降级成 mock 成功：
+        #   tests/test_billing_payment.py::test_unimplemented_gateway_returns_501
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
@@ -376,36 +362,25 @@ async def change_plan(
     sub.updated_at = now
 
     # 落账单（零元时网关返回 invoice=None，此处自然跳过）
+    # 网关给的是**纯数据草案**，由本层转成 ORM 实体后落库（见 _invoice_from_draft）。
     if charge.invoice is not None:
-        db.add(charge.invoice)
+        db.add(_invoice_from_draft(charge.invoice))
 
     try:
         await db.commit()
     except IntegrityError as exc:
-        # ★ 兜底闸：只有「同一用户此前没有任何订阅」时才会走到这里。
-        #   那时没有行可锁，两个并发请求都可能判定「不是重复提交」并各建一张单，
-        #   于是 invoices.idempotency_key 的唯一约束兜住其中一个。
-        #
-        #   ⚠️ 只吞「idempotency_key 冲突」，其他完整性错误（外键、number 撞车）
-        #   必须原样抛出，否则会把真 bug 伪装成「重复提交」静默吞掉。
+        # ★ 兜底闸：只在「同一用户此前没有任何订阅」（无行可锁）的竞态下生效，
+        #   由 invoices.idempotency_key 唯一约束拦下其中一个。两道闸的分工、
+        #   以及「为什么不能既 rollback 又读库」见：
+        #   tests/test_billing_payment.py::test_first_purchase_race_returns_409_not_500
+        #   ⚠️ 只吞幂等键冲突，其他完整性错误必须原样抛出：
+        #   tests/test_billing_payment.py::test_other_integrity_errors_are_not_swallowed
         if "idempotency_key" not in str(getattr(exc, "orig", exc)):
             raise
-        # ★★ 回滚后**立刻结束请求**，不再对这个 session 做任何 DB 操作。
-        #   实测踩坑：回滚后继续 `db.execute(...)` 会在连接池 checkout 的
-        #   pre-ping 阶段抛 `MissingGreenlet: greenlet_spawn has not been called`
-        #   —— 顶层 greenlet 上下文已经随异常一起退出，而 pre-ping 是同步路径
-        #   里的 `await_only`。同一个 `except IntegrityError` 分支里既回滚又读库，
-        #   在 async SQLAlchemy 上是走不通的组合。
-        #   所以这里不重建状态，直接 409 让前端刷新（此时前一个请求已提交成功，
-        #   刷新后看到的订阅状态是正确的）。
         await db.rollback()
-        # ★ 这里只能用**回滚前取好的标量**（_user_id / _plan_id），不能读 ORM 属性：
-        #   rollback() 已经把 session 内所有对象 expire，此时读 `current_user.id`
-        #   触发隐式懒加载 → 纯 async 上下文没有 greenlet ⇒ 抛
-        #   `MissingGreenlet: greenlet_spawn has not been called`，
-        #   本该 409「重复提交」的响应会变成 500 + 一串 SQLAlchemy 堆栈。
-        #   ★ 另外 loguru 用 `{}` 占位：写成 `%s` 不报错，但会把字面量 `%s`
-        #   打进日志并**丢掉全部参数**（本行原先就是错的）。
+        # ★ 只能用回滚前取好的标量（_user_id / _plan_id），不能读 ORM 属性；
+        #   日志占位必须用 loguru 的 `{}`（`%s` 不报错，但会丢参数）。
+        #   tests/test_billing_payment.py::test_first_purchase_race_returns_409_not_500
         _log.warning(
             "账单幂等键冲突，按重复提交拒绝 user={} plan={} cycle={} key={}",
             _user_id, _plan_id, billing_cycle, idem_key,

@@ -30,6 +30,10 @@ shop_id 空值守卫回归测试（多租户隔离闭环的最后一环）。
 4. **防后门**：豁免依赖 `get_current_shop_id_optional` 的使用面必须锁死在
    一张白名单上；严格依赖也不许从既有 8 个业务模块里消失。
    —— 这两条是 AST 级断言，防的是"未来某次改动顺手绕开守卫"。
+5. **对话入口「不落数据」必须是可执行的**：白名单里允许豁免的形态只有两种 ——
+   「不落业务数据」或「写路径自身在缺店铺上下文时硬拒绝」。后者不能只写在
+   注释里，所以第 5 节用真实请求 + 直查表行数把它钉住
+   （P0 修复 2026-09-16：product_research 对话入口曾用未校验的请求头当写库归属）。
 """
 
 from __future__ import annotations
@@ -50,8 +54,25 @@ STRICT = "get_current_shop_id"
 OPTIONAL = "get_current_shop_id_optional"
 
 # ★ 豁免白名单：只有这些函数允许使用 `get_current_shop_id_optional`。
-#   新增一条都必须先回答："它会落业务数据吗？" 会 → 不许加。
-ALLOWED_OPTIONAL = {("modules/secretary/router.py", "secretary_chat")}
+#   新增一条必须先回答两个问题：
+#     ① 它会落业务数据吗？
+#     ② 若会 —— 它的**写路径**在缺店铺上下文时是否硬拒绝？
+#        会落 且 写路径不拒绝 → 不许加（那才是真的开后门）。
+#   现有三条的成立理由（每条都有测试背书，不是自述）：
+#     · secretary/router.py::secretary_chat  —— ① 不会（纯对话/导航；工具层拿不到
+#       shop_id 时只回「产品库为空」）。
+#     · product_research/router.py::chat / chat_stream —— ① 会（候选入库），
+#       ② 写路径 `agent_product_research._write_candidates` 在 shop_id 缺失时
+#       直接返回失败、**零数据库往返**（见本文件第 5 节两条用例）。
+#       为什么不用严格版：该端点同时服务只读意图（蓝海/利润/痛点/能力），
+#       严格版对**所有写方法**强制要求 X-Shop-ID，会把"还没选店铺"的用户
+#       整个挡在门外（400）—— 属零收益的体验损伤。
+#       ⇒ 门禁放在"写"这一层，而不是"入口"这一层。
+ALLOWED_OPTIONAL = {
+    ("modules/secretary/router.py", "secretary_chat"),
+    ("modules/product_research/router.py", "chat"),
+    ("modules/product_research/router.py", "chat_stream"),
+}
 
 # 严格依赖的使用方（8 个业务模块）。少一个都意味着某个模块的租户过滤被摘掉了。
 EXPECTED_STRICT_MODULES = {
@@ -264,3 +285,78 @@ def test_strict_variant_still_used_by_all_business_modules():
         f"  缺失 = {sorted(EXPECTED_STRICT_MODULES - strict_modules)}\n"
         f"  多出 = {sorted(strict_modules - EXPECTED_STRICT_MODULES)}"
     )
+
+
+# ====== 5. 对话入口「不落数据」的可执行证明 ======
+
+async def test_optional_dependent_endpoint_cannot_write_without_shop(client):
+    """
+    用豁免依赖的对话入口，缺店铺上下文时**不得**落业务数据。
+
+    这是 `ALLOWED_OPTIONAL` 判据的可执行版本：白名单允许豁免的形态之一是
+    「写路径自身硬拒绝」，那就必须有测试证明它真的拒绝 ——
+    否则白名单条目只是一句注释，下一个人照着加一条也不会有人拦。
+
+    ★ 断言分两半，缺一不可：
+      · **可读原因**含「店铺」—— 这一半才有鉴别力。修复前缺店铺时仍然会去调
+        `create_candidate(shop_id=None)`，落成 `shop_id=""` 撞外键 → 回的是
+        "写入选品库失败（数据库不可用）"：**归因错误**，用户去查数据库，
+        而真因是他没选店铺。
+      · **表行数不变** —— 只看状态码/文案不够，"先写入再报错"同样能通过。
+    """
+    from sqlalchemy import text
+    from core.database import async_session_factory
+
+    async with async_session_factory() as db:
+        before = (await db.execute(text("SELECT count(*) FROM candidates"))).scalar()
+
+    r = await client.post(
+        "/api/v1/product-research/chat",
+        json={
+            # 显式给 ASIN：目标解析必然命中 ⇒ 一定走到写库那一步
+            # （若只给"这个品"，会在解析阶段就转成追问，测不到写守卫）
+            "message": "把 B0CGLKP2R1 加入选品库",
+            "context_id": "guard-no-shop-probe",
+        },
+        headers={},
+    )
+    assert r.status_code == 200, r.text
+    assert "店铺" in r.text, (
+        f"缺店铺时必须回一句指向店铺的可读原因（而不是「数据库不可用」）：{r.text[:300]}"
+    )
+
+    async with async_session_factory() as db:
+        after = (await db.execute(text("SELECT count(*) FROM candidates"))).scalar()
+    assert after == before, f"缺店铺上下文时竟写了候选：{before} -> {after}"
+
+
+async def test_write_candidates_hard_refuses_without_shop_id(monkeypatch):
+    """
+    `_write_candidates` 缺 shop_id 时**硬拒绝**，且**零数据库往返**。
+
+    反向保护：这条防的是"以后有人图省事，把 shop_id 默认成 '' 或从某个全局
+    上下文兜底取" —— 那样跨租户写入会以另一种形式复活（P0 事故就是"兜底取值"
+    的形态：直读中间件塞进上下文的原始请求头）。
+
+    ★ 用「写入口被触达就抛错」的探针证明"零往返"，而不是只看返回值：
+      返回值可能是"失败"，但失败发生在数据库拒绝之后（已经晚了一步）。
+    """
+    import modules.candidates.service as candidates_service
+    from modules.product_research.agent_product_research import ProductResearchAgent
+
+    touched: list = []
+
+    async def _boom(*args, **kwargs):
+        touched.append(args)
+        raise AssertionError("缺 shop_id 时不该触达 candidates/service")
+
+    monkeypatch.setattr(candidates_service, "candidate_exists", _boom)
+    monkeypatch.setattr(candidates_service, "create_candidate", _boom)
+
+    result = await ProductResearchAgent()._write_candidates(
+        [{"asin": "B0PROBE001", "title": "no-shop probe"}], None, None
+    )
+
+    assert result["type"] == "candidate_save_failed", result
+    assert "店铺" in result.get("error", ""), f"失败原因须指向店铺：{result}"
+    assert touched == [], "必须在触达数据库之前就拦下"

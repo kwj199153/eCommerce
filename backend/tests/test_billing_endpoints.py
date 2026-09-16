@@ -63,7 +63,7 @@ async def test_subscribe_changes_plan_and_creates_invoice(
     """切换到 pro 套餐应成功，并生成一条 paid 账单"""
     from sqlalchemy import select
     from core.database import get_async_session
-    from modules.user_subscription.models import SubscriptionPlan, Invoice
+    from modules.billing.models import SubscriptionPlan, Invoice
 
     # 找到 pro 套餐 id
     async with get_async_session() as db:

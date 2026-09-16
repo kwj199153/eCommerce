@@ -54,7 +54,22 @@ class Store(BaseModel):
     """
     id: str = Field(..., description="店铺唯一标识")
     tenant_id: str = Field(..., description="所属租户 ID")
-    owner_id: Optional[str] = Field(None, description="店铺归属用户 ID（users.id）")
+    owner_id: Optional[str] = Field(
+        None,
+        description="店铺创建者用户 ID（users.id）—— 审计/展示用，**不再**参与授权判定",
+    )
+    # ★★★ P1-c（2026-09-16）：账户归属 —— 归属判定的**唯一**依据。
+    #
+    #   收拢前用的是 `owner_id`（「一店一人」模型）⇒ 团队共享
+    #   （同一家店两个人都要能进）根本表达不出来。
+    #   account_id 指向 `accounts.id`：多人通过 account_members 共享
+    #   同一账户名下的全部店铺。判定实现见 core/auth/accounts.py。
+    #
+    #   ⚠️ 本字段**不由客户端指定**（StoreCreate 里没有它）：账户归属由后端
+    #      在建店时按当前登录用户决定，否则用户可以把自己的店挂到别人账户下。
+    account_id: Optional[str] = Field(
+        None, description="所属账户 ID（accounts.id）—— 归属判定真源"
+    )
 
     # 基本信息
     name: str = Field(..., description="店铺名称")

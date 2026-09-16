@@ -15,8 +15,9 @@ from sqlalchemy import select, update
 from core.database import get_db, get_async_session
 from core.config import config
 from core.auth.dependencies import require_auth_if_enabled
-from core.billing.llm_meter import reset_meter, snapshot
-from modules.user_subscription.models import User, Subscription
+from core.metering.llm_meter import reset_meter, snapshot
+from core.identity.models import User
+from modules.billing.models import Subscription
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +59,30 @@ class UsageTracker:
         Returns:
             True 记录成功，False 失败（如超出限额）
         """
-        # 1. 查询用户订阅
+        # 1. 查询用户订阅 —— ★★ 并发加固（P1-6 / 2026-09-16）
+        #
+        #    `.with_for_update()` 与 `.execution_options(populate_existing=True)`
+        #    **必须同时存在，缺一即失效**：
+        #      · 行锁把「同一用户的用量累加」在**数据库层**串行化 —— 后来的请求
+        #        阻塞到前一个提交，再读到新值。没有它，两个请求会各自读到同一份
+        #        旧快照，各自算出同样的新值，后写的覆盖先写的（丢更新）。
+        #      · populate_existing 强制 ORM **用锁后读到的新值覆盖 identity map
+        #        里的旧对象**。没有它，SQL 确实返回了新行，但业务读到的是本
+        #        session 早已加载的旧对象 ⇒ 锁保护的是数据库行，业务算的是旧快照。
+        #
+        #    ★ 为什么这里**必然**命中 identity map：`User.subscription`
+        #      （models.py:62）与 `Subscription.plan`（models.py:127）都是
+        #      `lazy="selectin"`，且 `async_sessionmaker(expire_on_commit=False)`
+        #      （database.py:44）—— 鉴权依赖加载 User 时订阅行已进 identity map，
+        #      commit 之后也不过期。与 billing_router.change_plan 的 P1-5 是同一
+        #      类竞态（那边修了，这边原先漏网）。
+        #
+        #    实测：修复前 8 并发各 +1，最终只累加到 2（丢 6 次）。
         result = await db.execute(
-            select(Subscription).where(Subscription.user_id == user_id)
+            select(Subscription)
+            .where(Subscription.user_id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         subscription = result.scalar_one_or_none()
 
@@ -210,8 +232,14 @@ class UsageTracker:
         Returns:
             True 写入成功；False 订阅不存在（静默失败，不影响业务）
         """
+        # ★ 与 record_usage 同源竞态（P1-6）：token / 成本也是「读-改-写」，
+        #   同样需要行锁 + populate_existing，否则并发结算时少记 token（少收钱）。
+        #   实测：修复前 8 并发各 +10 token，最终只记到 20（丢 60）。
         result = await db.execute(
-            select(Subscription).where(Subscription.user_id == user_id)
+            select(Subscription)
+            .where(Subscription.user_id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         subscription = result.scalar_one_or_none()
         if not subscription:
@@ -262,7 +290,24 @@ async def check_api_quota(
             },
         )
 
-    await UsageTracker.record_usage(db, current_user.id, UsageType.API_CALL)
+    # ★ 扣减结果不能丢（P1-6）：上面的 check_quota 只是「友好前置检查」，
+    #   它和扣减之间天然有竞态窗口（两个并发请求都可能通过检查）。真正决定
+    #   「这一笔算不算得进去」的是 record_usage 的**原子扣减**：它返回 False
+    #   表示「锁后重读发现已超限」或「订阅已失效」。
+    #   原写法直接忽略返回值 ⇒ 超限请求被**放行且不计数**，配额门禁漏掉最后一环
+    #   （形式上挂了三层依赖，实际仍可越过限额）。
+    #   ★ 判据：门禁的「判定」和「记账」若分两步，第二步的结果必须被回读，
+    #     否则第一步只是个友好提示。
+    if not await UsageTracker.record_usage(db, current_user.id, UsageType.API_CALL):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="API 调用次数已达上限",
+            headers={
+                "X-RateLimit-Limit": str(config.rate_limit_requests_per_day),
+                "X-RateLimit-Remaining": "0",
+                "Retry-After": "86400",
+            },
+        )
     return current_user
 
 
@@ -376,7 +421,7 @@ async def init_default_plans(db: AsyncSession):
 
     应在首次部署时调用，插入 free / pro / enterprise 三种套餐。
     """
-    from modules.user_subscription.models import SubscriptionPlan
+    from modules.billing.models import SubscriptionPlan
 
     # 检查是否已有数据
     result = await db.execute(select(SubscriptionPlan).limit(1))

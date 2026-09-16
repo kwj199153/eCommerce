@@ -1,68 +1,35 @@
 """
-用户与订阅数据模型
+订阅与计费领域模型
 
-定义 User、SubscriptionPlan、Shop 等核心业务实体。
-使用 SQLAlchemy 2.0 异步 ORM。
+★ 为什么住在 modules/billing 而不是 core：
+    Subscription / Invoice 只被计费域自身消费（billing 路由 + secretary 的
+    订阅工具），属于**业务域实体**；而 User 是全系统基础实体，
+    已移到 core/identity/models.py。两者原先混在同一个 models.py 里，
+    导致「基础域」和「业务域」无法分层。
+
+    本模块的 relationship 通过**类名字符串**引用 core/identity 的 User
+    （SQLAlchemy 延迟解析），不 import 对端类，保持依赖方向单向。
 """
 
 from datetime import datetime
-from typing import Optional, List
-from sqlalchemy import String, Boolean, DateTime, Text, Integer, Float, ForeignKey, Enum as SAEnum
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import Optional
+
 import enum
+
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 # 统一到 core.database.Base（alembic autogenerate 才会看到所有表）
 from core.database import Base
 
 
-# ====== 枚举类型 ======
-
-class UserRole(str, enum.Enum):
-    """用户角色"""
-    ADMIN = "admin"
-    USER = "user"
-
+# ====== 套餐类型枚举 ======
 
 class PlanType(str, enum.Enum):
     """套餐类型"""
     FREE = "free"
     PRO = "pro"
     ENTERPRISE = "enterprise"
-
-
-class ShopPlatform(str, enum.Enum):
-    """店铺平台"""
-    AMAZON_US = "amazon_us"
-    AMAZON_UK = "amazon_uk"
-    TIKTOK = "tiktok"
-    SHOPIFY = "shopify"
-
-
-# ====== 用户模型 ======
-
-class User(Base):
-    """用户表"""
-    __tablename__ = "users"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # UUID
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    name: Mapped[Optional[str]] = mapped_column(String(100))
-    role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.USER)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    is_verified: Mapped[bool] = mapped_column(Boolean, default=False)  # 邮箱验证
-
-    # 时间戳
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-
-    # 关系
-    shops: Mapped[List["Shop"]] = relationship("Shop", back_populates="owner", lazy="selectin")
-    subscription: Mapped[Optional["Subscription"]] = relationship("Subscription", back_populates="user", uselist=False, lazy="selectin")
-
-    def __repr__(self) -> str:
-        return f"<User(id={self.id}, email={self.email}, role={self.role})>"
 
 
 # ====== 套餐计划 ======
@@ -113,7 +80,7 @@ class Subscription(Base):
     api_calls_used: Mapped[int] = mapped_column(Integer, default=0)
     agent_chats_used: Mapped[int] = mapped_column(Integer, default=0)
 
-    # LLM 消耗计量（由 core/billing/llm_meter.py 按调用累积落库）
+    # LLM 消耗计量（由 core/metering/llm_meter.py 按调用累积落库）
     llm_tokens_used: Mapped[int] = mapped_column(Integer, default=0, server_default='0')          # 累计 token 数
     llm_cost_used: Mapped[float] = mapped_column(Float, default=0.0, server_default='0')          # 累计成本（元）
 
@@ -163,7 +130,7 @@ class Invoice(Base):
     # ★ P1-4 补充（2026-09-15）：账单幂等键 + 唯一约束。
     #   实测（09-支付链路-实测证据.txt 第 [8] 段）：连续两次 POST /billing/subscribe
     #   会产生 2 张账单；接真实网关后 = 真的扣两次钱。
-    #   服务端业务守卫（core.billing.pricing.is_duplicate_submission）能拦住
+    #   服务端业务守卫（modules.billing.pricing.is_duplicate_submission）能拦住
     #   绝大多数情况，但**拦不住并发双击**——两个请求都读到「尚未订阅」就会
     #   各建一张单。唯一约束是最后一道闸，它不依赖任何应用层判断。
     #   可为 NULL（历史数据、人工补录账单不走订阅链路），PG 允许多个 NULL。
@@ -197,36 +164,7 @@ class PaymentMethod(Base):
     def __repr__(self) -> str:
         return f"<PaymentMethod(type={self.type}, brand={self.brand}, last4={self.last4})>"
 
-
-# ====== 店铺（租户）======
-
-class Shop(Base):
-    """店铺表（多租户核心）"""
-    __tablename__ = "shops"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # UUID
-    owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    platform: Mapped[ShopPlatform] = mapped_column(SAEnum(ShopPlatform), nullable=False)
-
-    # 平台凭证（加密存储）
-    seller_id: Mapped[Optional[str]] = mapped_column(String(255))  # Amazon Seller ID
-    marketplace_id: Mapped[Optional[str]] = mapped_column(String(20))  # 如 ATVPDKIKX0DER
-    api_credentials: Mapped[Optional[str]] = mapped_column(Text)  # 加密的 JSON 凭证
-
-    # 状态
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    is_connected: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否已连接平台 API
-
-    # 同步状态
-    last_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    sync_status: Mapped[str] = mapped_column(String(20), default="idle")  # idle / syncing / error
-
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # 关系
-    owner: Mapped["User"] = relationship("User", back_populates="shops")
-
-    def __repr__(self) -> str:
-        return f"<Shop(id={self.id}, name={self.name}, platform={self.platform})>"
+# ====== 跨模块模型注册（非业务依赖）======
+# 见 core/identity/models.py 末尾同名段落。Subscription.user 引用 User，
+# 两侧必须同处一个 Base.registry；此处只做注册，不访问对端属性。
+import core.identity.models as _identity_models  # noqa: E402,F401

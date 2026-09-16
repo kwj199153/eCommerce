@@ -163,6 +163,64 @@ def _no_real_llm(request, monkeypatch):
     yield
 
 
+# ====== 生产环境 Settings 合规基线（唯一来源） ======
+#
+# ★ 为什么必须有这一份（这已经是**第三次**被同一件事咬）：
+#   `core/config.py::Settings._enforce_production_safety` 每加一条护栏，
+#   所有「构造 production Settings 并期望它成功」的用例都会开始报错 ——
+#   而且报错信息指向**新护栏**，看起来像是"护栏写错了"，实则只是基线没跟上。
+#   历史：P1-d 的 METRICS_TOKEN 加进来时，仓里**两处**独立构造点
+#   （test_auth_and_tenant / test_billing_payment）就各自补了一遍合规值，
+#   并在注释里登记"应收敛成 conftest 里的唯一 helper"。
+#   P1-b 的邮件通道 + 锁定阈值护栏加进来后，同样的问题又发生了。
+#   ⇒ 现在收敛成这一个 fixture，新护栏只在**这一处**补合规值。
+#
+# ★ 为什么用 **fixture** 而不是普通函数：
+#   普通函数放 conftest 里需要跨文件 `import conftest` / `import tests.conftest`
+#   —— 本仓有 `backend/conftest.py` 与 `backend/tests/conftest.py` 两个同名
+#   conftest（且 tests/ 无 `__init__.py`），模块名解析依赖 pytest 的 import 模式，
+#   还会把 conftest 执行第二遍。fixture 由 pytest 自动注入到所有测试模块，
+#   零 import、零歧义。
+#
+# 用法：`Settings(**prod_settings_kwargs())` 正向；反向传 overrides 破坏某一项。
+
+@pytest.fixture
+def prod_settings_kwargs():
+    """返回「生产环境合规 Settings 入参」工厂；overrides 用于定向破坏某一项。"""
+
+    def _make(**overrides) -> dict:
+        base = dict(
+            _env_file=None,             # 隔离 backend/.env，避免外部取值干扰
+            environment="production",
+            auth_required=True,
+            jwt_secret_key="a-very-strong-random-secret-9f2c8e1b7d4a6035",
+            debug=False,
+            # 支付：既非 mock 也非「未接入清单」，用于证明护栏不过宽
+            payment_gateway="internal",
+            # P1-d（2026-09-16）：/metrics 开启 ⇒ 必须给令牌
+            metrics_enabled=True,
+            metrics_token="metrics-token-for-pytest",
+            # 口令哈希：生产要求 >= 12
+            password_hash_rounds=12,
+            # ★ P1-b（2026-09-16）：邮件通道。
+            #   基线取**真发信那一档且必填项齐全** —— 这样「console 在
+            #   生产非法」这条反向用例是靠 overrides 打出的差异，
+            #   而不是靠默认值碰巧命中。
+            email_provider="aliyun_dm",
+            aliyun_dm_access_key_id="pytest-ak",
+            aliyun_dm_access_key_secret="pytest-secret",
+            aliyun_dm_account_name="noreply@example.com",
+            public_site_url="https://app.example.com",
+            # ★ P1-b：锁定阈值（生产须 >=3 / >=5）
+            login_max_failures=5,
+            login_lockout_minutes=15,
+        )
+        base.update(overrides)
+        return base
+
+    return _make
+
+
 # ====== 鉴权开关 ======
 
 @pytest.fixture
@@ -196,7 +254,137 @@ async def client():
         yield c
 
 
+# ====== 测试进程内的口令哈希降轮（提速，不影响生产） ======
+
+@pytest.fixture(scope="session", autouse=True)
+def _fast_password_hash_rounds():
+    """
+    把本测试进程的 bcrypt 轮数降到 4（会话级、自动生效）。
+
+    ★ 为什么必须做这件事（实测，别再当成「优化」删掉）：
+      bcrypt rounds=12 单次 hash ≈209ms、verify ≈207ms。而 `user` / `job_user`
+      夹具是 **function 级**的，每条用例都要真跑一次 register(1 hash) +
+      login(1 verify) ⇒ 每例固定白花 **≈416ms**。
+      全量 627 项里 25 项依赖该夹具 ⇒ 合计 17.73s，其中 bcrypt 占 ≈10.4s。
+
+    ★ 为什么这是安全的：
+      套件里**没有任何用例**在验证「哈希够不够慢」—— 那属于部署参数，
+      由 `Settings.password_hash_rounds`（默认 12）+ 生产启动护栏负责。
+      测试要验证的是「注册/登录逻辑是否正确」，而不是 bcrypt 的迭代次数。
+      实测 rounds=4 时单次 verify ≈0.8ms，语义完全不变（同为 $2b$ 格式、
+      互验通过，见 test_auth_and_tenant 的轮数守护用例）。
+
+    ★ 为什么写成「改运行时属性」而不是写进 .env：
+      `backend/.env` 同时被 uvicorn 开发服务读取，写进去会连带把**开发环境**
+      的注册哈希也降弱。只改本进程，爆炸半径最小。
+
+    ★ 反向保护：`test_password_hash_rounds_default_stays_production_grade`
+      直接检查字段默认值仍 >= 12 —— 防止有人把**默认值**也改小
+      （那样测试会照常全绿，生产却静默变弱）。
+    """
+    from core.config import config
+
+    prev = config.password_hash_rounds
+    config.password_hash_rounds = 4
+    yield
+    config.password_hash_rounds = prev
+
+
 # ====== 临时用户（含订阅） ======
+#
+# ★★ 「删除测试用户」的**唯一实现** —— 测试文件不要再自己写一份
+#
+#   指向 `users` 的外键共 **10 个**（`pg_constraint` 实测，2026-09-17），
+#   按「删 users 时会不会被阻塞」分两类：
+#     · CASCADE（数据库自己收尾）：accounts / account_members.user_id /
+#       email_tokens / user_api_keys
+#     · **NO CASCADE ⇒ 必须先手工处理**，否则 `DELETE FROM users` 直接报
+#       `ForeignKeyViolationError: ... is still referenced from table ...`
+#
+#   血泪（第 100 轮）：`tests/test_users_self_service.py` 曾在文件内自建
+#   `_cleanup()`，只 `DELETE FROM users` ⇒ 撞 `subscriptions_user_id_fkey`
+#   （/register 会自动建一条默认订阅），4 条用例直接红。
+#   根因**不是端点有 bug**，而是清理漏了依赖行 ⇒ 收敛到本函数。
+#
+#   清单可复算：
+#     SELECT conrelid::regclass, conname, pg_get_constraintdef(oid)
+#     FROM pg_constraint
+#     WHERE confrelid='public.users'::regclass AND contype='f';
+#   ★ 将来新增指向 users 的 NO-CASCADE 外键时，必须同步下面两张表。
+#
+#   `stores_store` 不放进这两张表：它的列名是 `owner_id`（不是 user_id），
+#   而且它下面还挂着一堆带 shop_id 的业务表，需单独走拓扑序清理。
+_USER_NO_CASCADE_DEPS = (
+    ("invoices", "user_id"),         # 账单
+    ("login_attempts", "user_id"),   # 登录尝试（可空：匿名尝试 user_id 为 NULL）
+    ("payment_methods", "user_id"),  # 支付方式
+    ("subscriptions", "user_id"),    # 订阅（注册时自动创建的那条 —— 本轮踩的就是它）
+)
+
+#: `invited_by` 用**置空**而不是删行 —— 它表示「谁邀请了这位成员」，
+#: 删整行等于把**别人**的成员关系也一并抹掉。该列可空，置空即可。
+_USER_NULL_OUT_DEPS = (("account_members", "invited_by"),)
+
+
+async def _purge_users(*user_ids) -> None:
+    """彻底删除这些测试用户（连同其名下店铺与全部依赖行）。
+
+    参数混着传都可以：`_purge_users(uid)` / `_purge_users([a, b])` /
+    `_purge_users(a, b)`。
+    """
+    from sqlalchemy import text
+    from core.database import get_async_session
+
+    flat: list[str] = []
+    for u in user_ids:
+        if isinstance(u, (list, tuple, set)):
+            flat.extend(x for x in u if x)
+        elif u:
+            flat.append(u)
+    if not flat:
+        return
+
+    async with get_async_session() as db:
+        for uid in flat:
+            # ① 该用户名下的店铺：先按外键拓扑序清 shop-scoped 数据，再删店铺。
+            #    普通用例不建店（此处多为 0 行），但绝不能因此把这段写成错的 ——
+            #    否则第一个"建了店"的用例就会在这里失败。
+            shop_ids = (
+                (
+                    await db.execute(
+                        text("SELECT id FROM stores_store WHERE owner_id = :u"),
+                        {"u": uid},
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if shop_ids:
+                for tbl in await _shop_scoped_delete_order(db):
+                    await db.execute(
+                        text(f'DELETE FROM "{tbl}" WHERE shop_id = ANY(:ids)'),
+                        {"ids": shop_ids},
+                    )
+                await db.execute(
+                    text("DELETE FROM stores_store WHERE id = ANY(:ids)"),
+                    {"ids": shop_ids},
+                )
+
+            # ② 指向 users 的 NO-CASCADE 依赖
+            for tbl, col in _USER_NO_CASCADE_DEPS:
+                await db.execute(
+                    text(f"DELETE FROM {tbl} WHERE {col} = :u"), {"u": uid}
+                )
+            for tbl, col in _USER_NULL_OUT_DEPS:
+                await db.execute(
+                    text(f"UPDATE {tbl} SET {col} = NULL WHERE {col} = :u"), {"u": uid}
+                )
+
+            # ③ 用户本体（accounts / account_members.user_id / email_tokens /
+            #    user_api_keys 由数据库 CASCADE 收尾）
+            await db.execute(text("DELETE FROM users WHERE id = :u"), {"u": uid})
+        await db.commit()
+
 
 @pytest_asyncio.fixture
 async def user(client):
@@ -204,7 +392,10 @@ async def user(client):
     注册一个临时用户并返回其凭据。
 
     /register 会自动创建默认订阅，因此返回对象里带 subscription 信息。
-    测试结束后删除该用户及其订阅。
+    测试结束后连同其全部依赖行一起删除（见 `_purge_users`）。
+
+    ★ 需要**多个互相隔离**的用户（越权 / 数据隔离类用例）请用 `make_user`，
+      不要在本夹具之外再造第二个用户，也不要在测试文件里自己写删除逻辑。
     """
     email = f"pytest-{uuid.uuid4().hex[:10]}@example.com"
     password = "pytest123456"
@@ -224,9 +415,10 @@ async def user(client):
     token = lr.json()["access_token"]
 
     # 查 user_id / subscription_id 供 DB 断言与清理
-    from sqlalchemy import select, text
+    from sqlalchemy import select
     from core.database import get_async_session
-    from modules.user_subscription.models import User, Subscription
+    from core.identity.models import User
+    from modules.billing.models import Subscription
 
     async with get_async_session() as db:
         u = (await db.execute(select(User).where(User.email == email))).scalar_one()
@@ -243,18 +435,67 @@ async def user(client):
 
     yield payload
 
-    async with get_async_session() as db:
-        await db.execute(
-            text("DELETE FROM invoices WHERE user_id = :u"), {"u": payload["user_id"]}
+    # ★ 复用唯一实现：按外键依赖顺序删干净（旧版只删 3 张表，
+    #   漏了 login_attempts —— 该表已因此累积到 850 行）。
+    await _purge_users(payload["user_id"])
+
+
+@pytest_asyncio.fixture
+async def make_user(client):
+    """
+    工厂夹具：一次用例内建 **N 个互相隔离**的用户，teardown 统一回收。
+
+    为什么需要它：`user` 夹具只能提供一个用户，而「越权访问」「数据按
+    user_id 隔离」这类用例**天生需要两个主体**（A 的资源不能被 B 动）。
+    第 100 轮曾在测试文件里自建 `_register()/_cleanup()`，清理漏了依赖行
+    直接撞外键 ⇒ 本夹具把「建」和「删」都钉在唯一实现上。
+
+    用法::
+
+        async def test_x(client, make_user):
+            a = await make_user("owner")
+            b = await make_user("other")
+            await client.get("/...", headers=a["headers"])   # 已备好 Bearer 头
+            assert a["user_id"] != b["user_id"]
+
+    ★ 关键收益不只是省事：**计数类断言从此是确定性的**。
+      若用共享的 `auth_headers`，同一用户会被其它用例反复写入
+      （例如"再建一把 key"），于是 `total == 1` 这类断言会随执行顺序变红 ——
+      这是"单跑绿、加个 -k 就红"的典型来源。
+    """
+    created: list[dict] = []
+
+    async def _make(label: str = "u") -> dict:
+        email = f"pytest-{label}-{uuid.uuid4().hex[:8]}@example.com"
+        password = "pytest123456"
+
+        r = await client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password, "name": label},
         )
-        await db.execute(
-            text("DELETE FROM payment_methods WHERE user_id = :u"), {"u": payload["user_id"]}
+        assert r.status_code in (200, 201), f"注册失败: {r.status_code} {r.text}"
+
+        lr = await client.post(
+            "/api/v1/auth/login",
+            data={"username": email, "password": password},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-        await db.execute(
-            text("DELETE FROM subscriptions WHERE user_id = :u"), {"u": payload["user_id"]}
-        )
-        await db.execute(text("DELETE FROM users WHERE id = :u"), {"u": payload["user_id"]})
-        await db.commit()
+        assert lr.status_code == 200, f"登录失败: {lr.status_code} {lr.text}"
+        body = lr.json()
+
+        info = {
+            "email": email,
+            "password": password,
+            "token": body["access_token"],
+            "user_id": body["user"]["id"],
+            "headers": {"Authorization": f"Bearer {body['access_token']}"},
+        }
+        created.append(info)
+        return info
+
+    yield _make
+
+    await _purge_users([c["user_id"] for c in created])
 
 
 @pytest.fixture
@@ -371,6 +612,17 @@ async def _shop_scoped_delete_order(session):
 # 这里在会话开始时为这些 id 建出真实店铺行，结束时清掉。
 # 保留原有隔离语义（每个文件仍用自己的 id 分区），只是补上"必须真实存在"这一前提。
 #
+# ★★ P1-c（2026-09-16）这些合成店铺**故意不带 account_id**（owner_id 也空）：
+#   它们扮演的是「租户上下文标记」，不是用户看得见的店铺。
+#   归属判定因此走 `core/auth/accounts.py::_matches` 的**过渡期兜底分支**
+#   （account_id 为空 ⇒ 回退到 owner_id 判定；两者都为空 ⇒ 非超管一律拒绝），
+#   而业务侧解析时它们只在演示模式（AUTH_REQUIRED=false）下被放行 ——
+#   这正是测试套件的运行模式。
+#   ⇒ 一旦过渡期分支被删除，相关用例会**大声失败**（而不是静默变成
+#     「看不见的店铺」）；那时请给它们补 account_id，而不是把断言调松。
+#   过渡期分支的分支穷尽断言见
+#   `tests/test_account_store_hierarchy.py::test_ownership_kernel_branches`。
+#
 # ★ 新增合成 shop_id 时必须登记到下面这张表，否则那条用例会以外键违例失败。
 #   （p9b_enum_shop_ids.py 可以机械枚举出全部字面量）
 SYNTHETIC_TEST_SHOP_IDS = (
@@ -398,6 +650,10 @@ async def _synthetic_test_shops():
     这些是"租户上下文"，不是用户看得见的店铺；写进内存会让
     `GET /api/v1/stores`（读内存）凭空多出 12 家店。
     需要它们的用例都走 `X-Shop-ID` 头，命中点只在 PG 侧。
+
+    ★ P1-c（2026-09-16）：这些行**不写 `account_id`**，理由见上面
+      `SYNTHETIC_TEST_SHOP_IDS` 上方的说明 —— 它们靠归属判定的过渡期
+      兜底分支存活，那是刻意保留的一条**临时**通道。
     """
     from sqlalchemy import text
     from core.database import async_session_factory

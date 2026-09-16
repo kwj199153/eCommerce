@@ -750,7 +750,7 @@ class BaseAgent:
 
                 # 复用 DashScopeLLM 的定价口径（唯一真源），不另写一套单价表
                 from ai_infra.llm.dashscope_client import DashScopeLLM
-                from core.billing.llm_meter import record_llm_usage
+                from core.metering.llm_meter import record_llm_usage
 
                 record_llm_usage(
                     input_tokens=in_tok,

@@ -106,9 +106,12 @@ def register_all_models() -> None:
 
     ⇒ 新增业务模块时**只改这里**，两处自动同步。
     """
-    from modules.user_subscription.models import (  # noqa: F401
-        User, SubscriptionPlan, Subscription, Shop, Invoice, PaymentMethod,
-    )
+    from core.identity.models import User  # noqa: F401
+    # 账户域（★ P1-b/P1-c 2026-09-16）：Account/AccountMember 取代 shops 的架构位置；
+    # EmailToken/LoginAttempt 服务邮箱验证、密码重置与登录审计。
+    from core.identity.account_models import Account, AccountMember  # noqa: F401
+    from core.identity.auth_models import EmailToken, LoginAttempt, UserApiKey  # noqa: F401
+    from modules.billing.models import SubscriptionPlan, Subscription, Invoice, PaymentMethod  # noqa: F401
     from modules.stores.db_model import StoreRecord  # noqa: F401
     from modules.products.db_model import (  # noqa: F401
         SpuRecord, SkuRecord, ProductGroupRecord,

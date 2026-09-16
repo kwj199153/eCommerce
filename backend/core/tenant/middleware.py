@@ -1,20 +1,50 @@
 """
-多租户中间件
+多租户中间件（**业务侧**）
 
-实现租户识别、数据隔离等核心逻辑。
-支持从 Header 或 Token 中提取 tenant_id（shop_id）。
+★★★ P1-c 收拢后（2026-09-16）本模块只剩两件职责：
+
+  1. **业务侧店铺 ID 解析**（`get_current_shop_id*` / `_resolve_current_shop_id`）
+     —— 从 `X-Shop-ID` 头取 `stores_store.id`（`store_xxx`），做归属校验后返回。
+  2. **可观测性**（`TenantMiddleware`）—— 把「这条请求声称属于哪个店铺」
+     放进 `request.state.shop_id`，供请求日志使用。
+
+★ 本模块删掉的东西（C4，别再写回来）
+  收拢前这里还有一整套**账户侧**（`shops` 表 / UUID）的租户上下文设施：
+
+      TenantContext / _tenant_context_var / tenant_context（替换式写入代理） /
+      get_tenant_context / _require_owned / get_tenant_from_header /
+      get_optional_tenant / get_tenant_from_query / require_shop_owner
+
+  它们唯一的用途是服务 `core/identity/shop_router.py` 那 7 个 `/api/v1/shops`
+  端点 —— 那是**账户侧**实体（`shops` 表，UUID 主键），与业务侧 `stores_store`
+  （`store_xxx`）是两套互不同步的店铺。实测该模块**生产 0 调用点**，且用它建
+  出来的店在业务侧**根本不可用**（UUID 放进 `X-Shop-ID` 打业务端点 →
+  `stores_store` 查不到 → 403），即「会安静地生产一批废店」。
+
+  ⇒ 随 `shop_router.py` 一并删除。账户管理改由
+    `core/auth/accounts_router.py`（`/api/v1/accounts`）承担；
+    归属与权限判定的**唯一真源**是 `core/auth/accounts.py`。
+
+  ★★ 附带的结构性收益：`tenant_context` 这条「未校验的租户身份注入通道」
+     **物理消失了**。它曾是 P0 事故（BOLA 跨租户写入）的载体 ——
+     `TenantMiddleware` 往里写未校验的原始 `X-Shop-ID`，而
+     `modules/product_research/agent_product_research.py::_write_candidates`
+     直读它当作写库归属（探针 r84d 实测：伪造头 → 候选落进别人的选品库）。
+     收拢前靠「**所有**写入点都必须在归属校验之后」这条不变量约束它；
+     现在**一个写入点都没有**，不变量退化成结构事实，不可能再被改错。
 """
 
-import contextvars
 from typing import Optional
-from fastapi import Request, HTTPException, status, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from core.database import get_db
 from core.auth.dependencies import require_auth_if_enabled
-from modules.user_subscription.models import Shop
+from core.database import get_db
+# ★ P0-2（2026-09-16）：account_id（= 本项目的租户语义）的唯一写入点。
+from core.observability.context import set_request_context
 
 
 # ====== 常量 ======
@@ -24,242 +54,6 @@ TENANT_HEADER = "X-Shop-ID"
 
 # 查询参数中的租户标识
 TENANT_QUERY_PARAM = "shop_id"
-
-
-# ====== 租户上下文 ======
-
-class TenantContext:
-    """
-    租户上下文（请求级「值对象」）
-
-    只读：仅暴露 shop / shop_id / is_set 属性，不提供原地修改方法。
-    所有写入统一走 `tenant_context.xxx` 代理（替换式更新 ContextVar），
-    避免出现「两个实例各改各的」这类语义分裂。
-    """
-
-    __slots__ = ("_shop", "_shop_id")
-
-    def __init__(self, shop: Optional[Shop] = None, shop_id: Optional[str] = None):
-        object.__setattr__(self, "_shop", shop)
-        object.__setattr__(
-            self, "_shop_id",
-            shop_id if shop_id is not None else (shop.id if shop else None),
-        )
-
-    def __setattr__(self, key, value):
-        raise AttributeError("TenantContext 是只读值对象，请通过 tenant_context 代理写入")
-
-    @property
-    def shop(self) -> Optional[Shop]:
-        """当前店铺对象"""
-        return self._shop
-
-    @property
-    def shop_id(self) -> Optional[str]:
-        """当前店铺 ID"""
-        return self._shop_id
-
-    @property
-    def is_set(self) -> bool:
-        """是否已设置租户"""
-        return self._shop_id is not None
-
-
-# ====== 请求级租户上下文（ContextVar 隔离）======
-#
-# 修复记录：原先这里是模块级单例 `tenant_context = TenantContext()`，
-# 所有请求共享同一个可变对象。异步并发下（同一 worker 内多个请求交错
-# 执行）会导致 A 请求读到 B 请求的 shop，属于跨请求数据串扰。
-#
-# 现改为 ContextVar + 「替换式写入」：
-#   1. 每个请求（asyncio Task）持有自己的上下文副本，天然隔离；
-#   2. 写入时构造新实例并 set 进 ContextVar，而不是原地改字段——
-#      这样即便某个 Task 继承了父级 Context 里的旧实例，写入也不会
-#      污染父级或兄弟 Task。
-_tenant_context_var: contextvars.ContextVar[Optional[TenantContext]] = contextvars.ContextVar(
-    "tenant_context", default=None
-)
-
-
-def _read_context() -> TenantContext:
-    """读取当前请求的上下文实例（懒创建，内部使用）"""
-    ctx = _tenant_context_var.get()
-    if ctx is None:
-        ctx = TenantContext()
-        _tenant_context_var.set(ctx)
-    return ctx
-
-
-def _update_context(**changes) -> TenantContext:
-    """
-    以「替换」语义更新当前请求上下文，返回新实例。
-
-    不在旧实例上原地改字段，而是构造新实例并 set 进当前 Context。
-    """
-    cur = _tenant_context_var.get()
-    cur_shop = cur._shop if cur else None
-    cur_shop_id = cur._shop_id if cur else None
-
-    new_shop = changes.get("shop", cur_shop)
-    new_shop_id = changes.get("shop_id", cur_shop_id)
-    if "shop" in changes and changes["shop"] is not None and "shop_id" not in changes:
-        new_shop_id = changes["shop"].id
-
-    new_ctx = TenantContext(shop=new_shop, shop_id=new_shop_id)
-    _tenant_context_var.set(new_ctx)
-    return new_ctx
-
-
-class _TenantContextProxy:
-    """
-    租户上下文代理（对外唯一入口）
-
-    - 读：`tenant_context.shop_id` / `.shop` / `.is_set` 转发到当前请求实例
-    - 写：`set_shop` / `set_shop_id` / `clear` 走「替换式」更新，保证 Task 隔离
-
-    保留此代理是为了让既有的 `tenant_context.set_shop(...)` 等调用点无需修改。
-    """
-
-    __slots__ = ()
-
-    def set_shop(self, shop: Shop) -> TenantContext:
-        return _update_context(shop=shop, shop_id=shop.id)
-
-    def set_shop_id(self, shop_id: str) -> TenantContext:
-        return _update_context(shop_id=shop_id)
-
-    def clear(self) -> TenantContext:
-        return _update_context(shop=None, shop_id=None)
-
-    @property
-    def shop(self) -> Optional[Shop]:
-        return _read_context().shop
-
-    @property
-    def shop_id(self) -> Optional[str]:
-        return _read_context().shop_id
-
-    @property
-    def is_set(self) -> bool:
-        return _read_context().is_set
-
-
-# 请求级租户上下文入口（所有读写都落在当前请求的 ContextVar 上）
-tenant_context = _TenantContextProxy()
-
-
-def get_tenant_context() -> _TenantContextProxy:
-    """
-    获取当前请求的租户上下文入口。
-
-    返回代理而非裸实例，确保调用方拿到的永远是安全（替换式）语义。
-    """
-    return tenant_context
-
-
-# ====== 依赖注入函数 ======
-
-async def get_tenant_from_header(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-) -> Shop:
-    """
-    从请求头获取当前租户（店铺）
-
-    用法：
-        @router.get("/products")
-        async def list_products(shop: Shop = Depends(get_tenant_from_header)):
-            # shop 就是当前选中的店铺
-            return {"shop_name": shop.name}
-
-    归属校验：当 config.auth_required 为 True 时，会强制校验当前登录用户
-    是目标店铺的所有者（admin 角色可跨租户访问），否则 401/403。
-    """
-    # 1. 从请求头提取 shop_id
-    shop_id = request.headers.get(TENANT_HEADER)
-
-    if not shop_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"缺少请求头: {TENANT_HEADER}",
-        )
-
-    # 2. 查询店铺
-    result = await db.execute(select(Shop).where(Shop.id == shop_id))
-    shop = result.scalar_one_or_none()
-
-    if not shop:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"店铺不存在: {shop_id}",
-        )
-
-    if not shop.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="该店铺已被禁用",
-        )
-
-    # 2.5 归属校验（仅在启用鉴权时强制；演示模式放行）
-    #     修复前：只要知道 shop_id 即可读写任意店铺数据
-    current_user = await require_auth_if_enabled(request, db)
-    if current_user is not None:
-        if current_user.role.value != "admin" and shop.owner_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="无权访问该店铺",
-            )
-
-    # 3. 设置到上下文
-    tenant_context.set_shop(shop)
-
-    return shop
-
-
-async def get_optional_tenant(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-) -> Optional[Shop]:
-    """
-    获取可选的租户（不强制要求）
-
-    如果提供了 shop_id 则返回店铺，否则返回 None。
-    用于支持全局操作或店铺级操作的接口。
-    """
-    shop_id = (
-        request.headers.get(TENANT_HEADER)
-        or request.query_params.get(TENANT_QUERY_PARAM)
-    )
-
-    if not shop_id:
-        return None
-
-    try:
-        return await get_tenant_from_header(request, db)
-    except HTTPException:
-        return None
-
-
-async def get_tenant_from_query(
-    shop_id: Optional[str] = Query(None, description="店铺 ID"),
-    db: AsyncSession = Depends(get_db),
-) -> Optional[Shop]:
-    """
-    从查询参数获取租户
-
-    用于 GET 请求中通过 ?shop_id=xxx 指定店铺的场景。
-    """
-    if not shop_id:
-        return None
-
-    result = await db.execute(select(Shop).where(Shop.id == shop_id))
-    shop = result.scalar_one_or_none()
-
-    if shop and shop.is_active:
-        tenant_context.set_shop(shop)
-        return shop
-
-    return None
 
 
 # ====== 轻量店铺 ID 依赖（数据层隔离用） ======
@@ -284,16 +78,22 @@ async def get_current_shop_id(
     从请求头提取当前选中店铺 ID（stores_store.id，格式 store_xxx）。
     用于业务数据（spus/candidates/assets/monitors/rules）的 shop_id 过滤。
 
-    与 get_tenant_from_header 的区别：
-    - 前者查 shops 表（user_subscription，UUID），用于订阅/归属校验；
-    - 本依赖查 stores_store 表，做归属校验后返回原始 ID 字符串。
+    ★ P1-c 收拢后（2026-09-16）本项目**只有这一个** `X-Shop-ID` 解析者。
+      账户侧那套（`get_tenant_from_header` 家族，查 `shops` 表 / UUID）已随
+      `core/identity/shop_router.py` 删除；此前「同一个请求头有两个含义不同的
+      解析者」是隐患来源，现在结构上不存在了。
 
     ★★★ 归属校验（P0 安全修复 2026-09-15，OWASP API Security #1 BOLA）
         修复前：直接 `return request.headers.get(TENANT_HEADER)`，零校验
         ⇒ 任何带有效 token 的用户改一下 X-Shop-ID 就能读别人全部业务数据
           （实测 6/6 端点 200：SPU/候选品/素材/监控/规则/音色）。
-        修复后：config.auth_required=True（生产模式）时强制校验
-          stores_store.owner_id == 当前用户 id；不符一律 403；admin 放行。
+        修复后：config.auth_required=True（生产模式）时强制做归属校验，
+          不符一律 403；平台超管放行。
+        ★★ P1-c（2026-09-16）判定口径更新为
+          `stores_store.account_id ∈ 当前用户可见账户集合`
+          （含成员表命中；实现见 `core/auth/accounts.py::can_access_store`）。
+          修复 2026-09-15 时的口径是 `owner_id == 当前用户 id` —— 那是
+          「一店一人」模型，表达不出团队共享，两个入口各抄一份必然漂移。
 
     ★★★ 空值守卫（P0 修复 2026-09-15，多租户隔离）
         **写方法（POST/PUT/PATCH/DELETE）+ 缺失/空白 X-Shop-ID ⇒ 400。**
@@ -316,8 +116,9 @@ async def get_current_shop_id(
          不做校验，行为与修复前一致 ⇒ 本地演示/联调不受影响。
          **注意：空值守卫不受演示模式影响**（它是请求形状校验，与"你是谁"无关）
          —— 演示模式下同样禁止空 shop 写入。
-      3. 存量无主店铺（owner_id IS NULL）生产模式下非 admin 一律拒绝
-         ⇒ 上线前须跑 scripts/backfill_owner_id.py 回填归属。
+      3. 存量无主店铺（account_id IS NULL **且** owner_id IS NULL）生产模式下
+         非超管一律拒绝 ⇒ 上线前须跑回填（迁移 d1e2f3a4b5c6 已为有主的店铺
+         建账户并挂 account_id；`scripts/backfill_owner_id.py` 处理无主店铺）。
 
     用法：
         @router.get("/products")
@@ -385,84 +186,85 @@ async def _resolve_current_shop_id(
         return shop_id
 
     # ③ 授权（这东西归不归你）—— 修复前缺失的就是这一段
+    #
+    # ★★★ P1-c（2026-09-16）口径升级：判定实现收到 `core/auth/accounts.py`。
+    #
+    #   改造前这里是 `store.owner_id != current_user.id`，而
+    #   `modules/stores/router.py::_check_store_owner` 里**又抄了同一份判断**。
+    #   两处各自演进 ⇒ 新增一个入口就要记得补一次，漏一次就是一个越权口子
+    #   （这正是 P0 事故的形态）。现在两处都调 `can_access_store()`。
+    #
+    #   口径本身也换了：从「一店一人」的 owner_id 改为
+    #   「store.account_id ∈ 当前用户可见账户集合」—— 后者才表达得出团队共享
+    #   （同一家店两个人都要能进）。owner_id 只留作过渡期兜底（account_id 为空的
+    #   存量/合成店铺），由 `tests/test_account_store_hierarchy.py` 锁定。
     from modules.stores.db_model import StoreRecord  # 函数内导入，避免循环依赖
+    from core.auth.accounts import can_access_store
 
     result = await db.execute(select(StoreRecord).where(StoreRecord.id == shop_id))
     store = result.scalar_one_or_none()
 
-    if current_user.role.value != "admin":
-        # 不存在 / 无主 / 归属他人 —— 统一 403，不区分，避免探测有效 ID
-        if store is None or store.owner_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="无权访问该店铺",
-            )
+    # 不存在 / 无主 / 归属他人 —— 统一 403，不区分，避免探测有效 ID
+    if store is None or not await can_access_store(db, current_user, store):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权访问该店铺",
+        )
 
-    # admin 放行（超管可跨租户）
+    # ★ P0-2（2026-09-16）：归属已确认 —— 把 account_id 写进请求上下文。
+    #
+    #   为什么必须在这里写，而不是在鉴权依赖 `get_current_user` 里：
+    #   一个用户可属于多个账户（个人账户 + 被邀请的团队账户），
+    #   "本次请求属于哪个账户"只有**解析出具体店铺之后**才知道。
+    #   在鉴权阶段写一个猜测值，等于把错误归属扩散到全部日志与审计。
+    #
+    #   ★ 只在归属校验通过之后写：走进 403 分支的请求不该在上下文里
+    #     留下任何账户痕迹（否则"越权尝试"的日志会带着受害账户的 ID）。
+    set_request_context(account_id=store.account_id)
+
     return shop_id
-
-
-# ====== 权限检查 ======
-
-def require_shop_owner():
-    """
-    验证当前用户是店铺的所有者
-
-    用法：
-        @router.delete("/shops/{shop_id}")
-        async def delete_shop(
-            shop: Shop = Depends(require_shop_owner()),
-        ):
-            ...
-    """
-    async def checker(
-        request: Request,
-        db: AsyncSession = Depends(get_db),
-        shop: Shop = Depends(get_tenant_from_header),
-    ) -> Shop:
-        # 归属校验逻辑复用统一鉴权依赖（admin 越权放行、演示模式返回 None）
-        current_user = await require_auth_if_enabled(request, db)
-
-        if current_user is None:
-            # 演示模式：不强制归属校验，避免影响本地演示
-            return shop
-
-        if current_user.role.value != "admin" and shop.owner_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="无权操作此店铺",
-            )
-
-        return shop
-    return checker
 
 
 # ====== FastAPI 中间件 ======
 
 class TenantMiddleware(BaseHTTPMiddleware):
     """
-    多租户中间件
+    多租户中间件（**只做可观测性，不做授权**）
 
-    自动从请求头/查询参数提取租户信息并设置到当前请求的上下文。
-    如果不需要强制要求租户，可以使用此中间件自动处理。
+    职责边界（P0 安全修复 2026-09-16 后固化，P1-c 收拢后进一步简化）：
+      - 做：把请求头/查询参数里的店铺标识放进 `request.state.shop_id`，
+            供请求日志与异常处理器展示（"这条请求声称是哪个店铺的"）。
+      - **不做**：解析店铺、写任何请求级业务上下文。
+
+    ★★★ 为什么这个中间件永远不许「顺手把 shop_id 存起来给后面用」（根因记录）
+        修复前这里是：
+            if shop_id:
+                get_tenant_context().set_shop_id(shop_id)      # ← 原始头值，零校验
+        而 `modules/product_research/agent_product_research.py::_write_candidates`
+        **直读**该上下文当作写库归属。两者串起来就是一条跨租户写入链：
+        任何带有效 token 的用户，只要把 `X-Shop-ID` 改成别人的店铺 ID，
+        候选商品就会落进**别人的选品库**（探针 r84d 实测 200 + 落库对齐受害店铺）。
+
+        危险点不在"谁读了上下文"，而在"上下文里的值从来没人校验过"。
+        它看起来只是一个无害的 request-scoped 缓存，实际是一条**未校验的
+        租户身份注入通道**，谁读谁中招。
+
+    ★ P1-c 收拢后（2026-09-16）：那条通道所在的整套 `tenant_context` 设施
+      已被删除（见模块 docstring）。现在**没有任何地方**可以"存起来给后面用"
+      —— 端点侧要拿店铺 ID 请显式 `Depends(get_current_shop_id*)`，
+      它会做归属校验并返回原始 ID 字符串。
 
     注册方式（main.py）：
         app.add_middleware(TenantMiddleware)
     """
 
     async def dispatch(self, request: Request, call_next):
-        # 尝试提取租户信息（不强制）
+        # 只提取、不授权：写进 request.state 供日志用，绝不写业务上下文
         shop_id = (
             request.headers.get(TENANT_HEADER)
             or request.query_params.get(TENANT_QUERY_PARAM)
         )
-
-        if shop_id:
-            get_tenant_context().set_shop_id(shop_id)
-
-        # 同时挂到 request.state：外层中间件（请求日志）与异常处理器可直接读取
         request.state.shop_id = shop_id
 
-        # 执行请求（ContextVar 在请求 Task 结束时随副本一起失效）
         response = await call_next(request)
         return response

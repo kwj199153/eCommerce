@@ -12,12 +12,19 @@ from core.config import config
 
 # ====== Redis 连接 ======
 async def get_redis_client() -> aioredis.Redis:
-    """获取异步 Redis 客户端"""
+    """获取异步 Redis 客户端。
+
+    ★ 必须显式给超时：redis-py 默认的 connect 超时可以很长（TCP 层面几十秒），
+      Redis 不可达时会把调用方（/health 探针、限流中间件）一起拖住 ——
+      探针本身不该比被探测的服务更慢。
+    """
     return aioredis.from_url(
         config.redis_url,
         encoding="utf-8",
         decode_responses=True,
         max_connections=20,
+        socket_connect_timeout=2,
+        socket_timeout=5,
     )
 
 

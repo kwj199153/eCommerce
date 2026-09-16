@@ -13,26 +13,17 @@ from urllib.parse import urlparse
 
 import httpx
 
-from core.config import config
 from core.logger import get_logger
+# ★ 路径计算已上收到 core/storage/paths.py（★ 第 100 轮）——
+#   补 `/users/avatar` 时出现了第二个消费者，而那位在 `core/identity/`；
+#   让 `core` 反向 import 本模块（业务模块）会把依赖方向搞反。
+#   ⇒ 上收到 core，本模块 re-export 保持既有 import 路径不变
+#     （`main.py` 等仍写 `from modules.aigc_media.storage import upload_root`）。
+from core.storage.paths import IMAGE_EXT, STATIC_PREFIX, upload_root  # noqa: F401
 
 logger = get_logger(__name__)
 
-#: 对外暴露的静态路径前缀（main.py 把 uploads 挂到它下面）
-STATIC_PREFIX = "/static"
-_ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".webp"}
-
-
-def upload_root() -> Path:
-    """``uploads`` 目录的绝对路径。
-
-    ``config.upload_dir`` 默认是相对路径 ``./uploads`` —— 直接拼会受启动 CWD
-    影响，统一按 ``backend/`` 解析（本文件位于 ``backend/modules/aigc_media/``）。
-    """
-    root = Path(config.upload_dir)
-    if not root.is_absolute():
-        root = Path(__file__).resolve().parents[2] / root
-    return root
+_ALLOWED_EXT = IMAGE_EXT
 
 
 async def persist_remote_image(url: str, *, subdir: str = "aigc", timeout: float = 60.0) -> str:

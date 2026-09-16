@@ -2,7 +2,7 @@
 支付网关抽象层
 
 背景：
-    billing_router.change_plan 原本把「模拟支付成功」硬编码在端点内——
+    modules/billing/router.py::change_plan 原本把「模拟支付成功」硬编码在端点内——
     直接生成一张 paid 账单 + 更新订阅，真实支付无法插拔。
 
     本模块定义统一支付网关协议与工厂，让计费端点只面向协议编程，
@@ -16,17 +16,19 @@
     - `get_gateway()`：按 config.payment_gateway 返回对应实现（工厂）
 
 用法：
-    from core.billing.payment_gateway import get_gateway
+    from platforms.payment.gateway import get_gateway
 
     gateway = get_gateway()
     result = await gateway.charge(ChargeIntent(
         user_id=..., amount=..., currency="CNY", description="专业版年付",
-        plan=..., billing_cycle="yearly", idempotency_key="sub:...",
+        plan_name="pro", billing_cycle="yearly", idempotency_key="sub:...",
     ))
     if not result.success:
         raise HTTPException(402, result.error)
     if result.invoice is not None:
-        db.add(result.invoice)          # 落账单（零元不开票，见 MockGateway）
+        # result.invoice 是纯数据 InvoiceDraft，不是 ORM 实体。
+        # 落库由调用方决定（见 modules/billing/router.py::_invoice_from_draft）。
+        db.add(_invoice_from_draft(result.invoice))   # 零元不开票，见 MockGateway
 
     前端若需拉起第三方支付（如 Stripe PaymentIntent），可透传 result.client_secret。
 
@@ -84,7 +86,7 @@ stripe / alipay / wechat，`get_gateway()` 会**显式抛 ValueError** 并列出
            #        不等于「收款成功」。把两者混为一谈 = 用户没付钱就拿到套餐。
 
 4) webhook 回调（★ 这是真实支付能闭环的关键，mock 完全不需要）
-   新增 `modules/user_subscription/payment_webhook_router.py`：
+   新增 `modules/billing/webhook_router.py`：
        POST /api/v1/billing/webhook/stripe
            - 用 payment_stripe_webhook_secret 验签（不验签 = 任何人可伪造到账通知）
            - 幂等：按 event.id 去重（Stripe 会重复投递同一个事件）
@@ -103,6 +105,10 @@ stripe / alipay / wechat，`get_gateway()` 会**显式抛 ValueError** 并列出
      接真实网关后要改成「建 pending 账单 → commit → 收 webhook → 改订阅为 active」。
    对应地 Subscription.status 需要用到 `past_due` / `trialing`
    （模型已预留这两个取值，无需改表结构）。
+   ★ 顺带注意：change_plan 的行锁覆盖「当前用户自己那一行」，事务内还包含
+     一次网关调用。mock 是瞬时完成；接真实网关若走**同步 HTTP**，
+     持锁时长 ≈ 网关 P99 延迟，同一用户的高频请求会排队等待。
+     这也是要改两段式的原因之一（建 pending 账单 → commit 释放锁 → 收 webhook）。
 
 6) 对账
    真实网关必须有日对账任务：拉取昨日结算流水，与 invoices 表按
@@ -132,7 +138,12 @@ from datetime import datetime
 from typing import Optional, Protocol, runtime_checkable
 
 from core.config import KNOWN_UNIMPLEMENTED_GATEWAYS, config
-from modules.user_subscription.models import Invoice, SubscriptionPlan
+
+# ★ 适配层只依赖 DTO，**不** import 任何业务 ORM 模型。
+#   历史问题：本模块曾 `from modules.user_subscription.models import Invoice,
+#   SubscriptionPlan`，于是「外部适配层」反向依赖了业务实体 ——
+#   要独立部署 webhook 服务 / 换网关时，会被业务模型一起拖走。
+#   现在账单以纯数据 InvoiceDraft 返回，由调用方（modules/billing）负责落库。
 
 
 # ====== 统一数据结构 ======
@@ -146,7 +157,9 @@ class ChargeIntent:
     currency: str = "CNY"
     description: str = ""
     billing_cycle: str = "monthly"      # monthly / yearly
-    plan: Optional[SubscriptionPlan] = None   # 关联套餐（生成账单描述用）
+    # 关联套餐的**标识**（如 "pro"）。刻意只放字符串而不是 ORM 实体：
+    # 适配层不该认识业务模型；给人看的描述文案由调用方拼进 description。
+    plan_name: str = ""
     # 幂等键：同一业务动作重试必须带同一个值。
     # ★ 真实网关靠它做服务端去重（Stripe 透传、支付宝/微信作 out_trade_no）；
     #   mock 下只落到 Invoice.idempotency_key 上，由 DB 唯一约束兜底。
@@ -154,11 +167,35 @@ class ChargeIntent:
 
 
 @dataclass
+class InvoiceDraft:
+    """账单草案（纯数据，**不含** ORM 实体）
+
+    ★ 为什么需要这一层：
+      网关属于**外部适配层**，只该产出与框架无关的数据；是否落库、按哪个
+      业务模型落库，是调用方（modules/billing）的决定。网关若直接 new 一个
+      ORM Invoice，就等于替业务层做了持久化决策，适配层也无法脱离业务模型复用。
+      调用方转换见 modules/billing/router.py::_invoice_from_draft()。
+    """
+
+    user_id: str
+    number: str                                  # 账单号 INV-xxxx
+    amount: float
+    currency: str = "CNY"
+    status: str = "paid"                        # paid / pending / failed / refunded
+    description: str = ""
+    issued_at: Optional[datetime] = None
+    paid_at: Optional[datetime] = None
+    pdf_url: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    id: str = ""                                # 网关预生成的账单 UUID
+
+
+@dataclass
 class ChargeResult:
     """一次扣款的结果（网关无关）"""
 
     success: bool
-    invoice: Optional[Invoice] = None           # 成功时返回待落库账单；零元或纯授权返回 None
+    invoice: Optional[InvoiceDraft] = None      # 成功时返回待落库的账单**草案**；零元或纯授权返回 None
     client_secret: str = ""                     # 第三方支付意图（Stripe 等）；mock 为空串
     transaction_id: str = ""                    # 网关侧交易号
     error: str = ""                             # 失败原因
@@ -214,7 +251,7 @@ class MockGateway:
             )
 
         now = datetime.utcnow()
-        invoice = Invoice(
+        invoice = InvoiceDraft(
             id=str(uuid.uuid4()),
             user_id=intent.user_id,
             number=f"INV-{now.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}",
@@ -263,7 +300,7 @@ class UnimplementedGateway:
     async def charge(self, intent: ChargeIntent) -> ChargeResult:
         raise NotImplementedError(
             f"支付网关 '{self.requested}' 尚未接入实现。"
-            f"请按 core/billing/payment_gateway.py 顶部「真实网关接入清单」"
+            f"请按 platforms/payment/gateway.py 顶部「真实网关接入清单」"
             f"完成 6 步接入后，再把 PAYMENT_GATEWAY 改为 '{self.requested}'。"
         )
 

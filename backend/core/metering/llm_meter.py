@@ -2,7 +2,7 @@
 LLM 用量计量器（请求级）
 
 背景：
-    计费系统（core/billing/usage_tracker.py）原本只统计「API 调用次数」和
+    计费系统（core/metering/usage_tracker.py）原本只统计「API 调用次数」和
     「Agent 对话次数」，LLM 真实 token / 成本只活在 DashScopeLLM 的内存
     stats 里，从未落库 —— 导致 LLM 消耗与计费完全脱钩。
 
@@ -11,7 +11,7 @@ LLM 用量计量器（请求级）
     由计费依赖（meter_agent_chat）在请求结束时一次性写入 subscriptions 表。
 
 用法（LLM 客户端侧）：
-    from core.billing.llm_meter import record_llm_usage
+    from core.metering.llm_meter import record_llm_usage
     record_llm_usage(input_tokens=..., output_tokens=..., cost=..., model="qwen-max")
 
 用法（计费依赖侧）：

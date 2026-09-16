@@ -6,7 +6,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from core.billing.usage_tracker import meter_agent_chat
+from core.metering.usage_tracker import meter_agent_chat
 from typing import Optional
 
 from ai_infra.sse import sse_event_stream

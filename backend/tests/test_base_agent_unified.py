@@ -157,7 +157,7 @@ async def test_graph_path_records_llm_usage(monkeypatch):
       `record_llm_usage(...)` 调用删掉，本用例立即变红（snapshot.calls 为 0）。
       改造前该路径**没有任何测试覆盖**——绿是假绿，靠 conftest 的桩代为记账。
     """
-    from core.billing.llm_meter import reset_meter, snapshot
+    from core.metering.llm_meter import reset_meter, snapshot
 
     from ai_infra.base_agent import BaseAgent
 
@@ -179,7 +179,7 @@ async def test_graph_path_records_llm_usage(monkeypatch):
 
 async def test_graph_path_metering_is_idempotent_per_call(monkeypatch):
     """同一请求内两次节点调用应累加，而不是相互覆盖。"""
-    from core.billing.llm_meter import reset_meter, snapshot
+    from core.metering.llm_meter import reset_meter, snapshot
 
     from ai_infra.base_agent import BaseAgent
 

@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.billing.usage_tracker import meter_agent_chat
+from core.metering.usage_tracker import meter_agent_chat
 # ★ 用 `_optional` 变体而不是 `get_current_shop_id`：本端点是 **POST 但属对话入口**，
 #   不是业务数据写入口。用严格版会让「刚注册、还没有店铺」的用户一进来就被 400
 #   挡住 —— 而这时候他恰恰只能靠店秘书去创建第一家店铺。

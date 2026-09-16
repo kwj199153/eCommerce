@@ -127,3 +127,70 @@ async def test_migration_head_is_single_not_forked():
         "alembic 出现多个 head，upgrade head 会失败。\n"
         + "\n".join(heads)
     )
+
+
+# ====== ORM 外键目标表必须全部可解析（★ P1-b 事故后补的硬门禁）======
+#
+# 事故形态（2026-09-16，P1-b/P1-c 批次，实测）
+# -------------------------------------------
+# `stores_store.account_id -> accounts.id` 是**字符串**外键，SQLAlchemy 在
+# 解析时要在当前 `MetaData` 里按表名找到 `accounts`。而 `accounts` 只由
+# `core.database.register_all_models()` 导入 —— 该函数**只被 alembic/env.py
+# 与 init_db() 调用**，init_db() 又只在 FastAPI lifespan 里跑。
+#
+# ⇒ pytest 进程从不跑 lifespan（`httpx.ASGITransport` 不触发 startup）
+#   ⇒ 整个套件在 **setup 阶段 100% ERROR**，报错是
+#
+#       NoReferencedTableError: Foreign key associated with column
+#       'stores_store.account_id' could not find table 'accounts'
+#
+#   注意它抛在 **flush** 时（SQLAlchemy 要对表做拓扑排序），不在 import 时；
+#   而且报错指向外键本身，看起来像"外键写错了"。
+#
+# 为什么这条用例是正确的位置
+# --------------------------
+# 上面的 `shop_id` 外键检查走的是 **information_schema**（只看库里的结构），
+# 所以"ORM 里声明的外键能不能解析"这件事它一个字都答不了。
+# 两者互补：一个管"库里的外键在不在"，一个管"ORM 里的外键能不能用"。
+#
+# 判据不硬编码表名：直接让 SQLAlchemy 解析**全部**外键，目标表缺失即抛。
+
+def test_every_orm_foreign_key_target_is_registered():
+    """
+    触发全部 ORM 外键的目标表解析；缺任何一张目标表都会立刻红。
+
+    `MetaData.sorted_tables` 会对所有表做拓扑排序 —— 这正是 flush 时抛
+    `NoReferencedTableError` 的那段逻辑，因此本用例能在**收集期/运行期早期**
+    就复现出"某张表没被任何模块 import"这一类问题，而不是等到某条
+    无关的用例 flush 时才炸（那时报错位置与根因隔了十万八千里）。
+    """
+    from core.database import Base, register_all_models
+
+    register_all_models()
+    # 不抛异常即通过
+    tables = Base.metadata.sorted_tables
+    assert tables, "metadata 里一张表都没有 —— register_all_models() 可能失效了"
+
+
+def test_stores_account_fk_target_is_present():
+    """
+    定向钉住本次事故的那条边：`stores_store.account_id -> accounts.id`。
+
+    为什么在通用检查之外还要这一条：通用检查依赖 `register_all_models()`
+    把两个模块都导进来 —— 如果哪天有人把 `stores.db_model` 从清单里删掉，
+    两条边会一起消失、通用检查反而**依然是绿的**。这条直接断言两边都在，
+    且外键指向的表名正确。
+    """
+    from core.database import Base, register_all_models
+
+    register_all_models()
+    assert "accounts" in Base.metadata.tables, "accounts 表未注册到 metadata"
+    assert "stores_store" in Base.metadata.tables, "stores_store 表未注册到 metadata"
+
+    targets = {
+        fk.target_fullname
+        for fk in Base.metadata.tables["stores_store"].foreign_keys
+    }
+    assert "accounts.id" in targets, (
+        f"stores_store 缺少指向 accounts.id 的外键，实际目标 = {sorted(targets)}"
+    )
