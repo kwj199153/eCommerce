@@ -159,7 +159,8 @@ export function dispatchAppAction(action: AppAction): boolean {
       return true
     }
     if (action.target === 'logout') {
-      useUserStore().logout()
+      // 同上：fire-and-forget，请求已发出，跳转不等待。
+      void useUserStore().logout()
       router.push('/login')
       return true
     }

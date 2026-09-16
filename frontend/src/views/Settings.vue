@@ -104,7 +104,7 @@
             <div v-for="key in apiKeys" :key="key.id" class="api-key-item">
               <div class="key-info">
                 <strong>{{ key.name }}</strong>
-                <code class="key-value">{{ maskApiKey(key.key) }}</code>
+                <code class="key-value">{{ key.key }}</code>
                 <a-tag :color="key.is_active ? 'green' : 'default'">
                   {{ key.is_active ? '活跃' : '已禁用' }}
                 </a-tag>
@@ -114,7 +114,8 @@
                 <span>最后使用：{{ key.last_used_at ? formatDate(key.last_used_at) : '从未' }}</span>
               </div>
               <div class="key-actions">
-                <a-button size="small" type="link" @click="handleCopyKey(key.key)">复制</a-button>
+                <!-- ★ 列表里不再提供"复制"：后端只存 sha256，列表返回的是掩码串，
+                     复制一串掩码没有意义。完整 key 只在**创建那一刻**的弹窗里给一次。 -->
                 <a-popconfirm title="确定要删除此密钥吗？" @confirm="handleDeleteKey(key.id)">
                   <a-button size="small" danger type="link">删除</a-button>
                 </a-popconfirm>
@@ -384,16 +385,17 @@ const savingProfile = ref(false)
 const profileForm = reactive({
   name: userStore.userName || '',
   email: userStore.userEmail || '',
-  phone: '',
-  company: '',
+  // ★ 从后端带回的资料回填（此前恒为空字符串 ⇒ 即使后端存了也看不见）
+  phone: userStore.user?.phone || '',
+  company: userStore.user?.company || '',
 })
 
 const avatarInputRef = ref<HTMLInputElement | null>(null)
 
 function resetProfileForm() {
   profileForm.name = userStore.userName || ''
-  profileForm.phone = ''
-  profileForm.company = ''
+  profileForm.phone = userStore.user?.phone || ''
+  profileForm.company = userStore.user?.company || ''
 }
 
 async function handleSaveProfile() {
@@ -403,14 +405,15 @@ async function handleSaveProfile() {
   }
   savingProfile.value = true
   try {
-    await put('/users/profile', {
+    const res: any = await put('/users/profile', {
       name: profileForm.name,
       phone: profileForm.phone,
       company: profileForm.company,
     })
     message.success('资料更新成功')
-    // 更新 store
-    userStore.updateUserName(profileForm.name)
+    // ★ 用后端返回的**完整** user 覆盖 store（只改 name 会让 phone/company
+    //   在界面上停留在旧值，看起来像没保存成功）
+    if (res?.user) userStore.setUser(res.user)
   } catch (err: any) {
     message.error(err?.response?.data?.detail || '保存失败')
   } finally {
@@ -464,11 +467,20 @@ async function handleChangePassword() {
 
   changingPassword.value = true
   try {
-    await post('/users/change-password', {
-      current_password: passwordForm.current,
-      new_password: passwordForm.newPwd,
-    })
-    message.success('密码修改成功')
+    // ★ 路径是 /auth/change-password（曾经写成 /users/change-password ⇒ 404 断链）
+    // ★ silent: true —— 后端返回的 message 会被拦截器自动弹一次，这里再弹就会出现两条
+    const res: any = await post(
+      '/auth/change-password',
+      {
+        current_password: passwordForm.current,
+        new_password: passwordForm.newPwd,
+      },
+      { silent: true }
+    )
+    // ★ 必须消费返回的新 token 对：改密会提升 token_version，
+    //   当前这枚 token 同时失效；不换发的话用户改完密码立刻掉线。
+    userStore.applyTokenPair(res?.access_token, res?.refresh_token)
+    message.success('密码修改成功，其他设备的登录已失效')
     passwordForm.current = ''
     passwordForm.newPwd = ''
     passwordForm.confirm = ''
@@ -496,14 +508,9 @@ const creatingKey = ref(false)
 const newKeyName = ref('')
 const newKeyValue = ref('')
 
-function maskApiKey(key: string): string {
-  if (key.length <= 8) return '****'
-  return key.slice(0, 4) + '****' + key.slice(-4)
-}
-
-function handleCopyKey(key: string) {
-  copyToClipboard(key)
-}
+// ★ `maskApiKey` / `handleCopyKey` 已删除（第 100 轮）：
+//   掩码由**后端**生成（库里只有 sha256，前端拿不到"前 7 位"这种信息），
+//   列表直接回显 `key.key` 即可；复制掩码串没有意义。
 
 function copyToClipboard(text: string) {
   navigator.clipboard.writeText(text).then(() => {
@@ -549,37 +556,39 @@ async function loadApiKeys() {
     const res: any = await get('/users/api-keys')
     apiKeys.value = res.api_keys || []
   } catch (e) {
-    console.warn('[Demo Mode] 加载 API Keys 失败，使用 Mock 数据')
-    // Mock 数据兜底
-    apiKeys.value = [
-      {
-        id: 'key-demo-001',
-        name: '生产环境',
-        key: 'sk-demo-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
-        is_active: true,
-        created_at: '2026-08-15T10:00:00Z',
-        last_used_at: '2026-09-01T08:30:00Z',
-      },
-    ]
+    // ★ 不喂 Mock 数据：虚构出一条"生产环境 sk-demo-…"会让用户以为
+    //   自己真有这么一把密钥（老板铁律：空状态优于虚构默认）。
+    console.warn('加载 API Keys 失败:', e)
+    apiKeys.value = []
   }
 }
 
 // ====== 通知偏好 ======
 const savingNotif = ref(false)
+// ★ 初值取自后端带回的偏好，只在缺项时用默认值。
+//   写死默认值的后果：用户关掉的开关，刷新页面后自己又打开了。
+// ★ 用 `??` 而不是 `||` —— `||` 会把用户显式关掉的 `false` 当成"没值"再套上默认 `true`，
+//   表现为"这个开关永远关不掉"（本项目已有同族判据：`x || 默认值` 把填 0 变默认）。
+const _userPrefs = userStore.user?.notification_prefs || {}
 const notifForm = reactive({
-  usageAlert: true,
-  billingAlert: true,
-  weeklyReport: false,
-  systemUpdate: true,
-  taskComplete: true,
-  agentError: true,
+  usageAlert: _userPrefs.usageAlert ?? true,
+  billingAlert: _userPrefs.billingAlert ?? true,
+  weeklyReport: _userPrefs.weeklyReport ?? false,
+  systemUpdate: _userPrefs.systemUpdate ?? true,
+  taskComplete: _userPrefs.taskComplete ?? true,
+  agentError: _userPrefs.agentError ?? true,
 })
 
 async function handleSaveNotifications() {
   savingNotif.value = true
   try {
-    await put('/users/notifications', notifForm)
+    const res: any = await put('/users/notifications', notifForm)
     message.success('偏好设置已保存')
+    // ★ 后端返回的是补齐后的**完整**六项 —— 用它与 store 对齐，
+    //   下次进设置页时初值就是刚保存的这份。
+    if (res?.prefs && userStore.user) {
+      userStore.setUser({ ...userStore.user, notification_prefs: res.prefs })
+    }
   } catch (err: any) {
     message.error(err?.response?.data?.detail || '保存失败')
   } finally {

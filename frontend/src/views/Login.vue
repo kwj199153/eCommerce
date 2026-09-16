@@ -169,14 +169,32 @@
 
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { UserOutlined, LockOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useUserStore } from '@/stores/user'
 import { DEMO_MODE, DEMO_TOKEN, DEMO_REFRESH_TOKEN, DEMO_USER } from '@/config/demoMode'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
+
+/**
+ * 登录成功后的落点。
+ *
+ * ★ 支持 `?redirect=`：从受保护页（如「团队成员」）被引导过来时，
+ *   登录完应当回到原处，而不是一律丢回首页 —— 否则用户会觉得
+ *   刚才点的那一下"白点了"，又得自己找回去。
+ *
+ * ★ 只接受**站内绝对路径**：`//evil.com` 会被浏览器当成协议相对 URL
+ *   跳到外站，是典型的开放重定向口子，这里必须挡掉。
+ */
+function redirectTarget(): string {
+  const raw = route.query.redirect
+  const path = typeof raw === 'string' ? raw : ''
+  if (path.startsWith('/') && !path.startsWith('//')) return path
+  return '/'
+}
 
 const activeTab = ref('login')
 
@@ -202,7 +220,7 @@ const handleLogin = async () => {
       password: loginForm.password,
     })
     message.success('🎉 登录成功')
-    router.push('/')
+    router.push(redirectTarget())
   } catch (error) {
     // 错误已在拦截器中处理
   }
@@ -217,7 +235,7 @@ const handleRegister = async () => {
       name: registerForm.name,
     })
     message.success('🎉 注册成功')
-    router.push('/')
+    router.push(redirectTarget())
   } catch (error) {
     // 错误已在拦截器中处理
   }
@@ -239,6 +257,12 @@ const handleDemoLogin = async () => {
   }))
 
   // 更新 store 状态
+  // ⚠️ 这里**只能** patch `token` / `user`：store 暴露的 state 里**没有**
+  //   refreshToken —— 那个名字被同名的 action 占用了
+  //   （见 stores/user.ts 的 return：`refreshToken: refreshTokenFn`）。
+  //   所以 demo 的 refresh_token 只落 localStorage，内存里仍是 null；
+  //   但后端本就不认 demo 凭据，实际无副作用。
+  //   要真正对齐，需先给该 state 换一个不被占用的导出名。
   userStore.$patch({
     token: DEMO_TOKEN,
     user: {

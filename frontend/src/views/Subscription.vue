@@ -638,7 +638,7 @@ function handleAddPayment() {
 // ====== Mock 数据（API 不可用时兜底）======
 //
 // ★ price_yearly 必须遵循与后端**同一口径**：年付 = 月付 × 10
-//   （后端真源在 core/billing/pricing.py，展示与收款共用同一个函数）。
+//   （后端真源在 modules/billing/pricing.py，展示与收款共用同一个函数）。
 //   这里原本写的是 999 / 2999，与月付 99 / 299 不成比例，
 //   演示模式下会显示一个后端永远不会收的价，属于口径分叉的翻版。
 const mockPlans: SubscriptionPlan[] = [

@@ -19,6 +19,12 @@ export interface UserInfo {
   is_verified: boolean
   created_at: string | null
   last_login_at: string | null
+  // ★ 第 100 轮：自助管理资料（后端 /auth/me 与 /users/profile 都会带回）
+  phone?: string | null
+  company?: string | null
+  avatar_url?: string | null
+  /** 通知偏好（后端保证返回**完整**六项，见 models.merge_notification_prefs） */
+  notification_prefs?: Record<string, boolean>
 }
 
 export interface LoginCredentials {
@@ -149,9 +155,13 @@ export const useUserStore = defineStore('user', () => {
   }
 
   /**
-   * 登出
+   * 清空本地认证态（**纯本地、同步、不发请求**）
+   *
+   * ★ 必须与 `logout()` 分开：401 拦截器里调的就是这一个。
+   *   若在 401 分支里调 `logout()`（会发请求），一旦后端仍返回 401，
+   *   就会「401 → 登出 → 又 401 → 又登出」递归打转。
    */
-  function logout() {
+  function clearAuth() {
     token.value = null
     refreshToken.value = null
     user.value = null
@@ -159,6 +169,63 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem('access_token')
     localStorage.removeItem('refresh_token')
     localStorage.removeItem('user_info')
+  }
+
+  /**
+   * 登出：**先让服务端撤销，再清本地**
+   *
+   * ★ 只清 localStorage 不叫登出：那枚 token 在服务端仍然有效，
+   *   有效期内谁拿到它都能继续用（access token 有 30 分钟窗口）。
+   *   后端 `/auth/logout` 会把 jti 写进黑名单，所以必须真的发这一枪。
+   *
+   * ★ 同时带上 refresh_token：只撤 access 的话，refresh 还能换出全新的 access，
+   *   「登出」等于被绕过（后端 `LogoutRequest` 注释里写明了这一点）。
+   *
+   * ★ 撤销失败也**必须**清本地 —— 不能因为 Redis 挂了（后端回 503）
+   *   就把用户卡在「以为登出了、其实还登录着」的状态里。
+   */
+  async function logout() {
+    try {
+      if (token.value) {
+        await post(
+          '/auth/logout',
+          { refresh_token: refreshToken.value },
+          { silent: true }
+        )
+      }
+    } catch (error) {
+      console.warn('服务端登出撤销失败，本地状态仍会清除:', error)
+    }
+    clearAuth()
+  }
+
+  /**
+   * 换发新 token 对（改密码后调用）
+   *
+   * ★ 后端 `/auth/change-password` 会提升 token_version ⇒ **当前这枚 token 也会失效**，
+   *   所以它在响应里直接返回了一对新 token。前端不消费 = 用户改完密码当场掉线。
+   */
+  function applyTokenPair(accessToken: string, refreshTokenValue?: string | null) {
+    if (!accessToken) return
+    token.value = accessToken
+    localStorage.setItem('access_token', accessToken)
+    if (refreshTokenValue) {
+      refreshToken.value = refreshTokenValue
+      localStorage.setItem('refresh_token', refreshTokenValue)
+    }
+  }
+
+  /**
+   * 用后端返回的 user 整体替换本地用户信息
+   *
+   * ★ 为什么必须"整体替换"而不是逐字段改：
+   *   `PUT /users/profile` 的响应里带回了**完整** user（含 phone / company）。
+   *   只调 `updateUserName()` 的话，用户改了电话、界面却仍显示旧值 ——
+   *   要等下次刷新才更新，看起来就像"没保存成功"。
+   */
+  function setUser(next: UserInfo) {
+    user.value = next
+    localStorage.setItem('user_info', JSON.stringify(next))
   }
 
   /**
@@ -215,6 +282,9 @@ export const useUserStore = defineStore('user', () => {
     refreshToken: refreshTokenFn,
     fetchUserInfo,
     logout,
+    clearAuth,
+    applyTokenPair,
+    setUser,
     updateUserName,
     updateAvatar,
   }

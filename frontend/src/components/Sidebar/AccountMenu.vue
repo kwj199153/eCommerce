@@ -60,6 +60,13 @@
               <span class="mi-extra"></span>
             </a-menu-item>
 
+            <!-- 2.5 团队成员（★ 第 100 轮：接上后端 9 个此前零调用的 /accounts 端点） -->
+            <a-menu-item key="team" @click="openTeam">
+              <span class="mi-icon"><TeamOutlined /></span>
+              <span class="mi-label">团队成员</span>
+              <span class="mi-extra"></span>
+            </a-menu-item>
+
             <!-- 3. 外观（子菜单：主题切换） -->
             <a-sub-menu key="appearance">
               <template #icon><span class="mi-icon"><BgColorsOutlined /></span></template>
@@ -102,10 +109,18 @@
 
             <a-divider :margin="0" />
 
-            <!-- 6. 退出登录 -->
-            <a-menu-item key="logout" @click="handleLogout" class="logout-item">
+            <!-- 6. 登录 / 退出登录 -->
+            <!-- ★ 未真实登录时必须给「登录」入口：否则用户在演示模式下点了
+                 需要身份的功能（如团队成员），既看到"请先登录"，又在界面上
+                 找不到任何能登录的地方 —— 这正是"提示要登录可是没有入口"。 -->
+            <a-menu-item v-if="isRealLogin" key="logout" @click="handleLogout" class="logout-item">
               <span class="mi-icon"><LogoutOutlined /></span>
               <span class="mi-label">退出登录</span>
+              <span class="mi-extra"></span>
+            </a-menu-item>
+            <a-menu-item v-else key="login" @click="goLogin" class="login-item">
+              <span class="mi-icon"><LoginOutlined /></span>
+              <span class="mi-label">登录</span>
               <span class="mi-extra"></span>
             </a-menu-item>
           </a-menu>
@@ -121,12 +136,13 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   SettingOutlined, ExperimentOutlined, BgColorsOutlined,
-  QuestionCircleOutlined, ReloadOutlined, LogoutOutlined,
-  DownOutlined, CheckOutlined, CopyOutlined, CrownOutlined,
+  QuestionCircleOutlined, ReloadOutlined, LogoutOutlined, LoginOutlined,
+  DownOutlined, CheckOutlined, CopyOutlined, CrownOutlined, TeamOutlined,
 } from '@ant-design/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useThemeStore } from '@/stores/theme'
 import { THEME_OPTIONS, themeModeLabel } from '@/theme/presets'
+import { isDemoToken } from '@/config/demoMode'
 
 const props = defineProps<{
   sidebarCollapsed?: boolean
@@ -147,7 +163,19 @@ const displayName = computed(() => {
 })
 const avatarLetter = computed(() => displayName.value.charAt(0).toUpperCase())
 
+/**
+ * 是否**真实登录**（而不是演示模式的临时身份）。
+ *
+ * ★ 为什么不能只看 `userStore.token`：演示模式会往 localStorage 写
+ *   `demo-token`，它不是 JWT、后端不认。旧实现把这个字符串当成了"已登录"，
+ *   于是菜单里只显示「退出登录」—— 用户想真登录却**找不到入口**。
+ */
+const isRealLogin = computed(
+  () => !!userStore.token && !isDemoToken(userStore.token) && !!userStore.user
+)
+
 const userRoleLabel = computed(() => {
+  if (!isRealLogin.value) return '未登录 · 演示模式'
   const role = userStore.user?.role
   const map: Record<string, string> = { admin: '管理员', operator: '运营', viewer: '只读' }
   return map[role || ''] || '运营账号'
@@ -168,6 +196,11 @@ const openSubscription = () => {
   router.push('/subscription')
 }
 
+const openTeam = () => {
+  menuOpen.value = false
+  router.push('/team')
+}
+
 const openMemoryDrawer = () => {
   menuOpen.value = false
   window.dispatchEvent(new CustomEvent('open-memory-drawer'))
@@ -186,8 +219,26 @@ const checkUpdate = () => {
 }
 
 const handleLogout = () => {
-  userStore.logout()
+  // 不 await：logout() 内部第一步就发出了撤销请求，随后立即跳转，
+  // 不必让用户等一个网络往返（撤销失败也会清本地）。
+  void userStore.logout()
   router.push('/login')
+}
+
+/**
+ * 去登录（未真实登录时的入口）。
+ *
+ * ★ 先 `clearAuth()` 把演示模式的 demo token 清掉：
+ *   路由守卫按"是不是真身份"决定要不要放行登录页，清干净状态
+ *   才能保证后续每一步（登录、回跳、401 处理）看到的是同一个事实。
+ */
+const goLogin = () => {
+  menuOpen.value = false
+  userStore.clearAuth()
+  router.push({
+    name: 'Login',
+    query: { redirect: router.currentRoute.value.fullPath },
+  })
 }
 
 const copyAccountId = async () => {
@@ -400,6 +451,10 @@ const copyAccountId = async () => {
 .logout-item .mi-icon { color: var(--danger); }
 .logout-item .mi-label { color: var(--danger); }
 .logout-item:hover { background: var(--danger-hover-bg) !important; }
+
+/* 登录（未登录态）—— 用主色，与"退出登录"的危险色形成对照 */
+.login-item .mi-icon { color: var(--primary); }
+.login-item .mi-label { color: var(--primary); font-weight: 600; }
 
 
 /* 外观子菜单状态 */
