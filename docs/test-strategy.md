@@ -91,10 +91,11 @@ cd backend
 
 ```
 backend/main.py                 启动装配
-backend/core/                   配置/数据库/计费/利润引擎
+backend/core/                   配置/数据库/计量/利润引擎
 backend/ai_infra/               Agent 基类 / LLM 客户端 / SSE
 backend/models/                 ORM 模型（所有模块共享）
-backend/core/billing/           计费计量
+backend/core/metering/           计费计量
+backend/modules/billing/        订阅与计费（契约层）
 backend/tests/conftest.py       测试总闸（影响全部用例）
 backend/pytest.ini              测试配置
 backend/alembic/                迁移

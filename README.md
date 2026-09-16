@@ -181,10 +181,10 @@ curl -s localhost:8000/metrics | head -20
 
 | 关注点 | 现状 |
 |---|---|
-| 抽象层 | `core/billing/payment_gateway.py`：`PaymentGateway` 协议 + `ChargeIntent`/`ChargeResult` + 工厂 |
+| 抽象层 | `platforms/payment/gateway.py`：`PaymentGateway` 协议 + `ChargeIntent`/`ChargeResult`/`InvoiceDraft` + 工厂 |
 | 当前实现 | 仅 `MockGateway`（模拟支付成功，**仅限开发/演示**） |
 | 真实接入 | 见 `payment_gateway.py` 顶部「真实网关接入清单」6 步（含三家网关差异速查表） |
-| 价目口径 | 唯一真源 `core/billing/pricing.py`；年付 = 月付 × 10。展示与扣款共用同一函数 |
+| 价目口径 | 唯一真源 `modules/billing/pricing.py`；年付 = 月付 × 10。展示与扣款共用同一函数 |
 | 幂等 | `SELECT ... FOR UPDATE` 行锁串行化 + `invoices.idempotency_key` 唯一约束兜底 |
 | 零元处理 | 金额为 0 时不建账单（没有资金流动就不该有资金凭证） |
 | 账单落库 | `POST /billing/subscribe` 成功即写入 `invoices`；返回值带 `charged` 字段 |
