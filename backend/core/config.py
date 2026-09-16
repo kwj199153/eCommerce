@@ -13,7 +13,7 @@ from pydantic import Field, model_validator
 
 # ★ 已知但尚未接入实现的真实支付网关名（P1-4，2026-09-15）
 #
-# 定义放在这里而不是 core/billing/payment_gateway.py，是为了**避免循环导入**
+# 定义放在这里而不是 platforms/payment/gateway.py，是为了**避免循环导入**
 # （payment_gateway 需要 import config）。payment_gateway 反过来 import 本常量，
 # 于是「哪些网关算未接入」只有一处定义，不会出现两份清单各自漂移。
 #
@@ -86,9 +86,96 @@ class Settings(BaseSettings):
             #   启动期拦住，比等第一个客户付款失败要好。
             errors.append(
                 f"PAYMENT_GATEWAY='{gw}' 尚未接入实现（只是占位名）。"
-                f"请先按 core/billing/payment_gateway.py 顶部「真实网关接入清单」"
+                f"请先按 platforms/payment/gateway.py 顶部「真实网关接入清单」"
                 f"完成 6 步接入，再把该值改为 '{gw}'"
             )
+
+        # ★ 口令哈希轮数（2026-09-16 新增）：与上面「mock 网关」同一道理的反面 ——
+        #   把 rounds 调低**不会**报错、不会告警、登录一切正常，只是哈希强度
+        #   静默掉到 1/256。这类「静默削弱」正是最该在启动期拦住的形态。
+        if self.password_hash_rounds < 12:
+            errors.append(
+                f"PASSWORD_HASH_ROUNDS 必须 >= 12（当前 {self.password_hash_rounds}）："
+                f"降低轮数会静默削弱口令抗爆破强度。"
+                f"测试提速请勿改这里，改用 tests/conftest.py 的会话级覆盖"
+            )
+
+        # ★ P1-d（2026-09-16）：/metrics 漏配令牌。
+        #   为什么从 WARNING 升级为「拒绝启动」：原先 main.py 里只有一句告警，
+        #   而告警**不改变任何行为** —— 端点照样 200 露出 QPS、错误率、
+        #   接口清单（等于把系统拓扑直接送给扫描器）。这类「提示存在 ≠ 门禁执行」
+        #   的形态，与 payment_gateway=mock 同构：默认结果必须朝安全侧倒。
+        #   判据：不需要指标端点 = 显式 METRICS_ENABLED=false（一行，是有意为之）；
+        #         漏配 = 起不来（立刻发现）。
+        if self.metrics_enabled and not (self.metrics_token or "").strip():
+            errors.append(
+                "METRICS_TOKEN 不能为空（METRICS_ENABLED=true 时生产必须给 /metrics "
+                "设访问令牌，否则 QPS、错误率、接口清单对任何扫到该路径的人可见）。"
+                "不需要指标端点请显式设 METRICS_ENABLED=false"
+            )
+
+        # ★ P1-b（2026-09-16）：口令爆破防护的两个阈值。
+        #   与 password_hash_rounds 同构 —— 调低不会报错，只会让防护静默消失。
+        if self.login_max_failures < 3:
+            errors.append(
+                f"LOGIN_MAX_FAILURES 必须 >= 3（当前 {self.login_max_failures}）："
+                f"阈值过大会让口令爆破在防护生效前就撞开弱口令"
+            )
+        if self.login_lockout_minutes < 5:
+            errors.append(
+                f"LOGIN_LOCKOUT_MINUTES 必须 >= 5（当前 {self.login_lockout_minutes}）："
+                f"锁定窗口过短等于没有锁定（攻击者只需放慢节奏即可绕过）"
+            )
+
+        # ★ P1-b：邮件通道。分三段判，因为「不想发邮件」与「想发却没配好」
+        #   必须被区分开 —— 前者用 disabled 显式声明，后者一律拒绝启动。
+        provider = (self.email_provider or "").strip().lower()
+        if provider not in ("console", "aliyun_dm", "disabled"):
+            errors.append(
+                f"EMAIL_PROVIDER='{self.email_provider}' 不是已知值"
+                f"（可选：console / aliyun_dm / disabled）"
+            )
+        elif provider == "console":
+            # console 只在单进程开发时把信写进日志，生产用它 =
+            # 「用户点了发送验证邮件、界面说已发送、实际没人收到」，
+            # 而且这个偏差**不会有任何报错**。必须拦住。
+            errors.append(
+                "EMAIL_PROVIDER=console 只能用于开发/测试（邮件只写日志不外发）。"
+                "生产请配 aliyun_dm（并填 ACCESS_KEY_ID/SECRET/ACCOUNT_NAME），"
+                "或显式设 disabled（此时会明确告知用户邮件服务未启用）"
+            )
+        elif provider == "aliyun_dm":
+            missing = [
+                name
+                for name, val in (
+                    ("ALIYUN_DM_ACCESS_KEY_ID", self.aliyun_dm_access_key_id),
+                    ("ALIYUN_DM_ACCESS_KEY_SECRET", self.aliyun_dm_access_key_secret),
+                    ("ALIYUN_DM_ACCOUNT_NAME", self.aliyun_dm_account_name),
+                )
+                if not (val or "").strip()
+            ]
+            if missing:
+                errors.append(
+                    f"EMAIL_PROVIDER=aliyun_dm 但缺少：{', '.join(missing)}。"
+                    f"缺项时发信会在运行时失败，而注册/找回密码接口仍返回成功 —— "
+                    f"这类「假成功」必须在启动期拦住"
+                )
+
+        # ★ EMAIL_VERIFICATION_REQUIRED=True 的两条前置：
+        #   ① 必须真的能发信（否则用户注册完永远验证不了 ⇒ 账号永久死锁）；
+        #   ② 必须能给用户一个可点的链接（PUBLIC_SITE_URL）。
+        if self.email_verification_required:
+            if provider in ("console", "disabled"):
+                errors.append(
+                    "EMAIL_VERIFICATION_REQUIRED=true 要求 EMAIL_PROVIDER 不是 "
+                    f"'{self.email_provider}'：发不出验证邮件时，用户注册完将"
+                    "永远无法完成验证 ⇒ 账号永久锁死"
+                )
+            if not (self.public_site_url or "").strip():
+                errors.append(
+                    "EMAIL_VERIFICATION_REQUIRED=true 要求 PUBLIC_SITE_URL 非空"
+                    "（否则邮件里给不出可点的激活链接）"
+                )
 
         if errors:
             raise ValueError(
@@ -116,15 +203,158 @@ class Settings(BaseSettings):
     database_max_overflow: int = Field(default=20, description="连接池最大溢出数")
 
     # ====== Redis & Celery ======
-    redis_url: str = Field(default="redis://localhost:6379/0", description="Redis 连接 URL")
-    celery_broker_url: str = Field(default="redis://localhost:6379/1", description="Celery Broker URL")
-    celery_result_backend: str = Field(default="redis://localhost:6379/2", description="Celery Result Backend")
+    # ⚠️ 用 127.0.0.1 而非 localhost（实测踩过的坑，别再改回去）：
+    #   Windows 上 `localhost` 会先解析到 IPv6 的 ::1。若 Redis 只监听 IPv4
+    #   （Docker 端口映射常见配置），连 ::1 会被拒绝，而系统要等约 2 秒才返回
+    #   失败；更糟的是客户端一旦设了 connect timeout，会在 1 秒处主动放弃，
+    #   **根本不会回退到 IPv4** ⇒ 限流中间件的 Redis 后端从未生效、静默降级为
+    #   进程内计数（"门禁存在 ≠ 在执行"），/health 每次探活也白等 1 秒。
+    #   直接写 127.0.0.1 省掉这段解析，Linux / Docker 下与 localhost 完全等价。
+    redis_url: str = Field(default="redis://127.0.0.1:6379/0", description="Redis 连接 URL")
+    celery_broker_url: str = Field(default="redis://127.0.0.1:6379/1", description="Celery Broker URL")
+    celery_result_backend: str = Field(default="redis://127.0.0.1:6379/2", description="Celery Result Backend")
+
+    # ====== Mock 适配器仿真参数 ======
+    #
+    # 平台 mock 适配器（platforms/amazon/client.py）里有一组硬编码的
+    # 「假网络延迟」（0.1~0.3s/次，见 AmazonAdapter._simulate_delay）。
+    # 它模拟的对象**并不存在** —— 该适配器的数据来自内存 MOCK_PRODUCTS，
+    # 没有任何网络往返；真实延迟要等 Phase 3+ 接 SP-API 时才由网络本身产生。
+    #
+    # 代价却是实在的（实测）：
+    #   · `_analyze_blue_ocean` 一次调 8 次 get_keyword_data + 5 次
+    #     match_products ⇒ 白等约 2.0 秒；
+    #   · 全量测试 626 项里约 45 秒耗在此（占 41%）；
+    #   · 产品上：老板在 UI 点一次「蓝海分析」就要多等 2 秒。
+    #
+    # 故默认 0.0（关闭）。若做演示想要「缓慢加载」的手感，设为 1.0
+    # 即恢复原始量级。
+    mock_latency_scale: float = Field(
+        default=0.0,
+        description="mock 适配器假延迟系数：0=关闭（默认），1.0=原始仿真值",
+    )
+
+    # ====== 口令哈希参数 ======
+    # bcrypt 的「成本因子」= 2**rounds 次迭代。rounds=12 时本机实测
+    # 单次 hash ≈ 209ms、verify ≈ 207ms。慢是**故意**的 —— 它保护的是离线爆破。
+    #
+    # 但它在测试里是纯开销：没有任何用例在测「哈希够不够慢」，而
+    # tests/conftest.py 的 `user` / `job_user` 夹具**每一条用例**都要
+    # register + login 一次 ⇒ 每例固定白花 ≈ 416ms。
+    # 实测（2026-09-16）：全量 627 项里有 25 项依赖该夹具，合计 17.73s，
+    # 其中 bcrypt 占 ≈ 10.4s（占剩余用例耗时的 23%）。
+    #
+    # 故做成配置项：**默认 12 不动**（生产强度不变），只由 tests/conftest.py
+    # 在该测试进程内显式降到 4（≈0.8ms）。
+    # ★ 生产护栏（_enforce_production_safety）会拒绝 < 12 的取值 ——
+    #   「测试里调低」与「默认值调低」必须能被区分开，否则强度会静默掉一半。
+    password_hash_rounds: int = Field(
+        default=12,
+        description="bcrypt 成本因子（轮数）。生产必须 >=12；测试由 conftest 降到 4",
+    )
+
+    # ====== 店铺平台凭证加密（P1-a 修复，2026-09-16）======
+    # Fernet（AES-128-CBC + HMAC-SHA256）密钥，base64 urlsafe 编码 44 字符。
+    #
+    # ★ 留空 = **拒绝写入平台凭证**，不是明文落库。
+    #   生成：python -c "from cryptography.fernet import Fernet;
+    #                     print(Fernet.generate_key().decode())"
+    #
+    # ★ 为什么不列入 _enforce_production_safety 的启动硬拒绝：
+    #   「暂时不接平台」是合法运营状态，强制要求密钥会让一个只想开店的部署
+    #   起不来。改成在**写这一层**拒绝（core/security/credentials.py）：
+    #   真去连接平台时才失败，且原因可读。漏配本项**不会**产生任何不安全的
+    #   落库结果 —— 这与 auth_required / jwt_secret_key 那些「漏配=危险」的项
+    #   方向不同，故档位也不同。
+    credentials_encryption_key: str = Field(
+        default="",
+        description="店铺平台凭证加密密钥（Fernet）；留空=拒绝写入凭证",
+    )
 
     # ====== JWT 认证 ======
     jwt_secret_key: str = Field(default="your-super-secret-key-change-in-production", description="JWT 密钥")
     jwt_algorithm: str = Field(default="HS256", description="JWT 算法")
     jwt_access_token_expire_minutes: int = Field(default=60, description="Access Token 过期时间(分钟)")
     jwt_refresh_token_expire_days: int = Field(default=7, description="Refresh Token 过期时间(天)")
+
+    # ====== 邮件通道（阿里云邮件推送 DirectMail；★ P1-b 2026-09-16）======
+    #
+    # 用途：注册邮箱验证 + 忘记密码重置链接。
+    #
+    # ★★★ 为什么是「三档」而不是「配了就发、没配就不发」：
+    #   后者是最典型的「假门禁」—— 没配邮件服务时，注册接口照样 200，
+    #   用户以为验证邮件已发出，实际什么都没发生；而忘记密码更是
+    #   彻底断链（用户永远收不到重置链接，也永远查不出为什么）。
+    #   三档的判据是**每一档的行为都可预测、且不产生"假成功"**：
+    #
+    #     console（默认，开发/测试）—— 信不真发，写进日志 + 内存 outbox。
+    #       测试据此断言「信确实被发了」，**永远不依赖外网**，也不会
+    #       因为没配 SMTP 而静默跳过。生产护栏禁止这一档。
+    #     aliyun_dm —— 真发。缺任一必填项 ⇒ 生产启动期直接拒绝。
+    #     disabled —— 显式关闭。此时发信接口**明确回 503 + 原因**（不静默），
+    #       且 EMAIL_VERIFICATION_REQUIRED 不允许为 true（否则用户注册完
+    #       永远无法验证 ⇒ 账号永久死锁）。
+    #
+    # ★ 为什么自实现签名而不是装 aliyun SDK：
+    #   DirectMail 的 SingleSendMail 是 RPC 风格 HMAC-SHA1 签名，
+    #   用标准库 hmac/hashlib + 已有的 httpx 即可，≈60 行。
+    #   少一个依赖 = 少一类「SDK 版本变了、签名算法变了」的静默失败。
+    email_provider: str = Field(
+        default="console",
+        description="邮件通道：console（开发/测试，只记录不外发）/ aliyun_dm / disabled",
+    )
+    aliyun_dm_access_key_id: str = Field(default="", description="阿里云 AccessKey ID")
+    aliyun_dm_access_key_secret: str = Field(default="", description="阿里云 AccessKey Secret")
+    aliyun_dm_region: str = Field(default="cn-hangzhou", description="DirectMail 区域")
+    aliyun_dm_endpoint: str = Field(
+        default="https://dm.aliyuncs.com/", description="DirectMail API 端点"
+    )
+    aliyun_dm_account_name: str = Field(
+        default="", description="发信地址（须已在控制台验证，如 noreply@mail.example.com）"
+    )
+    aliyun_dm_from_alias: str = Field(default="跨境电商AI", description="发件人显示名")
+
+    # 注册后是否必须验证邮箱才能登录。
+    # ★ 默认 False —— 这一条决定了「打开它」是不是安全的：
+    #   若默认 True，则任何未配邮件的部署（含全部 CI / 本地开发）注册完
+    #   就登不上，属"默认把系统锁死"。默认 False 时行为与改造前完全一致，
+    #   要开启请显式设置，并由生产护栏保证邮件通道真的可用。
+    email_verification_required: bool = Field(
+        default=False,
+        description="注册后是否必须完成邮箱验证才能登录（默认否）",
+    )
+    email_verify_token_ttl_hours: int = Field(default=24, description="邮箱验证链接有效期(小时)")
+    email_reset_token_ttl_minutes: int = Field(default=30, description="密码重置链接有效期(分钟)")
+
+    # 前端站点根地址，用于把 token 拼成用户可点的链接。
+    # 留空 = 只返回 token 本身，不拼链接（本地联调可接受；生产护栏要求非空）。
+    public_site_url: str = Field(
+        default="", description="前端站点根地址，用于生成邮箱里的激活/重置链接"
+    )
+
+    # ====== 登录失败锁定（★ P1-b 2026-09-16）======
+    #
+    # ★ 判据：口令爆破的防护不是「让猜错变慢」（bcrypt 已做，≈200ms/次），
+    #   而是「猜错够多次就换不了口」—— 否则每秒 5 次、一小时 18000 次，
+    #   弱口令照样被撞开。
+    #
+    # ★ 为什么锁定后即使**密码正确**也拒绝：
+    #   若密码正确就放行，攻击者只要持续猜，猜对的那一次就直接进 ——
+    #   锁定窗口对攻击者零成本。所以判定顺序必须是
+    #   「先看锁没锁，再看密码对不对」。
+    #
+    # ★ 阈值进生产护栏的理由同 password_hash_rounds：
+    #   把 max_failures 调成 1000000 不会报错、不会告警、登录一切正常，
+    #   只是防护静默消失。这类「静默削弱」必须能在启动期拦住。
+    login_max_failures: int = Field(
+        default=5, description="连续登录失败多少次后锁定账号（生产须 >=3）"
+    )
+    login_lockout_minutes: int = Field(
+        default=15, description="锁定时长(分钟)（生产须 >=5）"
+    )
+    login_attempt_retention_days: int = Field(
+        default=30, description="登录尝试审计记录保留天数（用于清理脚本）"
+    )
 
     # 业务接口强制鉴权开关（★ P0 安全修复 2026-09-15：默认 False → True）
     # True （默认）= 生产模式，全部业务接口要求 Bearer Token，未登录返回 401
@@ -236,9 +466,12 @@ class Settings(BaseSettings):
 
     # 指标：/metrics 按 Prometheus 文本格式暴露（自研，零新依赖）。
     #   - metrics_enabled=false 时不注册该路由（404 语义）
-    #   - metrics_token 非空时要求 `Authorization: Bearer <token>`；
-    #     留空则不鉴权 —— ★ 生产环境暴露裸 /metrics 会把 QPS/错误率/接口清单
-    #     告诉任何扫到它的人，因此「生产 + 无 token」会在启动时告警。
+    #   - metrics_token 非空时要求 `Authorization: Bearer <token>`
+    #   - ★ P1-d（2026-09-16）：生产环境 + enabled + token 为空 ⇒ **拒绝启动**。
+    #     修复前这里只打一句 WARNING（"门禁存在 ≠ 在执行"）：漏配的后果是
+    #     QPS/错误率/接口清单**安静地**对任何扫到该路径的人可见。
+    #     判据同 auth_required：「漏配的默认结果必须是明显失败，不是安静暴露」。
+    #     不需要指标端点请显式设 METRICS_ENABLED=false。
     metrics_enabled: bool = Field(default=True, description="是否注册 /metrics 指标端点")
     metrics_token: str = Field(default="", description="/metrics 访问令牌，留空=不鉴权")
 
