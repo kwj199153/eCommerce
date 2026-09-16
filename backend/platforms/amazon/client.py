@@ -12,10 +12,12 @@ Phase 2 MVP 使用模拟数据演示完整流程。
 - BSR 排名（模拟）
 """
 
+import asyncio
 import random
 from typing import List, Optional
 from datetime import datetime, timedelta
 
+from core.config import config
 from platforms.base import (
     PlatformAdapter,
     PlatformType,
@@ -494,6 +496,14 @@ class AmazonAdapter(PlatformAdapter):
     Phase 3+: 接入 SP-API 替换为真实数据
     """
 
+    #: 假延迟系数：0 = 关闭（默认），1.0 = 原始仿真值。
+    #: 取值来源 `config.mock_latency_scale`，详见 `_simulate_delay` 的说明。
+    #: 写成类属性是为了让测试/局部场景能直接改这一个值来开关，
+    #: 不必去动实例或配置文件。
+    MOCK_LATENCY_SCALE: float = float(
+        getattr(config, "mock_latency_scale", 0.0) or 0.0
+    )
+
     @property
     def platform_type(self) -> PlatformType:
         return PlatformType.AMAZON
@@ -824,11 +834,24 @@ class AmazonAdapter(PlatformAdapter):
 
     # ====== 内部工具方法 ======
 
-    @staticmethod
-    async def _simulate_delay(seconds: float):
-        """模拟网络延迟"""
-        import asyncio
-        await asyncio.sleep(seconds)
+    @classmethod
+    async def _simulate_delay(cls, seconds: float):
+        """模拟网络延迟（受 `MOCK_LATENCY_SCALE` 控制；0 = 直接返回）。
+
+        ★ 为什么要这个开关（实测数据，别再改回硬编码 sleep）：
+          本适配器的数据来自内存 `MOCK_PRODUCTS`，**没有任何网络往返可模拟** ——
+          原来的 `await asyncio.sleep(seconds)` 纯粹是凭空等待。
+          代价是实在的：`_analyze_blue_ocean` 一次要调 8 次 `get_keyword_data`
+          （0.15s/次）加 5 次 `match_products`（0.15s/次），合计白等约 2.0 秒；
+          实测把本方法置为 no-op 后，同一次调用从 2036.8ms 掉到 1.4ms。
+          全量测试 626 项里约 45 秒耗在此，产品 UI 上也白等同样时间。
+
+          真实延迟要等 Phase 3+ 接入 SP-API 后由网络本身产生，届时不需要仿真。
+        """
+        scale = cls.MOCK_LATENCY_SCALE
+        if scale <= 0:
+            return
+        await asyncio.sleep(seconds * scale)
 
     @staticmethod
     def _extract_pain_points(text: str) -> List[str]:

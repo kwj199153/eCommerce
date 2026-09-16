@@ -26,6 +26,43 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from core.resilience import RetryPolicy, call_with_retry
+
+#: SP-API 的重试策略（第 96 轮收敛到 `core/resilience.py`）。
+#:   · ``attempts=3`` = 原 ``for attempt in range(max_retries)``（max_retries=3）
+#:   · 退避 1s → 2s：原 ``asyncio.sleep(1 * (attempt + 1))`` 的实际取值序列。
+#:     本策略下 ``delay_for(1)=1``、``delay_for(2)=2``，第 3 次失败即抛 ⇒ **逐项等价**。
+#:   · ``max_delay=60``：**唯一的行为收紧**。429 的 ``Retry-After`` 现在会过封顶
+#:     （修复前**完全不封顶** —— 服务端/中间人回 3600 就真的睡一小时）。
+#:     取 60 而非默认 30：SP-API 的限流窗口常见 1 分钟，封太短反而会连续撞限流。
+#:   · ``retry_statuses`` 用默认值（429 + 5xx）：**确定性 4xx 不再重试**
+#:     （修复前 ``except httpx.HTTPStatusError`` 不看状态码，400/401/404 也重试 3 次）。
+_RETRY_POLICY = RetryPolicy(attempts=3, base_delay=1.0, multiplier=2.0, max_delay=60.0)
+
+
+def _wrap_spapi_error(
+    attempts: int,
+    exc: BaseException,
+    method: str,
+    endpoint: str,
+) -> "SPAPIAuthError":
+    """重试耗尽后包装成 ``SPAPIAuthError``（保留修复前的 code / details 形状）。
+
+    ★ 关键差异：把**真实原因**带出来。修复前 429 耗尽会落到
+      ``raise SPAPIAuthError("未知错误：超出最大重试次数")`` —— 状态码丢了，
+      看到这条日志的人只能靠猜。
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return SPAPIAuthError(
+            f"SP-API 请求失败 [{status}]: {method} {endpoint}（已尝试 {attempts} 次）",
+            code=f"HTTP_{status}",
+            details=(exc.response.text or "")[:500],
+        )
+    return SPAPIAuthError(
+        f"SP-API 请求异常: {exc}（{method} {endpoint}，已尝试 {attempts} 次）",
+    )
+
 
 def _get_settings():
     """延迟导入 settings，避免循环依赖"""
@@ -390,6 +427,15 @@ class SPAPIClientAuth:
         3. 请求发送
         4. 错误处理
         5. 限流重试
+
+        ★ 第 96 轮：重试**逻辑**收敛到 `core/resilience.py`（唯一真源）。
+          修复前是本文件自己抄的一套 ``for attempt in range(max_retries)``，
+          顺带修掉三个实测缺陷（细节见模块顶部 `_RETRY_POLICY` 的注释）：
+            ① 429 的 ``Retry-After`` 不封顶（回 3600 就睡一小时）；
+            ② 429 耗尽后抛「未知错误：超出最大重试次数」，**丢了真实原因**；
+            ③ 确定性 4xx（400/401/404）也被重试 3 次，白烧配额。
+          行为等价的部分（5xx / 连接错误重试、退避 1s→2s、最终包装成
+          `SPAPIAuthError`）逐一保留 —— **收敛是搬逻辑，不是改策略**。
         """
         body = json.dumps(json_data) if json_data else None
         query_params = {k: str(v) for k, v in (params or {}).items()}
@@ -404,44 +450,31 @@ class SPAPIClientAuth:
 
         url = f"{self.config.base_url}{endpoint}"
 
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = await self.http_client.request(
-                    method=method,
-                    url=url,
-                    params=query_params,
-                    content=body,
-                    headers=headers,
-                )
+        async def _once() -> Dict[str, Any]:
+            """单次尝试：发请求，并让 httpx 自己把 4xx/5xx 升成 ``HTTPStatusError``。
 
-                # 处理限流
-                if response.status_code == 429:
-                    retry_after = int(response.headers.get("Retry-After", "5"))
-                    import asyncio
-                    await asyncio.sleep(retry_after)
-                    continue
+            ★ 不再手写 ``status_code == 429`` 分支 —— "哪些状态码可重试"由
+              `RetryPolicy.retry_statuses` **一处**决定，顺带拿回 ``Retry-After``
+              （由 ``classify`` 解析并作为退避 hint 交给 ``delay_for``）。
+              修复前那个手写分支还有个副作用：429 走到 ``continue`` 就绕过了
+              ``raise_for_status()``，于是 429 耗尽后反而抛"未知错误"。
+            """
+            response = await self.http_client.request(
+                method=method,
+                url=url,
+                params=query_params,
+                content=body,
+                headers=headers,
+            )
+            response.raise_for_status()
+            return response.json()
 
-                response.raise_for_status()
-                return response.json()
-
-            except httpx.HTTPStatusError as e:
-                if attempt == max_retries - 1:
-                    raise SPAPIAuthError(
-                        f"SP-API 请求失败 [{e.response.status_code}]: {endpoint}",
-                        code=f"HTTP_{e.response.status_code}",
-                        details=e.response.text[:500],
-                    ) from e
-                import asyncio
-                await asyncio.sleep(1 * (attempt + 1))
-
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise SPAPIAuthError(f"SP-API 请求异常: {str(e)}") from e
-                import asyncio
-                await asyncio.sleep(1 * (attempt + 1))
-
-        raise SPAPIAuthError("未知错误：超出最大重试次数")
+        return await call_with_retry(
+            _once,
+            policy=_RETRY_POLICY,
+            what=f"SP-API {method} {endpoint}",
+            wrap=lambda attempts, exc: _wrap_spapi_error(attempts, exc, method, endpoint),
+        )
 
 
 # ====== 异常类 ======

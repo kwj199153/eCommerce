@@ -33,6 +33,7 @@ from collections.abc import Awaitable, Callable
 import httpx
 
 from core.logger import get_logger
+from core.resilience import RetryPolicy, call_with_retry
 
 logger = get_logger(__name__)
 
@@ -59,13 +60,39 @@ DEFAULT_EDIT_STRENGTH = 0.5
 #: 降到 2 并发 + 退避重试后 4 张全成。
 MAX_CONCURRENCY = 2
 
-#: 限流场景的退避重试次数与等待秒数（指数退避）。
-#: 只对「限流 / 超时」这类**可恢复**错误重试；参数错误重试无意义。
-MAX_RETRIES = 3
-RETRY_BACKOFF_SECONDS = (2.0, 5.0, 10.0)
-
-#: 命中这些关键词 → 判定为「可重试」（服务端瞬时压力，等一会儿就好）
+#: 命中这些关键词 → 判定为「可重试」（服务端瞬时压力，等一会儿就好）。
+#: ★ 这是**万相特有的 provider 知识**，所以留在本模块 ——
+#:   resilience 只提供判定钩子（`RetryPolicy.retry_if`），不替我们决定
+#:   万相的错误码长什么样。
 _RETRYABLE_MARKERS = ("429", "throttling", "ratequota", "rate limit", "超时", "timeout")
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """万相的失败是**业务错误码 / 文案**（如 ``Throttling.RateQuota``），
+
+    抛出来的是 ``ImageGenError`` 而不是 ``httpx.HTTPStatusError`` ——
+    所以"该不该重试"只能从文案里读，类型判定帮不上忙。
+    这正是 ``RetryPolicy.retry_if`` 存在的理由。
+    """
+    low = str(exc).lower()
+    return any(m in low for m in _RETRYABLE_MARKERS)
+
+
+#: 万相出图的重试策略（第 96 轮收敛到 `core/resilience.py`，逻辑不再写在本地）。
+#:   · ``attempts=4`` = 1 次初始 + 3 次重试 —— 与原
+#:     ``for attempt in range(MAX_RETRIES + 1)`` 配 ``attempt < MAX_RETRIES``
+#:     的**实际**语义一致（原代码写成 MAX_RETRIES=3，实际跑 4 次）。
+#:   · 退避 ``2s → 5s → 10s``：``base=2 × 2.5^(n-1)`` = 2 / 5 / 12.5，
+#:     过 ``max_delay=10`` 封顶 ⇒ 2 / 5 / 10，与原固定表 ``RETRY_BACKOFF_SECONDS``
+#:     **逐项等价**（不是"差不多"）。
+#:   · ``retry_if``：上面的文案判定（不给它，classify 认不出 ImageGenError）。
+_RETRY_POLICY = RetryPolicy(
+    attempts=4,
+    base_delay=2.0,
+    multiplier=2.5,
+    max_delay=10.0,
+    retry_if=_is_retryable,
+)
 
 
 class ImageGenError(RuntimeError):
@@ -205,33 +232,40 @@ async def _gather_many(
     """
     sem = asyncio.Semaphore(max(1, concurrency))
 
-    def _is_retryable(msg: str) -> bool:
-        low = msg.lower()
-        return any(m in low for m in _RETRYABLE_MARKERS)
-
     async def _one(prompt: str) -> tuple[str, str | None, str | None]:
-        """单张出图：限流/超时会退避重试，其余错误直接降级。"""
+        """单张出图：限流/超时会退避重试，其余错误直接降级（**不抛**）。
+
+        ★ 两条语义必须原样保留（收敛只搬逻辑）：
+          1. **逐项降级**：单张失败返回 ``(prompt, None, 原因)`` 而不是抛错 ——
+             长任务里最怕一张图挂掉就全灭。
+          2. 两条日志：重试时的 warning、以及**重试后成功**的 info
+             （后者是运维信号：出现过抖动但恢复了）。用 ``retried`` 计数器
+             在 ``on_retry`` 回调里记下，成功时补打。
+        """
         async with sem:
-            last_exc: Exception | None = None
-            for attempt in range(MAX_RETRIES + 1):
-                try:
-                    urls = await runner(prompt)
-                    if attempt:
-                        logger.info(f"[wanx] 第 {attempt} 次重试成功")
-                    return prompt, urls[0], None
-                except Exception as exc:  # noqa: BLE001 - 逐项降级，把原因带给调用方
-                    last_exc = exc
-                    msg = str(exc)
-                    if attempt < MAX_RETRIES and _is_retryable(msg):
-                        delay = RETRY_BACKOFF_SECONDS[min(attempt, len(RETRY_BACKOFF_SECONDS) - 1)]
-                        logger.warning(
-                            f"[wanx] 第 {attempt + 1} 次失败（可重试），{delay:.0f}s 后重试：{msg[:140]}"
-                        )
-                        await asyncio.sleep(delay)
-                        continue
-                    break
-            logger.error(f"[wanx] 单张出图失败：{last_exc}")
-            return prompt, None, str(last_exc)
+            retried = {"n": 0}
+
+            def _note(_what: str, attempt: int, attempts: int, delay: float, exc: BaseException) -> None:
+                retried["n"] = attempt
+                logger.warning(
+                    f"[wanx] 第 {attempt}/{attempts} 次失败（可重试），{delay:.0f}s 后重试：{str(exc)[:140]}"
+                )
+
+            try:
+                urls = await call_with_retry(
+                    lambda: runner(prompt),
+                    policy=_RETRY_POLICY,
+                    what=f"wanx 出图（{prompt[:24]}）",
+                    on_retry=_note,
+                )
+                first = urls[0]
+            except Exception as exc:  # noqa: BLE001 - 逐项降级，把原因带给调用方
+                logger.error(f"[wanx] 单张出图失败：{exc}")
+                return prompt, None, str(exc)
+
+            if retried["n"]:
+                logger.info(f"[wanx] 第 {retried['n']} 次重试成功")
+            return prompt, first, None
 
     return await asyncio.gather(*(_one(p) for p in items))
 
