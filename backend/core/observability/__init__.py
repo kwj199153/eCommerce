@@ -17,8 +17,11 @@
 """
 
 from core.observability.context import (
+    CONTEXT_FIELDS,
     EMPTY,
     clear_request_context,
+    current_account_id,
+    current_client_ip,
     current_request_id,
     current_shop_id,
     current_user_id,
@@ -42,11 +45,14 @@ from core.observability.metrics import (
 
 __all__ = [
     "EMPTY",
+    "CONTEXT_FIELDS",
     "set_request_context",
     "clear_request_context",
     "current_request_id",
     "current_shop_id",
     "current_user_id",
+    "current_account_id",
+    "current_client_ip",
     "snapshot",
     "normalize_path",
     "render_prometheus",

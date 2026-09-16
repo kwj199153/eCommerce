@@ -18,6 +18,11 @@
     3. **务必在 finally 清上下文**：keep-alive 连接下同一个 asyncio 任务会
        复用于后续请求，不清会把上一个请求的 ID 带到下一个请求里。
 
+★ P0-2（2026-09-16）：
+    1. 取客户端 IP 改用 `core/middleware/client_ip.py` 的**唯一实现**
+       （原先与 rate_limit 各抄一份，见该模块 docstring）；
+    2. client_ip 写入请求上下文，业务日志 / 审计可按来源聚合。
+
 ⚠️ 关于流式接口（SSE）：
    出于性能考虑，耗时统计的是「响应头就绪」时间（TTFB），
    而不是整个流式 body 传输完成的时间 —— 对 SSE 而言后者可能长达数十秒，
@@ -33,6 +38,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from core.config import config
 from core.logger import get_logger
+# ★ P0-2：客户端 IP 提取收敛到唯一实现（原先本文件与 rate_limit 各抄了一份）
+from core.middleware.client_ip import client_ip
 from core.observability.context import clear_request_context, set_request_context
 from core.observability.metrics import (
     HTTP_DURATION,
@@ -60,16 +67,6 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
         self.enabled = config.request_log_enabled if enabled is None else bool(enabled)
         self.slow_request_ms = int(slow_request_ms)
 
-    @staticmethod
-    def _client_ip(request: Request) -> str:
-        forwarded = request.headers.get("X-Forwarded-For", "")
-        if forwarded:
-            first = forwarded.split(",")[0].strip()
-            if first:
-                return first
-        client = request.client
-        return client.host if client else "-"
-
     async def dispatch(self, request: Request, call_next):
         if not self.enabled:
             return await call_next(request)
@@ -81,7 +78,15 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
         # ★ 写入 ContextVar —— 必须在 call_next 之前，
         #   下游 app 作为独立 task 启动时会继承此刻的上下文快照。
         shop_id = request.headers.get("X-Shop-ID") or request.query_params.get("shop_id") or "-"
-        set_request_context(request_id=request_id, shop_id=shop_id)
+        # ★ P0-2（2026-09-16）：client_ip 也进上下文 ——
+        #   此前它只出现在这一行访问日志的文本里（`client=...`），
+        #   业务日志 / 审计 / 指标都拿不到；而"是不是同一个来源在刷"
+        #   恰恰是排障时最常问的问题。
+        set_request_context(
+            request_id=request_id,
+            shop_id=shop_id,
+            client_ip=client_ip(request),
+        )
 
         path = request.url.path
         method = request.method
@@ -97,7 +102,7 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
                 _log.bind(request_id=request_id, shop_id=shop_id).exception(
                     "{method} {path} -> 未捕获异常 ({cost:.1f}ms) client={client}",
                     method=method, path=path,
-                    cost=cost_ms, client=self._client_ip(request),
+                    cost=cost_ms, client=client_ip(request) or "-",
                 )
                 HTTP_REQUESTS.inc(method=method, path=route_label, status="500")
                 HTTP_DURATION.observe(cost_ms, method=method, path=route_label)
@@ -118,7 +123,7 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             message = "{method} {path} -> {status} ({cost:.1f}ms) client={client} shop={shop}"
             fields = dict(
                 method=method, path=path, status=status_code,
-                cost=cost_ms, client=self._client_ip(request), shop=shop_id,
+                cost=cost_ms, client=client_ip(request) or "-", shop=shop_id,
             )
 
             if path in QUIET_PATHS:

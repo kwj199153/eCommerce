@@ -32,7 +32,7 @@ from core.config import config
 #   项目里**两套日志栈并存** —— 全局是 loguru，但还有 16 个模块用
 #   `logging.getLogger(__name__)`：aigc_media/service、aigc_media/router、
 #   competitor_intel/service、ad_analysis/service、listing_generator/service、
-#   review_analyst/service、platform_rules/ai_split、core/billing/usage_tracker、
+#   review_analyst/service、platform_rules/ai_split、core/metering/usage_tracker、
 #   core/middleware/rate_limit、core/checkpoint、platforms/amazon/sp_api/*、
 #   modules/amazon_sp/data_sources/*、secretary/shop_tools …
 #
@@ -148,6 +148,7 @@ LOG_FORMAT = (
     "<level>{level: <8}</level> | "
     "<cyan>{extra[request_id]}</cyan> | "
     "<cyan>{extra[shop_id]}</cyan> | "
+    "<cyan>{extra[user_id]}</cyan> | "
     "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
     "<level>{message}</level>"
 )
@@ -166,7 +167,14 @@ def _inject_context(record) -> bool:
         必须是 bool/None（loguru 要求 patcher 返回 falsy 或 True）；返回 False
         会让该条日志被丢弃，这里永远返回 True。
     """
-    from core.observability.context import EMPTY, current_request_id, current_shop_id
+    from core.observability.context import (
+        EMPTY,
+        current_account_id,
+        current_client_ip,
+        current_request_id,
+        current_shop_id,
+        current_user_id,
+    )
 
     extra = record["extra"]
 
@@ -177,11 +185,20 @@ def _inject_context(record) -> bool:
         name, function, line = origin
         record.update(name=name, function=function, line=line)
 
-    # ② 请求级上下文
-    if not extra.get("request_id"):
-        extra["request_id"] = current_request_id() or EMPTY
-    if not extra.get("shop_id"):
-        extra["shop_id"] = current_shop_id() or EMPTY
+    # ② 请求级上下文 —— 统一 Context 的五个字段（★ P0-2）
+    #    request_id(trace) / user_id / account_id(tenant) / shop_id / client_ip
+    #    仍是"显式 bind 优先"：调用方手工 bind 过的值不被覆盖。
+    #    ★ 五个字段全部落进 extra：JSON 日志（LOG_JSON=true）会整份带出；
+    #      文本格式只渲染其中三列（见 LOG_FORMAT），另两个留给采集端。
+    for key, getter in (
+        ("request_id", current_request_id),
+        ("shop_id", current_shop_id),
+        ("user_id", current_user_id),
+        ("account_id", current_account_id),
+        ("client_ip", current_client_ip),
+    ):
+        if not extra.get(key):
+            extra[key] = getter() or EMPTY
     return True
 
 

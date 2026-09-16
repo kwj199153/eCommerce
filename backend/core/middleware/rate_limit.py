@@ -3,15 +3,27 @@
 
 定位划分（重要）：
   - 本中间件负责「速率」——防刷、防爬，例如 60 次/分钟；
-  - 套餐维度的「总量」额度由 core/billing 计费体系负责（api_calls_limit / agent_chat_limit）。
+  - 套餐维度的「总量」额度由 core/metering 计费体系负责（api_calls_limit / agent_chat_limit）。
   两者互补，不要重复实现。
 
 存储策略：
   - 默认：进程内内存计数（单进程 uvicorn 足够）
   - 若配置了可达的 Redis，自动切换为 Redis 计数（多 worker / 多副本共享同一个计数器）
   - Redis 不可用时自动降级为内存计数，且只告警一次，绝不因限流组件故障而拒绝服务
+  - 可用 `redis_backend=False` 强制走内存计数（Redis 计数是**跨实例共享**的，
+    同一进程里存在多个中间件实例时会互相吃额度；只测限流算法时用这个开关隔离）
+
+⚠️ 关于 Redis 地址写法（实测踩过，别再犯）：
+  `redis_url` 请写 `127.0.0.1` 而不是 `localhost`。Windows 上 `localhost` 会先解析到
+  IPv6 的 ::1；若 Redis 只监听 IPv4，连 ::1 会被拒绝且系统要等约 2 秒才返回失败，
+  而这里的 `socket_connect_timeout=1` 会在 1 秒处主动放弃、**不会回退 IPv4**
+  ⇒ 本中间件永远走内存计数，"Redis 后端"形同不存在，而告警日志看起来只是"Redis 不可用"。
 
 ⚠️ 关于客户端 IP：
+  实现已收敛到 `core/middleware/client_ip.py`（**唯一真源**）——
+  原先本文件与 request_log 各抄了一份同样的逻辑，两份各自演进时，
+  访问日志记的 IP 与限流计数用的 key 会指向不同来源，排查「为什么这个 IP
+  被限流了」时会得到互相矛盾的证据。
   反向代理（Nginx）后所有请求的 request.client.host 都是代理 IP，
   因此优先取 X-Forwarded-For 的第一跳。前提是**前置代理可信**；
   若服务直接暴露公网且未经过代理，该头部可由客户端伪造 —— 部署时请确保
@@ -28,6 +40,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from core.config import config
+from core.middleware.client_ip import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +114,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         window_seconds: int = 60,
         enabled: Optional[bool] = None,
         exempt_paths: Optional[set[str]] = None,
+        redis_backend: Optional[bool] = None,
     ) -> None:
         super().__init__(app)
         self.limit = int(limit if limit is not None else config.rate_limit_requests_per_minute)
@@ -111,23 +125,26 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         )
         self._counter: object = _MemoryCounter()
         self._backend_resolved = False
+        # 后端选择：None = 自动探测（默认，生产行为）；
+        #           False = 强制进程内计数；True = 强制 Redis。
+        #
+        # ★ 为什么需要这个开关（不是为测试开的后门）：
+        #   `_MemoryCounter` 是**实例级**的，而 `_RedisCounter` 的 key 只含
+        #   「IP + 时间窗口」，是**跨实例/跨进程共享**的。于是同一个进程里
+        #   若有多个中间件实例（测试里的玩具 app、将来的子应用），它们会
+        #   共用同一份计数而互相污染 —— 一个实例的流量会吃掉另一个实例的额度。
+        #   生产只有唯一实例、且多副本共享计数正是设计意图，所以默认仍是自动探测；
+        #   需要"只测限流算法、不要外部共享状态"的场景可显式传 False。
+        self._redis_backend = redis_backend
 
     # ---- 内部工具 ----
-
-    @staticmethod
-    def _client_key(request: Request) -> str:
-        """取客户端标识：优先 X-Forwarded-For 首跳，回落 request.client"""
-        forwarded = request.headers.get("X-Forwarded-For", "")
-        if forwarded:
-            first = forwarded.split(",")[0].strip()
-            if first:
-                return first
-        client = request.client
-        return client.host if client else "unknown"
 
     async def _resolve_backend(self) -> None:
         """首次请求时决定用 Redis 还是内存（只尝试一次）"""
         self._backend_resolved = True
+        if self._redis_backend is False:
+            # 显式要求进程内计数 → 不碰 Redis
+            return
         redis_url = (getattr(config, "redis_url", "") or "").strip()
         if not redis_url:
             return
@@ -170,7 +187,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         bucket = int(now // self.window)
         reset_in = max(1, int(self.window - (now % self.window)))
 
-        key = f"ratelimit:{bucket}:{self._client_key(request)}"
+        # 占位符由本用途决定：限流 key 需要一个稳定可拼的 token（见 client_ip docstring）
+        key = f"ratelimit:{bucket}:{client_ip(request) or 'unknown'}"
         try:
             count = await self._counter.incr(key, self.window)
         except Exception as exc:  # noqa: BLE001 — 计数失败则放行（fail-open）
