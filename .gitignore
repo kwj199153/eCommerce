@@ -64,10 +64,16 @@ dist/
 
 # ====== 本地工具与临时产物 ======
 .workbuddy/
+.workbuddy
 dist_verify_*/
 dist_check_*/
 *.timestamp-*.mjs
 *.tmp
+
+# ====== 测试/脚本临时输出 ======
+.workbuddy-out-*.xml
+out-r*.txt
+script-r*.py
 
 # ====== AI 临时截图 ======
 .shot*.png
