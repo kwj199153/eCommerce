@@ -10,17 +10,33 @@
 - POST /api/v1/product-research/competitors      - 竞品对比分析
 - POST  /api/v1/product-research/chat            - 自然语言对话（主入口）
 - GET  /api/v1/product-research/capabilities     - 查询 Agent 能力说明
+
+★★★ 多租户边界（P0 安全修复 2026-09-16，OWASP API Security #1 BOLA）
+所有端点都会 `Depends(require_auth_if_enabled)`（认证）。但**认证 ≠ 授权**：
+只有 `chat` / `chat/stream` 需要租户上下文（它们能落业务数据 —— 候选选品），
+所以只有这两个挂店铺依赖；另外 5 个端点只读不写、且数据来自公共 mock 商品池，
+不接触任何租户数据，因此**有意不挂**（挂了反而会让"未选店铺"的用户连
+蓝海分析都用不了，属无收益的体验损伤）。
+
+为什么是两个不同依赖名，而不是照抄别的模块的严格版（`get_current_shop_id`）：
+  该严格版对**所有写方法**（含 POST）强制要求 `X-Shop-ID`，缺失即 400。
+  对话入口不能这样 —— 用户还没选店铺时，「帮我找蓝海机会」这类只读意图
+  是完全合法的；一律 400 等于把功能改坏。
+  于是取 `get_current_shop_id_optional`：**带店铺头时校验归属**（伪造头 403），
+  不带时返回 None → 对话照常，但入库被 `_write_candidates` 硬拒绝。
+  即：**门禁放在"写"这一层，而不是"入口"这一层。**
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from core.billing.usage_tracker import meter_agent_chat
+from core.metering.usage_tracker import meter_agent_chat
 from typing import List, Optional
 
 from ai_infra.sse import sse_event_stream
 
 from core.auth.dependencies import require_auth_if_enabled
-from modules.user_subscription.models import User
+from core.identity.models import User
+from core.tenant.middleware import get_current_shop_id_optional
 
 from modules.product_research.schemas import (
     BlueOceanRequest,
@@ -171,6 +187,7 @@ async def compare_competitors(
 async def chat(
     request: ChatRequest,
     current_user: Optional[User] = Depends(require_auth_if_enabled),
+    shop_id: Optional[str] = Depends(get_current_shop_id_optional),
     _meter=Depends(meter_agent_chat),
 ):
     """
@@ -193,6 +210,7 @@ async def chat(
         result = await service.chat(
             message=request.message,
             context_id=request.context_id,
+            shop_id=shop_id,
         )
         return result
     except Exception as e:
@@ -203,6 +221,7 @@ async def chat(
 async def chat_stream(
     request: ChatRequest,
     current_user: Optional[User] = Depends(require_auth_if_enabled),
+    shop_id: Optional[str] = Depends(get_current_shop_id_optional),
     _meter=Depends(meter_agent_chat),
 ):
     """选品助手对话，SSE 流式返回（打字机效果）。"""
@@ -212,7 +231,11 @@ async def chat_stream(
         try:
             # context_id 必须传下去：入库待补槽位与「上一轮蓝海结果」都按会话隔离
             async for event in sse_event_stream(
-                service.stream_chat(request.message, context_id=request.context_id)
+                service.stream_chat(
+                    request.message,
+                    context_id=request.context_id,
+                    shop_id=shop_id,
+                )
             ):
                 yield event
         except Exception as e:

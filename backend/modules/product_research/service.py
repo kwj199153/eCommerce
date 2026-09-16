@@ -303,18 +303,27 @@ class ProductResearchService:
 
         return result.data
 
-    async def chat(self, message: str, context_id: str = None) -> ChatResponse:
+    async def chat(
+        self,
+        message: str,
+        context_id: str = None,
+        shop_id: Optional[str] = None,
+    ) -> ChatResponse:
         """
         自然语言对话接口
 
         Args:
             message: 用户消息
             context_id: 会话上下文 ID
+            shop_id: **已校验归属**的店铺 ID（由 router 的依赖注入传入）。
+                     入库类意图必需；缺失时 `_write_candidates` 会拒绝写入。
 
         Returns:
             对话响应
         """
-        result = await self.agent.invoke(message, context_id=context_id)
+        result = await self.agent.invoke(
+            message, context_id=context_id, shop_id=shop_id
+        )
 
         return ChatResponse(
             reply=result.content,
@@ -323,14 +332,24 @@ class ProductResearchService:
             suggestions=self._generate_suggestions(result),
         )
 
-    async def stream_chat(self, message: str, context_id: str = None):
+    async def stream_chat(
+        self,
+        message: str,
+        context_id: str = None,
+        shop_id: Optional[str] = None,
+    ):
         """
         流式对话入口（返回逐 token 异步迭代器）。
 
         `context_id` 必须一路带到 Agent —— 入库的「待补槽位」与「上一轮蓝海结果」
         都按会话隔离，不传就退化成全局共享（多会话会串数据）。
+
+        `shop_id` 同理必须一路带到写库那一步（**已校验归属**，来自 router 依赖）：
+        流的最后一段可能就是"入库回执"，漏传会让写入被拒。
         """
-        async for chunk in self.agent.stream_chat(message, context_id=context_id):
+        async for chunk in self.agent.stream_chat(
+            message, context_id=context_id, shop_id=shop_id
+        ):
             yield chunk
 
     @staticmethod

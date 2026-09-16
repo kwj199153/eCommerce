@@ -182,6 +182,27 @@ _current_context_id: ContextVar[Optional[str]] = ContextVar(
     "product_research_context_id", default=None
 )
 
+# 当前店铺 ID（ContextVar）。
+#
+# 用途：与 `_current_context_id` 同因 —— 走 LLM 工具路由时，工具函数的入参由
+# LLM 生成，**塞不进 shop_id**，只能靠上下文传递。
+#
+# ★★★ 与旧写法的关键区别（P0 安全修复 2026-09-16）
+#   修复前：写库路径直读 `core.tenant.middleware.tenant_context.shop_id`
+#           （★ C4 2026-09-16：该符号已随账户侧收拢删除，此处仅为事故记录），
+#           而那个值由 `TenantMiddleware` 用**未校验的原始 `X-Shop-ID` 头**
+#           对每个请求写入 ⇒ 任何带有效 token 的用户改一下请求头，就能把候选
+#           写进别人的选品库（探针 r84d 实测：落库 shop_id = 受害店铺，200）。
+#   现在：本 ContextVar **只**由 `invoke` / `stream_chat` 写入，值来自 service
+#           层显式传入的、**已过归属校验**的 shop_id（`get_current_shop_id*`）。
+#           ⇒ 中间件不再碰业务上下文，注入通道被物理切断。
+#
+# ★ 并且 `_write_candidates` 在 shop_id 缺失时**硬拒绝写入**（不是写空分区），
+#   所以"拿不到已校验的店铺"= 不落数据，而不是落到别人的分区。
+_current_shop_id: ContextVar[Optional[str]] = ContextVar(
+    "product_research_shop_id", default=None
+)
+
 # 全类目高潜关键词——老板没指定类目时用它，替代原先的 "general" 泛化词表。
 #
 # 为什么不用泛化词（smart home / organizer / portable…）：这些词在关键词库里
@@ -282,22 +303,35 @@ class ProductResearchAgent(BaseAgent):
         return self._session(None).get("last_blue_ocean")
 
     @staticmethod
-    def _bind_context(context_id: Optional[str]) -> None:
+    def _bind_context(
+        context_id: Optional[str], shop_id: Optional[str] = None
+    ) -> None:
         """
-        把会话 ID 绑定到 ContextVar，供 tools.py 里的工具函数读回。
+        把会话 ID 与**已校验的**店铺 ID 绑定到 ContextVar，供 tools.py 读回。
 
         **有意不 reset**：每个请求是独立的 asyncio Task，ContextVar 天然按 Task 隔离，
         且下一次调用会覆盖 —— 这样可省掉「用 try/finally 缩进整个 async 生成器体」。
+
+        `shop_id` 必须是**服务端校验过归属**的值（来自 `get_current_shop_id*`
+        依赖），绝不能是原始请求头 —— 详见 `_current_shop_id` 的注释。
         """
         _current_context_id.set(context_id)
+        _current_shop_id.set(shop_id)
 
-    async def invoke(self, query: str, context_id: str = None) -> AgentResponse:
+    async def invoke(
+        self,
+        query: str,
+        context_id: str = None,
+        shop_id: Optional[str] = None,
+    ) -> AgentResponse:
         """
         同步调用 Agent（简单任务）
 
         Args:
             query: 用户查询
             context_id: 会话上下文 ID（可选）
+            shop_id: **已校验归属**的店铺 ID（可选）。入库类意图必须传，
+                     否则 `_write_candidates` 会硬拒绝写入。
 
         Returns:
             AgentResponse 包含结果和展示数据
@@ -308,12 +342,13 @@ class ProductResearchAgent(BaseAgent):
           3. 未命中（general）→ LLM 工具路由兜底（router 自主选工具）
           4. 路由不可用 → 关键词表的 general 分支
         """
-        # 0. 绑定会话 ID（LLM 工具路由里的 tools.py 需要读回它才能找到本会话状态）
-        self._bind_context(context_id)
+        # 0. 绑定会话 ID + 已校验的店铺 ID
+        #    （LLM 工具路由里的 tools.py 需要读回它们才能找到本会话状态与写库归属）
+        self._bind_context(context_id, shop_id)
 
         # 1. 入库槽位续填优先（上一轮追问过「还差什么」，本轮回答直接当槽位填充）
         if self._session(context_id).get("pending_save"):
-            resumed = await self._resume_pending_save(query, context_id)
+            resumed = await self._resume_pending_save(query, context_id, shop_id)
             if resumed is not None:
                 return AgentResponse(
                     content=self._compose_reply(resumed),
@@ -324,7 +359,7 @@ class ProductResearchAgent(BaseAgent):
         # 2. 关键词表优先
         intent = await self._classify_intent(query)
         if intent != "general":
-            return await self._process_query(query, context_id, intent)
+            return await self._process_query(query, context_id, intent, shop_id)
 
         # 3. 未命中 → 工具路由兜底（关键词表从「唯一门」降为「加速器」）
         router = self._get_router()
@@ -1135,12 +1170,17 @@ class ProductResearchAgent(BaseAgent):
     _SAVE_CANCEL_WORDS = ("算了", "取消", "不用了", "不弄了", "不要了", "先不放", "放弃")
 
     async def _resume_pending_save(
-        self, query: str, context_id: Optional[str] = None
+        self,
+        query: str,
+        context_id: Optional[str] = None,
+        shop_id: Optional[str] = None,
     ) -> Optional[dict]:
         """
         入库槽位续填：把这一轮消息当作「上一轮追问的答案」处理。
 
         返回 None 表示「用户显然在说别的事」→ 调用方清掉 pending 回到常规流程。
+        `shop_id` 一路带到 `_write_candidates`（槽位补齐的**终点就是一次写库**，
+        漏传会让"多轮补齐"在最后一步被拒）。
         """
         from modules.candidates.service import missing_required_fields
 
@@ -1206,25 +1246,46 @@ class ProductResearchAgent(BaseAgent):
         product = dict(draft.get("product") or {})
         product["asin"] = product.get("asin") or draft.get("asin") or ""
         product["title"] = product.get("title") or draft.get("title") or ""
-        return await self._write_candidates([product], context_id)
+        return await self._write_candidates([product], context_id, shop_id)
 
     async def _write_candidates(
-        self, targets: List[dict], context_id: Optional[str] = None
+        self,
+        targets: List[dict],
+        context_id: Optional[str] = None,
+        shop_id: Optional[str] = None,
     ) -> dict:
         """
         真正写库：判重 + 批量。
 
         与面板走**同一个写入口**（`candidates/service.create_candidate`），
         所以字段默认值与前端按钮完全一致。
+
+        ★★★ `shop_id` 必须**显式传入**（P0 安全修复 2026-09-16，BOLA）
+            修复前这里直读 `core.tenant.middleware.tenant_context.shop_id`
+            （★ C4 2026-09-16：该符号已随账户侧收拢删除，此处仅为事故记录），
+            而那个值由 `TenantMiddleware` 用**未校验的原始 `X-Shop-ID` 头**写入
+            ⇒ 「带自己的 token + 改一下请求头」就能把候选写进别人的选品库
+              （探针 r84d 实测三段对照：有校验的端点 403，本路径 200 且落库
+                 shop_id = 受害店铺）。
+            为什么旧写法特别隐蔽：读的是"看起来很干净"的 request-scoped 缓存，
+            脏数据在上游写进去，本处完全看不出问题。
+
+        ★ 无店铺上下文 ⇒ **硬拒绝**（可读失败 + 零数据库往返）。
+          不用"写空分区"兜底：`shop_id` 为空会撞 `fk_*_shop_id_stores_store`
+          外键 → 500 且把 SQLAlchemy 报错与约束名吐给客户端（见 shop_id 空值
+          守卫那段修复），而且归因文案会变成"数据库不可用"，误导排查方向。
         """
         from modules.candidates.service import candidate_exists, create_candidate
 
-        # 租户：中间件把 shop_id 放在 ContextVar 里；SSE 生成器与请求同 Task，能读到。
-        try:
-            from core.tenant.middleware import tenant_context
-            shop_id = tenant_context.shop_id
-        except Exception:
-            shop_id = None
+        shop_id = (shop_id or "").strip() or None
+        if shop_id is None:
+            return {
+                "type": "candidate_save_failed",
+                "error": (
+                    "还没选择店铺，我这边没法入库。请先在界面左上角选一个店铺，"
+                    "再说一次「把……加进选品库」。"
+                ),
+            }
 
         saved: List[dict] = []
         skipped: List[str] = []
@@ -1272,9 +1333,17 @@ class ProductResearchAgent(BaseAgent):
             "summary": "；".join(parts),
         }
 
-    async def _save_candidate(self, query: str, context_id: Optional[str] = None) -> dict:
+    async def _save_candidate(
+        self,
+        query: str,
+        context_id: Optional[str] = None,
+        shop_id: Optional[str] = None,
+    ) -> dict:
         """
         把商品写入选品库（对话直达）。
+
+        `shop_id` 是**已校验归属**的店铺 ID（来自 `get_current_shop_id*` 依赖）。
+        不传 = 拿不到归属 = `_write_candidates` 拒绝写入，绝不"猜一个"。
 
         这是前端「蓝海结果卡 → 勾选 → 选分组 → 保存」那条**面板流程的免填版**：
         字段契约与面板一致（必填 ASIN / 商品标题，单点定义在 `modules/candidates/service.py`），
@@ -1366,9 +1435,14 @@ class ProductResearchAgent(BaseAgent):
             )
 
         # 目标解析完成 → 写库（与前端面板同一个写入口）
-        return await self._write_candidates(targets, context_id)
+        return await self._write_candidates(targets, context_id, shop_id)
 
-    async def stream_chat(self, query: str, context_id: str = None) -> AsyncIterable[str]:
+    async def stream_chat(
+        self,
+        query: str,
+        context_id: str = None,
+        shop_id: Optional[str] = None,
+    ) -> AsyncIterable[str]:
         """
         流式对话（逐 token 返回 LLM 文本）。
 
@@ -1385,13 +1459,14 @@ class ProductResearchAgent(BaseAgent):
         Yields:
             文本片段 / progress / meta 事件（供 ai_infra.sse.sse_event_stream 包装成 SSE）
         """
-        # 0. 绑定会话 ID（LLM 工具路由里的 tools.py 需要读回它才能找到本会话状态）
-        self._bind_context(context_id)
+        # 0. 绑定会话 ID + **已校验的**店铺 ID
+        #    （工具路由里的 tools.py 要读回它们才能找到会话状态与写库归属）
+        self._bind_context(context_id, shop_id)
 
         # 1. 入库槽位续填优先：上一轮追问过「还差什么」，本轮回答直接当槽位填充。
         #    少了这一步，「多轮补齐」就无从进行 —— 用户回「就那个加湿器」会被判成 general。
         if self._session(context_id).get("pending_save"):
-            resumed = await self._resume_pending_save(query, context_id)
+            resumed = await self._resume_pending_save(query, context_id, shop_id)
             if resumed is not None:
                 yield self._compose_reply(resumed)
                 return
@@ -1400,7 +1475,7 @@ class ProductResearchAgent(BaseAgent):
         intent = await self._classify_intent(query)
         if intent in ("blue_ocean", "profit", "pain_points", "competitor", "save_candidate"):
             yield progress(_INTENT_PROGRESS.get(intent, "正在分析…"))
-            result = await self._process_query(query, context_id, intent)
+            result = await self._process_query(query, context_id, intent, shop_id)
             yield result.content
             # 结构化载荷随流下发：前端据此在**同一列**（对话消息内）渲染「结论卡」，
             # 并写入「最近结果」槽（清空会话后仍可找回）。
@@ -1473,7 +1548,13 @@ class ProductResearchAgent(BaseAgent):
         query = f"把 {asin} 加入选品库"
         if source_keyword:
             query += f"，来源机会词 {source_keyword}"
-        return await self._save_candidate(query)
+        # 会话 ID 与店铺 ID 都从 ContextVar 取回（工具入参由 LLM 生成，塞不进去）。
+        # 两者都由 `_bind_context()` 在**入口处**用已校验的值写入。
+        return await self._save_candidate(
+            query,
+            context_id=_current_context_id.get(),
+            shop_id=_current_shop_id.get(),
+        )
 
     # ====== 内部辅助方法 ======
 
@@ -1683,7 +1764,11 @@ class ProductResearchAgent(BaseAgent):
         return suggestions[:4]  # 最多返回4条建议
 
     async def _process_query(
-        self, query: str, context_id: str = None, intent: str = None
+        self,
+        query: str,
+        context_id: str = None,
+        intent: str = None,
+        shop_id: Optional[str] = None,
     ) -> AgentResponse:
         """处理查询（内部方法）。
 
@@ -1702,7 +1787,7 @@ class ProductResearchAgent(BaseAgent):
         elif intent == "competitor":
             result = await self._analyze_competitors(query)
         elif intent == "save_candidate":
-            result = await self._save_candidate(query, context_id)
+            result = await self._save_candidate(query, context_id, shop_id)
         else:
             result = await self._general_chat(query)
 

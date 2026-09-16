@@ -39,6 +39,16 @@ QUERY_BLUE_OCEAN = "现在哪些货卖的比较火"
 TARGET_KEYWORD = "exercise mat alignment lines"
 TARGET_ASIN = "B0KLMN3456"
 
+# 入库是**写业务数据**的动作，必须带一个"已校验归属"的店铺 ID。
+# 本文件测的是"目标解析"（要入哪个商品），不是租户归属，所以固定用一个合成店铺即可：
+#   - 常量 `store_test` 已登记在 conftest.SYNTHETIC_TEST_SHOP_IDS（外键前提）；
+#   - `create_candidate` / `candidate_exists` 在本文件里都被 monkeypatch 拦掉，
+#     不会真的落库，也不受真实店铺是否存在影响。
+# ★ 为什么必须显式传而不能省略：P0 修复后 `_write_candidates` 缺 shop_id 时
+#   **硬拒绝写入**（修复前它直读全局上下文，而那个值来自未校验的请求头）。
+#   用例若不声明店铺，就等于在测一条已经不存在的旧契约。
+TEST_SHOP = "store_test"
+
 
 # ====== A. 商品池统一（唯一权威源） ======
 
@@ -210,7 +220,7 @@ def captured_candidates(monkeypatch):
 async def test_save_without_context_asks_instead_of_writing_empty(captured_candidates):
     """既没跑过蓝海、也没给 ASIN → 必须追问，绝不写一条空壳候选"""
     agent = ProductResearchAgent()
-    result = await agent._save_candidate("这个品加进选品库")
+    result = await agent._save_candidate("这个品加进选品库", shop_id=TEST_SHOP)
 
     assert result["type"] == "candidate_save_failed"
     assert result.get("error")
@@ -220,7 +230,7 @@ async def test_save_without_context_asks_instead_of_writing_empty(captured_candi
 async def test_save_resolves_pronoun_to_top1(captured_candidates):
     """「这个品」→ 上一轮蓝海结果的 Top 1"""
     agent = await _agent_with_last_result()
-    result = await agent._save_candidate("这个品帮我进入选品库")
+    result = await agent._save_candidate("这个品帮我进入选品库", shop_id=TEST_SHOP)
 
     assert result["type"] == "candidate_saved"
     payload = captured_candidates[0]["payload"]
@@ -234,7 +244,7 @@ async def test_save_carries_market_layer_into_notes_and_keywords(captured_candid
     （keywords + notes 里留来源机会词，便于回溯成色来源）。
     """
     agent = await _agent_with_last_result()
-    await agent._save_candidate("把第 1 个加进选品库")
+    await agent._save_candidate("把第 1 个加进选品库", shop_id=TEST_SHOP)
 
     payload = captured_candidates[0]["payload"]
     assert payload["keywords"], "候选必须记录来源机会词"
@@ -249,7 +259,7 @@ async def test_save_carries_market_layer_into_notes_and_keywords(captured_candid
 async def test_save_resolves_explicit_asin(captured_candidates):
     """显式给 ASIN 时不需要上下文，也不该被代词逻辑覆盖"""
     agent = ProductResearchAgent()
-    await agent._save_candidate("把 B0CGLKP2R1 加入选品库")
+    await agent._save_candidate("把 B0CGLKP2R1 加入选品库", shop_id=TEST_SHOP)
 
     assert captured_candidates[0]["payload"]["asin"] == "B0CGLKP2R1"
 
@@ -260,7 +270,7 @@ async def test_save_resolves_ordinal(captured_candidates):
     products = agent._last_blue_ocean["products"]
     assert len(products) >= 2, "用例前提：上一轮结果至少 2 条"
 
-    await agent._save_candidate("把第 2 个加进选品库")
+    await agent._save_candidate("把第 2 个加进选品库", shop_id=TEST_SHOP)
     assert captured_candidates[0]["payload"]["asin"] == products[1]["asin"]
 
 
@@ -282,7 +292,7 @@ async def test_save_resolves_product_named_in_query(captured_candidates):
     assert agent._last_blue_ocean["products"][0]["asin"] == TARGET_ASIN, \
         "用例前提：上一轮 Top1 是瑜伽垫（这样才构成「错存」的复现条件）"
 
-    result = await agent._save_candidate(f"{NAMED_TITLE} 帮我加到选品库")
+    result = await agent._save_candidate(f"{NAMED_TITLE} 帮我加到选品库", shop_id=TEST_SHOP)
 
     assert result["type"] == "candidate_saved"
     payload = captured_candidates[0]["payload"]
@@ -293,7 +303,7 @@ async def test_save_resolves_product_named_in_query(captured_candidates):
 async def test_save_asks_when_named_product_not_in_pool(captured_candidates):
     """点名了商品但商品池匹配不到 → 追问，绝不改存上一轮 Top1 来充数"""
     agent = await _agent_with_last_result()
-    result = await agent._save_candidate("把 Titanium Space Suit For Hamsters 加进选品库")
+    result = await agent._save_candidate("把 Titanium Space Suit For Hamsters 加进选品库", shop_id=TEST_SHOP)
 
     assert result["type"] == "candidate_save_failed"
     assert result.get("error")
@@ -306,7 +316,7 @@ async def test_save_rejects_out_of_range_ordinal(captured_candidates):
     n = len(agent._last_blue_ocean["products"])
     assert n >= 2, "用例前提：上一轮结果至少 2 条"
 
-    result = await agent._save_candidate(f"把第 {n + 5} 个加进选品库")
+    result = await agent._save_candidate(f"把第 {n + 5} 个加进选品库", shop_id=TEST_SHOP)
 
     assert result["type"] == "candidate_save_failed"
     assert str(n) in result["error"], "应告知上一轮实际条数"
@@ -321,7 +331,7 @@ async def test_save_skips_existing_asin(monkeypatch, captured_candidates):
     monkeypatch.setattr("modules.candidates.service.candidate_exists", _always_exists)
 
     agent = await _agent_with_last_result()
-    result = await agent._save_candidate("这个品帮我进入选品库")
+    result = await agent._save_candidate("这个品帮我进入选品库", shop_id=TEST_SHOP)
 
     assert result["type"] == "candidate_saved"
     assert result["skipped"], "应走判重分支"
@@ -349,7 +359,7 @@ async def test_save_full_title_with_colloquial_verb(captured_candidates):
 
     assert await agent._classify_intent(HUMIDIFIER_QUERY) == "save_candidate"
 
-    result = await agent._save_candidate(HUMIDIFIER_QUERY)
+    result = await agent._save_candidate(HUMIDIFIER_QUERY, shop_id=TEST_SHOP)
 
     assert result["type"] == "candidate_saved"
     assert captured_candidates[0]["payload"]["asin"] == HUMIDIFIER_ASIN, \
@@ -453,7 +463,7 @@ async def test_ask_records_pending_and_is_not_a_failure(captured_candidates):
     追问用 `soft_error` 标记：它是对话的正常一步，文案不该被套上「这次没跑通」。
     """
     agent = ProductResearchAgent()
-    result = await agent._save_candidate("帮我入库", context_id="ctx-ask")
+    result = await agent._save_candidate("帮我入库", context_id="ctx-ask", shop_id=TEST_SHOP)
 
     assert result["type"] == "candidate_save_failed"
     assert result.get("soft_error") is True
@@ -474,10 +484,10 @@ async def test_slot_filling_second_turn_completes_save(captured_candidates):
     agent = ProductResearchAgent()
     ctx = "ctx-fill"
 
-    first = await agent._save_candidate("帮我入库", context_id=ctx)
+    first = await agent._save_candidate("帮我入库", context_id=ctx, shop_id=TEST_SHOP)
     assert first["type"] == "candidate_save_failed"
 
-    second = await agent._resume_pending_save("B0CGLKP2R1", ctx)
+    second = await agent._resume_pending_save("B0CGLKP2R1", ctx, shop_id=TEST_SHOP)
     assert second is not None and second["type"] == "candidate_saved"
 
     payload = captured_candidates[0]["payload"]
@@ -490,9 +500,9 @@ async def test_slot_filling_accepts_product_name(captured_candidates):
     """第 2 轮用户回的是商品名（不是 ASIN）→ 同样要能补齐"""
     agent = ProductResearchAgent()
     ctx = "ctx-name"
-    await agent._save_candidate("帮我入库", context_id=ctx)
+    await agent._save_candidate("帮我入库", context_id=ctx, shop_id=TEST_SHOP)
 
-    result = await agent._resume_pending_save("Yoga Mat with Alignment Lines", ctx)
+    result = await agent._resume_pending_save("Yoga Mat with Alignment Lines", ctx, shop_id=TEST_SHOP)
 
     assert result["type"] == "candidate_saved"
     assert captured_candidates[0]["payload"]["asin"] == TARGET_ASIN
@@ -502,9 +512,9 @@ async def test_cancel_clears_pending(captured_candidates):
     """用户说「算了」→ 清 pending，不再追问，也不写库"""
     agent = ProductResearchAgent()
     ctx = "ctx-cancel"
-    await agent._save_candidate("帮我入库", context_id=ctx)
+    await agent._save_candidate("帮我入库", context_id=ctx, shop_id=TEST_SHOP)
 
-    result = await agent._resume_pending_save("算了，不弄了", ctx)
+    result = await agent._resume_pending_save("算了，不弄了", ctx, shop_id=TEST_SHOP)
 
     assert result["type"] == "candidate_save_failed"
     assert result.get("soft_error") is True
@@ -516,9 +526,9 @@ async def test_topic_change_releases_pending(captured_candidates):
     """用户在待补期间换了话题（说了别的结构化意图）→ 放弃 pending，交回常规流程"""
     agent = ProductResearchAgent()
     ctx = "ctx-topic"
-    await agent._save_candidate("帮我入库", context_id=ctx)
+    await agent._save_candidate("帮我入库", context_id=ctx, shop_id=TEST_SHOP)
 
-    assert await agent._resume_pending_save("帮我挖点蓝海机会", ctx) is None
+    assert await agent._resume_pending_save("帮我挖点蓝海机会", ctx, shop_id=TEST_SHOP) is None
     assert agent._session(ctx).get("pending_save") is None
 
 
@@ -529,7 +539,7 @@ async def test_unknown_asin_asks_for_title(captured_candidates):
     不能拿 ASIN 当标题硬写一条半成品（面板里标题是必填项）。
     """
     agent = ProductResearchAgent()
-    result = await agent._save_candidate("把 B0ZZZZZZZZ 加入选品库", context_id="ctx-unknown")
+    result = await agent._save_candidate("把 B0ZZZZZZZZ 加入选品库", context_id="ctx-unknown", shop_id=TEST_SHOP)
 
     assert result["type"] == "candidate_save_failed"
     assert result.get("soft_error") is True
@@ -543,7 +553,7 @@ async def test_save_payload_aligns_with_panel(captured_candidates):
     **分组后台兜底**（面板里分组是唯一的人工交互，对话版不该为它打断用户）。
     """
     agent = await _agent_with_last_result()
-    await agent._save_candidate("这个品帮我进入选品库")
+    await agent._save_candidate("这个品帮我进入选品库", shop_id=TEST_SHOP)
 
     payload = captured_candidates[0]["payload"]
     assert payload["sku"].startswith("SKU-CAND-")
@@ -561,7 +571,7 @@ async def test_sessions_are_isolated(captured_candidates):
     """
     agent = ProductResearchAgent()
 
-    await agent._save_candidate("帮我入库", context_id="sess-A")
+    await agent._save_candidate("帮我入库", context_id="sess-A", shop_id=TEST_SHOP)
     assert agent._session("sess-A").get("pending_save")
     assert agent._session("sess-B").get("pending_save") is None, "B 会话不该看到 A 的待补项"
 
