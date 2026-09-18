@@ -5,8 +5,6 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp?: number
-  hitlRequired?: boolean
-  hitlToolName?: string
   data?: any
   displayType?: string
 }
@@ -168,6 +166,33 @@ export const useChatStore = defineStore('chat', () => {
     messagesByAgent.value = {}
   }
 
+  /**
+   * 清空**全部按身份隔离的会话状态**（★ P0-1 配套，2026-09-18）。
+   *
+   * 「切换账号 / 登出 / 401 身份失效」必须调它（由 `utils/sessionContext.ts` 统一触发）。
+   * 漏了会怎样（本轮实测的形态）：
+   * `sessionIdByAgent` 持久化在**全局** localStorage key `secretary_session_ids` 里，
+   * **不带任何用户维度** ⇒ 换账号后在同一个浏览器里，新身份的第一次对话就带着
+   * **上一个身份的** session_id 发出去。
+   *
+   * 后端 P0-1 修复之后，这种请求已经读不到别人的内容了（会判为"没有可用会话"
+   * 并新建，见 `modules/secretary/router.py`）；但前端不该把别人的会话 ID
+   * 当自己的发出去 —— 那等于把"归属"这件事整个交给后端兜底，
+   * 而兜底一旦失效（回滚、另开一条通道、下一个人重写这段逻辑）就是数据泄露。
+   *
+   * ★ 只清「当前身份」的痕迹，**不动** `knownAccounts`（账号历史）：
+   *   那是"已知身份"而非"当前身份"，理由见 `utils/sessionContext.ts` 头注释。
+   */
+  const resetSessionState = () => {
+    messagesByAgent.value = {}
+    sessionIdByAgent.value = {}
+    try {
+      localStorage.removeItem(SESSION_KEY)
+    } catch (e) {
+      // 忽略（隐私模式等）
+    }
+  }
+
   // 初始化：恢复持久化的 sessionId
   loadSessionIds()
 
@@ -189,5 +214,6 @@ export const useChatStore = defineStore('chat', () => {
     removeMessage,
     clearMessages,
     clearAllMessages,
+    resetSessionState,
   }
 })

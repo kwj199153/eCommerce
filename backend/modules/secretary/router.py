@@ -10,6 +10,8 @@ from core.metering.usage_tracker import meter_agent_chat
 #   不是业务数据写入口。用严格版会让「刚注册、还没有店铺」的用户一进来就被 400
 #   挡住 —— 而这时候他恰恰只能靠店秘书去创建第一家店铺。
 #   详见 `get_current_shop_id_optional` 的 docstring 使用边界。
+from core.auth.dependencies import require_auth_if_enabled
+from core.identity.models import User
 from core.tenant.middleware import get_current_shop_id_optional
 from modules.secretary.agent import route
 
@@ -58,14 +60,21 @@ class OrchestratorResponse(BaseModel):
 async def secretary_chat(
     request: OrchestratorRequest,
     shop_id: Optional[str] = Depends(get_current_shop_id_optional),
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
     _meter=Depends(meter_agent_chat),
 ):
     """
     店秘书全局入口：识别用户意图，调用业务工具或返回导航/选择动作。
 
     决策层 B（跨会话记忆）+ C（checkpointer）：
-    - 请求带 session_id → 从 DB 读历史（若历史为空）注入 + checkpoint 持久化
-    - 请求不带 session_id → 新建会话，返回新 session_id 供前端持久化
+    - 请求带 session_id 且**它属于当前用户** → 从 DB 读历史注入 + checkpoint 持久化
+    - 其余情况（没带 / 不存在 / 不属于你）→ 新建会话，返回新 session_id 供前端持久化
+
+    ★ P0-1（2026-09-18）：`session_id` 是**客户端提供的**，所以必须先判归属。
+      不属于当前用户时**当作没有会话**（新建），且**不回显**传入的 ID ——
+      回显等于确认"这个 ID 是真实的"，可供枚举。
+      实测修复前：B 持有效 token 传 A 的 session_id → 200 + A 的历史全文
+      （读到后还被当作上下文喂给 LLM），本轮消息也会写进 A 的会话。
 
     返回：
     - reply：面向用户的回复文本
@@ -75,37 +84,61 @@ async def secretary_chat(
     - session_id：会话 ID（前端持久化，后续请求带回）
     """
     try:
-        session_id = request.session_id
+        from modules.conversation import service as conv_service
 
-        # 决策层 B：带 session_id 时，优先从 DB 读历史（比前端显式传的 history 更权威）
-        history = [h.model_dump() for h in request.history]
+        # ★★★ P0-1（2026-09-18）：`session_id` 由**客户端**提供 ⇒ 必须先过归属校验。
+        #   修复前这里只问「会话存在吗」（`conversation_exists`），不问「是你的吗」
+        #   ⇒ 拿别人的 session_id 就能：
+        #     ① 读到别人的完整对话（`get_history` 直读）；
+        #     ② 那段历史被当作上下文**喂给 LLM**；
+        #     ③ 本轮两条消息被 `append_message` 写进**别人的**会话。
+        #   实测（生产模式）：B 持有效 token 传 A 的 session_id → 200 + A 的历史全文。
+        #
+        #   现在换成 `get_owned_conversation`：**不存在与无权返回同一个 None**，
+        #   本函数据此只做一件事 —— 当作"没有可用会话"，走新建。
+        #   ★ 绝不把别人的 session_id 回显给调用方，否则等于确认"这个 ID 是真的"。
+        session_id = request.session_id
+        conv = None
         if session_id:
-            from modules.conversation import service as conv_service
-            if await conv_service.conversation_exists(session_id):
-                db_history = await conv_service.get_history(session_id, limit=20)
-                if db_history:
-                    # DB 历史为准（跨会话恢复场景）
-                    history = db_history
-            else:
-                # 会话不存在（如换环境），退回前端 history 并新建
-                session_id = None
+            conv = await conv_service.get_owned_conversation(current_user, session_id)
+
+        history = [h.model_dump() for h in request.history]
+        if conv is not None:
+            # DB 历史为准（跨会话恢复场景）
+            db_history = await conv_service.history_of(conv, limit=20)
+            if db_history:
+                history = db_history
         else:
-            # 无 session_id：新建会话
-            from modules.conversation import service as conv_service
-            session_id = await conv_service.create_conversation(agent_id="secretary")
+            # 没带 session_id / 会话不存在 / 不属于当前用户（换账号、换环境、伪造）
+            # ⇒ 一律新建。owner_id **只能**来自服务端身份，不接受任何自报。
+            session_id = await conv_service.create_conversation(
+                agent_id="secretary",
+                owner_id=current_user.id if current_user else None,
+            )
 
         result = await route(
             request.message,
             shop_id=shop_id,
             history=history,
             session_id=session_id,
+            # ★ 身份只从服务端上下文取（`current_user` 由鉴权依赖注入），
+            #   绝不接受 body 里的任何自报字段。
+            user_id=current_user.id if current_user else None,
         )
 
         # 决策层 B：把本轮 user + assistant 消息写入会话（异步持久化，失败不阻断响应）
+        # ★ 此刻 session_id 必然是「当前用户自己的会话」或「刚为他新建的会话」，
+        #   所以这里不会再碰到别人的会话（append_message 内部仍会判一次，冗余但无害）。
+        # ★ 顺带修掉一个旧 bug：修复前 session_id 被置 None 后仍会走到这里，
+        #   于是落一条 `conversation_id=None` 的孤儿消息（该列**无外键**，
+        #   所以它不会报错、只会静默堆积）。现在 session_id 恒非空。
         try:
-            from modules.conversation import service as conv_service
-            await conv_service.append_message(session_id, "user", request.message)
-            await conv_service.append_message(session_id, "assistant", result.get("reply", ""))
+            await conv_service.append_message(
+                current_user, session_id, "user", request.message
+            )
+            await conv_service.append_message(
+                current_user, session_id, "assistant", result.get("reply", "")
+            )
         except Exception as e:
             # 写历史失败不影响主流程（如 DB 未就绪）
             import logging

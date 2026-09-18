@@ -61,6 +61,23 @@ export const useUserStore = defineStore('user', () => {
   // ====== Getters ======
   const isLoggedIn = computed(() => !!token.value && !!user.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
+
+  /**
+   * 手里是否有一枚**真实可用**的 refresh_token。
+   *
+   * ★ 第 117 轮新增，供 `api/request.ts` 的 401 判定使用。
+   *   修复前拦截器**读不到**这个事实 —— 那时 401 分支靠猜后端文案
+   *   （`detail.includes('Token')`）来决定要不要刷新，于是文案一变行为就变。
+   *
+   * ★ 为什么 `isDemoToken` 那一层判断不是冗余：
+   *   `refreshToken` 的初值读的是 `localStorage.getItem('refresh_token')`，
+   *   而演示登录恰恰往那个键里写了 `demo-refresh-token`（见 views/Login.vue）。
+   *   所以**刷新页面之后**内存里真的会握着一枚 demo 伪凭据 ——
+   *   后端一律不认，照它去刷只会得到一次注定失败的请求。
+   */
+  const hasRefreshToken = computed(
+    () => !!refreshToken.value && !isDemoToken(refreshToken.value)
+  )
   const userEmail = computed(() => user.value?.email || '')
   const userName = computed(() => user.value?.name || user.value?.email || '')
 

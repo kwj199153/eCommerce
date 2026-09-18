@@ -13,6 +13,12 @@ import { message } from 'ant-design-vue'
 import { useUserStore } from '@/stores/user'
 import router from '@/router'
 import { isDemoToken } from '@/config/demoMode'
+import { resetSessionContext } from '@/utils/sessionContext'
+import {
+  AUTH_RETRY_FLAG,
+  isAuthEndpoint,
+  shouldAttemptRefresh,
+} from '@/api/authRefreshPolicy'
 
 /**
  * 给 Axios 配置加一个 silent 开关。
@@ -47,6 +53,17 @@ declare module 'axios' {
      *   所以这类请求显式声明，让 401 走正常通路（清状态 + 跳登录 + 带回跳）。
      */
     requiresIdentity?: boolean
+
+    /**
+     * 一次性重试标记（值取自 `api/authRefreshPolicy.ts` 的 `AUTH_RETRY_FLAG`）。
+     *
+     * ★ 为什么必须有它：401 分支在刷新成功后会**重发原请求**。
+     *   如果服务端把新签发的 token 也拒了，那个重发请求会再回到 401 分支 ——
+     *   而那时手里**依然**有 refresh_token、请求也不是认证端点，
+     *   按四条客观事实看它会再次尝试刷新 ⇒ 形成「刷新→重试→401→刷新」的循环。
+     *   本标记就是打在这个岔路上的唯一一枪。
+     */
+    _authRetried?: boolean
   }
 }
 
@@ -58,6 +75,40 @@ const request: AxiosInstance = axios.create({
     'Content-Type': 'application/json',
   },
 })
+
+// ====== 刷新并发锁 ======
+
+/**
+ * 正在进行中的刷新。同一时刻**只允许一次** `/auth/refresh` 在飞。
+ *
+ * ★ 为什么需要锁：页面首屏会同时发多个请求（店铺 / 团队 / 账户…），
+ *   若 access token 恰好过期，它们会同时收到 401。没有锁的话
+ *   每一个都去刷一次 —— 既浪费往返，也会让后端一次撤销多条 refresh 记录，
+ *   极端情况下先到的那次刷新会使后到的 refresh_token 失效。
+ *   加锁后它们共享同一个 promise。
+ */
+let refreshPromise: Promise<boolean> | null = null
+
+/**
+ * 加锁地刷新一次。
+ *
+ * ★ `finally` 里必须把它清空：否则一次失败会把后续**所有**刷新
+ *   永久钉死在这个已经 resolve 的 promise 上（表现为「再也刷不动了」）。
+ * ★ `.catch(() => false)`：`refreshToken()` 内部虽然已经吞掉了异常，
+ *   但这里再兜一层 —— 让「刷新这事本身炸了」与「刷新返回了 false」
+ *   对调用方完全等价，调用方只需判布尔值。
+ */
+function refreshOnce(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise
+  const p = useUserStore()
+    .refreshToken()
+    .catch(() => false)
+    .finally(() => {
+      refreshPromise = null
+    })
+  refreshPromise = p
+  return p
+}
 
 // ====== 请求拦截器 ======
 request.interceptors.request.use(
@@ -115,6 +166,24 @@ request.interceptors.response.use(
         //   吞掉的后果是"需要登录"这件事永远送不到登录入口上（见类型声明处说明）。
         const needsIdentity = !!config?.requiresIdentity
 
+        // ★ 第 117 轮：**认证端点自身**的 401 是业务结论，不是「登录过期」。
+        //     `/auth/login` 的 401   = 邮箱或密码错误；
+        //     `/auth/refresh` 的 401 = refresh 已过期/被撤销；
+        //     `/auth/logout` 的 401  = 凭据本就无效（登出照样要成功）。
+        //
+        //   这类 401 必须**原样交回调用方**去解释，拦截器不得：
+        //     · 清状态 / 清上下文 / 跳登录页
+        //       —— 那会把「密码打错」渲染成「你被踢出去了」；
+        //     · 弹提示
+        //       —— `/auth/refresh` 的失败是外层 401 处理的**内部细节**，
+        //          在这里弹出来就是同一次失败弹出两条一样的提示。
+        //
+        //   ★ 用的是与 `shouldAttemptRefresh` 里**同一个** isAuthEndpoint，
+        //     不是又抄一份判定（两份实现必有一份永远测不到）。
+        if (isAuthEndpoint(config?.url)) {
+          return Promise.reject(error)
+        }
+
         // Token 过期或无效
         // 演示模式：demo-token 被拒时静默处理，由**业务页面**自行降级到 mock。
         // （业务数据在演示模式下的离线兜底依赖这个行为，不要动它。）
@@ -123,12 +192,36 @@ request.interceptors.response.use(
           return Promise.reject(error)
         }
 
-        if (data?.detail?.includes('Token') || data?.detail?.includes('认证')) {
-          // 尝试刷新 Token
-          const refreshed = await userStore.refreshToken()
-          if (refreshed) {
-            // 重试原请求
-            return request(error.config)
+        // ★ 第 117 轮：要不要刷新这件事，收敛到 api/authRefreshPolicy
+        //   这一个纯函数里（唯一真源，门禁钉住）。
+        //
+        //   修复前这里写的是：
+        //     `data?.detail?.includes('Token') || data?.detail?.includes('认证')`
+        //   —— 靠**猜后端文案**。它有两个实测可复现的后果：
+        //     · 后端回 `Not authenticated`（完全没带 Authorization 头）时
+        //       两个关键词都不含 ⇒ 永不刷新，直接登出；
+        //     · `/auth/refresh` 自己失败时的文案是
+        //       「Refresh Token 已过期，请重新登录」——**含「Token」**，
+        //       而它走的是同一个 axios 实例 ⇒ 递归刷新。
+        //
+        //   现在只看四个客观事实：
+        //     401 + 手里确有真实 refresh_token + 不是认证端点 + 本次没重试过
+        if (
+          shouldAttemptRefresh({
+            status,
+            url: config?.url,
+            hasRefreshToken: userStore.hasRefreshToken,
+            alreadyRetried: !!config?.[AUTH_RETRY_FLAG],
+          })
+        ) {
+          // 并发锁：此刻可能已有一次刷新在飞，那就搭它的车
+          const refreshed = await refreshOnce()
+          if (refreshed && config) {
+            // ★ 打标记再重发：新 token 若仍被拒，下一次进来
+            //   alreadyRetried=true ⇒ 直接登出，不再刷第二轮。
+            config[AUTH_RETRY_FLAG] = true
+            // 重试原请求（请求拦截器会用刚写入 store 的新 token 覆盖 Authorization）
+            return request(config)
           }
         }
 
@@ -139,6 +232,15 @@ request.interceptors.response.use(
         // ★ 同样必须把 demo token 一并清掉：路由守卫已改为按"是不是真身份"
         //   判断，但只清状态、不留残留，才能保证进登录页这一步是确定的。
         userStore.clearAuth()
+
+        // ★ 第 113 轮：身份失效，**上下文也得一起清**。
+        //   401 之后若还留着上一个身份的 current_shop_id / current_account_id，
+        //   下一个身份登录后、在店铺/团队列表加载完成之前发出去的请求，
+        //   会带着**上一个账号的** X-Shop-ID —— 后端归属校验 403，
+        //   而用户看到的是"我的店铺不见了"。
+        //   ★ 仍保持"纯本地、不发请求"：此刻后端正在回 401，
+        //     任何出网调用都会变成递归打转。
+        resetSessionContext()
 
         // 带回跳地址，登录后回到刚才那一页。
         // 已在登录页时不再跳，避免自我重定向。

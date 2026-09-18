@@ -295,6 +295,53 @@ async def ensure_can_access_store(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
 
 
+# ====== 会话归属判定（P0-1，2026-09-18）======
+#
+# ★ 为什么会话**不**走上面的「店铺 → 账户」链路：
+#   `conversations.shop_id` 在本项目**从未被写过**（实测开发库 57 行全 NULL），
+#   而 `owner_id` 才是设计时表达的归属。会话是「**某个人的**对话历史」，
+#   不是「某家店的业务数据」—— 把它挂到店铺/账户上，等于宣布
+#   "同店同事可以互相读聊天记录"，这不是任何一处的产品语义。
+#
+# ★ 会话是**私有**资源，判定只有一条：
+#       conversation.owner_id == user.id      （平台超管短路放行）
+#   无主会话（`owner_id IS NULL`，含修复前的存量行）对**任何有身份的人**都不可
+#   访问 ⇒ fail-closed。「没有归属的数据」被谁继承都不该发生 ——
+#   那正是 P0-1 的原始形态（57 行会话全部 `owner_id=NULL`）。
+#
+# ★ 判定入口唯一：`modules/conversation/service.py::get_owned_conversation`。
+#   其余所有读/写函数都从它进，所以「哪条通道忘了判权」在结构上不可能发生。
+
+def conversation_owner_id(conv) -> Optional[str]:
+    """取会话的归属用户 id（duck typing 的唯一落点，与 `store_*` 访问器同形）。"""
+    return getattr(conv, "owner_id", None) or None
+
+
+def can_access_conversation(user: Optional[User], conv) -> bool:
+    """
+    当前用户能否访问该会话。
+
+    ★ 判定是**纯函数**，刻意不带 `db`：它不查库，也不需要「可见账户集合」
+      （`get_visible_account_ids` 是店铺侧的概念，会话用不上）。
+      将来若要引入"团队共享会话"，改本函数 + 上面那个唯一入口即可，
+      两处就是全部 —— 不需要新增调用点去各自判一遍。
+
+    ★ `user is None` ⇒ True 是**演示档**语义（`config.auth_required=False` 且
+      请求完全不带凭据，或带的是 `demo_mode` 下的演示哨兵），与
+      `can_access_store` 里 `user is None` 的放行是同一档。
+      生产档（`auth_required=True`）下本分支**不可达** —— 匿名请求在
+      `BUSINESS_AUTH` 就被 401 拦掉，根本到不了这里。
+      ⚠️ 演示档整体 fail-closed 是**另一项**已挂账的债（体检报告 P1-5），
+        不要在这里顺手收紧：那会把本地匿名联调一起打死，属于另一轮的议题。
+    """
+    if user is None:
+        return True
+    if is_platform_admin(user):
+        return True
+    owner = conversation_owner_id(conv)
+    return bool(owner) and owner == user.id
+
+
 # ====== 团队角色与能力门 ======
 
 async def resolve_account_role(
