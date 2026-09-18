@@ -142,6 +142,10 @@ class Account(Base):
         index=True,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # ★ 第 110 轮：此处曾有 `kind`（personal / team）列，已**删除**。
+    #   它显式化的「个人账户 / 团队账户」二分被实测证伪 —— 容器只有**一种**，
+    #   「私有」是**成员数的一个取值**（成员数 = 1 时观感私有），
+    #   「一个人也可以是一人团」。删列理由见迁移 `b7e3f1a9c2d4`。
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
