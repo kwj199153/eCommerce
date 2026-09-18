@@ -65,8 +65,12 @@ class Store(BaseModel):
     #   account_id 指向 `accounts.id`：多人通过 account_members 共享
     #   同一账户名下的全部店铺。判定实现见 core/auth/accounts.py。
     #
-    #   ⚠️ 本字段**不由客户端指定**（StoreCreate 里没有它）：账户归属由后端
-    #      在建店时按当前登录用户决定，否则用户可以把自己的店挂到别人账户下。
+    #   ★ 2026-09-17（A 档）：`StoreCreate` 现可**显式指定** `account_id`
+    #      （把店建到自己名下的团队账户，而不是默认的个人账户）。
+    #      这不是"客户端随便填"：建店端点会对目标账户做 `store.write` 能力门，
+    #      填一个自己无权的账户会 403，而不是静默挂上去。
+    #      改造前完全没有这个入口 ⇒ 用户建的第二家店只能落回个人账户，
+    #      「新建账户」因此是个没有闭环的空壳。
     account_id: Optional[str] = Field(
         None, description="所属账户 ID（accounts.id）—— 归属判定真源"
     )
@@ -137,6 +141,15 @@ class StoreCreate(BaseModel):
     fee_template_id: Optional[str] = None
     discount_template_id: str = "default"
 
+    # ★ 2026-09-17（A 档）：把店建到**指定的**容器下（团队协作）。
+    #   不传（默认 None）→ 建到自己的**默认容器**（`ensure_default_account`），
+    #   即改造前的唯一行为。
+    #   ★ 传了就必须过目标容器的 `store.write` 能力门（见 create_store）——
+    #     否则任何登录用户都能把店挂进别人的团队。
+    account_id: Optional[str] = Field(
+        None, description="目标容器 ID（accounts.id）；不传=建到自己的默认容器"
+    )
+
 
 class StoreUpdate(BaseModel):
     """更新店铺请求"""
@@ -144,6 +157,20 @@ class StoreUpdate(BaseModel):
     status: Optional[StoreStatus] = None
     fee_template_id: Optional[str] = None
     discount_template_id: Optional[str] = None
+
+
+class StoreTransfer(BaseModel):
+    """店铺转移请求：把店铺改挂到另一个账户（团队）下。
+
+    ★ 为什么不做成 `StoreUpdate.account_id`：
+      改名 / 改状态 / 改费率随时可做，而**改归属**是权限敏感动作 ——
+      它同时需要「对原账户有写权限」与「对目标账户有写权限」两道门。
+      混进通用更新里，能力门很容易退化成只查其一，而"少查的那一道"
+      **不会有任何报错**，只会安静地放行一种越权。
+      独立端点让两道门各自有明确的位置（见 `transfer_store`）。
+    """
+
+    account_id: str = Field(..., description="目标账户 ID（accounts.id）")
 
 
 class StoreWithCredentials(Store):

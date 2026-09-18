@@ -35,6 +35,16 @@ export interface Shop {
   last_sync_at: string | null
   sync_status: string
   created_at: string | null
+
+  /**
+   * 归属账户 ID（★ A/B 档 2026-09-17）。
+   *
+   * ★ 这一行长期缺失，而后端**一直在返回**它（`stores_store.account_id`）——
+   *   后果是"当前账户 → 店铺"的映射在类型层面无法表达，消费端只能
+   *   `(s as any).account_id` 绕过（account store 里就这么写过）。
+   *   类型与后端脱节不会报错，只会让人以为这个字段不存在。
+   */
+  account_id?: string | null
 }
 
 // ====== Store ======
@@ -140,6 +150,20 @@ export const useShopStore = defineStore('shop', () => {
   }
 
   /**
+   * 清空当前选中店铺（★ C 档 2026-09-17）
+   *
+   * ★ 为什么需要它：切换账户后，若新账户下**一家店都没有**，
+   *   继续留着旧账户的 `current_shop_id` 会让后续每个请求都带上
+   *   一个**不属于当前账户**的 shop_id ——
+   *   后端归属校验（P0 修复后）会一律 403，而界面看起来是
+   *   「账户显示 A、数据来自 B」。清空让状态回到一致的空态。
+   */
+  function clearCurrentShop() {
+    currentShopId.value = null
+    localStorage.removeItem('current_shop_id')
+  }
+
+  /**
    * 从外部设置店铺列表（API 响应后直接设置）
    *
    * 参数用后端 Store 类型（/stores 数据源）；Shop 是前端富类型，
@@ -164,6 +188,8 @@ export const useShopStore = defineStore('shop', () => {
     platform: string
     currency?: string
     fee_template_id?: string
+    /** ★ A 档 2026-09-17：目标容器；不传 ⇒ 后端建到你的默认容器（`ensure_default_account`） */
+    account_id?: string
   }): Promise<Shop> {
     isLoading.value = true
 
@@ -284,6 +310,7 @@ export const useShopStore = defineStore('shop', () => {
     fetchShops,
     ensureShopsLoaded,
     setCurrentShop,
+    clearCurrentShop,
     setShopList,
     createNewShop,
     updateShop,

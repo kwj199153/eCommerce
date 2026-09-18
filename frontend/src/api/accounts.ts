@@ -29,6 +29,16 @@ const IDENTITY: AxiosRequestConfig = { requiresIdentity: true }
 
 export type AccountRoleValue = 'owner' | 'admin' | 'member' | 'viewer'
 
+/**
+ * 容器（后端 `accounts` 表）。
+ *
+ * ★ 第 110 轮：此处曾有 `kind`（personal / team），已删除 —— 那个二分被证伪：
+ *   「私有」不是一种**容器类型**，而是**成员数的一个取值**（成员数 = 1 时
+ *   观感私有，> 1 就是共享）——「一个人也可以是一人团」。
+ *   ⇒ 界面一律显示容器**自己的名字**，不再有「个人 / 团队」标签。
+ *   ★ 这**不只是**前端去掉了几个导出：后端字段与枚举也已由迁移
+ *     `b7e3f1a9c2d4` 删除。字段只要还在，标签就会被重新长出来。
+ */
 export interface AccountInfo {
   id: string
   name: string
@@ -112,14 +122,21 @@ export function listAccounts() {
   return get<{ accounts: AccountInfo[]; total: number }>('/accounts', undefined, IDENTITY)
 }
 
-/** 当前用户的默认账户（后端幂等 get-or-create） */
+/** 当前用户的默认容器（后端幂等 get-or-create；判据见 `ensure_default_account`） */
 export function getMyAccount() {
   return get<{ account: AccountInfo }>('/accounts/me', undefined, IDENTITY)
 }
 
-/** 新建账户（当前用户成为 owner） */
+/**
+ * 新建账户（当前用户成为 owner）。后端返回 `{"account": {...}}`。
+ *
+ * ★ 修正返回类型（B 档 2026-09-17）：此前这里声明为 `AccountInfo`，
+ *   而响应体实际是 `{"account": {...}}` ⇒ 调用方写的 `res.id` **恒为 undefined**
+ *   （新建账户后不会切到新账户），且**不报任何错** ——
+ *   类型断言不是运行时校验，tsc 拦不住这种不一致。
+ */
 export function createAccount(name: string) {
-  return post<AccountInfo>('/accounts', { name }, IDENTITY)
+  return post<{ account: AccountInfo }>('/accounts', { name }, IDENTITY)
 }
 
 export function getAccount(accountId: string) {

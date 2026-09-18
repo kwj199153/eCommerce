@@ -222,9 +222,9 @@ async def get_my_account(
     ★ 为什么不复用注册流程：注册时创建只覆盖"新用户"这一条路径，
       而历史用户（本批改造之前注册的）没有账户记录，仍需要这条兜底。
     """
-    from core.auth.accounts import ensure_personal_account
+    from core.auth.accounts import ensure_default_account
 
-    account = await ensure_personal_account(db, current_user)
+    account = await ensure_default_account(db, current_user)
     role = await resolve_account_role(db, current_user, account.id)
     counts = await _store_counts(db, [account.id])
     mcounts = await _member_counts(db, [account.id])
@@ -298,7 +298,7 @@ async def create_account(
     """新建账户（当前用户成为其 owner）。
 
     用途：一个用户想额外开一个团队账户（例如"国内组" / "跨境组"），
-    与 `GET /accounts/me` 自动创建的个人账户并存。
+    与 `GET /accounts/me` 自动创建的默认容器并存。
     """
     from core.auth.accounts import ensure_owner_member
 

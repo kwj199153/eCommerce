@@ -36,7 +36,7 @@ from fastapi import HTTPException  # noqa: E402
 from starlette.requests import Request  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
-from core.auth.accounts import ensure_owner_member, ensure_personal_account  # noqa: E402
+from core.auth.accounts import ensure_owner_member, ensure_default_account  # noqa: E402
 from core.auth.jwt_handler import create_token_pair  # noqa: E402
 from core.config import config  # noqa: E402
 from core.database import get_async_session  # noqa: E402
@@ -102,7 +102,7 @@ async def ensure_store(session, owner: User, name: str) -> StoreRecord:
     if store:
         return store
 
-    account = await ensure_personal_account(session, owner)
+    account = await ensure_default_account(session, owner)
     await ensure_owner_member(session, account, owner)
     await session.flush()
 

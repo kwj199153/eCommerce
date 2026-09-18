@@ -97,6 +97,14 @@ export interface Store {
   is_connected: boolean
   status: string
   connection_status: string
+  /**
+   * 所属账户 ID（★ A/B 档 2026-09-17）
+   *
+   * ★ 归属判定的真源是后端 `account_id`，本字段供前端做
+   *   「按当前账户筛选店铺」与"把店转到哪个账户"的展示。
+   *   兼容过渡：存量/合成店铺可能为 null（走 owner_id 兜底）。
+   */
+  account_id?: string | null
 }
 
 export interface SupportedMarket {
@@ -145,8 +153,25 @@ export async function createShop(data: {
   currency?: string
   fee_template_id?: string
   description?: string
+  /**
+   * 目标容器 ID（★ A 档 2026-09-17）。
+   * 不传 ⇒ 后端建到你的**默认容器**（判据见后端 `ensure_default_account`）。
+   * 传了 ⇒ 必须对该容器有 `store.write`，否则 403。
+   * ★ 第 110 轮：原写作"个人账户"，该概念已被证伪（容器只有一种）。
+   */
+  account_id?: string
 }): Promise<Store> {
   return post<Store>('/stores', data)
+}
+
+/**
+ * 把店铺转移到另一个账户（★ A 档 2026-09-17）
+ *
+ * ★ 后端要过**两道**门：对原账户有 `store.write` + 对目标账户有 `store.write`。
+ *   前端不做镜像判定（那是两套判定的老路），失败时把后端的 403 原样呈现。
+ */
+export async function transferStore(storeId: string, accountId: string): Promise<Store> {
+  return post<Store>(`/stores/${storeId}/transfer`, { account_id: accountId })
 }
 
 /**

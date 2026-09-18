@@ -253,6 +253,8 @@ import { getAgentTools } from '@/components/ChatPanel/tools/toolDefinitions'
 import { useAgentStore } from '@/stores/agent'
 import { useChatStore } from '@/stores/chat'
 import { useShopStore } from '@/stores/shop'
+// ★ C 档（2026-09-17）：当前账户上下文（应用级）。见 account store 的模块 docstring。
+import { useAccountStore } from '@/stores/account'
 import { useProductLibraryStore } from '@/stores/productLibrary'
 import { useAssetLibraryStore } from '@/stores/assetLibrary'
 import { useCandidateLibraryStore } from '@/stores/candidateLibrary'
@@ -266,6 +268,7 @@ const router = useRouter()
 const agentStore = useAgentStore()
 const chatStore = useChatStore()
 const shopStore = useShopStore()
+const accountStore = useAccountStore()
 const productLibraryStore = useProductLibraryStore()
 const assetLibraryStore = useAssetLibraryStore()
 const candidateLibraryStore = useCandidateLibraryStore()
@@ -577,7 +580,20 @@ onMounted(() => {
   //    AI 说「切换到 X 店」时 `switch_shop` 找不到目标被静默丢弃。
   //    这里是**唯一权威的启动加载点**；弹层内的 refreshShopList 保留（增删后刷新用）。
   //    下面 `watch(currentShopId)` 会在本调用写回 currentShopId 后自动触发资料库加载。
-  void shopStore.ensureShopsLoaded()
+  // ★★ C 档（2026-09-17）：账户上下文也是应用级基础数据，与店铺列表同批加载。
+  //
+  //   顺序是**串行**的（先店铺 → 后账户 → 再校正），不是并发，理由是：
+  //     · `syncCurrentShopToAccount()` 需要 `shops` 已就绪才知道"该切到哪一家"。
+  //       并发时它可能先跑（此时列表为空 ⇒ 无从校正），而店铺加载完成后
+  //       **不会**再回来纠正 —— 表现为「切了账户，列表仍停在上一个账户的店」。
+  //     · `loadAccounts()` 在演示模式下**直接早退**（demo-token 不是身份，
+  //       发请求会 401 并触发跳登录页）⇒ 此时 currentAccountId 保持 null，
+  //       店铺列表不做账户过滤，与演示模式"业务数据不设限"的既有语义一致。
+  void (async () => {
+    await shopStore.ensureShopsLoaded()
+    await accountStore.loadAccounts()
+    accountStore.syncCurrentShopToAccount()
+  })()
 
   // 资料库数据的加载交给上面的 `watch(currentShopId)`（见其注释：避开首屏无店铺头的竞态）
 

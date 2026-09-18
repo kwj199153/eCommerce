@@ -15,7 +15,7 @@ from datetime import datetime
 import uuid
 
 from models.store import (
-    Store, StoreCreate, StoreUpdate, StoreListResponse,
+    Store, StoreCreate, StoreUpdate, StoreTransfer, StoreListResponse,
     StoreDetailResponse, FeeTemplate, FeeTemplateCreate,
     DiscountTemplate, StoreStatus, ConnectionStatus, SyncStatus,
 )
@@ -26,7 +26,7 @@ from core.auth.dependencies import require_auth_if_enabled
 #   两份各自演进，漏改一处就是一个越权口子。
 from core.auth.accounts import (
     ensure_can_access_store,
-    ensure_personal_account,
+    ensure_default_account,
     filter_accessible_stores,
     is_platform_admin,
     require_account_permission,
@@ -525,25 +525,36 @@ async def create_store(
     currency = data.currency or get_currency_for_marketplace(data.platform)
     region_code = data.region_code or data.platform.split("_")[-1].upper()
 
-    # 归属（★ P1-c 2026-09-16）：
-    #   owner_id   —— 「谁创建的」这一**事实**记录（审计/展示），不再参与授权
-    #   account_id —— 归属判定的**唯一依据**；建店前必须确保用户有个人账户
+    # 归属（★ P1-c 2026-09-16；★ A 档 2026-09-17 支持指定账户）：
+    #   owner_id   —— 「谁创建的」这一**事实**记录（审计/展示），不参与授权
+    #   account_id —— 归属判定的**唯一依据**
     #
-    # ★ 本端点**不需要**账户能力门，且这不是遗漏：
-    #   店铺只能建在自己的个人账户下（`StoreCreate` 里**没有** `account_id`
-    #   字段 —— 那会让用户把店挂到别人账户下）。而
-    #   `ensure_personal_account()` 保证当事人就是该账户的 owner，
-    #   owner 必然拥有 `store.write`。⇒ 能力门恒真，加了是死代码。
-    #   ⚠️ 将来若给 `StoreCreate` 加 `account_id`（把店建到指定账户），
-    #      必须在这里补 `require_account_permission(..., "store.write")`。
+    # ★ 两条路径：
+    #   ① 未指定 `data.account_id`（默认）→ 建到自己的**个人账户**
+    #   ② 指定了 `data.account_id`        → 建到该账户，但**必须过能力门**
+    #
+    #   ★★★ 关于②的能力门（就地更正此前的判断）：
+    #     改造前这里写「本端点不需要账户能力门 …… 能力门恒真，加了是死代码」，
+    #     那个结论的**前提**是"除个人账户外没有任何入口"（`StoreCreate` 里
+    #     没有 `account_id`）。A 档加了这个字段之后前提不成立 ⇒ 门从"死代码"
+    #     变成**必需**：没有它，任何登录用户都能把店挂进**别人**的团队账户
+    #     （一种写入型越权 —— 污染他人的数据视图，且不会报任何错）。
     owner_id = current_user.id if current_user is not None else None
     account_id = None
     if current_user is not None:
-        # `ensure_personal_account()` 是**幂等**的：老用户此前没有账户记录时补建，
-        # 已有则复用。非幂等会造出第二个账户，而重复账户**不报错** ——
-        # 用户会看到两个一模一样的团队、店铺散落其中，日志里毫无提示。
-        account = await ensure_personal_account(db, current_user)
-        account_id = account.id
+        if data.account_id:
+            # 目标账户不存在/已停用 → 404；存在但当前用户无权 → 403
+            # （两种错误的区分在能力门内部完成，端点不再自己分辨）
+            await require_account_permission(
+                db, current_user, data.account_id, "store.write"
+            )
+            account_id = data.account_id
+        else:
+            # `ensure_default_account()` 是**幂等**的：老用户此前没有容器记录时补建，
+            # 已有则复用。非幂等会造出第二个账户，而重复账户**不报错** ——
+            # 用户会看到两个一模一样的团队、店铺散落其中，日志里毫无提示。
+            account = await ensure_default_account(db, current_user)
+            account_id = account.id
         # ★★ 必须显式提交，不能只 flush：
         #   `_upsert_store_db()` 用的是**另一个** session（async_session_factory），
         #   未提交的 accounts 行对它不可见（PostgreSQL 默认 READ COMMITTED）
@@ -585,6 +596,55 @@ async def update_store(
     for field, value in update_data.items():
         setattr(store, field, value)
 
+    store.updated_at = datetime.utcnow()
+    _store_db[store_id] = store
+    await _upsert_store_db(store)  # 持久化到 PG
+    return store
+
+
+@router.post("/{store_id}/transfer", response_model=Store)
+async def transfer_store(
+    store_id: str,
+    data: StoreTransfer,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_auth_if_enabled),
+):
+    """把店铺转移到另一个账户（团队）（★ A 档 2026-09-17 新增）。
+
+    ★ 为什么需要这个端点：「新建账户」在改造前是个**没有闭环的空壳** ——
+      账户建出来了，却没有任何办法把已有的店放进去（`StoreCreate` 不接受
+      `account_id`，也没有转移入口）。用户建团队后用不上，只能看到
+      一堆彼此无关的空账户。
+
+    ★★ 两道门，缺一不可（各自保护**不同**的东西）：
+      ① **源侧** `store.write`（经 `_ensure_store_access`）——
+         转移是一种写入：它改变了"谁能看见这家店"。少了这道门，
+         任何人都能把**别人的店**搬进自己的账户（等于接管）。
+      ② **目标侧** `store.write`（经 `require_account_permission`）——
+         少了这道门，可以把店塞进一个自己并不属于的团队账户，
+         污染他人的数据视图（对方甚至看不出是谁干的）。
+      只查一道是典型的"半扇门"：**少查的那一道不会报任何错**，
+      只会安静地放行一种越权。
+
+    ★ `owner_id` **不动**：它是「谁创建了这家店」这一事实的记录，
+      转移归属不该改写历史（审计价值正在于此）。
+
+    ★ 幂等：目标账户 == 当前账户时直接返回 200。
+      重复点击"转移"是常见操作，把它做成错误只会教用户不再相信这个按钮。
+
+    ⚠️ 演示模式（`current_user is None`）：两道门都放行，与其余店铺端点一致。
+    """
+    store = _get_store(store_id)
+
+    # ① 源侧：对这家店要有写权限（否则就是"把别人的店搬走"）
+    await _ensure_store_access(db, store, current_user, permission="store.write")
+    # ② 目标侧：对目标账户也要有写权限（否则就是"往别人团队里塞店"）
+    await require_account_permission(db, current_user, data.account_id, "store.write")
+
+    if store_account_id(store) == data.account_id:
+        return store  # 幂等：已经在目标账户下
+
+    store.account_id = data.account_id
     store.updated_at = datetime.utcnow()
     _store_db[store_id] = store
     await _upsert_store_db(store)  # 持久化到 PG

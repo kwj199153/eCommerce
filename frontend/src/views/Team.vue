@@ -4,26 +4,30 @@
       <div>
         <h1 class="team-title">团队成员</h1>
         <p class="team-sub">
-          账户是「团队」这一层：一个账户下可以有多名成员，成员按角色共享该账户的店铺。
+          一个团队下可以有多名成员，成员按角色共享团队下的店铺。
+          成员数只有 1 时它就是"你自己的"团队（也是默认的建店落点）。
         </p>
       </div>
       <a-space>
+        <!-- ★ C 档 2026-09-17：`:value` 而非 `v-model` —— 当前账户已提升为
+             应用级状态（account store），本页不再持有自己的副本。
+             两份副本的后果是：在侧栏切换了归属，本页下拉却纹丝不动。 -->
         <a-select
           v-if="accounts.length > 0"
-          v-model:value="currentAccountId"
-          style="min-width: 200px"
+          :value="currentAccountId"
+          style="min-width: 230px"
           @change="onAccountChange"
         >
           <a-select-option v-for="a in accounts" :key="a.id" :value="a.id">
             {{ a.name }}（{{ roleLabel(a.role) }}）
           </a-select-option>
         </a-select>
-        <a-button :disabled="needsLogin" @click="showCreateAccount = true">新建账户</a-button>
+        <a-button :disabled="needsLogin" @click="showCreateAccount = true">新建团队</a-button>
       </a-space>
     </div>
 
     <!-- ★ 未登录态：把**可执行的入口**摆在页面上，而不是只弹一句 toast 就结束。
-         账户/成员是身份数据，演示模式的临时身份不适用（后端必然 401），
+         团队成员是身份数据，演示模式的临时身份不适用（后端必然 401），
          所以这里必须直接告诉用户"去哪登录"。 -->
     <a-alert
       v-if="needsLogin"
@@ -31,7 +35,7 @@
       show-icon
       class="team-alert"
       message="需要登录后才能管理团队成员"
-      description="账户与成员属于身份数据，必须绑定真实账号。当前是演示模式的临时身份（后端不认），请先登录后再试。"
+      description="团队成员属于身份数据，必须绑定真实账号。当前是演示模式的临时身份（后端不认），请先登录后再试。"
     />
     <div v-if="needsLogin" class="team-login-row">
       <a-button type="primary" @click="goLogin">去登录</a-button>
@@ -41,13 +45,17 @@
     <a-spin :spinning="loading">
       <a-empty
         v-if="!loading && accounts.length === 0"
-        :description="needsLogin ? '登录后这里会显示你的账户' : '暂无可见账户'"
+        :description="needsLogin ? '登录后这里会显示你的团队' : '暂无可见团队'"
       />
 
       <template v-else-if="currentAccount">
         <a-card :bordered="false" class="team-card">
           <a-descriptions :column="4" size="small">
-            <a-descriptions-item label="账户名称">
+            <a-descriptions-item label="名称">
+              <!-- ★ 第 110 轮：此处曾有 [个人] / [团队] 标签，已删除。
+                   那个二分被证伪 —— 容器只有一种，"私有"是**成员数**的一个取值
+                   （成员数 = 1 时观感私有，> 1 就是共享）。不拉人也完全可以是
+                   一个正常团队（"一人团"）。容器一律显示**它自己的名字**。 -->
               {{ currentAccount.name }}
             </a-descriptions-item>
             <a-descriptions-item label="我的角色">
@@ -86,7 +94,7 @@
             type="info"
             show-icon
             message="你的角色不能管理成员"
-            description="只有账户所有者与管理员可以邀请、调整或移除成员。"
+            description="只有所有者与管理员可以邀请、调整或移除成员。"
             style="margin-bottom: 16px"
           />
 
@@ -118,7 +126,7 @@
                     {{ r.label }}
                   </a-select-option>
                 </a-select>
-                <a-tooltip v-else :title="record.is_owner ? '账户所有者不可变更角色' : ''">
+                <a-tooltip v-else :title="record.is_owner ? '所有者不可变更角色' : ''">
                   <a-tag :color="roleColor(record.role)">{{ roleLabel(record.role) }}</a-tag>
                 </a-tooltip>
               </template>
@@ -136,14 +144,14 @@
               <template v-else-if="column.key === 'action'">
                 <a-popconfirm
                   v-if="canManage && !record.is_owner && record.status === 'active'"
-                  title="确定移除该成员吗？移除后他将无法访问本账户的店铺。"
+                  title="确定移除该成员吗？移除后他将无法访问本团队的店铺。"
                   ok-text="移除"
                   cancel-text="取消"
                   @confirm="onRemove(record)"
                 >
                   <a-button size="small" danger type="link">移除</a-button>
                 </a-popconfirm>
-                <a-tooltip v-else-if="record.is_owner" title="账户必须有所有者，不能移除">
+                <a-tooltip v-else-if="record.is_owner" title="团队必须有所有者，不能移除">
                   <span class="muted">—</span>
                 </a-tooltip>
               </template>
@@ -174,23 +182,23 @@
               {{ r.label }} —— {{ r.desc }}
             </a-select-option>
           </a-select>
-          <div class="form-hint">「所有者」不可分配：账户只能有一个所有者。</div>
+          <div class="form-hint">「所有者」不可分配：团队只能有一个所有者。</div>
         </a-form-item>
       </a-form>
     </a-modal>
 
     <a-modal
       v-model:open="showCreateAccount"
-      title="新建账户"
+      title="新建团队"
       :confirm-loading="creatingAccount"
       @ok="onCreateAccount"
     >
       <a-form layout="vertical">
-        <a-form-item label="账户名称">
+        <a-form-item label="团队名称">
           <a-input v-model:value="newAccountName" placeholder="例如：跨境一组" />
         </a-form-item>
       </a-form>
-      <div class="form-hint">你将成为该账户的所有者。</div>
+      <div class="form-hint">你将成为该团队的所有者。</div>
     </a-modal>
   </div>
 </template>
@@ -210,6 +218,8 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { useUserStore } from '@/stores/user'
+// ★ C 档（2026-09-17）：当前账户已提升为应用级状态（account store）。
+import { useAccountStore } from '@/stores/account'
 import {
   listAccounts,
   listMembers,
@@ -238,8 +248,13 @@ const loading = ref(false)
  * 否则用户看着一句"请先登录"，界面上却找不到登录的地方。
  */
 const needsLogin = ref(false)
-const accounts = ref<AccountInfo[]>([])
-const currentAccountId = ref<string | undefined>(undefined)
+
+// ★ C 档（2026-09-17）：`accounts` / `currentAccountId` 提升为**应用级状态**。
+//   本页此前各持一份副本 ⇒ 在侧栏/店铺弹层切了账户，本页下拉纹丝不动
+//   （两份状态各自演进，且不报错）。
+const accountStore = useAccountStore()
+const accounts = computed(() => accountStore.accounts)
+const currentAccountId = computed(() => accountStore.currentAccountId)
 const members = ref<AccountMember[]>([])
 const includeRemoved = ref(false)
 const busyId = ref<string | null>(null)
@@ -255,9 +270,8 @@ const showCreateAccount = ref(false)
 const creatingAccount = ref(false)
 const newAccountName = ref('')
 
-const currentAccount = computed(
-  () => accounts.value.find((a) => a.id === currentAccountId.value) || null
-)
+// ★ C 档：直接读 store 的 getter，不再本地重算一遍
+const currentAccount = computed(() => accountStore.currentAccount)
 const canManage = computed(() => canManageMembers(currentAccount.value))
 
 const columns = [
@@ -276,13 +290,15 @@ async function loadAccounts() {
   loading.value = true
   try {
     const res = await listAccounts()
-    accounts.value = res.accounts || []
+    // ★ C 档：结果交给**唯一**的账户状态持有者（account store）。
+    //   默认选哪个容器、切换后怎么校正"当前店铺"，统一在 applyAccounts 里处理
+    //   —— 本页不再自己定一套（本页旧逻辑是「is_owner 优先，否则第一个」）。
+    //   ★ 第 110 轮删掉了"默认选个人账户"这一条（personal / team 二分已被证伪）。
+    //     注意 applyAccounts 选的只是**列表第一项**，**不等同于**后端判定的
+    //     "默认建店落点"（`ensure_default_account` 的判据）—— 两者可能不同，
+    //     后果由 ShopPopoverContent 的显式提示兜住（读建店响应里的 account_id）。
+    accountStore.applyAccounts(res.accounts || [])
     needsLogin.value = false
-    if (!currentAccountId.value && accounts.value.length > 0) {
-      // 默认选「我自己的」账户（is_owner 优先），否则第一个
-      const own = accounts.value.find((a) => a.is_owner)
-      currentAccountId.value = (own || accounts.value[0]).id
-    }
     if (currentAccountId.value) await loadMembers()
   } catch (e: any) {
     // 不喂 Mock：账户是身份数据，编不出来（空状态优于虚构默认）
@@ -292,9 +308,9 @@ async function loadAccounts() {
       // 这里只负责**页面内联引导** —— 再弹一次用户会看到两条一样的提示。
       needsLogin.value = true
     } else {
-      message.error(e?.response?.data?.detail || '加载账户失败')
+      message.error(e?.response?.data?.detail || '加载团队失败')
     }
-    accounts.value = []
+    accountStore.reset()
   } finally {
     loading.value = false
   }
@@ -316,7 +332,14 @@ async function loadMembers() {
   }
 }
 
-async function onAccountChange() {
+/**
+ * 切换当前账户（★ C 档：改为接收选中值）
+ *
+ * 状态在 store 里，本页不能直接改它 —— 否则又回到"两份状态"的老路。
+ * `setCurrentAccount` 内部还会把"当前店铺"校正到新账户内（见 account store）。
+ */
+async function onAccountChange(accountId: string) {
+  accountStore.setCurrentAccount(accountId)
   members.value = []
   await loadMembers()
 }
@@ -380,18 +403,22 @@ async function onRemove(record: AccountMember) {
 async function onCreateAccount() {
   const name = newAccountName.value.trim()
   if (!name) {
-    message.warning('请输入账户名称')
+    message.warning('请输入团队名称')
     return
   }
   creatingAccount.value = true
   try {
-    const res: any = await createAccount(name)
-    message.success('账户已创建')
+    const res = await createAccount(name)
+    message.success('团队已创建')
     showCreateAccount.value = false
     newAccountName.value = ''
     await loadAccounts()
-    if (res?.id) {
-      currentAccountId.value = res.id
+    // ★ 修正取值路径（B 档 2026-09-17）：后端返回的是 `{"account": {...}}`。
+    //   旧写法 `res?.id` 恒为 undefined（响应外层不是账户本身），
+    //   于是"新建账户后不会切到新账户"，而且**不报任何错**。
+    const newId = res?.account?.id
+    if (newId) {
+      accountStore.setCurrentAccount(newId)
       await loadMembers()
     }
   } catch (e: any) {

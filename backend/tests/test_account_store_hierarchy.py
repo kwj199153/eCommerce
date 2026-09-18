@@ -220,7 +220,7 @@ async def test_store_created_via_api_is_linked_to_owner_account(
                 ), {"i": store2})).scalar()
             assert acct2 == account_id, (
                 f"同一用户的两家店挂到了不同账户（{account_id} vs {acct2}）—— "
-                f"`ensure_personal_account()` 不幂等会造出重复账户，而重复账户**不报错**"
+                f"`ensure_default_account()` 不幂等会造出重复容器，而重复容器**不报错**"
             )
         finally:
             await _drop_store(client, user["token"], store2)
@@ -248,7 +248,9 @@ def test_ownership_kernel_branches():
     user = SimpleNamespace(id="u-1", role="user")
     other = SimpleNamespace(id="u-2", role="user")
 
-    # ① 演示模式（无身份）⇒ 放行（调用方决定是否走到这里）
+    # ① 演示模式（无身份）⇒ 本内核返回 True，但★ 列表入口已不再走到这里
+    #    （`filter_accessible_stores` 现在 `user is None` 直接返回空列表）；
+    #    走到这里的是**单店**路径，见 accounts.py 里的 P1-5 说明。
     assert _matches("acct-x", "u-9", frozenset(), None) is True
 
     # ② 平台超管：visible is None 表示「不设限」
@@ -271,6 +273,56 @@ def test_ownership_kernel_branches():
     assert _matches(None, "u-1", frozenset(), user) is True
     assert _matches(None, "u-2", frozenset(), user) is False
     assert _matches(None, None, frozenset(), user) is False, "无主店铺对非超管一律拒绝"
+
+
+async def test_filter_accessible_stores_no_identity_means_no_data():
+    """
+    ★★★ 守卫：没有身份 ⇒ 没有数据（2026-09-17）。
+
+    直接测批量筛法的**两个短路分支**，不碰 IO：
+      · `user is None`（匿名 / 演示哨兵）⇒ **空列表**（改前是"不过滤 ⇒ 全库"）
+      · `visible is None`（平台超管）    ⇒ **全量**（这条是对的，不能一起收）
+
+    ★ 为什么用"会爆炸的 db"当入参：两条分支都应在**查库之前**短路。若哪天有人把
+      `get_visible_account_ids()` 提到前面、或把 `user is None` 写成"查完再判"，
+      本用例会用一条明确的 AssertionError 报出"该分支不应查库" ——
+      而不是悄悄多出一次全表查询。
+
+    ★★ 两条分支**不可混淆**：都写 `return list(stores)` 就是"匿名 = 超管"
+      （全库对任何人不设限地敞开）；都写 `return []` 则超管也看不到东西。
+      本用例同时断言两者，任何一个被改坏都会红。
+
+    反向注入：把 `filter_accessible_stores` 里的 `return []` 改回
+    `return list(stores)`，第一条断言必须转红。
+    """
+    from types import SimpleNamespace
+
+    from core.auth.accounts import PLATFORM_ADMIN_ROLE, filter_accessible_stores
+
+    class _ExplodingSession:
+        """任何 IO 都抛 —— 用来证明这两条分支都是**零 DB 往返**。"""
+
+        async def execute(self, *a, **kw):
+            raise AssertionError(
+                "该分支不应查库（应在 get_visible_account_ids 之前短路）"
+            )
+
+    db = _ExplodingSession()
+    stores = [
+        SimpleNamespace(id="s-1", account_id="acct-1", owner_id="u-1"),
+        SimpleNamespace(id="s-2", account_id="acct-2", owner_id="u-2"),
+    ]
+
+    assert await filter_accessible_stores(db, None, stores) == [], (
+        "★★★ 匿名拿到了店铺 —— 「没有身份 ⇒ 没有数据」的守卫失效了。"
+        "改前这里是 `return list(stores)`（不过滤）⇒ 演示档下全库裸奔。"
+    )
+
+    admin = SimpleNamespace(id="u-admin", role=PLATFORM_ADMIN_ROLE)
+    assert await filter_accessible_stores(db, admin, stores) == stores, (
+        "平台超管看不到了 —— 把 `visible is None`（不设限）与空集（什么都看不到）"
+        "混为一谈了。这两者在 `_matches` 里是两条不同的分支，不能一起收。"
+    )
 
 
 # ====== 4. 团队共享：成员能进、能写，但删不了店 ======
