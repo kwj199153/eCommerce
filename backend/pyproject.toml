@@ -11,10 +11,15 @@
 #    两处都写会造成「改了 pyproject 却不生效」的静默困惑，因此只保留 pytest.ini 一处。
 #
 #  ⚠️ 静态检查的接入状态（如实标注，避免「配置存在 ≠ 门禁在执行」）：
-#    - ruff：配置已就绪，但 **CI 尚未调用**。首次接入必须先生成基线
-#      （见文末命令），否则一次性几千条告警没人会看，最后又变成死配置。
-#    - mypy：同上。本项目大量使用 SQLAlchemy 2.0 Mapped[] 与 pydantic，
-#      严格模式会误报很多，默认用宽松档。
+#    - ruff：**已部分接入 CI**（2026-09-17 第 132 轮）。
+#      全量 `ruff check .` 基线 **2807 条**（UP045/UP006/I001 占大头，2385 条可自动修）——
+#      一次性修完不现实，硬接 CI 只会被人 --no-verify 绕过、最后没人信。
+#      所以 CI 只跑**已收敛到零的那部分**：`ruff check . --select T20`。
+#      以后每收敛一类（如 F401 unused-import）就往 CI 的 --select 加一项，
+#      形成**棘轮**：只增不减、永不回退。
+#    - mypy：配置已就绪，**仍未接入 CI**（存量无标注，接入前同样要先跑基线）。
+#    - 覆盖率 / bandit / pip-audit：见下方 [tool.coverage.*]、[tool.bandit]，
+#      以及 .github/workflows/ci.yml 的 security job。
 # ============================================================
 
 [project]
@@ -55,7 +60,12 @@ exclude = [
 #   UP   pyupgrade    —— 过时写法升级
 #   ASYNC             —— async 用法错误（在 await 里做阻塞调用等）
 #   S    bandit       —— 安全问题（硬编码密码、assert 用作校验等）
-select = ["E", "W", "F", "I", "B", "UP", "ASYNC", "S"]
+#   T20  flake8-print —— 生产代码里出现 print（只启 T20 子集，不含 T10/T30）
+#       ★ 第 132 轮补：此前 select 里**没有 T**，而 per-file-ignores 却写着
+#         `"scripts/**" = ["T201"]` —— 一条从未被启用的规则被"忽略"着，
+#         是典型的**死配置**：配了、review 过、也永远不会触发。
+#         启用 T20 后，生产代码里新增的 print 才真正成为一个能说"不"的门禁。
+select = ["E", "W", "F", "I", "B", "UP", "ASYNC", "S", "T20"]
 
 # 忽略项 + 忽略理由（不加理由的 ignore 会变成"永久性黑洞"）
 ignore = [
@@ -68,11 +78,19 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # 测试文件放宽：允许 assert、允许魔法值、允许私有成员访问
 "tests/**" = ["S101", "S105", "S106", "SLF001"]
-# 脚本/种子数据：允许 print（本来就该往控制台输出进度）
+# ★ scripts/ 允许 print —— 这不是"偷懒豁免"，而是它们**本来就不该走 logger**：
+#   scripts/ 的输出是**机器可读契约**（例如 check_multi_turn_memory.py 固定输出
+#   `RESULT_JSON: {...}` 供 tests/test_agent_session_memory.py 解析；
+#   pick_tests.py 输出文件清单供 CI 消费）。loguru 会给每行加时间戳/级别前缀，
+#   直接破坏解析 —— CLI 工具的 stdout 就是它的接口，print 在此是正确工具。
 "scripts/**" = ["T201"]
 "modules/**/seed.py" = ["T201"]
+# 该文件是「既是 pytest 用例、又是手工演示入口」的混合体（见文末 --main 块）：
+#   46 处 print 集中在 print_separator()/main() 里，是为人工跑一遍看链路是否通
+#   而写的可读输出，不是遗留的调试语句。
+"tests/test_llm_rag_integration.py" = ["T201"]
 # 迁移脚本自动生成，不参与风格检查
-"alembic/**" = ["E", "W", "F", "I", "B", "UP", "S"]
+"alembic/**" = ["E", "W", "F", "I", "B", "UP", "S", "T20"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["core", "modules", "platforms", "ai_infra", "models"]
@@ -106,6 +124,85 @@ exclude = [
     "uploads",
     "logs",
 ]
+
+# ==================== 覆盖率（coverage.py / pytest-cov）====================
+#
+# ★ 为什么要显式写 source，而不是用默认的"已导入模块"统计：
+#   默认口径的分母取决于"测试恰好 import 了什么"，导致
+#   ① 覆盖率会随无关改动漂移（多 import 一个模块就掉几个点）；
+#   ② 没被任何测试碰过的模块**根本不进分母** —— 最该被看见的裸奔代码反而消失。
+#   source 显式列出业务代码，分母固定，数字才有可比性。
+
+[tool.coverage.run]
+# ★ 这里**刻意不写 `source`** —— 这是第 132 轮本地实测踩出来的坑，务必保留说明：
+#   coverage 处理**配置里的** `source` 时会 `importlib.import_module(name)` 去定位包路径。
+#   一旦把 `main` / `main.py` 列进去，`import main` 就会**执行 main.py 的顶层代码**：
+#   建 FastAPI app、注册全部路由、import 全部业务模块 ⇒ SQLAlchemy 的
+#   Base.metadata 里同名表被注册两次
+#   （实测症状：`InvalidRequestError: Table 'accounts' already defined` +
+#    `KeyError: 'test_stores'`，6 个测试文件在 **collection 阶段**直接 ERROR，
+#    完全看不出跟覆盖率有关，极易被误判成"代码坏了"）。
+#   而 pytest-cov 的 `--cov=main` 走的是**路径**处理、不会 import ⇒ 两者行为不同。
+#   ⇒ 所以：**覆盖率目标由命令行 `--cov=core --cov=modules ...` 显式指定**
+#     （见 .github/workflows/ci.yml 的「跑测试」步骤）；本段只定义"怎么算"。
+# 分支覆盖：只统计"语句执行过"会漏掉 if/else 只走一边的情况
+branch = true
+omit = [
+    "*/tests/*",
+    "*/alembic/versions/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+# ★ fail_under 是**棘轮**，不是"目标值"：它锁住"不许比现在更差"，
+#   而不是要求立刻达到某个理想数字。
+#
+#   ⚠️ 口径提醒：本项目这个数字是 **line + branch 综合**（[tool.coverage.run] 开了
+#   branch = true），因此比"只看语句覆盖率"低几个点 —— 同一份代码
+#   line-only 是 66.94%、综合是 62.53%，**两个数字都真实**。
+#   横向比较前必须先确认口径，否则会误判成"覆盖率掉了"。
+#   基线 62.53%（2026-09-17 实测，954 passed / 0 failed，
+#   见 .workbuddy/probes/out-r132-g3-full.txt），这里取 62，
+#   留 ~0.5pp 波动余量（重构时增删行数不该让 CI 随机红）。
+#   要提高覆盖率 → 先补测试、实测新基线、再抬这个数字，**顺序不能反**。
+#   ★ 本轮就犯过一次这个错：先按 line-only 的 65.95% 定了 fail_under=65，
+#     随后启用 branch = true，真实值变成 62.53% ⇒ CI 直接红。
+#     教训：**改覆盖口径的同一次改动里，必须重算阈值**。
+fail_under = 62
+show_missing = true
+skip_covered = true      # 只列未 100% 的文件，否则输出几千行没人看
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "@(abc\\.)?abstractmethod",
+    "\\.\\.\\.",
+]
+
+[tool.coverage.json]
+output = "coverage.json"
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+
+# ==================== bandit（专项安全扫描）====================
+#
+# ★ 已经有了 ruff 的 S 规则，为什么还要单独跑 bandit：
+#   ruff 的 S 是 **bandit 规则的移植子集**（常见几十条），
+#   bandit 本体有 200+ 条（B1xx~B6xx）并支持 `# nosec` 精确豁免 + 严重度分级。
+#   两者不重复劳动：ruff 管"顺手能修的安全写法"，bandit 管"专项深扫 + 出报告"。
+
+[tool.bandit]
+targets = ["core", "modules", "platforms", "ai_infra", "main.py", "worker.py"]
+# 测试里的 assert/假密钥、迁移脚本的 SQL 拼接、CLI 脚本的 subprocess 都不是线上风险
+exclude_dirs = ["tests", "alembic", "scripts", "uploads", "logs"]
+# 显式豁免（每条必须写理由，否则就成了"永久黑洞"）：
+#   B104 绑定 0.0.0.0 —— 容器内必须绑 0.0.0.0，否则宿主机/Nginx 访问不到；
+#        对外暴露由安全组与 Nginx 控制。与 ruff 侧 ignore S104 是同一个判断。
+skips = ["B104"]
+
 
 # ==================== 接入静态检查的操作步骤 ====================
 #

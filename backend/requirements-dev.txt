@@ -1,0 +1,29 @@
+# ====== 跨境电商 AI SaaS - 后端「开发/CI 专用」依赖 ======
+#
+# 安装（本地开发）：
+#     pip install -r requirements.txt -r requirements-dev.txt
+# 安装（CI）：见 .github/workflows/ci.yml 的「安装依赖」步骤
+#
+# ★ 为什么要和 requirements.txt 分开（2026-09-17 第 132 轮建立）：
+#   运行时镜像不需要 lint / 安全扫描工具（层更小、攻击面更小），
+#   但 CI **必须**装 —— 否则会重现本仓库真实踩过的坑：
+#
+#     backend/pyproject.toml 里早就写好了 [tool.ruff] / [tool.mypy] 配置，
+#     注释里还写着"配置已就绪，接的时候打开 --select 即可"，
+#     但 requirements.txt 里**一个 lint 工具都没有** ⇒ CI 里根本装不上 ruff
+#     ⇒ 那份配置从写下的那天起就是**纸面门禁**，从未执行过一次。
+#
+#   所以：配置和依赖必须成对存在。只有配置没有依赖 = 承诺没有兑现；
+#   只有依赖没有配置 = 每次都靠命令行现敲，必然漂移。
+
+# ---------- 静态检查 ----------
+ruff>=0.16            # linter + formatter（CI 只跑已收敛到零的规则子集）
+mypy>=1.11            # 类型检查（宽松档，配置见 pyproject [tool.mypy]）
+
+# ---------- 安全扫描 ----------
+bandit>=1.8           # 专项安全扫描（ruff 的 S 规则只是它的一个子集）
+pip-audit>=2.7        # 依赖漏洞扫描（查 OSV / PyPI 安全公告）
+
+# ---------- 覆盖率 ----------
+coverage[toml]>=7.6   # 覆盖率内核（[toml] extra 才能读 pyproject 的 [tool.coverage]）
+pytest-cov>=5.0       # pytest 集成（CI 用 --cov 出报告，并用 fail_under 当门禁）

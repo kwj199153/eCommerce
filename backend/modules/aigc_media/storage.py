@@ -37,7 +37,8 @@ async def persist_remote_image(url: str, *, subdir: str = "aigc", timeout: float
     ext = Path(urlparse(url).path).suffix.lower()
     if ext not in _ALLOWED_EXT:
         ext = ".png"
-    name = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16] + ext
+    # 内容寻址用（非安全用途）；usedforsecurity=False 让 FIPS 环境也放行
+    name = hashlib.sha1(url.encode("utf-8"), usedforsecurity=False).hexdigest()[:16] + ext
 
     target_dir = upload_root() / subdir
     target_dir.mkdir(parents=True, exist_ok=True)

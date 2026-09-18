@@ -116,7 +116,8 @@ async def persist_sample(content: bytes, filename: str) -> str:
     if ext not in client.ALLOWED_SAMPLE_EXTS:
         raise VoiceCloneError(f"音频格式不支持：{ext}")
 
-    name = hashlib.sha1(content).hexdigest()[:16] + ext
+    # 内容寻址用（非安全用途）；usedforsecurity=False 让 FIPS 环境也放行
+    name = hashlib.sha1(content, usedforsecurity=False).hexdigest()[:16] + ext
     target_dir = _voice_upload_root()
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / name
@@ -162,7 +163,8 @@ async def persist_remote_audio(url: str) -> str:
     ext = Path(urlparse(url).path).suffix.lower()
     if ext not in client.ALLOWED_SAMPLE_EXTS:
         ext = ".mp3"
-    name = "tts-" + hashlib.sha1(url.encode("utf-8")).hexdigest()[:16] + ext
+    # 内容寻址用（非安全用途）；usedforsecurity=False 让 FIPS 环境也放行
+    name = "tts-" + hashlib.sha1(url.encode("utf-8"), usedforsecurity=False).hexdigest()[:16] + ext
     target_dir = _voice_upload_root()
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / name
@@ -207,7 +209,8 @@ async def upsert_record(shop_id: str, **fields):
         ).scalars().first()
         if row is None:
             row = ShopVoice(
-                id="voice-" + hashlib.sha1(shop_id.encode("utf-8")).hexdigest()[:16],
+                # 内容寻址用（非安全用途）；usedforsecurity=False 让 FIPS 环境也放行
+                id="voice-" + hashlib.sha1(shop_id.encode("utf-8"), usedforsecurity=False).hexdigest()[:16],
                 shop_id=shop_id,
             )
             session.add(row)

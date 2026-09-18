@@ -471,4 +471,4 @@ async def init_default_plans(db: AsyncSession):
         db.add(plan)
 
     await db.commit()
-    print("✅ 默认订阅套餐初始化完成")
+    logger.info("✅ 默认订阅套餐初始化完成")

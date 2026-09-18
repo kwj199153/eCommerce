@@ -519,14 +519,20 @@ if __name__ == "__main__":
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    print(f"""
+    banner = f"""
 ╔══════════════════════════════════════════════════╗
 ║     {config.app_name} v{config.app_version}
 ║     环境: {config.environment}
 ║     地址: http://{config.api_host}:{config.api_port}
 ║     文档: http://{config.api_host}:{config.api_port}/docs
 ╚══════════════════════════════════════════════════╝
-    """)
+    """
+    # ★ 这里**刻意保留 print**、不改走 logger（2026-09-17 第 132 轮）：
+    #   这是给人看的启动横幅（ASCII 边框）。loguru 会给每一行都加上
+    #   「时间戳 | 级别 | request_id | 模块:函数:行号」前缀，边框会被撑散、
+    #   反而更难读。所以这是 T201 的**正当例外** —— 显式 noqa 说明理由，
+    #   而不是为了绕开检查改成 sys.stdout.write（那是掩盖，不是豁免）。
+    print(banner)  # noqa: T201
 
     uvicorn.run(
         "main:app",

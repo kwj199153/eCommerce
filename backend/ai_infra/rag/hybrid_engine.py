@@ -75,7 +75,8 @@ class Document:
     def __post_init__(self):
         if not self.doc_id:
             raw = f"{self.page_content}:{json.dumps(self.metadata, sort_keys=True)}"
-            self.doc_id = hashlib.md5(raw.encode()).hexdigest()[:12]
+            # 内容寻址用（非安全用途）；usedforsecurity=False 让 FIPS 环境也放行
+            self.doc_id = hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()[:12]
 
 
 @dataclass

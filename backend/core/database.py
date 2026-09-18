@@ -4,6 +4,7 @@
 基于 SQLAlchemy 2.0 + aiosqlite (MVP) / asyncpg (生产) 的异步数据库连接池管理。
 """
 
+import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -16,6 +17,9 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from core.config import config
+
+
+logger = logging.getLogger(__name__)
 
 
 # ====== 声明式基类 ======
@@ -158,7 +162,7 @@ async def init_db():
             #   因为 `X.metadata` 就是 `Base.metadata`，第一次调用已经建完了全部。
             #   合并成一次调用，避免「逐类调用看起来各建一张表」的误导。
             await conn.run_sync(Base.metadata.create_all)
-            print("✅ 数据库表创建完成（注意：已迁移到 Alembic，已有表请走 `alembic upgrade head`）")
+            logger.info("✅ 数据库表创建完成（注意：已迁移到 Alembic，已有表请走 `alembic upgrade head`）")
 
 
 async def close_db():

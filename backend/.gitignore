@@ -8,3 +8,16 @@ venv/
 *.egg-info/
 .idea/
 .vscode/
+
+# 覆盖率产物（2026-09-17 第 132 轮接入 coverage 后新增）
+# ★ 必须忽略：CI 每次跑测试都会生成，本地也一样 —— 不忽略的话
+#   `git status` 会被这些文件淹掉，且容易被 `git add -A` 误提交。
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+htmlcov/
+
+# 工具缓存
+.ruff_cache/
+.mypy_cache/

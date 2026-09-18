@@ -21,11 +21,15 @@
 #      ④ `pytest`                      —— 此时库 == 「应用首次启动后应有的状态」
 #    ①②③ 缺任何一个，「本地全绿」都推不出「CI 全绿」——本仓库三者都曾缺失。
 #
-#  ⚠️ 未接入（有意保留，避免「声明了却没生效」的假门禁）：
-#    - 前端 ESLint：package.json 里有 lint 脚本，但 devDependencies 里
-#      **没有 eslint**。加进 CI 会直接失败。要么先补依赖，要么删脚本。
-#    - ruff / mypy：先建立基线再加，否则一上来几千条告警没人看。
-#      （backend/pyproject.toml 里已备好配置，接的时候打开 --select 即可）
+#  ⚠️ 静态检查的接入状态（2026-09-17 第 132 轮更新，如实标注）：
+#    - ruff：**只接「已收敛到零」的规则子集**（见 backend job 的 Lint 步骤，
+#      当前跑 --select T20）。全量基线 2796 条，一次性修不现实 ——
+#      每收敛一类就往 --select 加一项，形成棘轮；
+#    - mypy：**仍未接入**（存量无标注，接入前要先跑基线）；
+#    - 前端 ESLint：package.json 有 lint 脚本，但 devDependencies 里**没有 eslint**
+#      ⇒ 该脚本是死的，直接加进 CI 会失败。补 devDeps + 配置文件是独立任务；
+#    - 覆盖率 / 安全扫描：**已接入**（见 backend job 的覆盖率步骤与 security job）；
+#      npm audit 暂以 critical 为线，2 项 high 是已知待办（理由写在 security job 里）。
 # ============================================================
 
 name: CI
@@ -109,9 +113,14 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: 安装依赖
+        # ★ 必须同时装 requirements-dev.txt：本 job 要跑 lint 与覆盖率，
+        #   而这些工具**只在 dev 清单里**。这正是本仓库真实踩过的坑 ——
+        #   pyproject.toml 里写好了 [tool.ruff] 配置，但 requirements.txt
+        #   里没有任何 lint 工具 ⇒ CI 根本装不上 ruff ⇒ 配置从写下那天起
+        #   就是纸面门禁。"配置与依赖必须成对出现"。
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -r requirements-dev.txt
 
       - name: 语法编译检查（快速失败，不用等测试跑完）
         # 编译全部 .py：能抓住缩进/语法级错误，几秒钟出结果
@@ -155,8 +164,44 @@ jobs:
         #    所以不会出现「启动会灌、CI 不灌」两套清单各自漂移。
         run: python scripts/bootstrap_db.py
 
-      - name: 跑测试
-        run: pytest tests/ -q --no-header
+      - name: Lint（只跑已收敛到零的规则）
+        # ★ 为什么不是全量 `ruff check .`：
+        #   全量基线 **2796 条**（UP045/UP006/I001 占大头，2380 条可自动修）。
+        #   一次性修完不现实；硬接上去只会被人 --no-verify 绕过，
+        #   最后"有 CI 但没人信"。所以只跑**已经收敛到零**的规则子集 ——
+        #   每收敛一类就往 --select 里加一项，形成**棘轮**：只增不减。
+        #   当前已收敛：
+        #     T20 —— 生产代码里不得出现 print（scripts/ 与演示型测试已按文件豁免，
+        #            理由写在 backend/pyproject.toml 的 per-file-ignores 注释里）
+        run: ruff check . --select T20
+
+      - name: 跑测试（含覆盖率门禁）
+        # ★ 覆盖率的口径与阈值在 backend/pyproject.toml 的 [tool.coverage.*] 里，
+        #   这里不重复写 fail_under / branch / omit —— 两处都写必然漂移，
+        #   而"改了不生效"的那个地方永远是没人看的那份。
+        # ★ 但**覆盖率目标必须在这里显式列**（--cov=core --cov=modules ...）：
+        #   pyproject 的 [tool.coverage.run] 里**不能**写 source ——
+        #   coverage 对配置里的 source 会 importlib.import_module() 去定位包，
+        #   把 `main` 列进去就会真的 import main.py（执行顶层代码、注册全部路由），
+        #   导致 SQLAlchemy 表重复注册、6 个测试文件在 collection 阶段 ERROR
+        #   （第 132 轮本地实测，详见 pyproject 里的说明）。
+        #   而 pytest-cov 的 --cov=X 走路径处理、不 import ⇒ 只能从这里给。
+        # fail_under = 65 是**棘轮**（锁住"不许比现在更差"），不是目标值；
+        # 要提高必须先补测试、实测新基线、再抬阈值，顺序不能反。
+        run: |
+          pytest tests/ -q --no-header \
+            --cov=core --cov=modules --cov=platforms --cov=ai_infra \
+            --cov=main --cov=worker \
+            --cov-report=term-missing --cov-report=xml
+
+      - name: 上传覆盖率报告
+        # if: always() —— 覆盖率不达标时这一步也要跑，否则"红在哪"没有报告可看
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          if-no-files-found: ignore
 
   # ================= 前端 =================
   frontend:
@@ -248,3 +293,57 @@ jobs:
             exit 1
           fi
           echo "OK 敏感文件未被跟踪"
+
+  # ================= 安全扫描 =================
+  security:
+    name: 安全扫描（bandit / pip-audit / npm audit）
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: 安装扫描工具
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: bandit（代码安全扫描）
+        # 配置在 backend/pyproject.toml 的 [tool.bandit]（targets/exclude_dirs/skips）。
+        # -ll 只报 Medium 及以上：Low 级在本项目全是噪声（测试 assert、mock 随机数）。
+        # 当前 Medium+ = 0（6 处 B324 弱哈希已改为 usedforsecurity=False，
+        # 它们都是"内容寻址/文件名生成"，不是安全哈希）。
+        working-directory: backend
+        run: python -m bandit -c pyproject.toml -r . -ll
+
+      - name: pip-audit（后端依赖漏洞）
+        # ★ 显式忽略 PYSEC-2026-1325（ecdsa），理由有据可查：
+        #   ① 该漏洞**没有修复版本**（pip-audit 的 Fix Versions 列为空）；
+        #   ② 本项目 JWT 用 HS256（config.jwt_algorithm 默认值 + .env 实测），
+        #      而 ecdsa 只在 ES256/ES384 的签名验签路径上参与 —— 本项目不经过；
+        #   ③ ecdsa 是 python-jose 的传递依赖，实际密码学实现由 [cryptography] extra 提供。
+        #   ⇒ 这是**有依据的例外**，不是"红色太多先关掉"。
+        #   处置：跟踪 python-jose 上游是否移除对 ecdsa 的硬依赖。
+        working-directory: backend
+        run: python -m pip_audit -r requirements.txt --ignore-vuln PYSEC-2026-1325
+
+      - name: npm audit（前端依赖漏洞）
+        # ★ 门禁为什么定在 critical 而不是 high：
+        #   当前 high 有 2 项、且**都无法在本轮修**：
+        #     · vite（devDependency，仅构建期）：修复要 5.x → 8.x 的 major 升级，
+        #       跨越 3 个大版本，属于独立改造任务，不能顺手塞进来；
+        #     · xlsx（**生产依赖**）：SheetJS 已不在 npm 上发新版（fixAvailable: false），
+        #       要么改用官方 CDN 源安装、要么整体换 exceljs —— 需要单独评估。
+        #   门禁若定在 high，CI 会**立刻常红**，最后必然被人绕过或关掉
+        #   （本仓库记忆里有明确一条：门禁一亮红就被 --no-verify 绕过）。
+        #   所以先锁 critical（当前 0 ⇒ 绿），把 high 当**已知待办**跟踪，
+        #   每修掉一个就把 --audit-level 收紧一档。
+        working-directory: frontend
+        run: npm audit --audit-level=critical

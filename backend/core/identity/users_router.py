@@ -275,7 +275,8 @@ async def upload_avatar(
 
     # ★ 以**嗅探结果**为准，不看 filename 的扩展名（前者不可伪造）
     ext = ".jpg" if sniffed == ".jpg" else sniffed
-    name = hashlib.sha1(content).hexdigest()[:16] + ext
+    # 内容寻址用（非安全用途）；usedforsecurity=False 让 FIPS 环境也放行
+    name = hashlib.sha1(content, usedforsecurity=False).hexdigest()[:16] + ext
 
     target_dir = upload_root() / "avatars"
     target_dir.mkdir(parents=True, exist_ok=True)
