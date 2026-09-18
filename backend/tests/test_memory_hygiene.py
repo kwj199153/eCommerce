@@ -104,6 +104,22 @@ def test_inject_alarm_script_matches_hot_line():
     )
     assert isinstance(mod.CAP_BYTES, int) and mod.CAP_BYTES > 0, "CAP_BYTES 必须是正整数常量"
 
+    # ★ 鲁棒性：计数锚点**不得对两侧标点敏感**。
+    #   第 135 轮实测：结算把热区那行的「（已 11 次」改成「；已 11 次」⇒
+    #   上一轮刚修好的「（已 (\d+) 次」（去掉了右括号）**又失配了**。
+    #   修一个括号、炸另一个括号 ⇒ 判据只能是「只保留语义核『已 N 次』」。
+    for v in (
+        "（已 11 次）",
+        "（已 11 次；零动作，别重写热区）",
+        "（章节对不上=陈旧 / 尾部消失=截断；已 11 次，零动作）",
+        "已 11 次",
+        "已 3 次",
+    ):
+        m = mod.COUNT_RE.search(v)
+        assert m and m.group(1) in v, (
+            "COUNT_RE 对两侧标点敏感 ⇒ 热区一改措辞就静默断链，`--record` 会拒绝工作：%r" % v
+        )
+
     verdict, hot, margin = mod.verdict()
     assert verdict in ("MISREPORT", "REAL"), "verdict 只能两值之一"
     assert margin == mod.CAP_BYTES - hot, "余量口径必须是 cap - 磁盘字节"
