@@ -1,7 +1,8 @@
 """
 多租户隔离回归自检（业务侧）
 
-验证 `core/tenant/middleware.py::_resolve_current_shop_id` 的归属校验是否真正生效：
+验证 `core/tenant/middleware.py` 公开入口的归属校验是否真正生效
+（`get_current_shop_id` / `get_current_shop_id_optional`）：
   - 用户 A 的 token 拿用户 B 的店铺 ID 当 X-Shop-ID -> 403
   - 店铺所有者 B 自己访问                          -> 放行（返回该 shop_id）
   - 平台超管跨账户访问                             -> 放行（设计如此）
@@ -15,6 +16,16 @@
     并且用**真实的 account → store 层级**造数据（而不是手插一行 shops）：
     店铺必须挂在一个账户上、账户必须有 owner 成员行 —— 否则测的不是生产形态。
     判定实现见 `core/auth/accounts.py`。
+
+★★★ 2026-09-18：本脚本改走**公开依赖入口**（`get_current_shop_id` /
+    `get_current_shop_id_optional`），不再直接 import `_resolve_current_shop_id`。
+    两条理由：
+      ① 生产代码走的本来就是那两个公开依赖，直接打私有实现 = **少测一层**；
+      ② 跨包 import 下划线私有符号等于对内部签名**静默上锁** —— `middleware.py`
+         改名或加参数时这里会失联，而 `scripts/` 不在任何 CI 的 import 图上。
+    该形态由 `tests/test_import_boundaries.py::test_no_cross_package_private_symbol_imports`
+    钉住（本处是它挖出的**唯一**真实违规）。
+    行为等价性有实测：改造前后本脚本均 `10/10 通过`、逐条 PASS 文案一致。
 
 运行方式（必须在生产模式下才会拦截）：
     cd backend
@@ -42,7 +53,11 @@ from core.config import config  # noqa: E402
 from core.database import get_async_session  # noqa: E402
 from core.identity.models import User, UserRole  # noqa: E402
 from core.identity.router import hash_password  # noqa: E402
-from core.tenant.middleware import TENANT_HEADER, _resolve_current_shop_id  # noqa: E402
+from core.tenant.middleware import (  # noqa: E402
+    TENANT_HEADER,
+    get_current_shop_id,
+    get_current_shop_id_optional,
+)
 from modules.stores.db_model import StoreRecord  # noqa: E402
 
 
@@ -183,74 +198,74 @@ async def main() -> int:
             print("用例：")
             # 1. A 带着自己的合法 token 用 B 的店铺 ID -> 403
             await expect(
-                lambda: _resolve_current_shop_id(
-                    make_request(store_b.id, token_a), session, require_for_write=True),
+                lambda: get_current_shop_id(
+                    make_request(store_b.id, token_a), session),
                 403, "用户A token 冒充 用户B 的店铺", results,
             )
             # 2. 所有者 B 访问自己的店铺 -> 放行
             await expect(
-                lambda: _resolve_current_shop_id(
-                    make_request(store_b.id, token_b), session, require_for_write=True),
+                lambda: get_current_shop_id(
+                    make_request(store_b.id, token_b), session),
                 200, "所有者B 访问自己的店铺", results,
             )
             # 3. 平台超管跨账户 -> 放行
             await expect(
-                lambda: _resolve_current_shop_id(
-                    make_request(store_b.id, token_admin), session, require_for_write=True),
+                lambda: get_current_shop_id(
+                    make_request(store_b.id, token_admin), session),
                 200, "平台超管 跨账户访问", results,
             )
             # 4. 无 token -> 401
             await expect(
-                lambda: _resolve_current_shop_id(
-                    make_request(store_b.id, None), session, require_for_write=True),
+                lambda: get_current_shop_id(
+                    make_request(store_b.id, None), session),
                 401, "无 token 访问", results,
             )
             # 5. 伪造 token -> 401
             await expect(
-                lambda: _resolve_current_shop_id(
-                    make_request(store_b.id, "fake.token.value"), session, require_for_write=True),
+                lambda: get_current_shop_id(
+                    make_request(store_b.id, "fake.token.value"), session),
                 401, "伪造 token 访问", results,
             )
             # 6. 不存在的店铺 ID -> 403（**不是 404**：不泄露存在性）
             await expect(
-                lambda: _resolve_current_shop_id(
-                    make_request("store_ffffffff", token_b), session, require_for_write=True),
+                lambda: get_current_shop_id(
+                    make_request("store_ffffffff", token_b), session),
                 403, "不存在的店铺 ID（应为 403 而非 404）", results,
             )
             # 7. 缺 X-Shop-ID + 写方法 -> 400（空值守卫）
             await expect(
-                lambda: _resolve_current_shop_id(
-                    make_request(None, token_b, method="POST"), session, require_for_write=True),
+                lambda: get_current_shop_id(
+                    make_request(None, token_b, method="POST"), session),
                 400, "写方法缺 X-Shop-ID", results,
             )
             # 8. 缺 X-Shop-ID + 读方法 -> 返回 None（端点回空列表）
             await expect(
-                lambda: _resolve_current_shop_id(
-                    make_request(None, token_b, method="GET"), session, require_for_write=True),
+                lambda: get_current_shop_id(
+                    make_request(None, token_b, method="GET"), session),
                 None, "读方法缺 X-Shop-ID（应返回 None）", results, expect_value=None,
             )
             # 9. 纯空白头 + 写方法 -> 400（不能被当成合法店铺 ID）
             await expect(
-                lambda: _resolve_current_shop_id(
-                    make_request("   ", token_b, method="POST"), session, require_for_write=True),
+                lambda: get_current_shop_id(
+                    make_request("   ", token_b, method="POST"), session),
                 400, "写方法 + 纯空白 X-Shop-ID", results,
             )
-            # 10. require_for_write=False（对话/导航入口）缺头 -> 返回 None，不 400
+            # 10. get_current_shop_id_optional（对话/导航入口）缺头 -> 返回 None，不 400
             await expect(
-                lambda: _resolve_current_shop_id(
-                    make_request(None, token_b, method="POST"), session, require_for_write=False),
+                lambda: get_current_shop_id_optional(
+                    make_request(None, token_b, method="POST"), session),
                 None, "对话入口缺头（不应 400）", results, expect_value=None,
             )
         else:
             print("用例：")
             await expect(
-                lambda: _resolve_current_shop_id(
-                    make_request(store_b.id, None), session, require_for_write=True),
+                lambda: get_current_shop_id(
+                    make_request(store_b.id, None), session),
                 200, "演示模式：无 token 也放行（保证演示可用）", results,
             )
             await expect(
-                lambda: _resolve_current_shop_id(
-                    make_request(None, None, method="POST"), session, require_for_write=True),
+                lambda: get_current_shop_id(
+                    make_request(None, None, method="POST"), session),
                 400, "演示模式：写方法缺头仍 400（空值守卫与身份无关）", results,
             )
 
