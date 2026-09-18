@@ -27,6 +27,7 @@ import pytest
 
 MEM_DIR = pathlib.Path(__file__).resolve().parents[2] / ".workbuddy" / "memory"
 GATE = MEM_DIR / "check_budget.py"
+ALARM = MEM_DIR / "check_inject_alarm.py"   # 宿主「超限」告警分诊（第 134 轮）
 
 pytestmark = pytest.mark.skipif(
     not GATE.is_file(),
@@ -79,3 +80,30 @@ def test_index_and_shards_match_both_ways():
     linked = set(re.findall(r"\(DETAILS/([^)]+\.md)\)", idx))
     dangling = sorted(n for n in linked if not (MEM_DIR / "DETAILS" / n).is_file())
     assert not dangling, "INDEX.md 指向不存在的分片（= 指向空气）：%s" % dangling
+
+
+def test_inject_alarm_script_matches_hot_line():
+    """★ 反回归：`check_inject_alarm.py` 的计数锚点必须仍能匹配热区那一行。
+
+    第 134 轮实测的坑：热区措辞从「（已 N 次）」改成「（已 N 次；零动作，…）」后，
+    脚本里的 `COUNT_RE = （已 (\d+) 次）` **静默失配** —— `--record` 会直接报
+    「找不到计数点」而拒绝工作。改热区措辞的人不会想到去看脚本
+    ⇒ 必须由门禁来说这一声「不」（同源于「注释承诺型假门禁」）。
+
+    ★ 反向注入已验：把 COUNT_RE 改回带右括号的旧式 ⇒ 本条断言变红。
+    """
+    if not ALARM.is_file():
+        pytest.skip("本机无 check_inject_alarm.py（.workbuddy 被 gitignore）")
+    spec = importlib.util.spec_from_file_location("inject_alarm", ALARM)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    assert mod.hot_count() is not None, (
+        "COUNT_RE 匹配不到热区的「（已 N 次」计数行 —— 热区措辞与脚本失配，"
+        "`--record` 会拒绝工作"
+    )
+    assert isinstance(mod.CAP_BYTES, int) and mod.CAP_BYTES > 0, "CAP_BYTES 必须是正整数常量"
+
+    verdict, hot, margin = mod.verdict()
+    assert verdict in ("MISREPORT", "REAL"), "verdict 只能两值之一"
+    assert margin == mod.CAP_BYTES - hot, "余量口径必须是 cap - 磁盘字节"
