@@ -283,13 +283,22 @@ class ListingGeneratorAgent(BaseAgent):
             logger.warning(f"[listing_generator] LLM generate failed: {e}")
         return None
 
-    async def invoke(self, query: str, context: Dict[str, Any] = None) -> AgentResponse:
+    async def invoke(
+        self,
+        query: str,
+        context: Dict[str, Any] = None,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> AgentResponse:
         """
         调用 Agent 处理请求
 
         Args:
             query: 用户查询或指令
             context: 额外上下文（产品信息、现有 Listing 等）
+            session_id: 会话 ID。非空时透传给路由子层当 checkpointer 的
+                thread_id ⇒ 同一会话的第二轮能看见第一轮（服务端多轮记忆）；
+                为空则**不留记忆**（不会拿默认值兜底，避免跨用户串记忆）。
 
         Returns:
             AgentResponse 包含生成的 Listing 或分析结果
@@ -299,7 +308,7 @@ class ListingGeneratorAgent(BaseAgent):
         """
         router = self._get_router()
         if router is not None:
-            result = await self._route_via_tools(query, context)
+            result = await self._route_via_tools(query, context, session_id, user_id)
             if result is not None:
                 return result
         return await self._process_query(query, context)
@@ -319,19 +328,33 @@ class ListingGeneratorAgent(BaseAgent):
             return None
         try:
             from .tools import listing_tools
+
+            from core.checkpoint import get_checkpointer
+
             # 组合一个 BaseAgent 作为路由层，复用其 bind_tools + LangGraph 图。
+            # ★ 2026-09-17：**子层也要绑 checkpointer**，否则主 Agent 传了
+            #   session_id 也无处可持久化（`interrupt()` 更是直接抛）。
+            #   `checkpoint_ns="listing"` 与 secretary / 选品分析师隔离。
             return BaseAgent(
                 agent_name=f"{self.agent_name}_router",
                 system_prompt=self.system_prompt,
                 tools=listing_tools,
                 max_iterations=4,
                 metadata={"role": "sub_agent_router"},
+                checkpointer=get_checkpointer(),
+                checkpoint_ns="listing",
             )
         except Exception as e:
             logger.warning(f"[listing_generator] router build failed: {e}")
             return None
 
-    async def _route_via_tools(self, query: str, context: Dict[str, Any] = None) -> Optional[AgentResponse]:
+    async def _route_via_tools(
+        self,
+        query: str,
+        context: Dict[str, Any] = None,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[AgentResponse]:
         """工具化路由：LLM 自主选工具执行，把工具结果包装回 AgentResponse。
 
         返回 None 表示路由失败，调用方回退 _process_query。
@@ -351,9 +374,13 @@ class ListingGeneratorAgent(BaseAgent):
                 except (TypeError, ValueError):
                     prompt = f"{query}\n\n[上下文键] {list(context.keys())}"
 
-            state = await self._router.graph.ainvoke(
+            # ★ 2026-09-17：改走统一入口。旧键 `f"listing-{id(self)}"` 拿的是
+            #   **对象内存地址** —— 进程一重启就换键，等于永远命中不到上一轮的
+            #   checkpoint（现象："记忆看着有一轮、重启就没了"）。
+            state = await self._router.run_session(
                 {"messages": [HumanMessage(content=prompt)]},
-                config={"configurable": {"thread_id": f"listing-{id(self)}"}},
+                session_id=session_id,
+                user_id=user_id,
             )
 
             messages = state.get("messages", [])

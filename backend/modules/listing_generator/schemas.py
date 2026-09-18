@@ -86,6 +86,9 @@ class ListingChatRequest(BaseModel):
     """自然语言对话请求"""
     message: str = Field(..., description="用户消息")
     context: Optional[dict] = Field(None, description="上下文信息（可选）")
+    session_id: Optional[str] = Field(
+        None, description="会话 ID（非空 ⇒ 服务端多轮记忆；空 ⇒ 不留记忆）"
+    )
 
 
 # ====== 响应模型 ======

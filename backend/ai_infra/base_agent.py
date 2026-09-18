@@ -57,7 +57,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, AsyncIterable, Dict, List, Optional, Union
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -135,6 +135,10 @@ class BaseAgent:
     ENABLE_LLM: bool = True              # 总开关（关闭则全部走降级）
     ENABLE_RAG: bool = False             # 是否启用 RAG（通用检索增强，业务按需开启）
     FALLBACK_TO_MOCK: bool = True        # LLM 失败时是否降级
+    #: checkpointer 的线程命名空间（`thread_id` 前缀）。
+    #: 空串 ⇒ `thread_id` 就是裸 `session_id`（`secretary` 的历史口径，勿改）；
+    #: 非空 ⇒ `f"{ns}:{session_id}"`，用于隔离不同 Agent 的会话记忆。
+    CHECKPOINT_NAMESPACE: str = ""
 
     def __init__(
         self,
@@ -146,6 +150,7 @@ class BaseAgent:
         max_iterations: int = 10,
         metadata: Optional[dict] = None,
         checkpointer: Optional[AsyncPostgresSaver] = None,
+        checkpoint_ns: Optional[str] = None,
     ):
         """
         初始化 Agent
@@ -162,6 +167,9 @@ class BaseAgent:
             max_iterations: 最大推理迭代次数（防止死循环）
             metadata: 额外元数据
             checkpointer: LangGraph checkpointer（PostgreSQL 持久化，None 则内存态）
+            checkpoint_ns: checkpointer 的线程命名空间（`thread_id` 前缀）。
+                缺省取类属性 `CHECKPOINT_NAMESPACE`；空串 ⇒ 直接用 `session_id`
+                （`secretary` 的历史口径，勿改）。
         """
         self.agent_name = agent_name or self.__class__.__name__
         self.system_prompt = system_prompt
@@ -175,6 +183,11 @@ class BaseAgent:
         metadata = dict(metadata) if metadata else {}
         self.hitl_tool_names = set(hitl_tools)
         self.checkpointer = checkpointer
+        # ★ 线程命名空间：见 `resolve_thread_id()`。子类可用类属性声明，
+        #   组合式（router 子层）用构造参数传。
+        self.checkpoint_namespace = (
+            checkpoint_ns if checkpoint_ns is not None else self.CHECKPOINT_NAMESPACE
+        )
         self._metadata_extra = metadata
 
         # ---- LLM 槽位 ①：LangChain 模型（图内核）----
@@ -207,6 +220,8 @@ class BaseAgent:
         #   没有理由为它们付 ToolNode/StateGraph 的构建成本。
         #   需要图的一方（secretary、router 层）首次访问 `self.graph` 时构建。
         self._graph: Optional[Any] = None
+        # 不带 checkpointer 的图（"无会话 ⇒ 不留记忆"用它；懒构建 + 缓存）
+        self._graph_memoryless: Optional[Any] = None
 
         # 前向兼容：当前 MRO 的下一环是 object（无副作用）；保留此调用可确保
         # 未来若引入 mixin，基类初始化链不会断在中间。
@@ -594,10 +609,10 @@ class BaseAgent:
     def graph(self):
         """LangGraph 工作流（懒构建，首次访问时编译）。"""
         if self._graph is None:
-            self._graph = self._build_graph()
+            self._graph = self._build_graph(self.checkpointer)
         return self._graph
 
-    def _build_graph(self) -> StateGraph:
+    def _build_graph(self, checkpointer: Optional[Any] = None) -> StateGraph:
         """
         构建 LangGraph 工作流
 
@@ -627,7 +642,11 @@ class BaseAgent:
         workflow.add_edge("respond", END)
 
         # 编译图（checkpointer 在编译期绑定，非运行时 config 传入）
-        return workflow.compile(checkpointer=self.checkpointer)
+        # ★ 形参默认 `None` = **不带记忆**编译；要记忆的一方由调用方显式传
+        #   `self.checkpointer`（见 `graph` 属性 / `_memoryless_graph()`）。
+        #   为什么不在函数体里回退到 `self.checkpointer`：那样就**编译不出**
+        #   一张"不带记忆"的图，而"无会话就不留记忆"正需要它。
+        return workflow.compile(checkpointer=checkpointer)
 
     # ====== 节点函数 ======
 
@@ -842,6 +861,134 @@ class BaseAgent:
         # 如果有工具调用，继续执行
         return "tool_node"
 
+    # ====== 会话记忆：统一入口（session_id → thread_id）======
+    #
+    # ★★★ 本仓唯一的 thread_id 生成点。此前散在 3 处、各写一份：
+    #     `secretary/agent.py`       → `session_id or "secretary-default"`
+    #     `listing_generator`        → `f"listing-{id(self)}"`            ← 内存地址
+    #     `product_research`         → `f"product-research-{context_id or id(self)}"`
+    # 后两处拿**对象内存地址**当 thread_id ⇒ 进程一重启就换键，于是永远命中不到
+    # 上一轮的 checkpoint，表现为「记忆看着有一轮、重启就没了」。
+    #
+    # ★ 为什么名字不是 `invoke()`：见文件末「关于『统一调用入口』」。本组方法
+    #   **原样返回 state / 事件流**、不预设返回结构 ⇒ 不与业务 `invoke()` 的
+    #   `AgentResponse` 契约冲突（防回流门禁只拦 `invoke`/`stream`/`stream_chat`
+    #   这三个**同名**方法，本组名字不撞）。
+
+    def attach_checkpointer(self, checkpointer: Optional[AsyncPostgresSaver]) -> None:
+        """
+        绑定 / 更换 checkpointer（并丢弃已编译的图）。
+
+        ★ 必须丢图重编译：`workflow.compile(checkpointer=...)` 是**编译期**绑定。
+          编译完成后再改 `self.checkpointer`，对已编译的图**没有任何影响** ——
+          不报错、只是不生效，属于典型静默失效。
+        """
+        self.checkpointer = checkpointer
+        self._graph = None
+        self._graph_memoryless = None
+
+    def resolve_thread_id(
+        self, session_id: str, user_id: Optional[str] = None
+    ) -> str:
+        """
+        ★ 唯一实现：会话 `session_id` → checkpointer 的 `thread_id`。
+
+        规则：`thread_id = ":".join(p for p in (ns, user_id, session_id) if p)`
+        —— 空段直接跳过。所以 `ns` 为空时是 `user_id:session_id`，
+        `user_id` 为空时是 `ns:session_id`，两者都空就是裸 `session_id`
+        （`secretary` 的历史口径，见下）。
+
+        ★ 为什么要命名空间：LangGraph 的 checkpoint 按 `thread_id` 分片，
+          **不看图的身份**，而本仓所有图共用同一个 `AgentState` schema。
+          两个 Agent 拿到同一个 `session_id` ⇒ 写进同一条消息历史 ——
+          用户与 listing 的对话会出现在 secretary 的上下文里。schema 相同
+          所以不报错，只是**静默串味**。前缀把两者隔开。
+
+        ★ 为什么 `secretary` 的 `ns` 是空串（`CHECKPOINT_NAMESPACE = ""`）：
+          它从一开始就用裸 `session_id` 当 thread_id，本地库里已有落盘记忆。
+          改键会让那些记忆**全部失联**（不报错，只是"历史突然没了"）
+          ⇒ 保持原口径、不动既有数据；新接的 Agent 一律带前缀。
+
+        ★ 为什么还要带 `user_id`（第 131 轮）：
+          命名空间只隔开**不同 Agent**，隔不开**同一 Agent 的不同用户**。
+          会话 ID 可能由客户端提供、也可能由服务端颁发，两条路都可能撞上
+          同一个串；一旦相同，两个用户的 checkpoint 就落在同一个 thread 上，
+          互相看得见对方的消息、且不报任何错。把 `user_id` 拼进键 =
+          **纵深防御**：即使上层归属校验被绕过，两人的键在物理上不可能相等。
+          ⚠️ 这是**公开契约变更**：键里加了 `user_id`，此前已落库的
+          checkpoint 行会全部失联（不报错，只是"历史突然没了"）。
+        """
+        ns = self.checkpoint_namespace
+        return ":".join(p for p in (ns, user_id, session_id) if p)
+
+    def graph_for_session(
+        self, session_id: Optional[str], user_id: Optional[str] = None
+    ):
+        """
+        统一入口（底层）：按**有无会话**返回 `(graph, config)`。
+
+        · 有 `session_id` **且有** `user_id` ⇒ 带记忆：`self.graph` +
+          `{"configurable": {"thread_id": ...}}`
+        · 缺任一个 ⇒ **不留记忆**：走不带 checkpointer 的图，且**不伪造 thread_id**
+
+        ★ 为什么"没有会话"不等于"用一个默认 thread_id 兜底"：
+          默认 thread_id 是**全进程共享**的 —— 所有匿名 / 无会话请求会挤进同一段
+          记忆、互相看到对方的消息，且没有任何报错。原则与
+          `core.auth.accounts.filter_accessible_stores` 同一条：
+          **没有身份 ⇒ 没有数据；没有会话 ⇒ 不留记忆。**
+
+        ★ 第 131 轮补上后半句的「身份」条件：只有 `session_id` 时，
+          `thread_id` 仍是「一个与用户无关的串」—— 只要两个用户拿到同一个
+          串，记忆就串了。会话与身份**缺一不可**：拿不到身份就如同拿不到
+          会话 —— 不留记忆，而不是留到一个"公共"记忆里。
+        """
+        if session_id and user_id:
+            return self.graph, {
+                "configurable": {
+                    "thread_id": self.resolve_thread_id(session_id, user_id)
+                }
+            }
+        return self._memoryless_graph(), {}
+
+    def _memoryless_graph(self):
+        """不带 checkpointer 的图（懒构建 + 缓存）。"""
+        if self.checkpointer is None:
+            return self.graph   # 本来就没绑 ⇒ 是同一张图，无需重复编译
+        if self._graph_memoryless is None:
+            self._graph_memoryless = self._build_graph(checkpointer=None)
+        return self._graph_memoryless
+
+    async def run_session(
+        self,
+        state: dict,
+        *,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> dict:
+        """
+        ★ 统一入口（一次性）：驱动本 Agent 的图，返回**原始 state**。
+
+        ★ 与业务 `invoke()` 的分工：本方法**不组装业务响应**，原样返回
+          `{"messages": [...]}`，由调用方按自己的契约解析 —— 这正是 `self.graph`
+           的既有用法，只是补上了此前缺的两条语义：`session_id + user_id →
+          thread_id`、以及「缺任一个就不留记忆」。
+        """
+        graph, cfg = self.graph_for_session(session_id, user_id)
+        return await graph.ainvoke(state, config=cfg)
+
+    async def stream_session(
+        self,
+        state: dict,
+        *,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        version: str = "v2",
+    ) -> AsyncIterable:
+        """★ 统一入口（流式）：同 `run_session`，产出 `astream_events` 事件流。"""
+        graph, cfg = self.graph_for_session(session_id, user_id)
+        async for ev in graph.astream_events(state, config=cfg, version=version):
+            yield ev
+
     # ====== 关于「统一调用入口」 ======
     #
     # ★ 本类**故意不提供** `invoke()` / `stream()`。
@@ -884,6 +1031,13 @@ class BaseAgent:
     #
     # 防回流门禁：`tests/test_infra_layering.py` 的
     #             `test_base_agent_exposes_no_conflicting_entry`。
+    #
+    # ★ 2026-09-17 补充：本类新增了**会话记忆统一入口** —— `run_session()` /
+    #   `stream_session()` / `graph_for_session()` / `resolve_thread_id()`（见上）。
+    #   它们与 `invoke()` 不冲突的理由是**返回原始 state、不预设结构**，
+    #   而 `invoke()` 恰好会在"返回什么"上与业务契约打架。两者不是同一件事：
+    #     · 驱动图的**机制**（thread_id / checkpointer / 无会话不留记忆）⇒ 归基类
+    #     · 业务响应的**结构**（AgentResponse / 结果卡形状）⇒ 归业务模块
 
 
 __all__ = ["BaseAgent", "LLMCallResult", "AgentState"]

@@ -211,7 +211,18 @@ class ListingGeneratorService:
             },
         )
 
-        seo_data = result.data.get("seo_score", {})
+        # ★ 2026-09-17 修：`agent.invoke()` 在 LLM 不可用 / 路由未产出结构化数据时
+        #   返回 `AgentResponse(data=None)`；原写法 `result.data.get(...)` 直接
+        #   AttributeError ⇒ 被路由层包成 500，报错文案是
+        #   "'NoneType' object has no attribute 'get'"，**指向错方向**。
+        #   这里改为显式报错，并说明真实原因（不编造全 0 分数冒充分析结果）。
+        payload = result.data or {}
+        seo_data = payload.get("seo_score") or {}
+        if not isinstance(seo_data, dict) or not seo_data:
+            raise ValueError(
+                "SEO 分析未产出结构化结果（Agent 路由未返回 seo_score）。"
+                "常见原因：LLM 不可用或未按工具协议返回，请检查 LLM 配置后重试。"
+            )
 
         # 计算等级
         overall = seo_data.get("overall_score", 0)
@@ -252,9 +263,17 @@ class ListingGeneratorService:
             testing_recommendations=recommendations,
         )
 
-    async def chat(self, message: str, context: dict = None) -> dict:
-        """自然语言对话入口"""
-        result = await self.agent.invoke(message, context=context)
+    async def chat(
+        self,
+        message: str,
+        context: dict = None,
+        session_id: str = None,
+        user_id: str = None,
+    ) -> dict:
+        """自然语言对话入口（session_id 非空 ⇒ 服务端多轮记忆）"""
+        result = await self.agent.invoke(
+            message, context=context, session_id=session_id, user_id=user_id
+        )
         return {
             "response": result.content,
             "data": result.data,

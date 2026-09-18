@@ -19,7 +19,10 @@ GET  /api/v1/listing/capabilities       - Agent 能力说明
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from core.metering.usage_tracker import meter_agent_chat
-from typing import List
+from typing import List, Optional
+
+from core.auth.dependencies import require_auth_if_enabled
+from core.identity.models import User
 
 from ai_infra.sse import sse_event_stream
 
@@ -194,6 +197,7 @@ async def create_ab_test(request: ABTestRequest):
 async def chat_with_listing_agent(
     request: ListingChatRequest,
     _meter=Depends(meter_agent_chat),
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
 ):
     """
     与 Listing 优化专家进行自然语言对话
@@ -205,7 +209,12 @@ async def chat_with_listing_agent(
     - 请求案例参考
     """
     try:
-        result = await service.chat(request.message, request.context)
+        result = await service.chat(
+            request.message,
+            request.context,
+            request.session_id,
+            user_id=current_user.id if current_user else None,
+        )
         return ApiResponse(data=result, message="OK")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

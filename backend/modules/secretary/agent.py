@@ -111,7 +111,13 @@ def get_secretary_agent(shop_id: Optional[str] = None) -> SecretaryAgent:
     return SecretaryAgent(shop_id=shop_id, checkpointer=cp)
 
 
-async def route(query: str, shop_id: Optional[str] = None, history: Optional[list[dict]] = None, session_id: Optional[str] = None) -> dict:
+async def route(
+    query: str,
+    shop_id: Optional[str] = None,
+    history: Optional[list[dict]] = None,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> dict:
     """一次路由调用，返回结构化结果。
 
     直接执行图并捕获消息流，从中提取：
@@ -127,8 +133,12 @@ async def route(query: str, shop_id: Optional[str] = None, history: Optional[lis
         history: 本会话的历史消息（[{role, content}]，role ∈ user/assistant），
             用于让 LLM 感知多轮上下文（如「再切换」能理解上一轮在说主题）。
             历史里**不应**包含当前 query（前端取的是「当前消息之前」的最近 N 条）。
-        session_id: 会话 ID。非空时作为 checkpointer 的 thread_id，实现跨轮
-            持久化（决策层 C）；同时优先于前端显式传的 history。
+        session_id: 会话 ID。与 `user_id` **同时**非空时才作为 checkpointer
+            的 thread_id，实现跨轮持久化（决策层 C）；同时优先于前端显式传的
+            history。
+        user_id: **服务端身份**（`current_user.id`），不接受任何自报字段。
+            与会话同样必需 —— 只有会话没有身份时，两个用户撞上同一个
+            session_id 就会共享记忆（见 `BaseAgent.graph_for_session`）。
 
     Returns:
         {"reply": str, "actions": [dict], "action": dict|None, "tool_calls": [str],
@@ -161,8 +171,21 @@ async def route(query: str, shop_id: Optional[str] = None, history: Optional[lis
     # 决策层 C：session_id 作为 checkpointer 的 thread_id，实现跨轮持久化。
     # 关键语义：checkpointer 会自动把同一 thread_id 的历史消息注入上下文，
     # 因此有 session_id 时**不应再手动拼 history**（否则历史重复两份）。
-    thread_id = session_id or "secretary-default"
-    use_checkpoint = session_id is not None and agent.checkpointer is not None
+    #
+    # ★ 2026-09-17：thread_id 的生成 + 「没有会话怎么办」收进 BaseAgent 唯一实现
+    #   （`graph_for_session()` / `resolve_thread_id()`）。改前这里有两个隐患：
+    #     ① 无 session_id 时仍把 `"secretary-default"` 填进 config，而本图是**绑了
+    #        checkpointer 的** ⇒ 所有无会话请求（含匿名）共用同一段消息历史，
+    #        互相看得见对方说过什么（跨用户串记忆，且不报任何错）。
+    #     ② 那个默认值是**全进程共享的常量**，不是"每个人一个"。
+    #   `graph_for_session(None, None)` 改为返回**不带 checkpointer 的图 +
+    #   空 config** ⇒ 没有会话就真的不留记忆（原则同 accounts：没有身份 ⇒
+    #   没有数据）。
+    #     ③ 第 131 轮再补一条：**有会话还不够，必须有身份** —— thread_id 里
+    #        不带 user_id 时，两个用户拿到同一个 session_id 就会共享记忆。
+    use_checkpoint = (
+        bool(session_id) and bool(user_id) and agent.checkpointer is not None
+    )
 
     # 拼接输入消息：
     # - 有 checkpointer：只传当前 query，历史由 checkpointer 自动恢复
@@ -180,10 +203,8 @@ async def route(query: str, shop_id: Optional[str] = None, history: Optional[lis
                 messages.append(HumanMessage(content=content))
     messages.append(HumanMessage(content=query))
 
-    state = await agent.graph.ainvoke(
-        {"messages": messages},
-        config={"configurable": {"thread_id": thread_id}},
-    )
+    _graph, _cfg = agent.graph_for_session(session_id, user_id)
+    state = await _graph.ainvoke({"messages": messages}, config=_cfg)
 
     messages = state.get("messages", [])
 
