@@ -58,6 +58,8 @@ from modules.product_research import prompts as _prompts  # noqa: F401
 # 本类继承 BaseAgent 只为拿 LLM 原语；router 是本类内部一个独立的 BaseAgent 实例，
 # 让「分析逻辑」与「工具编排」各归其位（而非让本类自己成为一张图）。
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+# ★ 第 131 轮 item2-B：resume 要把审批决策喂回被中断的图，必须用 `Command(resume=...)`
+from langgraph.types import Command
 
 
 # ====== 数据模型 ======
@@ -323,6 +325,7 @@ class ProductResearchAgent(BaseAgent):
         query: str,
         context_id: str = None,
         shop_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> AgentResponse:
         """
         同步调用 Agent（简单任务）
@@ -358,13 +361,19 @@ class ProductResearchAgent(BaseAgent):
 
         # 2. 关键词表优先
         intent = await self._classify_intent(query)
+        # ★★★ 第 131 轮：**有副作用的意图必须走带 HITL 审批的工具路径**，
+        #   不能由关键词表直写 —— 否则「说一句入库」是零审批直写，
+        #   而「LLM 判为入库」要审批（同一操作两套规矩）。详见
+        #   `_route_gated_intent` 的 docstring。
+        if intent in self._APPROVAL_GATED_INTENTS:
+            return await self._route_gated_intent(query, context_id, user_id, shop_id)
         if intent != "general":
             return await self._process_query(query, context_id, intent, shop_id)
 
         # 3. 未命中 → 工具路由兜底（关键词表从「唯一门」降为「加速器」）
         router = self._get_router()
         if router is not None:
-            result = await self._route_via_tools(query, context_id)
+            result = await self._route_via_tools(query, context_id, user_id)
             if result is not None:
                 return result
 
@@ -383,16 +392,367 @@ class ProductResearchAgent(BaseAgent):
             return None
         try:
             from .tools import product_research_tools
+
+            from core.checkpoint import get_checkpointer
+
+            # ★ 2026-09-17：**子层也要绑 checkpointer** —— 主 Agent 传了
+            #   session_id 也没有任何东西可被持久化（`interrupt()` 更是直接抛）。
+            #   `checkpoint_ns` 把本 Agent 的会话与 secretary 隔开，避免同一个
+            #   session_id 挤进同一段消息历史（见 BaseAgent.resolve_thread_id）。
             return BaseAgent(
                 agent_name=f"{self.agent_name}_router",
                 system_prompt=self.system_prompt,
                 tools=product_research_tools,
                 max_iterations=4,
                 metadata={"role": "sub_agent_router"},
+                checkpointer=get_checkpointer(),
+                checkpoint_ns="product_research",
+                # ★★★ 第 131 轮：`save_candidate` 是全仓**唯一**「有外部副作用
+                #   （真写 PG：`candidates/service.create_candidate`）+ 真被生产
+                #   代码装配」的 agent 工具 ⇒ 它是 HITL 的首选、也是唯一目标。
+                #   （全仓 8 个工具注册表 / 41 个工具：`create_ticket` 零持久化、
+                #    `track_batch_asins` 只读内存 mock，且两者所在注册表的
+                #    **生产装配点数都是 0**，见 probe `out-r131-a2-toolmatrix.txt`。）
+                #   为什么必须有上面那两行：`interrupt()` 在**没有 checkpointer 的
+                #   图上直接抛**，不是「降级为不审批」⇒ HITL 与 checkpointer 是
+                #   **同一个前提**。`checkpoint_ns` 再把本 Agent 的会话与
+                #   secretary 隔开（见 `BaseAgent.resolve_thread_id`）。
+                hitl_tools=["save_candidate"],
             )
         except Exception as e:
             logger.warning(f"[product_research] router build failed: {e}")
             return None
+
+    # ====== HITL 人工审批（第 131 轮 item2-B）======
+
+    # ★★★ 有副作用的意图名单：**只能**经带 HITL 审批的工具路径执行。
+    #
+    # 为什么必须收在**一处**：`invoke()` 与 `stream_chat()` 是两条独立入口，
+    # 各自维护一份名单必然漂移 —— 而这里漂移的后果是「同一句话走流式不审批、
+    # 走非流式审批」这种**按请求形式决定要不要审批**的荒谬结果。
+    #
+    # 为什么「入库」会上这个名单：它真的写 PG（`candidates/service.create_candidate`），
+    # 而 `_classify_intent()` 的 `save_keywords` 里含「选品库 / 入库」等高频词 ——
+    # 修之前，说一句「加进选品库」就是**零审批直写**。
+    _APPROVAL_GATED_INTENTS = frozenset({"save_candidate"})
+
+    # 审批通道不可用时的统一拒绝文案（两个入口共用，避免「同一件事两种说法」）
+    _APPROVAL_CHANNEL_DOWN_MSG = (
+        "入库是写操作，需要人工确认后才能执行；但审批通道当前不可用，"
+        "这次**没有写入**。请稍后重试。"
+    )
+
+    async def _route_gated_intent(
+        self,
+        query: str,
+        context_id: Optional[str],
+        user_id: Optional[str],
+        shop_id: Optional[str] = None,
+    ) -> AgentResponse:
+        """
+        把「有副作用」的意图送进**带 HITL 审批的**工具路径（非流式入口）。
+
+        ★ 为什么不让关键词命中的入库直接 `_save_candidate()`：
+          那样「说一句『加进选品库』」= 零审批直写；而同一件事若由 LLM 判定
+          入库 = 要审批 ⇒ **同一个操作两套规矩**，且被绕过的那条恰好是最高频的
+          表达（`save_keywords` 里就含「入库」）。审批闸门等于形同虚设。
+        ★ 为什么审批通道不可用时**拒绝写入**、而不是降级直写：
+          与 `core.auth.accounts.filter_accessible_stores` 同一条原则 ——
+          「没有身份 ⇒ 没有数据」。这里是「**没有审批通道 ⇒ 不执行有副作用的
+          操作**」。降级直写意味着「基础设施一抖，审批就自动失效」，
+          比拒绝危险得多。
+        """
+        # ★★ 缺店铺 ⇒ **立刻**给可读原因、零 DB 往返。
+        #   为什么提前到入口，而不是复用 `_write_candidates` 的硬拒绝：
+        #   此处意图**已确定为写**，不存在「只读意图被误伤」的顾虑
+        #   （`chat` 之所以用豁免版依赖，正是为了不误伤只读意图）；
+        #   而等到审批走完再报「没选店铺」，等于让用户白点一次批准，
+        #   失败还被推迟到看不见的地方。与写路径同一条原则，只是提前。
+        #   ★ 两条路径必须**逐字同源**：同一句话在流式/非流式上要说同一件事。
+        if not (shop_id or "").strip():
+            return AgentResponse(
+                content=(
+                    "入库需要有目标店铺，但当前没有选择店铺，这次**没有写入**。"
+                    "请先在界面左上角选一个店铺，再说一次「把……加进选品库」。"
+                ),
+                data={
+                    "type": "candidate_save_failed",
+                    "error": "no_shop_selected",
+                },
+                display_type="text",
+            )
+
+        if self._get_router() is not None:
+            result = await self._route_via_tools(query, context_id, user_id)
+            # ★★★ 「走了审批闸门」的判据是**拿到结构化结果**：
+            #   中断态 pending 带 `data.type == "pending_approval"`，
+            #   工具结果带自己的 type。两者都非 None。
+            #   纯文本（`data is None`）意味着**目标工具根本没被调用** ——
+            #   LLM 没选它、或 LLM 不可用 —— 这一步压根没到闸门前。
+            #   把它当答案返回，用户会以为入库已完成，实际什么都没发生
+            #   （实测：LLM 离线时回一句泛泛闲聊，入库静默消失）。
+            #   fail-closed：说不清有没有执行，就明确说「这次没有写入」。
+            if result is not None and result.data is not None:
+                return result
+        return AgentResponse(
+            content=self._APPROVAL_CHANNEL_DOWN_MSG,
+            data={
+                "type": "candidate_save_failed",
+                "error": "approval_channel_unavailable",
+            },
+            display_type="text",
+        )
+
+    async def _stream_gated_intent(
+        self,
+        query: str,
+        context_id: Optional[str],
+        user_id: Optional[str],
+        shop_id: Optional[str] = None,
+    ) -> AsyncIterable:
+        """有副作用意图的**流式**入口：同 `_route_gated_intent`，理由见其 docstring。"""
+        if not (shop_id or "").strip():
+            # 与非流式 `_route_gated_intent` 的文案**逐字相同**：两条路径说同一件事
+            yield (
+                "入库需要有目标店铺，但当前没有选择店铺，这次**没有写入**。"
+                "请先在界面左上角选一个店铺，再说一次「把……加进选品库」。"
+            )
+            return
+        if self._get_router() is None:
+            yield self._APPROVAL_CHANNEL_DOWN_MSG
+            return
+        async for chunk in self._stream_via_tools(
+            query, context_id, user_id, gated=True
+        ):
+            yield chunk
+
+
+    async def _detect_pending_approval(
+        self, context_id: Optional[str], user_id: Optional[str] = None
+    ) -> Optional[AgentResponse]:
+        """
+        判断「这张图此刻是不是停在一次人工审批上」；是则渲染成 `pending_approval`。
+
+        ★ 为什么走 `aget_state()` 而不是读 `ainvoke` 的返回值：
+          流式与非流式都要判同一件事。非流式的 state 里有 `__interrupt__` 可读，
+          但**流式没有**（`astream_events` 只给事件、不给最终 state）。
+          两边各写一份判定，就会长出「非流式弹卡、流式静默吞掉」的不一致。
+          `aget_state()` 对两条路径**语义完全相同**，是这里唯一正确的口径。
+
+        ★ 为什么必须先确认 `context_id and user_id`：两者缺任一时
+          `graph_for_session()` 返回的是**不带 checkpointer 的图**，
+          对它调 `aget_state()` 会直接抛（连接层报 checkpointer 未设置）。
+        """
+        if not (context_id and user_id):
+            return None
+
+        router = self._get_router()
+        if router is None or router.checkpointer is None:
+            return None
+
+        try:
+            graph, cfg = router.graph_for_session(context_id, user_id)
+            snapshot = await graph.aget_state(cfg)
+        except Exception as e:  # noqa: BLE001 —— 探测失败不该让整轮对话崩
+            logger.warning(f"[product_research] pending-approval probe failed: {e}")
+            return None
+
+        for task in (getattr(snapshot, "tasks", None) or []):
+            for it in (getattr(task, "interrupts", None) or []):
+                return self._pending_approval_from_interrupt(it, context_id)
+        return None
+
+    @staticmethod
+    def _pending_approval_from_interrupt(
+        interrupt_obj, context_id: Optional[str]
+    ) -> AgentResponse:
+        """
+        把 LangGraph 的 `Interrupt` 渲染成前端可直接展示的审批请求。
+
+        ★ 刻意**不回传 `thread_id`**：前端只要把同一个 `session_id` 交回来，
+          服务端会按**与首轮完全相同的口径**重算 thread_id
+          （`resolve_thread_id`）。把 thread_id 交给客户端，等于把
+          「这条待审批操作归谁」交给请求方 —— 而 thread_id 里就含 user_id。
+        """
+        req = getattr(interrupt_obj, "value", None) or {}
+        action = (req.get("action_request") or {}) if isinstance(req, dict) else {}
+        tool_name = action.get("action") or "未知操作"
+        return AgentResponse(
+            content=(
+                f"这一步需要你确认：准备执行「{tool_name}」，"
+                "在批准之前它不会被真正执行。请选择「批准」或「拒绝」。"
+            ),
+            data={
+                "type": "pending_approval",
+                "approval": {
+                    "interrupt_id": getattr(interrupt_obj, "id", None),
+                    "action": tool_name,
+                    "args": action.get("args") or {},
+                    "require_reason": bool(action.get("require_reason")),
+                    "timeout_seconds": action.get("timeout"),
+                    "description": req.get("description") or "",
+                },
+                "session_id": context_id,
+            },
+            display_type="pending_approval",
+        )
+
+    @staticmethod
+    def _build_resume_payload(
+        decision: str,
+        *,
+        reason: Optional[str] = None,
+        args: Optional[dict] = None,
+        feedback: Optional[str] = None,
+    ) -> dict:
+        """
+        把外部的「决策」翻译成 `hitl_decorator.call_tool_with_hitl` 认得的载荷。
+
+        ★ 契约在包装器那一侧（`response.get("type")` /
+          `response.get("args", {}).get(...)`）。两边结构必须逐字段对齐 ——
+          结构对不上的表现是「点了批准但什么都没发生」（`type` 认不出 ⇒
+          落到 else 分支抛 `不支持的 HITL 响应类型`），而不是任何显式报错。
+        """
+        d = (decision or "").strip().lower()
+        if d == "accept":
+            return {"type": "accept", "args": {}}
+        if d == "reject":
+            return {"type": "reject", "args": {"reason": reason or "未提供原因"}}
+        if d == "edit":
+            if not isinstance(args, dict) or not args:
+                raise ValueError("decision=edit 时必须提供非空的 args（改写后的工具入参）")
+            return {"type": "edit", "args": {"args": args}}
+        if d == "response":
+            return {"type": "response", "args": feedback or ""}
+        raise ValueError(
+            f"不支持的审批决策: {decision!r}（可选 accept / reject / edit / response）"
+        )
+
+    @staticmethod
+    def _unwrap_hitl_tool_output(raw: str) -> Optional[dict]:
+        """
+        从 HITL 包装器的返回文案里取回**内层工具的原始结构化结果**。
+
+        包装器的返回形如：
+
+            ✅ 操作已执行 [save_candidate]
+            结果: {"type": "candidate_saved", ...}
+
+        ★ 为什么值得做这层解包：审批通过后的结果应该与「没走审批」时
+          **长得一模一样**（同一个结果卡、同一套字段）。否则前端要为
+          「审批后」单独写一套渲染 —— 两边字段一旦漂移，就又回到
+          「同一件事两种表现」的老问题。
+        ★ 解包失败一律返回 `None`（调用方降级为展示原始文案），
+          不让「文案改了」升级成「审批流程报错」。
+        """
+        if not raw:
+            return None
+        marker = "结果: "
+        idx = raw.find(marker)
+        if idx < 0:
+            return None
+        try:
+            parsed = json.loads(raw[idx + len(marker):])
+        except Exception:  # noqa: BLE001
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    async def resume_approval(
+        self,
+        context_id: str,
+        decision: str,
+        *,
+        user_id: Optional[str] = None,
+        shop_id: Optional[str] = None,
+        reason: Optional[str] = None,
+        args: Optional[dict] = None,
+        feedback: Optional[str] = None,
+    ) -> AgentResponse:
+        """
+        把审批决策回传给**被中断的那张图**，让它续跑到结束。
+
+        ★ 为什么必须重新 `_bind_context()`：续跑时被中断的工具会**重新执行**，
+          而它靠 ContextVar 拿会话与店铺归属（见 `tools.py::_save_candidate_tool`）。
+          不重新绑定 ⇒ `shop_id` 拿不到 ⇒ `_write_candidates` **硬拒绝写入** ——
+          用户「批准了」却收到「请先选一个店铺」，是这条链路上最迷惑的表现。
+        """
+        router = self._get_router()
+        if router is None:
+            return AgentResponse(
+                content="审批通道暂时不可用（工具路由层未就绪），请稍后重试。",
+                data={"type": "approval_failed", "error": "router_unavailable"},
+                display_type="text",
+            )
+        if not (context_id and user_id):
+            return AgentResponse(
+                content="审批必须带上会话与登录身份，否则定位不到你那条待审批的操作。",
+                data={"type": "approval_failed", "error": "missing_session_or_identity"},
+                display_type="text",
+            )
+        if router.checkpointer is None:
+            return AgentResponse(
+                content="审批通道暂时不可用（会话存储未就绪），请稍后重试。",
+                data={"type": "approval_failed", "error": "checkpointer_unavailable"},
+                display_type="text",
+            )
+
+        try:
+            payload = self._build_resume_payload(
+                decision, reason=reason, args=args, feedback=feedback
+            )
+        except ValueError as e:
+            return AgentResponse(
+                content=str(e),
+                data={"type": "approval_failed", "error": "bad_decision"},
+                display_type="text",
+            )
+
+        # 续跑前重新绑定上下文（被中断的工具会重新执行，需要会话 + 归属）
+        self._bind_context(context_id, shop_id)
+
+        graph, cfg = router.graph_for_session(context_id, user_id)
+        try:
+            state = await graph.ainvoke(Command(resume=payload), config=cfg)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[product_research] resume failed: {e}")
+            return AgentResponse(
+                content="审批回传失败，请重试；若反复失败请重新发起这次操作。",
+                data={
+                    "type": "approval_failed",
+                    "error": "resume_failed",
+                    "detail": str(e)[:200],
+                },
+                display_type="text",
+            )
+
+        # 多步审批：续跑后可能又停在**下一个**中断上，别把它当成功
+        again = await self._detect_pending_approval(context_id, user_id)
+        if again is not None:
+            return again
+
+        messages = state.get("messages", []) if isinstance(state, dict) else []
+        tool_content = ""
+        reply = ""
+        for m in messages:
+            if m.__class__.__name__ == "ToolMessage":
+                tool_content = str(m.content)
+            elif m.__class__.__name__ == "AIMessage":
+                c = getattr(m, "content", "")
+                if isinstance(c, str) and c.strip():
+                    reply = c
+
+        unwrapped = self._unwrap_hitl_tool_output(tool_content)
+        if unwrapped is not None:
+            return AgentResponse(
+                content=reply or self._compose_reply(unwrapped),
+                data={**unwrapped, "approval_decision": decision},
+                display_type=unwrapped.get("type", "text"),
+            )
+        return AgentResponse(
+            content=tool_content or reply or "已记录你的审批决定。",
+            data={"type": "approval_resolved", "decision": decision},
+            display_type="text",
+        )
 
     # 工具名 → display_type（对齐 _process_query 的 type 语义）
     _TOOL_TYPE_MAP = {
@@ -421,19 +781,33 @@ class ProductResearchAgent(BaseAgent):
         return {**data, "type": self._TOOL_TYPE_MAP.get(tool_name, "analysis")}
 
     async def _route_via_tools(
-        self, query: str, context_id: Optional[str] = None
+        self,
+        query: str,
+        context_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Optional[AgentResponse]:
         """工具化路由：LLM 自主选工具执行，把工具结果包装回 AgentResponse。
 
         返回 None 表示路由失败，调用方继续兜底。
         """
         try:
-            state = await self._router.graph.ainvoke(
+            # ★ 2026-09-17：改走统一入口。旧键 `...-{context_id or id(self)}`
+            #   的 `id(self)` 是**对象内存地址** ⇒ 没有 context_id 时换个进程
+            #   就换 thread_id，永远命中不到上一轮的 checkpoint。
+            state = await self._router.run_session(
                 {"messages": [HumanMessage(content=query)]},
-                config={"configurable": {
-                    "thread_id": f"product-research-{context_id or id(self)}"
-                }},
+                session_id=context_id,
+                user_id=user_id,
             )
+
+            # ★★★ 第 131 轮 item2-B：有副作用工具的 HITL 中断必须**立刻回传**，
+            #   而不是继续按「这轮没调到工具」往下解析 —— 图此刻停在 tool_node 上，
+            #   消息里**根本没有 ToolMessage**，继续走会一路落到 `return None`
+            #   ⇒ 调用方退化到闲聊兜底 ⇒ 用户收到一句无关的回复，
+            #   **完全不知道有个操作正卡在等他审批**（审批卡永远出不来）。
+            pending = await self._detect_pending_approval(context_id, user_id)
+            if pending is not None:
+                return pending
 
             messages = state.get("messages", [])
             tool_result = None
@@ -469,7 +843,11 @@ class ProductResearchAgent(BaseAgent):
             return None
 
     async def _stream_via_tools(
-        self, query: str, context_id: Optional[str] = None
+        self,
+        query: str,
+        context_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        gated: bool = False,
     ) -> AsyncIterable:
         """
         LLM 工具路由（**流式版**）。
@@ -489,12 +867,11 @@ class ProductResearchAgent(BaseAgent):
 
         if router is not None:
             try:
-                async for ev in router.graph.astream_events(
+                # 与非流式走**同一个** thread_id 口径（同一会话两条路径互通）
+                async for ev in router.stream_session(
                     {"messages": [HumanMessage(content=query)]},
-                    config={"configurable": {
-                        "thread_id": f"product-research-{context_id or id(self)}"
-                    }},
-                    version="v2",
+                    session_id=context_id,
+                    user_id=user_id,
                 ):
                     et = ev.get("event")
                     if et == "on_chat_model_stream":
@@ -510,6 +887,22 @@ class ProductResearchAgent(BaseAgent):
             except Exception as e:
                 logger.warning(f"[product_research] stream tool routing failed: {e}")
 
+        # ★★★ 第 131 轮 item2-B：流式路径的中断检测**必须与非流式同源**。
+        #   两边各写一份判定，就必然长出「非流式弹审批卡、流式静默吞掉」这种
+        #   「同一句话在两条路径上表现不一致」的经典缺陷（本项目此前踩过，
+        #   见 `_stream_via_tools` 的 docstring：流式与非流式必须是同一条决策路径）。
+        #   所以两者都调同一个 `_detect_pending_approval()`（它走 `aget_state`，
+        #   对流式同样适用 —— `astream_events` 只给事件、不给最终 state）。
+        pending = await self._detect_pending_approval(context_id, user_id)
+        if pending is not None:
+            if not replied:
+                yield pending.content
+            yield {
+                "event": "meta",
+                "data": {"display_type": pending.display_type, "data": pending.data},
+            }
+            return
+
         data = self._parse_tool_output(tool_name, tool_output)
         if data is not None:
             # LLM 没自己总结过工具结果 → 由我们把结论压成人话补上
@@ -522,9 +915,19 @@ class ProductResearchAgent(BaseAgent):
             return
 
         if replied:
+            # ★ `gated`（有副作用意图）：LLM 自己写了文本、却**没调工具** ⇒
+            #   这一步压根没到审批闸门前。把它当答案返回，用户会以为入库已完成
+            #   （实测文案是一段泛泛闲聊），而操作从未发生。
+            if gated:
+                yield self._APPROVAL_CHANNEL_DOWN_MSG
             return
 
-        # 既没调到工具、也没吐出文本 → 闲聊兜底（带会话语境，别让它编通用知识）
+        # 既没调到工具、也没吐出文本 → 闲聊兜底（带会话语境，别让它编通用知识）。
+        # ★ `gated` 意图**不**走闲聊兜底：闸门的语义是「要么走审批、要么明说
+        #   没执行」，掉进闲聊等于把一次写操作伪装成一次普通对话。
+        if gated:
+            yield self._APPROVAL_CHANNEL_DOWN_MSG
+            return
         async for chunk in self._general_stream(query, context_id):
             yield chunk
 
@@ -1442,6 +1845,7 @@ class ProductResearchAgent(BaseAgent):
         query: str,
         context_id: str = None,
         shop_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> AsyncIterable[str]:
         """
         流式对话（逐 token 返回 LLM 文本）。
@@ -1473,7 +1877,18 @@ class ProductResearchAgent(BaseAgent):
 
         # 2. 关键词表命中结构化意图 → 直接执行
         intent = await self._classify_intent(query)
-        if intent in ("blue_ocean", "profit", "pain_points", "competitor", "save_candidate"):
+        # ★★★ 第 131 轮：`save_candidate` **故意**从下面这个元组里拿掉 ——
+        #   它是有副作用的写操作，必须经带 HITL 审批的工具路径执行。
+        #   留在这里就等于「流式下说『入库』零审批直写」（旁路），
+        #   而同一句话走非流式却要审批。详见 `_stream_gated_intent` 的 docstring。
+        if intent in self._APPROVAL_GATED_INTENTS:
+            yield progress(_INTENT_PROGRESS.get(intent, "正在分析…"))
+            async for chunk in self._stream_gated_intent(
+                query, context_id, user_id, shop_id
+            ):
+                yield chunk
+            return
+        if intent in ("blue_ocean", "profit", "pain_points", "competitor"):
             yield progress(_INTENT_PROGRESS.get(intent, "正在分析…"))
             result = await self._process_query(query, context_id, intent, shop_id)
             yield result.content
@@ -1501,7 +1916,7 @@ class ProductResearchAgent(BaseAgent):
             return
 
         # 3/4. 未命中关键词表 → 与非流式同一条 LLM 工具路由（内部已含闲聊兜底）
-        async for chunk in self._stream_via_tools(query, context_id):
+        async for chunk in self._stream_via_tools(query, context_id, user_id):
             yield chunk
 
     # ====== 工具函数（供 LLM 调用）======

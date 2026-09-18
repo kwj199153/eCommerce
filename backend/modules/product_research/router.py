@@ -45,6 +45,7 @@ from modules.product_research.schemas import (
     CompetitorCompareRequest,
     ChatRequest,
     ChatResponse,
+    ApprovalResumeRequest,
     ApiResponse,
 )
 from modules.product_research.service import product_research_service
@@ -211,10 +212,54 @@ async def chat(
             message=request.message,
             context_id=request.context_id,
             shop_id=shop_id,
+            user_id=current_user.id if current_user else None,
         )
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/approval/resume", response_model=ChatResponse)
+async def resume_approval(
+    request: ApprovalResumeRequest,
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
+    shop_id: Optional[str] = Depends(get_current_shop_id_optional),
+):
+    """
+    回传人工审批决策，恢复被 `interrupt()` 冻结的会话（HITL 闭环的收敛点）。
+
+    为什么要单独一个端点、而不是复用 `/chat`：
+      被挂起的图停在 `tool_node` 上等一个 `Command(resume=...)`。
+      用户在界面上点「批准」**不是在说话**，所以走 `/chat` 只会开一轮全新对话，
+      那个待审批的操作仍会永久挂着（且没有任何报错）。
+
+    归属与隔离：
+      · `thread_id` 由服务端按 `(命名空间, 用户, 会话)` 重算（见
+        `BaseAgent.resolve_thread_id`），**不接受**客户端传入；
+      · `session_id` 属于别人时，算出来的 thread_id 与对方不同 ⇒
+        找不到那条中断 ⇒ 天然无法替别人批准（`user_id` 是键的一部分）。
+    """
+    try:
+        result = await service.resume_approval(
+            request.context_id,
+            request.decision,
+            shop_id=shop_id,
+            user_id=current_user.id if current_user else None,
+            reason=request.reason,
+            args=request.args,
+            feedback=request.feedback,
+        )
+    except ValueError as e:
+        # 决策载荷本身不合法（如 edit 缺 args）⇒ 422，不是服务端故障
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    # 与 `/chat` 同一个响应契约：前端用同一套结果卡渲染
+    return ChatResponse(
+        reply=result.content,
+        display_type=result.display_type,
+        data=result.data,
+        suggestions=None,
+    )
 
 
 @router.post("/chat/stream")
@@ -235,6 +280,7 @@ async def chat_stream(
                     request.message,
                     context_id=request.context_id,
                     shop_id=shop_id,
+                    user_id=current_user.id if current_user else None,
                 )
             ):
                 yield event

@@ -308,6 +308,7 @@ class ProductResearchService:
         message: str,
         context_id: str = None,
         shop_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> ChatResponse:
         """
         自然语言对话接口
@@ -322,7 +323,7 @@ class ProductResearchService:
             对话响应
         """
         result = await self.agent.invoke(
-            message, context_id=context_id, shop_id=shop_id
+            message, context_id=context_id, shop_id=shop_id, user_id=user_id
         )
 
         return ChatResponse(
@@ -332,11 +333,40 @@ class ProductResearchService:
             suggestions=self._generate_suggestions(result),
         )
 
+    async def resume_approval(
+        self,
+        context_id: str,
+        decision: str,
+        *,
+        shop_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        reason: Optional[str] = None,
+        args: Optional[dict] = None,
+        feedback: Optional[str] = None,
+    ):
+        """
+        人工审批决策透传（详见 Agent 侧 `ProductResearchAgent.resume_approval`）。
+
+        `shop_id` 与 `user_id` 都必须是**服务端已校验**的值：
+        前者来自 `get_current_shop_id_optional` 依赖，后者来自 `current_user.id`。
+        续跑时被中断的工具会重新执行并**真的写库**，归属口径与首轮**必须同源**。
+        """
+        return await self.agent.resume_approval(
+            context_id,
+            decision,
+            user_id=user_id,
+            shop_id=shop_id,
+            reason=reason,
+            args=args,
+            feedback=feedback,
+        )
+
     async def stream_chat(
         self,
         message: str,
         context_id: str = None,
         shop_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ):
         """
         流式对话入口（返回逐 token 异步迭代器）。
@@ -348,7 +378,7 @@ class ProductResearchService:
         流的最后一段可能就是"入库回执"，漏传会让写入被拒。
         """
         async for chunk in self.agent.stream_chat(
-            message, context_id=context_id, shop_id=shop_id
+            message, context_id=context_id, shop_id=shop_id, user_id=user_id
         ):
             yield chunk
 

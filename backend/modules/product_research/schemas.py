@@ -4,7 +4,7 @@
 Pydantic schemas 用于 API 请求/响应验证。
 """
 
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -171,6 +171,40 @@ class ChatResponse(BaseModel):
     display_type: str  # table / chart / text / report
     data: Optional[dict] = None
     suggestions: Optional[List[str]] = None
+
+
+# ====== 人工审批（HITL，第 131 轮）======
+
+class ApprovalResumeRequest(BaseModel):
+    """把人工审批的**决策**回传给被中断的会话。
+
+    为什么需要这个端点（而不是让前端「再发一句话」）：
+      有副作用的工具被 `interrupt()` 挂起后，整张图**停在 tool_node 上**，
+      等的是一个 `Command(resume=...)`。用户在前端点「批准」并不是在对话，
+      而是在**恢复一张被冻结的图** —— 用普通的 `/chat` 再发一句话，
+      只会开一轮全新的对话，那个待审批的操作仍永远挂着。
+
+    `context_id` 必须是**首轮那次对话的同一个会话 ID**：thread_id 由
+    服务端按 `(命名空间, 用户, 会话)` 重算（见 `BaseAgent.resolve_thread_id`），
+    所以**不接受**客户端传 thread_id —— 那等于把「谁的操作能被恢复」
+    交给请求方决定（thread_id 里含 user_id）。
+
+    `decision` 四档与 `hitl_decorator` 的响应契约逐字对应：
+      · accept   → 执行操作
+      · reject   → 拒绝执行（可带 `reason`，会展示给模型与用户）
+      · edit     → 用 `args` 改写入参后再执行
+      · response → 不执行，把 `feedback` 直接当作回复
+    结构对不上的表现是「点了批准但什么都没发生」（落到 else 分支抛错），
+    因此这里用 `Literal` 在入口处就把非法值挡掉。
+    """
+
+    context_id: str = Field(..., description="会话 ID（与首轮对话同一个）")
+    decision: Literal["accept", "reject", "edit", "response"] = Field(
+        ..., description="审批决策：accept / reject / edit / response"
+    )
+    reason: Optional[str] = Field(None, description="拒绝原因（decision=reject 时展示）")
+    args: Optional[dict] = Field(None, description="改写后的工具入参（decision=edit 时必填）")
+    feedback: Optional[str] = Field(None, description="直接回复内容（decision=response 时使用）")
 
 
 # ====== 通用响应包装 ======

@@ -6,7 +6,7 @@
  *   - 右侧面板 tool-analysis 事件的接收与执行
  *   - 各 Agent 顶部动作条 chip（竞品/选品/复盘/广告）
  *   - 工具结果摘要、Listing 草稿同步、脚本落库
- *   - HITL 审批、滚动定位
+ *   - 滚动定位
  *
  * 组件层（index.vue）只保留三类无法搬走的东西：
  *   1. v-model 绑定的 ref（inputMessage / intelDays）—— ref 必须由组件持有
@@ -1251,6 +1251,14 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
                 context_id: contextId,
               })
               chatStore.appendToLastMessage(response.reply || '分析完成')
+              // ★ 兜底路径**同样要回填结构化结果**（第 131 轮 item2-C）。
+              //   只 append 正文的话，流式失败时用户会看到后端那句
+              //   「请选择『批准』或『拒绝』」却**没有任何按钮可点** ——
+              //   一句无法执行的指令，比不显示更糟。
+              //   审批卡与结论卡都只靠 `display_type` + `data` 渲染。
+              if (response?.display_type) {
+                chatStore.setLastMessageResult(response.display_type, response.data)
+              }
             } catch (e2) {
               if (!chatStore.messages[chatStore.messages.length - 1]?.content) {
                 chatStore.appendToLastMessage('（对话失败，请重试）')
@@ -1503,14 +1511,6 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
     })
   }
 
-  // HITL 审批
-  const handleHitlAccept = async (msg: any) => {
-    message.success('已批准执行')
-  }
-  const handleHitlReject = async (msg: any) => {
-    message.info('已拒绝执行')
-  }
-
   // 滚动到底部
   // 注意：滚动容器是 .main-content（overflow-y:auto），.message-list 自身不滚动
   // （见 index.vue 样式注释「不再独立滚动，随 main-content 一起滚动」）。
@@ -1560,7 +1560,5 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
     renderMarkdown,
     handleKeyPress,
     handleSend,
-    handleHitlAccept,
-    handleHitlReject,
   }
 }

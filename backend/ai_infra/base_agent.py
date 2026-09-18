@@ -596,8 +596,21 @@ class BaseAgent:
         wrapped_tools = []
         for tool in tools:
             if tool.name in self.hitl_tool_names:
+                # ★ 形态守卫（第 131 轮加）：工厂必须返回**真的 BaseTool**。
+                #   原 `add_human_in_the_loop` 是 `async def`，此处同步调用 ⇒
+                #   拿到 coroutine 被原样塞进 `self.tools`、`bind_tools` 随后
+                #   拿到非 BaseTool（全仓 0 个 `hitl_tools=` 调用点 ⇒ 从未暴露）。
+                #   显式断言把「哪天有人把工厂改回 async」升级成
+                #   **装配期即报错**，而不是「工具静默损坏、调用时才炸」。
+                wrapped = add_human_in_the_loop(tool)
+                if not isinstance(wrapped, BaseTool):
+                    raise TypeError(
+                        "HITL 包装器必须返回 BaseTool，实际拿到 "
+                        f"{type(wrapped).__name__}（工具={tool.name}）"
+                        "—— add_human_in_the_loop 被改成 async 了吗？"
+                    )
                 logger.info(f"🔒 为工具 [{tool.name}] 添加 HITL 审批")
-                wrapped_tools.append(add_human_in_the_loop(tool))
+                wrapped_tools.append(wrapped)
             else:
                 wrapped_tools.append(tool)
 

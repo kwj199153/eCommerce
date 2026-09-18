@@ -18,6 +18,7 @@ import BlueOceanProductCard from './BlueOceanProductCard.vue'
 import ProfitAnalysisCard from './ProfitAnalysisCard.vue'
 import PainPointAnalysisCard from './PainPointAnalysisCard.vue'
 import CompetitorAnalysisCard from './CompetitorAnalysisCard.vue'
+import PendingApprovalCard from './PendingApprovalCard.vue'
 
 export const CONVERSATION_RESULT_COMPONENTS: Record<string, Component> = {
   // 选品分析师
@@ -25,6 +26,8 @@ export const CONVERSATION_RESULT_COMPONENTS: Record<string, Component> = {
   profit_analysis: ProfitAnalysisCard,
   pain_point_analysis: PainPointAnalysisCard,
   competitor_analysis: CompetitorAnalysisCard,
+  // 选品分析师 · HITL 人工审批（有副作用的工具被 interrupt() 挂起时由后端下发）
+  pending_approval: PendingApprovalCard,
 }
 
 /** display_type → 组件；未登记的类型返回 null（按普通文本处理） */

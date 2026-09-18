@@ -25,7 +25,23 @@ from core.logger import get_logger
 logger = get_logger(__name__)
 
 
-async def add_human_in_the_loop(
+class HITLPrerequisiteError(RuntimeError):
+    """HITL 的**前置条件**不满足（第 131 轮新增）。
+
+    ★ 为什么单独建类、而不是裸 `raise RuntimeError`：
+      调用方（router / 服务层 / 前端）需要把「这次操作因为缺会话上下文而
+      **压根没执行**」与「工具自己执行失败」区分开 —— 前者是**拒绝**
+      （fail-closed，没有人被扣钱、没有脏数据落库），后者才是故障。
+
+    ★ 为什么继承 `RuntimeError`（即 `Exception` 子类）、**不是** `BaseException`：
+      本仓的 `ToolNode` 与各层兜底都按 `except Exception` 写。让本异常逃出
+      `Exception` 会把整张图的安全网（含 `GraphRecursionError` 兜底）一并绕过
+      —— 那是"更安全"的反面：一个本该被优雅降级的**拒绝**，变成了穿透
+      全链路的**崩溃**。
+    """
+
+
+def add_human_in_the_loop(
     tool: BaseTool | Callable,
     *,
     interrupt_config: dict = None,
@@ -50,14 +66,34 @@ async def add_human_in_the_loop(
             # ...发布逻辑...
             return "Listing 已发布"
 
-        # 在 Agent 中使用：
-        hitl_tool = await add_human_in_the_loop(publish_listing)
+        # 在 Agent 中使用（★ 同步工厂，**不要**加 await）：
+        hitl_tool = add_human_in_the_loop(publish_listing)
+
+    ★ 为什么必须是**同步工厂**（第 131 轮运行时实证，两处硬 bug）：
+      ① `BaseAgent._wrap_hitl_tools` 在 `__init__` 里装配工具，是**同步**方法、
+         手上没有可跑的事件循环 ⇒ 同步调用 `async def` 拿到的是 **coroutine 对象**，
+         会被原样塞进 `self.tools`，`bind_tools` 随后拿到非 `BaseTool`；
+         而全仓 `hitl_tools=` 调用点数为 **0** ⇒ 这个坏形态从未暴露。
+      ② 本函数体内**没有任何 await** —— `async` 关键字纯属装饰性。
+      ③ `add_batch_human_in_the_loop` 曾用
+         `asyncio.get_event_loop().run_until_complete(...)` 强行同步化，
+         在**已在运行的事件循环**里（FastAPI / Celery worker）会直接抛。
+      同步化是同时满足「构造期装配」与「运行期批处理」两条路径的唯一形态。
+
+    ⚠️ `name` 只能作**第一位置参数**传（`create_tool(tool.name, ...)`）：
+       `langchain_core` 的 `tool()` 签名里没有 `name` 关键字，
+       写 `@create_tool(name=...)` 会直接
+       `TypeError: tool() got an unexpected keyword argument 'name'`。
+
+    ⚠️ `interrupt()` **要求图带 checkpointer + 调用时给 `thread_id`** ——
+       无 checkpointer 时它直接抛，而不是「降级为不审批」。接线方必须为
+       需要审批的图显式绑 checkpointer（见 `BaseAgent.graph_for_session`）。
     """
     if not isinstance(tool, BaseTool):
         tool = create_tool(tool)
 
     @create_tool(
-        name=tool.name,
+        tool.name,
         description=f"[需人工审批] {tool.description}",
         args_schema=tool.args_schema,
     )
@@ -90,6 +126,23 @@ async def add_human_in_the_loop(
             ),
         }
 
+        # ★★★ fail-closed 守卫（第 131 轮）：`interrupt()` 要求**当前图绑了
+        #   checkpointer 且运行时 config 带 `thread_id`**。两者缺一，它会在图
+        #   内部抛一个上下文缺失的底层错 —— 归因不明确，且在「无会话 / 无身份」
+        #   场景下会把整次对话打崩。本仓 `BaseAgent.graph_for_session()` 在
+        #   `session_id` 与 `user_id` 缺任一个时，返回的正是**不带 checkpointer
+        #   的图 + 空 config**，所以这条路径是真会被走到的。
+        #   这里提前把条件讲明白：**拒绝执行**并把原因交给调用链。
+        #   原则同 `_write_candidates`：没有身份 / 没有会话 ⇒ 这个动作就不该
+        #   发生，而不是"悄悄照做"。
+        thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
+        if not thread_id:
+            raise HITLPrerequisiteError(
+                f"[{tool.name}] 该操作需人工审批，但当前调用没有可用的会话上下文"
+                "（缺少 `thread_id`）—— 审批记录无处落盘、操作无法被追溯，"
+                "因此**拒绝执行**。请带上 `session_id` 与登录身份后重试。"
+            )
+
         logger.info(f"🔒 HITL 等待审批: 工具=[{tool.name}] 参数={tool_input}")
 
         # 触发中断，等待用户响应
@@ -102,7 +155,7 @@ async def add_human_in_the_loop(
         if response_type == "accept":
             logger.info(f"⏳ 用户批准执行: [{tool.name}]")
             try:
-                result = await tool.ainvoke(input=tool_input)
+                result = await tool.ainvoke(tool_input, config=config)
                 return f"✅ 操作已执行 [{tool.name}]\n结果: {result}"
             except Exception as e:
                 logger.error(f"❌ 工具执行失败: [{tool.name}] 错误={e}")
@@ -113,7 +166,7 @@ async def add_human_in_the_loop(
             modified_args = response.get("args", {}).get("args", tool_input)
             logger.info(f"✏️ 用户修改参数: 原始={tool_input} → 修改后={modified_args}")
             try:
-                result = await tool.ainvoke(input=modified_args)
+                result = await tool.ainvoke(modified_args, config=config)
                 return f"✅ 操作已执行（已修改参数）[{tool.name}]\n结果: {result}"
             except Exception as e:
                 logger.error(f"❌ 修改后执行失败: [{tool.name}] 错误={e}")
@@ -156,11 +209,7 @@ def add_batch_human_in_the_loop(
     wrapped_tools = []
     for tool in tools:
         if tool.name in hitl_tool_names:
-            import asyncio
-            wrapped = asyncio.get_event_loop().run_until_complete(
-                add_human_in_the_loop(tool)
-            )
-            wrapped_tools.append(wrapped)
+            wrapped_tools.append(add_human_in_the_loop(tool))
         else:
             wrapped_tools.append(tool)
 

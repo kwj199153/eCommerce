@@ -177,12 +177,23 @@ async def _save_candidate_tool(
         parts.append(f"来源机会词 {source_keyword}")
     query = f"把 {'，'.join(parts)} 加入选品库" if parts else "帮我入库"
 
-    # 会话 ID 靠 ContextVar 传递（工具入参由 LLM 生成，塞不进 context_id）——
-    # 不传的话工具会在 `_default` 会话里找不到蓝海结果与待补槽位。
-    from .agent_product_research import _current_context_id
+    # 会话 ID **与店铺 ID** 都靠 ContextVar 传递（工具入参由 LLM 生成，塞不进去）；
+    # 两者都由 `ProductResearchAgent._bind_context()` 在**入口处**写入：
+    #   · 缺 context_id → 工具会在 `_default` 会话里找不到蓝海结果与待补槽位；
+    #   · 缺 shop_id    → `_write_candidates` **硬拒绝写入**（拿不到归属就不写）。
+    # ★★★ 第 131 轮修复：此前这里**只读了 `_current_context_id`**，漏读
+    #     `_current_shop_id` ⇒ 工具路径 **100% 写不进库**，且返回的文案是
+    #     「请先在界面左上角选一个店铺，再说一次…」——用户明明选过店铺，
+    #     这是一句**归因错误的假拒绝**（让人去查一个不存在的问题）。
+    #     实测（`_r131_a2_savecand_probe.py`）：`shop_id=probe-shop-A` 已绑定，
+    #     工具路径仍被拒、`create_candidate` 零调用；而 Agent 自带的
+    #     `_tool_save_candidate`（读双 ContextVar）同场次正常落库。
+    from .agent_product_research import _current_context_id, _current_shop_id
 
     return _dump(await _service.agent._save_candidate(
-        query, context_id=_current_context_id.get()
+        query,
+        context_id=_current_context_id.get(),
+        shop_id=_current_shop_id.get(),
     ))
 
 

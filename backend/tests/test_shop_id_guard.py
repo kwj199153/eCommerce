@@ -58,7 +58,7 @@ OPTIONAL = "get_current_shop_id_optional"
 #     ① 它会落业务数据吗？
 #     ② 若会 —— 它的**写路径**在缺店铺上下文时是否硬拒绝？
 #        会落 且 写路径不拒绝 → 不许加（那才是真的开后门）。
-#   现有三条的成立理由（每条都有测试背书，不是自述）：
+#   现有四条（含第 131 轮新增的 resume_approval）的成立理由（每条都有测试背书，不是自述）：
 #     · secretary/router.py::secretary_chat  —— ① 不会（纯对话/导航；工具层拿不到
 #       shop_id 时只回「产品库为空」）。
 #     · product_research/router.py::chat / chat_stream —— ① 会（候选入库），
@@ -72,6 +72,14 @@ ALLOWED_OPTIONAL = {
     ("modules/secretary/router.py", "secretary_chat"),
     ("modules/product_research/router.py", "chat"),
     ("modules/product_research/router.py", "chat_stream"),
+    # ★ 第 131 轮新增。与 chat / chat_stream **完全同构**：
+    #   ① 会落业务数据（恢复被中断的图 ⇒ 执行 save_candidate）；
+    #   ② 缺店铺时写路径硬拒绝（`_write_candidates` 零 DB 往返），
+    #      且第 131 轮起 `_route_gated_intent` 在**入口**就拦了（零写入）。
+    #   为什么不用严格版：审批的 reject / response 两档**不需要** shop_id
+    #      （thread_id 由 (命名空间, 用户, 会话) 重算，不含 shop_id）。
+    #      用严格版会让「想拒绝但没选店铺」的用户连拒绝都点不动（400）。
+    ("modules/product_research/router.py", "resume_approval"),
 }
 
 # 严格依赖的使用方（8 个业务模块）。少一个都意味着某个模块的租户过滤被摘掉了。
@@ -271,7 +279,10 @@ def test_optional_variant_usage_is_locked_to_allowlist():
         f"豁免依赖使用点与白名单不一致：\n"
         f"  实际 = {sorted(optional_hits)}\n"
         f"  期望 = {sorted(ALLOWED_OPTIONAL)}\n"
-        f"新增豁免前请先确认该端点「不落业务数据」。"
+        f"新增豁免前先回答白名单注释里的两个问题："
+        f"① 它会落业务数据吗？② 若会，写路径在缺店铺时硬拒绝吗？"
+        f"（「会落数据且写路径硬拒绝」是允许的形态之一 —— 门禁放在写那一层，"
+        f"而不是入口那一层；chat / chat_stream / resume_approval 都属此类。）"
     )
 
 
