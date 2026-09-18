@@ -17,7 +17,6 @@ from core.config import config
 from core.auth.dependencies import require_auth_if_enabled
 from core.metering.llm_meter import reset_meter, snapshot
 from core.identity.models import User
-from modules.billing.models import Subscription
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +77,8 @@ class UsageTracker:
         #      类竞态（那边修了，这边原先漏网）。
         #
         #    实测：修复前 8 并发各 +1，最终只累加到 2（丢 6 次）。
+        # ★ 延迟导入（core 顶层禁 import modules，见 tests/test_core_layering.py）
+        from modules.billing.models import Subscription
         result = await db.execute(
             select(Subscription)
             .where(Subscription.user_id == user_id)
@@ -134,6 +135,8 @@ class UsageTracker:
         Returns:
             包含已用量、剩余量、限制等信息的字典
         """
+        # ★ 延迟导入（core 顶层禁 import modules，见 tests/test_core_layering.py）
+        from modules.billing.models import Subscription
         result = await db.execute(
             select(Subscription).where(Subscription.user_id == user_id)
         )
@@ -194,6 +197,8 @@ class UsageTracker:
         Returns:
             (是否允许, 原因说明)
         """
+        # ★ 延迟导入（core 顶层禁 import modules，见 tests/test_core_layering.py）
+        from modules.billing.models import Subscription
         result = await db.execute(
             select(Subscription).where(Subscription.user_id == user_id)
         )
@@ -235,6 +240,8 @@ class UsageTracker:
         # ★ 与 record_usage 同源竞态（P1-6）：token / 成本也是「读-改-写」，
         #   同样需要行锁 + populate_existing，否则并发结算时少记 token（少收钱）。
         #   实测：修复前 8 并发各 +10 token，最终只记到 20（丢 60）。
+        # ★ 延迟导入（core 顶层禁 import modules，见 tests/test_core_layering.py）
+        from modules.billing.models import Subscription
         result = await db.execute(
             select(Subscription)
             .where(Subscription.user_id == user_id)
