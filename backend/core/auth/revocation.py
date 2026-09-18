@@ -120,6 +120,27 @@ async def _get_client():
         return None
 
 
+async def get_shared_client():
+    """
+    公共别名：把懒加载的共享 Redis 客户端开放给其他**认证类**模块复用。
+
+    ★★ 为什么必须是"复用"而不是各写各的（第 119 轮）：
+      「从 config 建一个 async Redis 客户端」这件事在本仓已有 **3 处**实现
+      （`core/redis.py`、本文件、`core/middleware/rate_limit.py` 内联）。
+      新增能力时再抄一份，就是第 4 处 —— 项目判据明确要求收敛，不许扩散。
+
+    ★ 复用还带来一个**正确性**收益，不只是省代码：
+      本文件的 `_client_failed` 会把"Redis 不可达"记住，避免每个请求都重试一次
+      连接（那会把 connect 超时叠加到每个请求上）。其他模块共用同一个客户端，
+      意味着 Redis 故障时各方的降级判定**一致** —— 不会出现
+      「jti 黑名单已按不可达放行，而免密容器还在苦等 2 秒超时」这种分裂行为。
+
+    返回 None 表示 Redis 不可达（**不抛异常**）—— 由调用方决定自己的失败语义
+    （读侧保可用 / 写侧保诚实，见本模块 docstring）。
+    """
+    return await _get_client()
+
+
 def _remaining_ttl_seconds(exp: Optional[datetime]) -> int:
     """
     算出「这枚 token 还有多久过期」= 黑名单条目该保留多久。

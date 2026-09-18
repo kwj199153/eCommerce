@@ -400,6 +400,18 @@ app.include_router(auth_router, prefix="/api/v1")
 from core.identity.security_router import router as security_router
 app.include_router(security_router, prefix="/api/v1")
 
+# 本机免密切换（第 119 轮）—— 凭据由服务端加密托管，浏览器只持有 httpOnly 设备 Cookie。
+#
+# ★ 为什么**不**挂 BUSINESS_AUTH / API_QUOTA：这两条的语义都是"业务数据按店铺维度
+#   的鉴权与配额"，而本模块管的是**登录凭据本身**，层级更高（用户可能一家店都没有，
+#   也拿不到店铺上下文）。
+# ★ 更重要的是：`POST /auth/device/switch` **刻意不要求真身份**（它正是在
+#   "当前身份已不可用"时才需要，见该模块 docstring 的鉴权档位表），
+#   若按路由级批量挂鉴权，就会把这唯一一条逃生通道一并堵死。
+#   故本路由的鉴权由各端点自己声明 —— 与上面 security_router 同一个理由。
+from core.identity.device_router import router as device_router
+app.include_router(device_router, prefix="/api/v1")
+
 # ★ P1-c 收拢（2026-09-16）：原 `core/identity/shop_router.py`
 #   （7 个 `/api/v1/shops` 端点，挂在账户侧 `shops` 表 / UUID 主键上）
 #   **已整体删除**。实测该模块生产 0 调用点（前端只调 `/api/v1/stores`），

@@ -8,7 +8,7 @@
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, model_validator
 
 
 # ★ 已知但尚未接入实现的真实支付网关名（P1-4，2026-09-15）
@@ -276,9 +276,43 @@ class Settings(BaseSettings):
     #   真去连接平台时才失败，且原因可读。漏配本项**不会**产生任何不安全的
     #   落库结果 —— 这与 auth_required / jwt_secret_key 那些「漏配=危险」的项
     #   方向不同，故档位也不同。
+    # ★★★ 第 119 轮实测修掉的缺陷：**文档写的环境变量名，代码根本没读**
+    #
+    #   本字段名是 `credentials_encryption_key`，而 `Settings.model_config` 里
+    #   既没有 `env_prefix`、字段也没有 alias ⇒ pydantic-settings 按默认规则
+    #   直接大写字段名去找环境变量，也就是 **`CREDENTIALS_ENCRYPTION_KEY`**。
+    #   但 `.env.example`、`core/security/credentials.py` 的报错文案、
+    #   本字段的注释，一律写的是 `SHOP_CREDENTIALS_ENCRYPTION_KEY`。
+    #
+    #   对照实验（同一套 .env、同一段代码，只改环境变量名）：
+    #       SHOP_CREDENTIALS_ENCRYPTION_KEY → 读到 0 字符
+    #       CREDENTIALS_ENCRYPTION_KEY      → 读到 44 字符
+    #
+    #   后果形态：用户**照文档配了**、却依然拿到「未配置密钥，已拒绝写入」
+    #   的报错，而报错文案还在指引他"把结果写进 .env 的
+    #   SHOP_CREDENTIALS_ENCRYPTION_KEY" —— 照做，依然失败，无处可查。
+    #   这正是本仓判据里的「注释承诺 ≠ 实现事实」，且**没有任何代码会报错**。
+    #   （测试之所以没发现：`tests/test_credential_encryption.py` 用
+    #     `monkeypatch.setattr(config, ...)` 直接改属性，**绕过了环境变量这条
+    #     路径** ⇒ 环境变量名从未被任何用例覆盖过。）
+    #
+    #   修法：用 `AliasChoices` 把三个名字都接住 ——
+    #     ① `SHOP_CREDENTIALS_ENCRYPTION_KEY`（文档/示例对外承诺的名字）
+    #     ② `CREDENTIALS_ENCRYPTION_KEY`（修复前**唯一真正生效**的名字，
+    #        可能已有部署在用，不能弃）
+    #     ③ `credentials_encryption_key`（字段名本身；不列进来的话，
+    #        `Settings(...)` 关键字构造与 `populate_by_name` 那条路会断）
     credentials_encryption_key: str = Field(
         default="",
-        description="店铺平台凭证加密密钥（Fernet）；留空=拒绝写入凭证",
+        validation_alias=AliasChoices(
+            "SHOP_CREDENTIALS_ENCRYPTION_KEY",
+            "CREDENTIALS_ENCRYPTION_KEY",
+            "credentials_encryption_key",
+        ),
+        description=(
+            "静态加密主密钥（Fernet，44 字符）：店铺平台凭证 + 本机登录凭据；"
+            "留空=拒绝写入，不是明文落库"
+        ),
     )
 
     # ====== JWT 认证 ======

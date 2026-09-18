@@ -2,7 +2,7 @@
   <a-drawer
     :open="open"
     @update:open="(val: boolean) => $emit('update:open', val)"
-    title="账户设置"
+    title="账号设置"
     placement="right"
     :width="680"
     :body-style="{ padding: '0', overflow: 'auto' }"

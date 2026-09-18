@@ -327,3 +327,112 @@ async def test_disconnect_actually_clears_ciphertext(client, user, auth_headers,
         assert "AKIA-SUPER-SECRET-12345" not in d.text
     finally:
         await _drop_store(client, auth_headers, store_id)
+
+
+# ====== 5. ★ 「配置项名」本身必须真的生效（第 119 轮补） ======
+#
+# ★★★ 这一段守的是一个「文档与实现各说各话」的缺陷，**上面全部用例都拦不住**：
+#
+#   本文件 test_encrypt_without_key_refuses 断言「报错文案里出现
+#   SHOP_CREDENTIALS_ENCRYPTION_KEY」—— 它保证的是**文档提到了这个名字**，
+#   而没有任何一条用例验证 **这个名字真的能配置系统**。
+#
+#   实测（第 119 轮，对照实验：同一套 .env、同一段代码，只改环境变量名）：
+#       SHOP_CREDENTIALS_ENCRYPTION_KEY → config 读到 0 字符
+#       CREDENTIALS_ENCRYPTION_KEY      → config 读到 44 字符
+#   根因：`Settings.model_config` 里既没有 `env_prefix`、字段也没有 alias
+#   ⇒ pydantic-settings 按**字段名大写**去找环境变量。于是 `.env.example`、
+#   `credentials.py` 的报错文案、字段注释一律写的那个名字**完全无效**，
+#   而失败信息还在指引用户去配同一个没用的名字 —— 照做，依然失败，无处可查。
+#
+#   ★ 为什么长期没被发现：本文件所有用例都用 `monkeypatch.setattr(config, ...)`
+#     **直接改属性**，绕过了环境变量这条真实路径。
+#     判据：**绕过真实入口的测试，测的是夹具不是产品。**
+#
+#   修法见 `core/config.py::credentials_encryption_key` 的 `AliasChoices`。
+
+@pytest.mark.parametrize(
+    "env_name",
+    [
+        "SHOP_CREDENTIALS_ENCRYPTION_KEY",   # 文档 / .env.example / 报错文案承诺的名字
+        "CREDENTIALS_ENCRYPTION_KEY",        # 修复前**唯一真正生效**的名字（可能已有部署在用）
+    ],
+)
+def test_env_var_name_actually_configures_encryption(env_name, monkeypatch):
+    """
+    这两名字都必须真能配置到 —— 「文档提到它」不算证据，「读得到」才算。
+
+    ★ 用 `_env_file=None` 隔离掉开发机 `.env` 里的真实密钥：
+      否则 `.env` 里那个值会掩盖"环境变量没被读到"这个事实，
+      用例会在**本机绿、CI 红**（或反过来），失去判据价值。
+    """
+    from core.config import Settings
+
+    key = generate_key()
+    # 先把两个候选名都清掉，避免互相干扰（Windows 环境变量大小写不敏感，
+    # 故只用两个全大写名，不再额外测字段名本身）
+    for name in ("SHOP_CREDENTIALS_ENCRYPTION_KEY", "CREDENTIALS_ENCRYPTION_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(env_name, key)
+
+    s = Settings(_env_file=None)
+    assert s.credentials_encryption_key == key, (
+        f"环境变量 {env_name} 没有生效 —— 文档承诺的名字必须真能配置系统，"
+        f"否则用户照文档配置后只会看到「未配置密钥」，而报错文案还在指引他配同一个名字"
+    )
+
+
+def test_settings_keyword_construction_still_works():
+    """
+    关键字构造这条路不能被 `validation_alias` 打断。
+
+    ★ 回归护栏：加了 alias 之后，若忘了把字段名本身也列进 `AliasChoices`，
+      `Settings(credentials_encryption_key=...)` 会静默变回默认空串 ——
+      而**没有任何报错**，只是密钥"莫名其妙不生效"。
+    """
+    from core.config import Settings
+
+    key = generate_key()
+    assert Settings(_env_file=None, credentials_encryption_key=key).credentials_encryption_key == key
+
+
+def test_missing_key_error_message_names_a_working_config_item(without_key):
+    """
+    报错文案点名的配置项，必须**真的是能生效的那个**。
+
+    ★ 与 test_encrypt_without_key_refuses 的区别（那一条不够）：
+      那条只断言"文案里出现了某个名字"；若代码读的名字与文案写的名字不是一个，
+      它照样通过。本用例把两件事**绑在一起**验证：
+         文案点名的名字 → 照着配 → config 真的读到 → 加密真的可用。
+      这才是「承诺与实现一致」的完整判据。
+    """
+    from core.config import Settings
+
+    with pytest.raises(CredentialsKeyMissing) as ei:
+        encrypt_credentials(SECRET)
+    msg = str(ei.value)
+
+    # 从文案里抠出被点名的配置项（形如 XXX_ENCRYPTION_KEY）
+    import re
+
+    named = re.findall(r"\b([A-Z][A-Z0-9_]*_ENCRYPTION_KEY)\b", msg)
+    assert named, f"报错文案没有点名任何配置项：{msg[:200]}"
+
+    key = generate_key()
+    for name in named:
+        probe_env = {name: key}
+        # 只留文案点名的那个名字
+        for other in ("SHOP_CREDENTIALS_ENCRYPTION_KEY", "CREDENTIALS_ENCRYPTION_KEY"):
+            probe_env.setdefault(other, "")
+        monkeypatch = pytest.MonkeyPatch()
+        try:
+            for other in ("SHOP_CREDENTIALS_ENCRYPTION_KEY", "CREDENTIALS_ENCRYPTION_KEY"):
+                monkeypatch.delenv(other, raising=False)
+            monkeypatch.setenv(name, key)
+            s = Settings(_env_file=None)
+            assert s.credentials_encryption_key == key, (
+                f"报错文案叫用户去配 {name}，但配了**读不到** —— "
+                f"用户会陷入「照着报错改，还是同一句报错」的死循环"
+            )
+        finally:
+            monkeypatch.undo()
