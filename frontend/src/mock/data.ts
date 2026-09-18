@@ -107,31 +107,6 @@ export interface MockReview {
   category?: string        // 痛点分类：质量/物流/功能/服务等
 }
 
-export interface MockCompetitor {
-  asin: string
-  title: string
-  brand: string
-  price: number
-  rating: number
-  review_count: number
-  bsr_rank: number
-
-  // Listing 质量
-  listing_quality_score: number
-  title_score: number
-  image_score: number
-  bullet_score: number
-  a_plus_content: boolean
-
-  // 定位策略
-  price_positioning: 'premium' | 'mid-range' | 'budget'
-  strengths: string[]
-  weaknesses: string[]
-
-  // 广告数据
-  sponsored_rank?: number
-  estimated_ppc?: number
-}
 
 export interface MockBSRTrend {
   date: string
@@ -159,17 +134,6 @@ export interface PainPointItem {
   severity: 'high' | 'medium' | 'low'
   category: string
   example_review_id: string
-}
-
-export interface MockCompetitorCompareResult {
-  compared_asins: string[]
-  comparison_summary: string
-  recommendation: string
-  competitors: MockCompetitor[]
-  price_range: { min: number; max: number }
-  avg_rating: number
-  market_leader: string
-  opportunity_areas: string[]
 }
 
 
@@ -991,78 +955,6 @@ export const MOCK_PRODUCTS: MockProduct[] = [
     ]),
   },
 ]
-
-
-// ====== 竞品对比 Mock 数据 ======
-
-export function getMockCompetitorComparison(asins: string[]): MockCompetitorCompareResult {
-  const competitors = asins.map(asin => {
-    const product = MOCK_PRODUCTS.find(p => p.asin === asin)
-    if (!product) return null
-
-    // 根据评分生成优劣势
-    const isLeader = product.blue_ocean_score >= 65
-    const isWeak = product.blue_ocean_score < 40
-
-    return {
-      asin: product.asin,
-      title: product.title.slice(0, 60) + (product.title.length > 60 ? '...' : ''),
-      brand: product.brand,
-      price: product.price,
-      rating: product.rating,
-      review_count: product.review_count,
-      bsr_rank: product.bsr_rank,
-      listing_quality_score: product.overall_listing_score,
-      title_score: product.title_score,
-      image_score: product.image_score,
-      bullet_score: product.bullet_score,
-      a_plus_content: Math.random() > 0.7,
-      price_positioning: product.price < 20 ? 'budget' : product.price < 35 ? 'mid-range' : 'premium' as const,
-      strengths: isLeader
-        ? ['高评分低竞争', 'Listing 质量优秀', '利润空间充足']
-        : ['价格有竞争力', '销量稳定'],
-      weaknesses: isWeak
-        ? ['评论数过多竞争激烈', 'ROI 偏低', '差异化不足']
-        : ['品牌知名度有限', 'A+ Content 缺失'],
-      sponsored_rank: Math.floor(Math.random() * 50) + 1,
-      estimated_ppc: parseFloat((Math.random() * 2 + 0.5).toFixed(2)),
-    } as MockCompetitor
-  }).filter(Boolean) as MockCompetitor[]
-
-  const best = competitors.reduce((a, b) =>
-    (a?.listing_quality_score || 0) > (b?.listing_quality_score || 0) ? a : b
-  )
-
-  return {
-    compared_asins: asins,
-    comparison_summary:
-      `共对比 ${competitors.length} 个竞品。` +
-      `最佳 Listing：「${best?.title?.slice(0, 25)}...」` +
-      `(综合评分 ${best?.listing_quality_score})。` +
-      `市场呈现"一超多强"格局，头部产品占据约${Math.floor(35 + Math.random() * 30)}%市场份额。`,
-    recommendation:
-      best
-        ? `建议参考「${best.brand}」的 Listing 结构和图片风格，同时避免「${
-            competitors[competitors.length - 1]?.brand
-          }」的定价策略。`
-        : '建议深入分析各竞品的用户评价，寻找差异化切入点。',
-    competitors,
-    price_range: {
-      min: Math.min(...competitors.map(c => c.price)),
-      max: Math.max(...competitors.map(c => c.price)),
-    },
-    avg_rating: parseFloat(
-      (competitors.reduce((sum, c) => sum + c.rating, 0) / competitors.length).toFixed(1)
-    ),
-    market_leader: best?.asin || '',
-    opportunity_areas: [
-      '中高端价位段存在空白',
-      '环保材料认证是差异化机会',
-      '套装组合销售潜力未释放',
-      '视频内容营销可提升转化率',
-    ],
-  }
-}
 
 
 // ====== 痛点分析 Mock 数据 ======

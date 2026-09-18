@@ -260,20 +260,6 @@
                 :data="msg.data"
               />
 
-              <!-- HITL 审批卡片 -->
-              <div v-if="msg.hitlRequired" class="hitl-card">
-                <a-alert
-                  type="warning"
-                  show-icon
-                  message="需要人工审批"
-                  :description="`操作：${msg.hitlToolName}`"
-                  style="margin-bottom: var(--space-12)"
-                />
-                <a-space>
-                  <a-button type="primary" size="small" @click="handleHitlAccept(msg)">批准执行</a-button>
-                  <a-button size="small" danger @click="handleHitlReject(msg)">拒绝</a-button>
-                </a-space>
-              </div>
             </div>
           </div>
           </div>
@@ -598,8 +584,6 @@ const {
   renderMarkdown,
   handleKeyPress,
   handleSend,
-  handleHitlAccept,
-  handleHitlReject,
 } = useChatOrchestrator({
   inputMessage,
   messageListRef,
@@ -889,14 +873,6 @@ watch(currentAgentId, () => {
 }
 .message-text :deep(strong) {
   font-weight: 600;
-}
-
-.hitl-card {
-  margin-top: var(--space-12);
-  padding: var(--space-12);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-8);
-  background-color: var(--bg-hover-light);
 }
 
 /* 竞品监控员·统一分析动作条（输入框上方） */

@@ -1,0 +1,167 @@
+{
+  "success": true,
+  "message": "诊断完成",
+  "data": {
+    "overall_score": 87.0,
+    "grade": "B",
+    "summary": "[探针桩] 离线",
+    "metrics": [
+      {
+        "name": "ACoS",
+        "value": 28.716457261025013,
+        "unit": "%",
+        "benchmark": 22.0,
+        "status": "warning",
+        "change_pct": 0.0
+      },
+      {
+        "name": "RoAS",
+        "value": 5.237748671154681,
+        "unit": "x",
+        "benchmark": 4.5,
+        "status": "good",
+        "change_pct": 0.0
+      },
+      {
+        "name": "CTR",
+        "value": 0.26317122497008827,
+        "unit": "%",
+        "benchmark": 0.4,
+        "status": "warning",
+        "change_pct": 0.0
+      },
+      {
+        "name": "CVR",
+        "value": 6.231927322545895,
+        "unit": "%",
+        "benchmark": 9.0,
+        "status": "warning",
+        "change_pct": 0.0
+      },
+      {
+        "name": "CPC",
+        "value": 0.6852688020731262,
+        "unit": "$",
+        "benchmark": 0.75,
+        "status": "warning",
+        "change_pct": 0.0
+      }
+    ],
+    "campaigns": [
+      {
+        "campaign_name": "自动广告-广泛",
+        "campaign_type": "SP",
+        "status": "active",
+        "spend": 578.24,
+        "impressions": 158235,
+        "clicks": 3806,
+        "orders": 176,
+        "sales": 6665.25,
+        "acos": 8.7,
+        "roas": 11.53,
+        "ctr": 2.41,
+        "cvr": 4.6,
+        "cpc": 0.15,
+        "health_score": 100.0
+      },
+      {
+        "campaign_name": "手动-精准-核心词",
+        "campaign_type": "SP",
+        "status": "active",
+        "spend": 1306.81,
+        "impressions": 318860,
+        "clicks": 4716,
+        "orders": 54,
+        "sales": 1479.98,
+        "acos": 88.3,
+        "roas": 1.13,
+        "ctr": 1.48,
+        "cvr": 1.1,
+        "cpc": 0.28,
+        "health_score": 67.0
+      },
+      {
+        "campaign_name": "手动-短语-长尾词",
+        "campaign_type": "SP",
+        "status": "active",
+        "spend": 917.81,
+        "impressions": 483824,
+        "clicks": 4505,
+        "orders": 146,
+        "sales": 4759.27,
+        "acos": 19.3,
+        "roas": 5.19,
+        "ctr": 0.93,
+        "cvr": 3.2,
+        "cpc": 0.2,
+        "health_score": 100.0
+      },
+      {
+        "campaign_name": "品牌-SB-品牌词",
+        "campaign_type": "SB",
+        "status": "active",
+        "spend": 620.5,
+        "impressions": 237310,
+        "clicks": 2354,
+        "orders": 167,
+        "sales": 3382.59,
+        "acos": 18.3,
+        "roas": 5.45,
+        "ctr": 0.99,
+        "cvr": 7.1,
+        "cpc": 0.26,
+        "health_score": 100.0
+      },
+      {
+        "campaign_name": "展示-SD-竞品定向",
+        "campaign_type": "SD",
+        "status": "active",
+        "spend": 1339.44,
+        "impressions": 411448,
+        "clicks": 1778,
+        "orders": 69,
+        "sales": 1661.98,
+        "acos": 80.6,
+        "roas": 1.24,
+        "ctr": 0.43,
+        "cvr": 3.9,
+        "cpc": 0.75,
+        "health_score": 23.0
+      }
+    ],
+    "top_issues": [
+      {
+        "type": "ctr_low",
+        "title": "点击率偏低",
+        "description": "CTR 仅 0.26%，建议优化主图和标题相关性",
+        "priority": "high"
+      },
+      {
+        "type": "campaign_poor",
+        "title": "Campaign 表现差",
+        "description": "展示-SD-竞品定向 健康度仅 23.0，ACoS 达 80.6%",
+        "priority": "medium"
+      },
+      {
+        "type": "negative_missing",
+        "title": "否定关键词不足",
+        "description": "可能有浪费性流量未屏蔽",
+        "priority": "low"
+      },
+      {
+        "type": "budget_split",
+        "title": "预算分配不均",
+        "description": "高ROI Campaign 可能预算不足",
+        "priority": "medium"
+      }
+    ],
+    "recommendations": [
+      "🖼️ A/B 测试主图，选择 CTR 更高的版本",
+      "📋 优化标题前 80 字符，确保包含核心关键词",
+      "⏸️ 对健康度 < 50 的 Campaign 进行深度审计或暂时暂停",
+      "📊 每周定期下载搜索词报告，及时否定无效流量",
+      "🎯 开启商品投放（PAT）扩展流量来源",
+      "📅 关注季节性趋势，提前调整预算和出价"
+    ]
+  }
+}

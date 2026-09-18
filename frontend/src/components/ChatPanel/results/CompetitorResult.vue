@@ -13,8 +13,9 @@
 
     <!-- 概览 -->
     <div class="overview-bar">
-      <span>💰 ${{ data.price_range?.min || 0 }} - ${{ data.price_range?.max || 0 }}</span>
-      <span>⭐ {{ data.avg_rating?.toFixed(1) || '-' }}</span>
+      <span v-if="data.price_range">💰 ${{ data.price_range.min }} - ${{ data.price_range.max }}</span>
+      <span v-else>💰 价格区间：后端未返回</span>
+      <span>⭐ {{ data.avg_rating != null ? data.avg_rating.toFixed(1) : '-' }}</span>
       <span>👑 {{ leaderBrand }}</span>
     </div>
 
@@ -28,31 +29,42 @@
       rowKey="asin"
     >
       <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'price_positioning'">
-          <a-tag :color="getPositionColor(record.price_positioning)" size="small">
-            {{ getPositionLabel(record.price_positioning) }}
-          </a-tag>
+        <!-- 性价比：后端 comparison.value_score 真值。★ 该分数量纲不是 0–100
+             （= 评分×20/价格×100），所以**不**当百分比进度条用，直接给数值。 -->
+        <template v-if="column.key === 'value_score'">
+          <span class="value-score">
+            {{ record.value_score != null ? Number(record.value_score).toFixed(1) : '-' }}
+          </span>
         </template>
-        <template v-else-if="column.key === 'listing_quality_score'">
-          <a-progress
-            :percent="record.listing_quality_score"
-            :stroke-color="bandColor('score', record.listing_quality_score)"
+        <!-- 综合排名：后端 comparison.overall_ranking[].rank 真值 -->
+        <template v-else-if="column.key === 'rank'">
+          <a-tag
+            v-if="record.rank != null"
+            :color="record.rank === 1 ? 'gold' : 'default'"
             size="small"
-          />
+          >
+            #{{ record.rank }}
+          </a-tag>
+          <span v-else>-</span>
         </template>
       </template>
     </a-table>
 
-    <!-- 结论 -->
+    <!-- 结论（后端 comparison.recommendations，含 LLM 生成的竞争结论） -->
     <div v-if="data.recommendation" class="conclusion">
       <div class="conclusion-title">📋 分析结论</div>
       <p>{{ data.recommendation }}</p>
+    </div>
+
+    <!-- 差异化分析（后端 comparison.differentiation_analysis 真值） -->
+    <div v-if="differentiationText" class="conclusion">
+      <div class="conclusion-title">🔍 差异化分析</div>
+      <p>{{ differentiationText }}</p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { bandColor } from '@/theme/bands'
 import { computed } from 'vue'
 import { CloseOutlined } from '@ant-design/icons-vue'
 
@@ -64,8 +76,8 @@ const columns = [
   { title: '价格', dataIndex: 'price', key: 'price', width: 65, align: 'right' },
   { title: '评分', dataIndex: 'rating', key: 'rating', width: 50, align: 'center' },
   { title: '评论', dataIndex: 'review_count', key: 'review_count', width: 55, align: 'center' },
-  { title: 'Listing质量', dataIndex: 'listing_quality_score', key: 'listing_quality_score', width: 100 },
-  { title: '定位', dataIndex: 'price_positioning', key: 'price_positioning', width: 75, align: 'center' },
+  { title: '性价比', dataIndex: 'value_score', key: 'value_score', width: 70, align: 'right' },
+  { title: '排名', dataIndex: 'rank', key: 'rank', width: 55, align: 'center' },
 ]
 
 const leaderBrand = computed(() => {
@@ -73,17 +85,19 @@ const leaderBrand = computed(() => {
   return leader?.brand || '-'
 })
 
-const getPositionColor = (pos: string): string => {
-  if (pos === 'premium') return 'red'
-  if (pos === 'mid-range') return 'blue'
-  return 'green'
-}
+// ★ 原 getPositionColor / getPositionLabel 已删：它们服务的 `price_positioning`
+//   是前端自造字段，后端 /competitor/compare 从不算它 —— 保留就是留一列永远空白的假 UI。
+//   后端真算出来的是 value_score（性价比）与 overall_ranking（排名），已在表格中展示。
 
-const getPositionLabel = (pos: string): string => {
-  if (pos === 'premium') return '高端'
-  if (pos === 'mid-range') return '中端'
-  return '平价'
-}
+/**
+ * 差异化分析文本。
+ *
+ * ★ 展平逻辑已下沉到适配层 `utils/toolResultAdapters.ts::flattenDifferentiation`
+ *   （唯一实现）—— 放在组件 computed 里**门禁测不到**。组件只负责渲染。
+ * ★ 原实现读的是 `key_differentiators` / `differentiators`，这两个键后端**不存在**
+ *   ⇒ 恒返回 '' ⇒ 本区块永远不渲染（真数据接线进来却看不见，已修）。
+ */
+const differentiationText = computed<string>(() => props.data?.differentiation_text || '')
 </script>
 
 <style scoped>

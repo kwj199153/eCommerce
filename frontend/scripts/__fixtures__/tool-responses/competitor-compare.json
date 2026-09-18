@@ -1,0 +1,184 @@
+{
+  "success": true,
+  "intent": "",
+  "data": {
+    "type": "competitor_comparison",
+    "compared_count": 3,
+    "competitors": [
+      {
+        "asin": "B08ABC1234",
+        "brand": "SoundMax Pro",
+        "title": "Premium Wireless Bluetooth Earbuds with "
+      },
+      {
+        "asin": "B08DEF5678",
+        "brand": "TechBeat",
+        "title": "Wireless Earbuds Bluetooth 5.3 IPX7 Wate"
+      },
+      {
+        "asin": "B08GHI9012",
+        "brand": "AudioElite",
+        "title": "True Wireless Earbuds Hi-Fi Sound Qualit"
+      }
+    ],
+    "comparison": {
+      "price_comparison": {
+        "dimension": "price",
+        "values": [
+          {
+            "asin": "B08ABC1234",
+            "brand": "SoundMax Pro",
+            "value": 79.99
+          },
+          {
+            "asin": "B08DEF5678",
+            "brand": "TechBeat",
+            "value": 49.99
+          },
+          {
+            "asin": "B08GHI9012",
+            "brand": "AudioElite",
+            "value": 129.99
+          }
+        ],
+        "best": "TechBeat",
+        "best_value": 49.99
+      },
+      "rating_comparison": {
+        "dimension": "rating",
+        "values": [
+          {
+            "asin": "B08ABC1234",
+            "brand": "SoundMax Pro",
+            "value": 4.5
+          },
+          {
+            "asin": "B08DEF5678",
+            "brand": "TechBeat",
+            "value": 4.3
+          },
+          {
+            "asin": "B08GHI9012",
+            "brand": "AudioElite",
+            "value": 4.7
+          }
+        ],
+        "best": "AudioElite",
+        "best_value": 4.7
+      },
+      "review_count_comparison": {
+        "dimension": "review_count",
+        "values": [
+          {
+            "asin": "B08ABC1234",
+            "brand": "SoundMax Pro",
+            "value": 12456
+          },
+          {
+            "asin": "B08DEF5678",
+            "brand": "TechBeat",
+            "value": 8234
+          },
+          {
+            "asin": "B08GHI9012",
+            "brand": "AudioElite",
+            "value": 3421
+          }
+        ],
+        "best": "SoundMax Pro",
+        "best_value": 12456
+      },
+      "bsr_comparison": {
+        "dimension": "bsr_rank",
+        "values": [
+          {
+            "asin": "B08ABC1234",
+            "brand": "SoundMax Pro",
+            "value": 1523
+          },
+          {
+            "asin": "B08DEF5678",
+            "brand": "TechBeat",
+            "value": 892
+          },
+          {
+            "asin": "B08GHI9012",
+            "brand": "AudioElite",
+            "value": 3456
+          }
+        ],
+        "best": "TechBeat",
+        "best_value": 892
+      },
+      "value_score": [
+        {
+          "asin": "B08DEF5678",
+          "brand": "TechBeat",
+          "value_score": 172.0,
+          "rating": 4.3,
+          "price": 49.99
+        },
+        {
+          "asin": "B08ABC1234",
+          "brand": "SoundMax Pro",
+          "value_score": 112.5,
+          "rating": 4.5,
+          "price": 79.99
+        },
+        {
+          "asin": "B08GHI9012",
+          "brand": "AudioElite",
+          "value_score": 72.3,
+          "rating": 4.7,
+          "price": 129.99
+        }
+      ],
+      "overall_ranking": [
+        {
+          "asin": "B08DEF5678",
+          "brand": "TechBeat",
+          "overall_score": 85.0,
+          "rank": 1
+        },
+        {
+          "asin": "B08ABC1234",
+          "brand": "SoundMax Pro",
+          "overall_score": 63.4,
+          "rank": 2
+        },
+        {
+          "asin": "B08GHI9012",
+          "brand": "AudioElite",
+          "overall_score": 44.2,
+          "rank": 3
+        }
+      ],
+      "differentiation_analysis": {
+        "price_spread": 80.0,
+        "rating_spread": 0.4,
+        "market_segments": [
+          {
+            "brand": "SoundMax Pro",
+            "segment": "mid-range"
+          },
+          {
+            "brand": "TechBeat",
+            "segment": "mid-range"
+          },
+          {
+            "brand": "AudioElite",
+            "segment": "premium"
+          }
+        ],
+        "gap_opportunities": []
+      },
+      "recommendations": [
+        "[探针桩] 离线",
+        "💡 最佳性价比: TechBeat ($49.99, ⭐4.3)",
+        "🏆 最高评分: AudioElite (⭐4.7)"
+      ]
+    }
+  },
+  "message": "完成 3 个竞品的多维度对比",
+  "timestamp": "2026-09-18T02:09:25.681815"
+}

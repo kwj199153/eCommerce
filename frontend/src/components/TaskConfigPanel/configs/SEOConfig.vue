@@ -160,8 +160,32 @@ const handleAnalyze = () => {
   if (!asin || !/^B0[A-Z0-9]{8,10}$/.test(asin)) {
     return message.warning('请输入有效的 ASIN 格式（如 B0CXXXX001）')
   }
+
+  // ★ P0-2 批 1：后端 /listing/analyze/seo 诊断的是 **Listing 文本**
+  //   （title / bullets / description 三件必填），**不是 ASIN** ——
+  //   后端没有「按 ASIN 查 Listing」这个能力。
+  //   所以这里把「载入产品」上已有的 Listing 内容一并交给执行器。
+  //   ★ 缺料**不在这里拦**：只有一处判定（executeSEOAudit），文案也只在那一处，
+  //     避免出现两个地方各说一套「缺什么」。
+  const p = workingProduct?.value
+  const bullets = Array.isArray(p?.generated_bullets)
+    ? p.generated_bullets.map((b: any) => `【${b?.title || ''}】${b?.content || ''}`)
+    : []
+  const keywords = Array.isArray(p?.keywords) ? p.keywords : []
+
   analyzing.value = true
-  setTimeout(() => { analyzing.value = false; emit('startAnalysis', form.value) }, 800)
+  setTimeout(() => {
+    analyzing.value = false
+    emit('startAnalysis', {
+      ...form.value,
+      listing_title: p?.generated_title || p?.title || '',
+      listing_bullets: bullets,
+      listing_description: p?.description || '',
+      listing_search_terms: keywords.join(' '),
+      listing_main_keyword: keywords[0] || '',
+      platform_mode: 'amazon',
+    })
+  }, 800)
 }
 
 const handleReset = () => { form.value = { ...defaultForm }; localStorage.removeItem('seo-audit-config'); selectedMainProduct.value = null; selectedCompetitorProduct.value = null }

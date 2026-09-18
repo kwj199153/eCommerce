@@ -85,6 +85,9 @@ export function analyzeSEO(data: {
   description: string
   search_terms: string
   main_keyword?: string
+  /** ★ 目标平台。后端 schemas.SEOAnalysisRequest 默认 "amazon"；
+   *  此前这里漏声明 ⇒ vue-tsc 报 TS2353（漏的是声明，不是数据） */
+  platform?: string
 }) {
   return request.post('/listing/analyze/seo', data)
 }

@@ -1,0 +1,49 @@
+{
+  "success": true,
+  "data": {
+    "product_name": "Manual Coffee Grinder",
+    "bullets": [
+      {
+        "bullet_id": 1,
+        "title": "PREMIUM QUALITY",
+        "content": "Our Manual Coffee Grinder features 304 stainless steel burr. This ensures you get the best performance and value for your investment. Designed with attention to detail and built to last.",
+        "character_count": 201,
+        "emotion_trigger": "gain_desired"
+      },
+      {
+        "bullet_id": 2,
+        "title": "EASY TO USE",
+        "content": "Our Manual Coffee Grinder features 40 adjustable settings. This ensures you get the best performance and value for your investment. Designed with attention to detail and built to last.",
+        "character_count": 195,
+        "emotion_trigger": "pain_relief"
+      },
+      {
+        "bullet_id": 3,
+        "title": "VERSATILE APPLICATION",
+        "content": "Our Manual Coffee Grinder features foldable non-slip handle. This ensures you get the best performance and value for your investment. Designed with attention to detail and built to last.",
+        "character_count": 207,
+        "emotion_trigger": "social_proof"
+      },
+      {
+        "bullet_id": 4,
+        "title": "DURABLE DESIGN",
+        "content": "Our Manual Coffee Grinder features 7.5 inch portable body. This ensures you get the best performance and value for your investment. Designed with attention to detail and built to last.",
+        "character_count": 198,
+        "emotion_trigger": "fear_avoidance"
+      },
+      {
+        "bullet_id": 5,
+        "title": "SATISFACTION GUARANTEED",
+        "content": "Our Manual Coffee Grinder features easy to disassemble and clean. This ensures you get the best performance and value for your investment. Designed with attention to detail and built to last.",
+        "character_count": 214,
+        "emotion_trigger": "urgency"
+      }
+    ],
+    "total_characters": 1015,
+    "coverage_score": 100.0,
+    "tips": [
+      "每条五点以大写标题开头，便于移动端快速浏览"
+    ]
+  },
+  "message": "五点描述生成成功"
+}

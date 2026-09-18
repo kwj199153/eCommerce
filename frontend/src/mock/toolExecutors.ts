@@ -1,17 +1,34 @@
 /**
- * 工具执行器 — Mock 数据生成层
+ * 工具执行器 —— 工具 ID → 执行结果
  *
  * 由 components/ChatPanel/index.vue 拆分而来（S1 低垂果实）。
- * 这里集中承载「工具 ID -> 执行结果」的纯数据生成逻辑：
- *   - 每个执行器签名统一为 `async (params: any) => Promise<any>`
- *   - 不依赖任何响应式状态（无 ref / .value / store 读写）
- *   - 唯一外部依赖：useMonitorPoolStore（竞品监控两个执行器读取监控池）
+ * 每个执行器签名统一为 `async (params: any) => Promise<any>`，
+ * 组件层通过 `toolExecutors` 注册表查表调用，不关心实现来源。
  *
- * 后续接真实后端时，只需替换本文件内的实现（或按 id 指向真实 API 调用），
- * 组件层无需改动 —— 通过 toolExecutors 注册表查表调用。
+ * ★ P0-2 批 1（2026-09-18）：**4 个高曝光执行器已接真后端**
+ *   - `ad-diagnosis`  → POST /ad-analysis/diagnose
+ *   - `competitor`    → POST /competitor/compare
+ *   - `seo-audit`     → POST /listing/analyze/seo
+ *   - `bullet-gen`    → POST /listing/generate/bullets
+ *   形状转换统一在 `@/utils/toolResultAdapters`。
+ *   ★ 这 4 个**不再产出本地假数据**；后端给不出的字段一律留空，**不编造**。
+ *
+ * ★ 其余执行器**仍是本地 mock**（本目录的定位所在），由前端门禁
+ *   `scripts/check-tool-reality.cjs` 钉住「真调用执行器数量不得回退」。
+ *
+ * 外部依赖：useMonitorPoolStore（竞品监控执行器读监控池）+ 上述 4 个 @/api 模块。
  */
 import { useMonitorPoolStore } from '@/stores/monitorPool'
 import { generateAssets } from '@/api/aigcMedia'
+import { diagnoseAdAccount } from '@/api/adAnalysis'
+import { generateBullets, analyzeSEO } from '@/api/listingGenerator'
+import { compareCompetitors } from '@/api/competitorIntel'
+import {
+  adaptAdDiagnosis,
+  adaptBulletGen,
+  adaptSeoAudit,
+  adaptCompetitorCompare,
+} from '@/utils/toolResultAdapters'
 
 // 辅助：时间范围标签
 const timeRangeLabel = (tr: string): string => ({ '7d': '近7天', '30d': '近30天', '90d': '近90天' }[tr] || '近30天')
@@ -212,9 +229,31 @@ export const executePainPointAnalysis = async (params: any): Promise<any> => {
 
 // 执行竞品对比（Mock）
 export const executeCompetitorAnalysis = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 500))
-  const { getMockCompetitorComparison } = await import('@/mock/data')
-  return getMockCompetitorComparison(params.validAsins || params.asins.filter((a: string) => a))
+  // ★ 真调后端。/competitor/compare 硬校验 asins >= 2（<2 直接 400），
+  //   这里提前拦下来，给的是**可执行的下一步**而不是一个后端 400 文案。
+  const asins: string[] = (params?.validAsins || params?.asins || []).filter((a: any) => !!a)
+  if (asins.length < 2) {
+    throw new Error('竞品对比至少需要 2 个 ASIN —— 请在右侧补齐后再试')
+  }
+
+  const resp: any = await compareCompetitors({ asins, dimensions: params?.dimensions })
+  if (resp?.success === false) {
+    throw new Error(resp?.message || '竞品对比失败')
+  }
+
+  // ★ 后端在「ASIN 一个都解析不到」时返回 HTTP 200 + success:true + data.error（**伪成功**）。
+  //   只判 success === false 会把这种失败当成功，界面就会拿空数组渲染出一份
+  //   「对比完成」的空报告。实测：{"error":"至少需要2个竞品进行对比"}。
+  const bizErr = resp?.data?.error
+  if (bizErr) {
+    throw new Error(typeof bizErr === 'string' ? bizErr : '竞品对比失败：未解析到任何竞品')
+  }
+
+  const adapted = adaptCompetitorCompare(resp, params)
+  if (!adapted.competitors.length) {
+    throw new Error('竞品对比未解析到任何竞品 —— 请确认这些 ASIN 是否已被系统收录')
+  }
+  return adapted
 }
 
 // 执行利润测算 —— 已下线（09-14）
@@ -229,53 +268,15 @@ export const executeCompetitorAnalysis = async (params: any): Promise<any> => {
 
 // 执行广告诊断（Mock）
 export const executeAdDiagnosis = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 600))
-
-  const timeRangeMap: Record<string, string> = { '7d': '近7天', '30d': '近30天', '90d': '近90天' }
-  const grades = ['A', 'B', 'C', 'D', 'F']
-  const grade = grades[Math.floor(Math.random() * 2)] // 倾向给较好评级
-  const score = grade === 'A' ? 85 + Math.floor(Math.random() * 12) : grade === 'B' ? 72 + Math.floor(Math.random() * 12) : 58 + Math.floor(Math.random() * 15)
-
-  return {
-    overall_score: score,
-    grade,
-    summary: `账户整体表现${grade === 'A' ? '优秀' : grade === 'B' ? '良好' : '一般'}，${timeRangeMap[params.time_range] || '近30天'}内各项指标${score >= 75 ? '基本达标' : '存在优化空间'}。`,
-    metrics: [
-      { name: 'ACoS', value: 18 + Math.random() * 17, unit: '%', benchmark: 22.0, status: Math.random() > 0.4 ? 'good' : 'warning', change_pct: (Math.random() - 0.5) * 10 },
-      { name: 'RoAS', value: 2.8 + Math.random() * 2.7, unit: 'x', benchmark: 4.5, status: Math.random() > 0.35 ? 'good' : 'warning', change_pct: (Math.random() - 0.5) * 8 },
-      { name: 'CTR', value: 0.25 + Math.random() * 0.4, unit: '%', benchmark: 0.40, status: Math.random() > 0.35 ? 'good' : 'warning', change_pct: (Math.random() - 0.5) * 6 },
-      { name: 'CVR', value: 5 + Math.random() * 9, unit: '%', benchmark: 9.0, status: Math.random() > 0.45 ? 'good' : 'warning', change_pct: (Math.random() - 0.5) * 10 },
-      { name: 'CPC', value: 0.45 + Math.random() * 0.75, unit: '$', benchmark: 0.75, status: Math.random() > 0.4 ? 'good' : 'warning', change_pct: (Math.random() - 0.5) * 8 },
-    ],
-    campaigns: [
-      { campaign_name: '自动广告-广泛', campaign_type: 'SP', status: 'active', spend: 450 + Math.random() * 500, impressions: 80000 + Math.floor(Math.random() * 150000), clicks: 1200 + Math.floor(Math.random() * 2000), orders: 40 + Math.floor(Math.random() * 60), sales: (orders: any) => orders * (25 + Math.random() * 20), acos: (s: any) => (s.spend / s.sales(s) * 100), roas: (s: any) => s.sales(s) / s.spend, ctr: (c: any) => c.clicks / c.impressions * 100, cvr: (c: any) => c.orders / c.clicks * 100, cpc: (c: any) => c.spend / c.clicks, health_score: 60 + Math.floor(Math.random() * 30) },
-      { campaign_name: '手动-精准-核心词', campaign_type: 'SP', status: 'active', spend: 600 + Math.random() * 600, impressions: 40000 + Math.floor(Math.random() * 60000), clicks: 2000 + Math.floor(Math.random() * 2500), orders: 80 + Math.floor(Math.random() * 80), sales: (o: any) => o * (28 + Math.random() * 18), acos: (s: any) => (s.spend / s.sales(s) * 100), roas: (s: any) => s.sales(s) / s.spend, ctr: (c: any) => c.clicks / c.impressions * 100, cvr: (c: any) => c.orders / c.clicks * 100, cpc: (c: any) => c.spend / c.clicks, health_score: 70 + Math.floor(Math.random() * 25) },
-      { campaign_name: '手动-短语-长尾词', campaign_type: 'SP', status: 'active', spend: 220 + Math.random() * 180, impressions: 50000 + Math.floor(Math.random() * 70000), clicks: 600 + Math.floor(Math.random() * 900), orders: 18 + Math.floor(Math.random() * 30), sales: (o: any) => o * (22 + Math.random() * 16), acos: (s: any) => (s.spend / s.sales(s) * 100), roas: (s: any) => s.sales(s) / s.spend, ctr: (c: any) => c.clicks / c.impressions * 100, cvr: (c: any) => c.orders / c.clicks * 100, cpc: (c: any) => c.spend / c.clicks, health_score: 65 + Math.floor(Math.random() * 28) },
-      { campaign_name: '品牌-SB-品牌词', campaign_type: 'SB', status: 'active', spend: 150 + Math.random() * 120, impressions: 12000 + Math.floor(Math.random() * 18000), clicks: 350 + Math.floor(Math.random() * 500), orders: 14 + Math.floor(Math.random() * 25), sales: (o: any) => o * (32 + Math.random() * 15), acos: (s: any) => (s.spend / s.sales(s) * 100), roas: (s: any) => s.sales(s) / s.spend, ctr: (c: any) => c.clicks / c.impressions * 100, cvr: (c: any) => c.orders / c.clicks * 100, cpc: (c: any) => c.spend / c.clicks, health_score: 72 + Math.floor(Math.random() * 23) },
-      { campaign_name: '展示-SD-竞品定向', campaign_type: 'SD', status: 'active', spend: 280 + Math.random() * 220, impressions: 30000 + Math.floor(Math.random() * 50000), clicks: 420 + Math.floor(Math.random() * 650), orders: 10 + Math.floor(Math.random() * 20), sales: (o: any) => o * (30 + Math.random() * 18), acos: (s: any) => (s.spend / s.sales(s) * 100), roas: (s: any) => s.sales(s) / s.spend, ctr: (c: any) => c.clicks / c.impressions * 100, cvr: (c: any) => c.orders / c.clicks * 100, cpc: (c: any) => c.spend / c.clicks, health_score: 50 + Math.floor(Math.random() * 30) },
-    ].map(c => ({
-      ...c,
-      spend: Math.round(c.spend * 100) / 100,
-      sales: Math.round(c.sales(c) * 100) / 100,
-      acos: Math.round(c.acos(c) * 10) / 10,
-      roas: Math.round(c.roas(c) * 100) / 100,
-      ctr: Math.round(c.ctr(c) * 100) / 100,
-      cvr: Math.round(c.cvr(c) * 10) / 10,
-      cpc: Math.round(c.cpc(c) * 100) / 100,
-    })),
-    top_issues: [
-      { type: 'acos_high', title: '部分 Campaign ACoS 偏高', description: '展示广告(SD) Campaign 的 ACoS 超过 35%，建议优化定向或降低出价', priority: 'high' },
-      { type: 'ctr_low', title: '品牌词 CTR 有提升空间', description: 'SB 品牌 Campaign CTR 仅 0.29%，建议测试新创意素材', priority: 'medium' },
-      { type: 'negative_missing', title: '否定关键词可能不足', description: '搜索词报告中发现多笔无转化花费，建议加强否词管理', priority: 'medium' },
-    ],
-    recommendations: [
-      '🔥 暂停 SD Campaign 中 ACoS > 50% 的低效投放，转移预算到 SP 精准匹配',
-      '📝 对 SB 品牌词 Campaign 进行 A/B 测试，选择 CTR 更高的创意素材',
-      '📊 本周下载搜索词报告，新增不少于 10 个精确否定词',
-      '💰 对 RoAS > 5 的核心词 Campaign 适当提高预算 15%',
-      '🎯 开启商品投放(PAT)扩展流量来源，降低对单一关键词的依赖',
-    ],
+  // ★ 真调后端。★ 与对话路径（useChatOrchestrator 的 `/诊断/` 分支）**同源同端点** ——
+  //   同一能力只有一个数据来源，避免「工具卡与对话给出两个数字」。
+  const resp: any = await diagnoseAdAccount({
+    time_range: params?.time_range || '30d',
+  })
+  if (resp?.success === false) {
+    throw new Error(resp?.message || '广告诊断失败')
   }
+  return adaptAdDiagnosis(resp, params)
 }
 
 // 执行搜索词报告（Mock）
@@ -897,30 +898,31 @@ export const executeTitleGen = async (params: any): Promise<any> => {
 
 // 执行五点描述生成（Mock）
 export const executeBulletGen = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 750))
-
-  const productName = params.product_name || 'Coffee Grinder'
-  return {
-    type: 'bullet_gen',
-    params,
-    product_name: productName,
-    // 透传来源产品，供结果卡「应用到当前产品 Listing」定位（对齐 title-gen）
-    _source: params.source === 'product_library' ? 'product' : 'manual',
-    product_id: params.product_id,
-    bullets: [
-      { point: `【PREMIUM CERAMIC BURRS】${productName} features high-density ceramic conical burrs that deliver consistent grind size every time. Unlike metal burrs that overheat and alter flavor, our ceramic burrs stay cool, preserving your coffee's essential oils and aroma for a richer, more authentic taste.`, emoji: '💎', char_count: 248 },
-      { point: `【ADJUSTABLE COARSENESS SETTINGS】Customize your grind from ultra-fine for espresso to coarse for French press with 15+ precision settings. The intuitive dial mechanism lets you find the perfect texture for ANY brewing method — AeroPress, pour-over, drip, cold brew, or Turkish coffee.`, emoji: '⚙️', char_count: 256 },
-      { point: `【PORTABLE & TRAVEL-FRIENDLY】Compact size (5.2 x 3.1 inches) fits perfectly in your backpack or suitcase. No batteries, no cords — just pure manual grinding anywhere you go. Ideal for camping, hiking, office use, or small kitchens where space is at a premium.`, emoji: '🧳', char_count: 238 },
-      { point: `【BUILT TO LAST】Crafted from food-grade 304 stainless steel with a reinforced ergonomic handle. The transparent powder chamber holds up to 40g of beans (4 cups), and the anti-slip silicone base keeps it stable during use. Backed by our 5-year warranty.`, emoji: '🔩', char_count: 245 },
-      { point: `【COMPLETE PACKAGE】Includes a cleaning brush, storage pouch, and user manual. Our 24/7 customer support team is ready to help. Makes an excellent gift for coffee lovers — presented in premium gift-ready packaging.`, emoji: '🎁', char_count: 218 },
-    ],
-    optimization_suggestions: [
-      '每条 Bullet 以【大写关键词】开头，移动端首屏可见',
-      '全大写括号内的卖点词，吸引快速浏览的买家',
-      '融入场景词（camping/office/AeroPress）提升搜索覆盖',
-      '数字具体化（15+ settings / 40g / 4 cups）增加可信度',
-    ],
+  // ★ 真调后端。入参只有 product_name 是必需的（后端 min_length=2）
+  const productName = String(params?.product_name || '').trim()
+  if (productName.length < 2) {
+    throw new Error('请先填写或载入产品名称（至少 2 个字符）')
   }
+
+  // 右栏面板的 features 是 [{name, detail}]，后端要 string[] ⇒ 在这里合流。
+  // 兼容两种入参形态，避免面板改名后静默丢参。
+  const rawFeatures = Array.isArray(params?.features) ? params.features : []
+  const features = rawFeatures
+    .map((f: any) =>
+      typeof f === 'string' ? f : [f?.name, f?.detail].filter(Boolean).join(': '),
+    )
+    .map((s: string) => String(s || '').trim())
+    .filter(Boolean)
+
+  const resp: any = await generateBullets({
+    product_name: productName,
+    features: features.length ? features : undefined,
+    tone: params?.style || params?.tone || undefined,
+  })
+  if (resp?.success === false) {
+    throw new Error(resp?.message || '五点描述生成失败')
+  }
+  return adaptBulletGen(resp, params)
 }
 
 // 执行描述生成（Mock）
@@ -954,64 +956,40 @@ export const executeDescGen = async (params: any): Promise<any> => {
 
 // 执行 SEO 诊断（Mock）
 export const executeSEOAudit = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 650))
+  // ★ 真调后端。★ 关键：后端 /listing/analyze/seo 要的是**完整 Listing 文本**
+  //   （title / bullets / description 三件必填），**不是 ASIN** ——
+  //   后端没有「按 ASIN 查 Listing」的能力。
+  //   文本由右栏面板在提交时从「载入产品」带过来（见 configs/SEOConfig.vue）。
+  const title = String(params?.listing_title || '').trim()
+  const bullets: string[] = Array.isArray(params?.listing_bullets)
+    ? params.listing_bullets.map((b: any) => String(b || '').trim()).filter(Boolean)
+    : []
+  const description = String(params?.listing_description || '').trim()
 
-  const asin = params.asin || 'B08SAMPLE01'
-  const platformMode = params.platform_mode || 'amazon'
-  const isSimplified = params.is_simplified === true
-
-  // ===== Temu / Shopee：简化 SEO 校验规则 =====
-  if (isSimplified) {
-    const platformLabel = platformMode === 'temu' ? 'Temu' : 'Shopee'
-    return {
-      type: 'seo_audit',
-      params,
-      asin,
-      platform_mode: platformMode,
-      is_simplified: true,
-      overall_score: 76,
-      grade: 'B',
-      categories: [
-        { category: '短标题', score: 82, status: 'good', issues: ['标题长度 28 字符，符合 20-40 区间', '核心词已前置，但可再精简修饰词'], suggestions: ['保持核心词前置', '控制在 40 字符内，突出价格/卖点'] },
-        { category: '商品详情', score: 70, status: 'warning', issues: ['详情段落偏长，移动端需下滑 3 屏', '缺少规格参数表'], suggestions: ['用符号列表+短段落结构', '补充规格参数、售后说明'] },
-        { category: '关键词覆盖', score: 68, status: 'warning', issues: ['站内搜索词仅覆盖 6/12 目标词', '缺少长尾场景词'], suggestions: ['在标题+详情首段自然植入高频词', '补充场景词（卧室/办公室/送礼）'] },
-        { category: '主图质量', score: 74, status: 'warning', issues: ['主图背景不够纯净', '缺少多角度展示图'], suggestions: ['重拍白底主图', '补充细节图+场景图'] },
-        { category: '价格竞争力', score: 80, status: 'good', issues: [`价格处于${platformLabel}类目中位水平`, '缺少促销标签'], suggestions: ['可设置限时折扣标签', '突出性价比话术'] },
-      ],
-      top_recommendations: [
-        '🔥 P0：短标题核心词前置，控制在 30 字符内',
-        '📌 P1：商品详情改为「符号列表 + 规格参数表」结构',
-        '📌 P1：主图重拍白底，补充细节/场景图',
-        '💡 P2：补充长尾场景词，提升站内搜索曝光',
-      ],
-    }
+  // 缺料就**明确说缺什么**，绝不拿假文案去诊断 —— 那是把本地随机数包装成 AI 结论。
+  const missing: string[] = []
+  if (!title) missing.push('标题')
+  if (!bullets.length) missing.push('五点描述')
+  if (!description) missing.push('产品描述')
+  if (missing.length) {
+    throw new Error(
+      `该商品缺少${missing.join(' / ')}，无法做 SEO 诊断。` +
+        '请先在顶部「载入产品」选一个已有 Listing 内容的商品，或先用 Listing 工具生成文案。',
+    )
   }
 
-  // ===== 亚马逊：完整 SEO 校验规则 =====
-  return {
-    type: 'seo_audit',
-    params,
-    asin,
-    platform_mode: platformMode,
-    is_simplified: false,
-    overall_score: 72,
-    grade: 'B',
-    categories: [
-      { category: '标题优化', score: 78, status: 'good', issues: ['标题长度 185 字符，略超推荐 150-200 区间上限', '品牌名位置偏后，建议移至最前面'], suggestions: ['将品牌名移至标题开头', '精简修饰词，控制在 200 字符以内'] },
-      { category: '五点描述', score: 85, status: 'good', issues: ['第3条 Bullet 未以大写关键词开头', '缺少数字量化卖点'], suggestions: ['每条以【KEYWORD】格式开头', '加入具体数据（尺寸/容量/时长等）'] },
-      { category: '搜索词覆盖率', score: 65, status: 'warning', issues: ['核心搜索词 "portable coffee grinder" 未出现在标题前 50 字符', '长尾词覆盖不足，仅命中 12/25 目标词'], suggestions: ['在标题/五点/A+ 中自然植入 Top 20 搜索词', '利用后台搜索词报告补充遗漏的高频词'] },
-      { category: '图片质量', score: 70, status: 'warning', issues: ['主图背景不够纯净，存在轻微阴影', '缺少信息图表(infographic)风格的辅助图', '生活场景图仅 3 张，建议增加到 5 张'], suggestions: ['重新拍摄白底主图，确保纯白背景(#FFF)', '增加尺寸对比图、使用场景拼图'] },
-      { category: 'A+ 页面', score: 55, status: 'poor', issues: ['未开通 A+ Content（品牌注册 prerequisite）', '缺少增强版产品描述模块'], suggestions: ['尽快完成 Brand Registry 注册', 'A+ 可提升转化率 5-10%'] },
-      { category: '评价管理', score: 80, status: 'good', issues: ['近 30 天收到 2 条差评未回复', 'Vine 计划未启用'], suggestions: ['及时回复差评并展示解决方案', '申请 Amazon Vine 获取早期评论'] },
-    ],
-    top_recommendations: [
-      '🔥 P0：将核心搜索词 "portable coffee grinder" 移至标题前 50 字符内',
-      '🔥 P0：申请 Brand Registry 开通 A+ Content',
-      '📌 P1：重拍白底主图，消除阴影和反光',
-      '📌 P1：每条 Bullet 加入至少 1 个数字化卖点',
-      '💡 P2：启用 Vine 计划获取 30 条早期评论',
-    ],
+  const resp: any = await analyzeSEO({
+    title,
+    bullets,
+    description,
+    search_terms: String(params?.listing_search_terms || ''),
+    main_keyword: params?.listing_main_keyword || undefined,
+    platform: params?.platform_mode || 'amazon',
+  })
+  if (resp?.success === false) {
+    throw new Error(resp?.message || 'SEO 诊断失败')
   }
+  return adaptSeoAudit(resp, params)
 }
 
 // 执行 A/B 测试（Mock）

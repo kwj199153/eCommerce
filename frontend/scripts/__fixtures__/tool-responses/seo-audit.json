@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "data": {
+    "overall_score": 72.5,
+    "title_score": 80.0,
+    "bullet_score": 68.0,
+    "description_score": 70.0,
+    "keywords_score": 72.0,
+    "checklist": {
+      "标题含主关键词": true,
+      "标题长度 80-200 字符": true,
+      "五点均以大写标题开头": false,
+      "后台搜索词已填": true,
+      "描述含场景化卖点": false
+    },
+    "improvement_areas": [
+      "五点描述首句建议突出差异化",
+      "描述可补充使用场景"
+    ],
+    "grade": "C"
+  },
+  "message": "SEO 分析完成"
+}

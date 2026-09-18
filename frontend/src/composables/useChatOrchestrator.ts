@@ -1361,11 +1361,18 @@ export function useChatOrchestrator(opts: ChatOrchestratorOptions) {
 
         if (response) {
           // 结构化结果：一次性渲染 + 落右栏
+          // ★ P0-2 批 1 修正：原来 isDiagnosis 给的是 `displayType: 'ad_diagnosis'`，
+          //   但 ChatPanel 的结果卡分派只认 `msg.data?.toolId` ⇒ 该 displayType
+          //   **全仓没有任何渲染分支** ⇒ metrics / campaigns / top_issues 其实一直渲染不出来，
+          //   用户只看得到一行 summary（「接线了但没渲染」比纯 mock 更隐蔽）。
+          //   现改为与工具卡**共用同一个结果卡**，两个入口同一份真数据。
           chatStore.addMessage({
             role: 'assistant',
             content: response.reply || response.summary || '分析完成',
-            data: response.data || response,
-            displayType: response.display_type || (isDiagnosis ? 'ad_diagnosis' : undefined),
+            data: isDiagnosis
+              ? { toolId: 'ad-diagnosis', toolName: '广告诊断', resultData: response }
+              : (response.data || response),
+            displayType: isDiagnosis ? 'tool_result' : (response.display_type || undefined),
           })
           return
         }
