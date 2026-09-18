@@ -1,7 +1,7 @@
 """
 运营复盘师 - 数据模型定义
 
-复盘能力基于 amazon_sp 数据源（MockAmazonDataSource / SpApiDataSource）的
+复盘能力基于 amazon_sp 数据源工厂（get_data_source：真实 SP-API 或 Mock 回退）的
 8 张表数据做聚合分析，产出周报/月报/广告归因/商品表现/库存健康/利润审计
 六大类复盘结果。
 """

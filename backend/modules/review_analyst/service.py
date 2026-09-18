@@ -1,7 +1,15 @@
 """运营复盘师 - 业务逻辑层
 
-复用 amazon_sp 的 MockAmazonDataSource 数据源（对接真实 SP-API 后替换为
-SpApiDataSource 零改动），聚合 8 张表数据产出六大复盘能力。
+数据源**一律经工厂** `amazon_sp.data_sources.get_data_source()` 获取：
+  - 已配置 SP-API 凭据 → SpApiDataSource（真实数据）
+  - 未配置           → MockAmazonDataSource（演示数据，工厂会打 warning）
+
+★ 禁止在本模块 import 具体数据源实现（`mock_source` / `sp_api_source`）。
+  曾经这里是 `_source = MockAmazonDataSource(seed=42)` 的**模块级单例** ——
+  后果是「配好真实凭据」对复盘功能完全无效，永远跑假数据，且没有任何报错。
+  该形态由 `tests/test_import_boundaries.py` 钉住（反向注入验证过）。
+
+聚合 8 张表数据产出六大复盘能力。
 
 设计原则：
 - service 只做「取数 + 聚合计算」，不引入 LLM（复盘是确定性数据汇总）。
@@ -12,7 +20,7 @@ import logging
 from datetime import date, timedelta
 from typing import Optional
 
-from modules.amazon_sp.data_sources.mock_source import MockAmazonDataSource
+from modules.amazon_sp.data_sources import get_data_source
 
 from .schemas import (
     WeeklyReportRequest, MonthlyReviewRequest, AdReviewRequest,
@@ -21,8 +29,17 @@ from .schemas import (
 
 logger = logging.getLogger(__name__)
 
-# 数据源单例（seed 固定，保证复盘数据可复现）
-_source = MockAmazonDataSource(seed=42)
+# ★ 数据源**按请求**经工厂获取（不是模块级单例）。
+#
+#   seed=42 只在「工厂回退到 Mock」时生效，作用是让 Mock 数据可复现。
+#   旧形态（模块级单例）其实**做不到可复现**：`MockAmazonDataSource.__init__`
+#   里是 `self._rng = random.Random(seed)`，单例会让 RNG 状态跨请求累积 ——
+#   同一个请求第 N 次调用拿到的数据与第 1 次不同。
+#
+#   改为一请求一实例后：Mock 档每次都从同一起点生成（真的可复现），
+#   真实档则按当前配置走 SpApiDataSource。两种档的判定都在工厂里。
+def _source():
+    return get_data_source(prefer="auto", seed=42)
 
 
 def _date_range(days: int):
@@ -67,9 +84,10 @@ def _sum_ad(ads: list[dict]) -> dict:
 async def weekly_report(request: WeeklyReportRequest) -> dict:
     """经营概览（周报）：销售 + 广告 + 库存 + 客诉汇总。"""
     d_from, d_to = _date_range(request.days)
-    sales = _source.fetch_daily_sales(request.store_id, d_from, d_to)
-    ads = _source.fetch_ad_metrics(request.store_id, d_from, d_to)
-    inventory = _source.fetch_inventory(request.store_id)
+    source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
+    sales = source.fetch_daily_sales(request.store_id, d_from, d_to)
+    ads = source.fetch_ad_metrics(request.store_id, d_from, d_to)
+    inventory = source.fetch_inventory(request.store_id)
 
     s = _sum_sales(sales)
     a = _sum_ad(ads)
@@ -102,8 +120,9 @@ async def weekly_report(request: WeeklyReportRequest) -> dict:
 async def monthly_review(request: MonthlyReviewRequest) -> dict:
     """月度复盘：GMV/ACoS/转化/退货趋势对比。"""
     d_from, d_to = _date_range(request.days)
-    sales = _source.fetch_daily_sales(request.store_id, d_from, d_to)
-    ads = _source.fetch_ad_metrics(request.store_id, d_from, d_to)
+    source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
+    sales = source.fetch_daily_sales(request.store_id, d_from, d_to)
+    ads = source.fetch_ad_metrics(request.store_id, d_from, d_to)
 
     s = _sum_sales(sales)
     a = _sum_ad(ads)
@@ -143,7 +162,8 @@ async def monthly_review(request: MonthlyReviewRequest) -> dict:
 async def ad_review(request: AdReviewRequest) -> dict:
     """广告归因：ROAS/ACoS/CPC/CTR 多维分析，campaign 评级。"""
     d_from, d_to = _date_range(request.days)
-    ads = _source.fetch_ad_metrics(request.store_id, d_from, d_to)
+    source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
+    ads = source.fetch_ad_metrics(request.store_id, d_from, d_to)
 
     a = _sum_ad(ads)
 
@@ -200,9 +220,10 @@ async def ad_review(request: AdReviewRequest) -> dict:
 async def product_performance(request: ProductPerformanceRequest) -> dict:
     """商品表现：SKU 级销量/利润/周转排名，识别爆款与滞销。"""
     d_from, d_to = _date_range(request.days)
-    sales = _source.fetch_daily_sales(request.store_id, d_from, d_to, asins=request.asins)
-    listings = _source.fetch_listings(request.store_id, d_from, d_to, asins=request.asins)
-    inventory = _source.fetch_inventory(request.store_id)
+    source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
+    sales = source.fetch_daily_sales(request.store_id, d_from, d_to, asins=request.asins)
+    listings = source.fetch_listings(request.store_id, d_from, d_to, asins=request.asins)
+    inventory = source.fetch_inventory(request.store_id)
 
     # 最新 listing 快照（评分/BSR）
     latest_listing: dict[str, dict] = {}
@@ -255,7 +276,8 @@ async def product_performance(request: ProductPerformanceRequest) -> dict:
 
 async def inventory_health(request: InventoryHealthRequest) -> dict:
     """库存健康：滞销预警 / 断货风险 / 补货建议。"""
-    inventory = _source.fetch_inventory(request.store_id)
+    source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
+    inventory = source.fetch_inventory(request.store_id)
 
     status_map = {"HEALTHY": 0, "WARNING": 0, "CRITICAL": 0, "STAGNANT": 0}
     items = []
@@ -291,8 +313,9 @@ async def inventory_health(request: InventoryHealthRequest) -> dict:
 async def profit_audit(request: ProfitAuditRequest) -> dict:
     """利润审计：销售额 - 佣金 - FBA - 广告 - 退货 - 仓储 = 净利润。"""
     d_from, d_to = _date_range(request.days)
-    sales = _source.fetch_daily_sales(request.store_id, d_from, d_to)
-    ads = _source.fetch_ad_metrics(request.store_id, d_from, d_to)
+    source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
+    sales = source.fetch_daily_sales(request.store_id, d_from, d_to)
+    ads = source.fetch_ad_metrics(request.store_id, d_from, d_to)
 
     s = _sum_sales(sales)
     a = _sum_ad(ads)
