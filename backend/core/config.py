@@ -64,6 +64,16 @@ class Settings(BaseSettings):
         errors = []
         if not self.auth_required:
             errors.append("AUTH_REQUIRED 必须为 true（生产环境不能关闭鉴权）")
+        # ★ 2026-09-17：演示哨兵在生产必须关闭。
+        #   理由与 payment_gateway=mock 同构 —— 它不报错、不告警、接口一切正常，
+        #   只是「任何知道 `demo-token` 这个字符串的人」都能以匿名身份读业务数据。
+        #   而该字符串**就写在前端源码里**（frontend/src/config/demoMode.ts），
+        #   等于把门敞开还贴了张告示。属典型的「静默削弱」，必须在启动期拦住。
+        if self.demo_mode:
+            errors.append(
+                "DEMO_MODE 必须为 false（演示模式承认前端哨兵串 demo-token 为匿名身份，"
+                "等于对任何知道该字符串的人开放全部业务数据）"
+            )
         if not self.jwt_secret_key or "change-in-production" in self.jwt_secret_key:
             errors.append("JWT_SECRET_KEY 必须设为独立的高强度随机值（不能沿用占位默认密钥）")
         if self.debug:
@@ -369,6 +379,39 @@ class Settings(BaseSettings):
     auth_required: bool = Field(
         default=True,
         description="是否强制业务接口鉴权（默认开启，fail-closed；本地演示可显式设 false）",
+    )
+
+    # ====== 演示模式哨兵（★ 2026-09-17 新增）======
+    #
+    # ★ 背景：老板反馈「真实登录后在主页面仍看到别人的 4 个店铺」，
+    #   排查后发现根因是「把演示模式表达成了『连 Authorization 头都不解析』」。
+    #
+    #   旧实现的 `require_auth_if_enabled` 在 auth_required=False 时**第一步就
+    #   return None**，后果不是"演示模式不设限"，而是**连真实登录用户的身份也
+    #   拿不到** —— 于是所有 `user is None → 放行` 的归属过滤分支被整体触发：
+    #     · `accounts.filter_accessible_stores(db, None, stores)` → 返回全库店铺
+    #       （★ 2026-09-17 已收紧为「无身份 ⇒ 空列表」；此处描述的是**当时**的形态）
+    #       ⇒ 任何登录用户看到所有人的店铺（老板看到的就是这个）；
+    #     · `accounts.can_access_store` / `_matches` → 恒真
+    #       ⇒ 伪造 `X-Shop-ID` 即可读写任意店铺的业务数据（BOLA 回归）。
+    #
+    #   ⇒ 正确分工是**两件独立的事**，此前被搓成了一件事：
+    #       · auth_required —— **匿名**访问（完全不带凭据）放不放行；
+    #       · demo_mode     —— 是否承认前端那个演示哨兵串 `demo-token`。
+    #
+    #   两者的组合含义（四象限都有确定行为，没有"漏配就静默放行"）：
+    #       auth_required=T + demo_mode=F → 生产：必须真身份，demo-token 一律 401
+    #       auth_required=F + demo_mode=T → 本地演示：无凭据或 demo-token 均放行
+    #       auth_required=F + demo_mode=F → 本地真实登录联调：匿名放行，
+    #                                        但带了真 token 就**必须**被解析
+    #       auth_required=T + demo_mode=T → 生产护栏拒绝启动（见下方校验）
+    #
+    # ★ 为什么 demo_mode 默认 False（fail-closed）：
+    #   承认 `demo-token` 等于"任何知道这个字符串的人都能以匿名身份访问业务数据"。
+    #   这个字符串就写在开源前端源码里，所以它**不能**是默认值。
+    demo_mode: bool = Field(
+        default=False,
+        description="是否承认前端演示哨兵 token（demo-token）为匿名演示身份；默认关闭",
     )
 
     # ====== LLM (DashScope/Qwen) ======

@@ -201,12 +201,37 @@ async def filter_accessible_stores(
     ★ 为什么单独给一个批量函数：`can_access_store()` 每次都要查一次
       "可见账户集合"，列表端点里对 N 家店调用 N 次就是 N 次往返。
       这里只查一次集合、再在内存里过滤。
+
+    ★★★ 守卫：**没有身份 ⇒ 没有数据**（2026-09-17 收紧；改前是 fail-open）
+
+      改前：`user is None` ⇒ `return list(stores)`（**不过滤** ⇒ 全库返回）。
+      改后：`user is None` ⇒ `return []`。
+
+      为什么必须收：`auth_required=False`（本地 / 演示档）下，匿名请求能拿到
+      **全部真实店铺**。生产档不受影响 —— `main.py::BUSINESS_AUTH` 先用 401
+      拦掉匿名，所以 `user is None` 在生产档**不可达**。但"生产不可达"不等于
+      "本地安全"：`.env` 漏改一行、或拿演示配置连了真实库，就是全库裸奔。
+
+      为什么返回空列表、而不是在这里抛 401 / 403：
+      「放不放行」已由**上游**决定（`require_auth_if_enabled`：生产档无凭据 → 401，
+      演示档无凭据 → 放行到本函数）。本函数只负责**数据可见性**，不该反向改写
+      上游的鉴权结论。上游放行 + 这里给空集 = "访问被允许，但你看不到任何店铺"。
+
+    ★ 为什么**不动** `can_access_store` / `_matches` 的同一分支：
+      那两个函数服务的是**单店**路径（详情 / 写操作 / `X-Shop-ID` 解析）。改它们
+      会让演示档下所有单店请求变成 403 —— 那是**另一档**决策（演示档整体
+      fail-closed），已作为体检报告 P1-5 单独挂账。本次只收口列表入口，
+      不顺手制造第三种语义。
+      ⇒ 已知副作用（**有意保留**）：演示档下"列表为空、单店详情仍可读"是
+        不一致的。要一致就整档一起收 —— 但那是同一处收口，见 P1-5。
     """
-    visible = await get_visible_account_ids(db, user)
     if user is None:
-        # 演示模式：不做归属校验（与 require_auth_if_enabled 的放行口径一致）
-        return list(stores)
+        return []
+
+    visible = await get_visible_account_ids(db, user)
     if visible is None:
+        # 平台超管：全部可见。★ 与上面的空集**不可混淆** ——
+        # 空集是"什么都看不到"，None 是"什么都不限"。
         return list(stores)
     return [s for s in stores if _matches(store_account_id(s), store_owner_id(s), visible, user)]
 

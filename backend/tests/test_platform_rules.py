@@ -463,7 +463,10 @@ def test_routes_under_business_auth_gate():
     """
     防以后新增模块漏挂鉴权闸门。
     （不能用 auth_on 断言 401 —— BUSINESS_AUTH 是 import 时求值一次的启动期快照，
-      演示模式启动则恒为空列表，运行期改 config.auth_required 对它无效。）
+      演示模式启动则恒为空列表，运行期改 config.auth_required 对它无效。
+
+      ★ 第 106 轮更新：已改为**无条件挂载**、请求期读 config，auth_on 现已能
+        断言 401；保留源码断言只为防「新增模块漏挂闸门」。）
     """
     import inspect
     import main

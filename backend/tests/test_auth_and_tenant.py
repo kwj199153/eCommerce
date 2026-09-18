@@ -412,11 +412,24 @@ async def test_product_research_chat_rejects_forged_shop_header(client, auth_on,
         await _drop_store(victim)
 
 
-async def test_product_research_chat_writes_to_own_shop(client, auth_on, user):
+async def test_product_research_chat_does_not_write_before_approval(client, auth_on, user):
     """
-    反向保护（防误伤）：带**自己**店铺头的入库必须照常成功，且落在自己分区。
+    带**自己**店铺头的入库请求：在人工审批通过之前，**一行都不许写**。
 
-    守卫若把正常路径也堵死，"修好了"就只是"关掉了功能"。
+    ★ 本条的前身是 `..._writes_to_own_shop`（断言「正常入库照常成功、落在自己
+      分区」）。第 131 轮引入 HITL 后那条断言**不再是正确行为** —— 它钉住的
+      恰好是「说一句『加进选品库』= 零审批直写」。同一件事若由 LLM 判为入库
+      却要审批，就是「同一操作两套规矩」，而且被绕过的那条正是最高频的表达。
+      ⇒ **需求变了，旧断言从资产变负资产**，故改写（而不是删掉：租户隔离
+        这条防线仍要有人守）。
+
+    ★ 归属（BOLA）覆盖没有丢，落点写在这里，免得下一个人以为没人管：
+      · 伪造他人店铺头 ⇒ 403 + 受害店铺零写入，见
+        `test_product_research_chat_rejects_foreign_shop`（守卫在依赖层，
+        早于 HITL，因此不受本轮改动影响）；
+      · 写入确实落在**自己**分区 ⇒ `tests/test_hitl_approval_flow.py` 的端到端
+        用例（真图 + 真 PG：审批 accept 后恰好一次 `create_candidate(shop_id=…)`）
+        以及 `test_write_candidates_hard_refuses_without_shop_id`。
     """
     import uuid
 
@@ -432,9 +445,18 @@ async def test_product_research_chat_writes_to_own_shop(client, auth_on, user):
             headers={"Authorization": f"Bearer {user['token']}", "X-Shop-ID": mine},
         )
         assert r.status_code == 200, r.text[:300]
-        assert await _count_candidates(mine) == 1, (
-            "正常入库被守卫误伤 —— 检查 shop_id 是否一路带到了 "
-            f"`_write_candidates`（期望 {mine}）；响应：{r.text[:300]}"
+
+        assert await _count_candidates(mine) == 0, (
+            f"**未经审批**就写了候选 —— HITL 闸门被绕过（店铺 {mine}）。"
+            f"响应：{r.text[:300]}"
+        )
+
+        # 只断言「没写」还不够：必须给出**可读结论**。把一句泛泛的 LLM 闲聊
+        # 当成功返回，用户会以为入库完成了（fail-open 的另一种形态）。
+        body = r.text
+        assert ("没有写入" in body) or ("审批" in body) or ("确认" in body), (
+            "未审批时必须明确说明（发起审批 or 明说没写入），不能把无关文本当成功："
+            + body[:300]
         )
     finally:
         await _drop_store(mine)

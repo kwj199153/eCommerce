@@ -23,6 +23,11 @@ from core.observability.context import set_request_context
 # OAuth2 密码模式（自动从请求头提取 Bearer Token）
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
+# ★ 前端演示哨兵串的前缀（必须与 frontend/src/config/demoMode.ts::DEMO_TOKEN 一致）。
+#   它不是 JWT、后端永远验签不通过 ⇒ 只在 `config.demo_mode=True` 时才被承认，
+#   且只代表「匿名演示」，**永远拿不到任何归属**（见 require_auth_if_enabled 三档）。
+DEMO_SENTINEL_PREFIX = "demo-"
+
 
 async def get_current_user(
     request: Request,
@@ -202,15 +207,39 @@ async def require_auth_if_enabled(
     db: AsyncSession = Depends(get_db),
 ) -> Optional[User]:
     """
-    受开关控制的鉴权依赖（用于路由级批量挂载）
+    受开关控制的鉴权依赖（用于路由级批量挂载）—— **optional auth（可选用户）**
 
-    行为：
-      - config.auth_required = False（演示模式，默认）：直接放行，返回 None
-      - config.auth_required = True（生产模式）：
-          * 缺少 / 格式错误的 Authorization 头 -> 401
-          * Token 无效、过期或用户不存在  -> 401
-          * 用户被禁用                    -> 403
-          * 校验通过                      -> 返回 User 对象
+    ★★★ 2026-09-17 语义修正（起因：老板反馈「真实登录后仍看到别人的 4 个店铺」）
+
+      旧实现是「`auth_required=False` ⇒ 第一步 `return None`，**连 Authorization
+      头都不解析**」。它把两件不同的事搓成了一件，后果不是"演示模式不设限"，
+      而是**连真实登录用户的身份也拿不到**：
+
+        · `accounts.filter_accessible_stores(db, None, stores)` 走
+          `user is None → return list(stores)` ⇒ **任何登录用户看到全库店铺**；
+          （★ 2026-09-17：该函数已收紧为 `user is None → []`，此处描述的是**当时**
+            的形态 —— 若不收口，这条通道在演示档下依然成立。）
+        · `accounts.can_access_store` / `_matches` 的 `user is None → True`
+          ⇒ 伪造 `X-Shop-ID` 就能读写任意店铺的业务数据（演示模式下 BOLA 原样回归）。
+
+      正确形态是 **optional auth**（有凭据就解析，没有才看开关），三档行为：
+
+        ① 有 `Authorization: Bearer <token>`
+             · token 是演示哨兵（`demo-` 前缀）且 `config.demo_mode=True`
+               → 按**匿名演示**处理（auth_required=False 时返回 None）
+             · 否则 → **强制解析真身份**（`get_current_user`）：
+                 无效 / 过期 / 已撤销 / 用户不存在 → 401；用户被禁用 → 403
+             ★ 这一档是本次修复的核心：带真 token 就必须拿到真身份，
+               否则下游所有「user is None → 放行」的归属分支会整体失效。
+
+        ② 无 `Authorization` 头（真正的匿名访问）
+             · `config.auth_required=False` → 返回 None（本地匿名联调，行为不变）
+             · `config.auth_required=True`  → 401
+
+    ★ 为什么演示哨兵要 `demo_mode` 单独把关（而不是直接认字符串）：
+      `demo-token` 就明文写在前端源码里（frontend/src/config/demoMode.ts），
+      任何会读代码的人都能带上它。所以它是「本地演示开关」，不是「身份」——
+      生产必须为 false（由 `config._enforce_production_safety` 硬拦）。
 
     用途：在 main.py 里以 router 级别挂载，一处覆盖整个模块的所有端点，
          例如 app.include_router(xxx_router, dependencies=[Depends(require_auth_if_enabled)])
@@ -225,21 +254,40 @@ async def require_auth_if_enabled(
       `core.tenant.middleware.get_current_shop_id*`，由它做归属校验
       （403 语义）并返回已校验的 ID。
     """
-    if not config.auth_required:
-        return None
-
     auth_header = request.headers.get("Authorization") or ""
     scheme, _, raw_token = auth_header.partition(" ")
     token = raw_token.strip()
+    has_bearer = scheme.lower() == "bearer" and bool(token)
 
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="缺少认证凭据，请在 Authorization 头中提供 Bearer Token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    # ① 演示哨兵：不是真身份，只按"匿名演示"处理，且**只在 demo_mode 打开时承认**。
+    #    生产（demo_mode=False）下它和任意伪造串一样，落到 ② 被 401 拒绝。
+    if has_bearer and config.demo_mode and token.startswith(DEMO_SENTINEL_PREFIX):
+        if config.auth_required:
+            # demo_mode 与 auth_required 同时为真属配置矛盾（生产护栏已拒绝启动），
+            # 这里按更严格的一侧生效：不承认这个身份。
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="演示身份不可用：当前环境要求真实登录。",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return None
 
-    return await get_current_user(request=request, token=token, db=db)
+    # ② 带了自称为 Bearer 的凭据 ⇒ 一律按**真身份**强制校验。
+    #    ★★★ 本次修复的核心：修复前这一步被 `if not config.auth_required: return None`
+    #    挡在前面，导致真实登录用户也拿不到身份 ⇒ 归属过滤整体失效
+    #    （老板看到的"4 个店铺"就是这么漏出来的）。
+    if has_bearer:
+        return await get_current_user(request=request, token=token, db=db)
+
+    # ③ 完全没带凭据（真匿名）⇒ 由 auth_required 决定放不放行。
+    if not config.auth_required:
+        return None
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="缺少认证凭据，请在 Authorization 头中提供 Bearer Token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 async def require_authenticated_user(
     request: Request,
@@ -250,12 +298,17 @@ async def require_authenticated_user(
     """
     **强制身份**（fail-closed）：拿不到有效身份一律 401，绝不静默放行。
 
-    ★ 与 `require_auth_if_enabled` 的分工：
-      - 后者服务于「业务数据按店铺分区」的路由级批量挂载（`BUSINESS_AUTH`），
-        它把 `config.auth_required` 当**整块功能的总开关**：关掉时返回 None，
-        语义是"演示模式，业务数据不设限"；
+    ★ 与 `require_auth_if_enabled` 的分工（★ 2026-09-17 更新：两者语义已对齐）：
+      - 后者服务于「业务数据按店铺分区」的路由级批量挂载（`BUSINESS_AUTH`）：
+        它现在是 **optional auth** —— 带了真 token 就**必须**解析出身份
+        （这条对多租户隔离是必需的，见其 docstring 的修复记录）；只有
+        **完全不带凭据**时才可能返回 None（`config.auth_required=False` 的匿名放行）。
       - 本函数服务于**身份与授权数据**（账户、成员、自助资料管理）——
-        这类东西说不清"你是谁"就不该能读，更不该能改。
+        这类东西说不清"你是谁"就不该能读，更不该能改，故**不接受任何匿名**。
+
+      ⚠️ 两者唯一的差别是「demo 哨兵算不算身份」：`require_auth_if_enabled` 在
+        `config.demo_mode=True` 下承认 `demo-token` 为**匿名演示**（仍拿不到归属），
+        而本函数**永远不认** —— 身份数据编不出一份可降级的"你的团队成员"。
 
     ★★★ 2026-09-16 修正：本函数**不再受 `config.auth_required` 影响**。
 

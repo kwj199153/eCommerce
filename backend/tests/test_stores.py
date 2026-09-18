@@ -59,10 +59,16 @@ async def created_ids():
         await session.commit()
 
 
-async def _create_store(client, ids: list[str], **overrides):
-    """建一个店铺并登记 id（供 teardown 清理）"""
+async def _create_store(client, ids: list[str], headers: dict | None = None, **overrides):
+    """
+    建一个店铺并登记 id（供 teardown 清理）。
+
+    ★ `headers` 只在需要**按身份过滤**的用例里传：列表端点已收紧为
+      「没有身份 ⇒ 没有数据」（见 `test_auth_optional_semantics.py`），
+      匿名建出来的店 `owner_id` 为空 ⇒ 带身份读列表本就不该看见它。
+    """
     payload = {"name": f"pytest-{uuid.uuid4().hex[:6]}", "platform": "amazon_us", **overrides}
-    r = await client.post("/api/v1/stores", json=payload)
+    r = await client.post("/api/v1/stores", json=payload, headers=headers or {})
     assert r.status_code == 201, r.text
     ids.append(r.json()["id"])
     return r.json()
@@ -188,20 +194,42 @@ async def test_create_store_missing_name_422(client, auth_off):
     assert r.status_code == 422
 
 
-async def test_list_stores_contains_created(client, auth_off, created_ids):
-    store = await _create_store(client, created_ids)
-    r = await client.get("/api/v1/stores")
+async def test_list_stores_contains_created(client, auth_off, created_ids, make_user):
+    """
+    ★ 2026-09-17：改为**带身份**建店 + 带身份读列表。
+
+    改前它匿名建、匿名读，靠的是「列表端点对无身份请求不过滤」——
+    那正是 `filter_accessible_stores` 的 fail-open，现已收紧为
+    「没有身份 ⇒ 没有数据」。这是**用例语义随之修正**，不是放宽断言。
+    """
+    me = await make_user("stores-list")
+    store = await _create_store(client, created_ids, headers=me["headers"])
+    r = await client.get("/api/v1/stores", headers=me["headers"])
     assert r.status_code == 200
     body = r.json()
     assert body["total"] == len(body["stores"])
+    assert body["stores"], "带身份读列表不该为空（否则下一条断言会真空通过）"
     assert any(s["id"] == store["id"] for s in body["stores"])
 
 
-async def test_list_stores_platform_filter(client, auth_off, created_ids):
-    await _create_store(client, created_ids, platform="amazon_us")
-    r = await client.get("/api/v1/stores", params={"platform": "amazon_us"})
+async def test_list_stores_platform_filter(client, auth_off, created_ids, make_user):
+    """
+    ★ 同 `test_list_stores_contains_created`：必须带身份。
+
+    ★★ 另修一处**真空通过**：`all(...)` 对空列表**恒真** ⇒ 过滤逻辑整段
+      坏掉也一路绿。加一条非空前置，让「过滤没生效」能被抓住。
+    """
+    me = await make_user("stores-filter")
+    await _create_store(
+        client, created_ids, headers=me["headers"], platform="amazon_us"
+    )
+    r = await client.get(
+        "/api/v1/stores", params={"platform": "amazon_us"}, headers=me["headers"]
+    )
     assert r.status_code == 200
-    assert all(s["platform"] == "amazon_us" for s in r.json()["stores"])
+    stores = r.json()["stores"]
+    assert stores, "列表为空 ⇒ `all(...)` 会真空通过，本用例失去意义"
+    assert all(s["platform"] == "amazon_us" for s in stores)
 
 
 async def test_get_store_detail(client, auth_off, created_ids):
@@ -329,6 +357,11 @@ def test_routes_under_business_auth_gate():
     注意不能用 `auth_on` 夹具断言 401 —— `BUSINESS_AUTH` 是 `import main` 时
     求值一次的**启动期快照**，运行期改 `config.auth_required` 对它无效。
     因此只能做源码断言。
+
+    ★ 第 106 轮更新：该常量已改为**无条件挂载**，依赖在**请求期**读
+      `config.auth_required` ⇒ 上面那句话不再成立，`auth_on` 现在**可以**
+      断言 401（端点级 401 见 `test_auth_optional_semantics.py`）。
+      本用例保留源码断言，锁的是「这份 router 被纳入闸门」，防新增模块漏挂。
     """
     import main
 
@@ -380,7 +413,9 @@ def test_shop_order_by_is_single_source_of_truth():
         "_list_shops 里仍有写死的 order_by —— 应改为 SHOP_ORDER_BY"
 
 
-async def test_stores_order_matches_shop_tools_order(client, auth_off, created_ids):
+async def test_stores_order_matches_shop_tools_order(
+    client, auth_off, created_ids, make_user
+):
     """
     ★ 核心回归：`/api/v1/stores` 的顺序 == `_list_shops()` 的顺序。
 
@@ -388,13 +423,19 @@ async def test_stores_order_matches_shop_tools_order(client, auth_off, created_i
     """
     from modules.secretary.shop_tools import _list_shops
 
+    # ★ 带身份建 / 带身份读：无身份的列表已收紧为空集，用它比对顺序会**真空通过**
+    #   （空列表的 positions 必然等于 sorted(positions)）。
+    me = await make_user("stores-order")
     # 建 3 个店铺，故意用「乱序」的创建顺序（名字带前缀不参与排序）
     for _ in range(3):
-        await _create_store(client, created_ids)
+        await _create_store(client, created_ids, headers=me["headers"])
 
-    r = await client.get("/api/v1/stores")
+    r = await client.get("/api/v1/stores", headers=me["headers"])
     assert r.status_code == 200, r.text
     api_ids = [s["id"] for s in r.json()["stores"]]
+    assert len(api_ids) == 3, (
+        f"期望恰好 3 家店，实得 {api_ids} —— 空/少则下面的顺序断言真空通过"
+    )
 
     tool_shops = await _list_shops()
     tool_ids = [s["id"] for s in tool_shops]

@@ -491,6 +491,9 @@ def test_routes_under_business_auth_gate():
 
     不能用 `auth_on` 夹具断言 401 —— `BUSINESS_AUTH` 是 `import main` 时求值一次的
     启动期快照，运行期改 `config.auth_required` 对它无效。
+
+    ★ 第 106 轮更新：该常量已改为**无条件挂载**（请求期读 config）⇒
+      `auth_on` 现在能断言 401 了；此处保留源码断言，只为防「新增模块漏挂闸门」。
     """
     import main
 

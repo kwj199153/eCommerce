@@ -543,6 +543,43 @@ def fake_llm(monkeypatch):
     return {"response": _make_response}
 
 
+# ====== 内存店铺镜像自清理（autouse） ======
+#
+# ★★ 为什么必须有这一道（第 106 轮实测踩到，全量跑红 / 单跑绿）：
+#   `GET /api/v1/stores` 读的是**进程内内存字典** `_store_db`
+#   （PG 才是权威存储，lifespan 启动时回灌；见 modules/stores/router.py）。
+#   用 API 建的店铺会**同时**写 PG 与 `_store_db`；而 `make_user` / `user`
+#   夹具收尾只走 `_purge_users` 删 PG 行，**内存镜像没有对应的清理**。
+#   ⇒ 排在后面的用例读 `GET /api/v1/stores`（内存）会拿到"PG 里已不存在"的店铺。
+#   实测打破 `test_stores.py::test_stores_order_matches_shop_tools_order`
+#   —— 它比对的正是「内存版 /api/v1/stores」与「PG 版 _list_shops」。
+#
+#   ★ 现象特征：**单跑绿、全量红**（是否踩中取决于文件收集顺序里谁排在前面），
+#     且报错信息是"api 返回了 tool 不认识的店铺"，看起来像归属过滤出了问题，
+#     其实是测试进程内的残留 —— 别去改断言，先怀疑内存镜像没清。
+#
+# ★ 为什么是「快照差集」而不是逐用例写 `_store_db.pop`：
+#   逐处 pop 依赖每个新用例作者都记得（本仓已有 test_stores /
+#   test_store_delete_guard / test_credential_encryption /
+#   test_account_store_hierarchy 四个文件各写了一遍），漏一个就重现。
+#   这里在**内存镜像这个出口**统一兜底 —— 与上面 `_no_real_llm` 在"网络出口"
+#   兜底是同一个思路：新增用例零负担，不必知道 `_store_db` 的存在。
+#
+# ★ 只删「本用例新增」的 key，因此绝不会误伤：
+#   · lifespan 回灌的基线店铺；
+#   · 模块级 / 会话级夹具在用例**开始之前**就放进去的店铺（它们都在快照里）。
+
+@pytest.fixture(autouse=True)
+def _isolate_store_memory_mirror():
+    """用例结束后移除本用例往 `_store_db` 新增的条目（详见上方说明）。"""
+    from modules.stores.router import _store_db
+
+    before = set(_store_db.keys())
+    yield
+    for sid in set(_store_db.keys()) - before:
+        _store_db.pop(sid, None)
+
+
 # ====== 业务店铺上下文（需要 X-Shop-ID 的端点测试共用） ======
 #
 # 背景：spus / skus / assets / candidates / monitors / knowledge_* / *_groups …

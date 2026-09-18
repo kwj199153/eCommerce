@@ -343,14 +343,28 @@ if config.metrics_enabled:
 # ====== API 路由注册 ======
 
 # 业务接口统一鉴权依赖
-# 条件挂载：只有 config.auth_required=True 时才真正挂到路由上，
-#   这样「路由上有依赖」== 「请求真的会被拦」，鉴权覆盖报告不会失真。
-#   False（默认，演示模式）-> BUSINESS_AUTH 为空列表，接口行为与改造前完全一致
-#   True （生产模式）      -> 全部挂载了该依赖的接口要求 Bearer Token，未登录返回 401
+#
+# ★★★ 2026-09-17 修正：**无条件挂载**，不再按 config.auth_required 条件化。
+#
+#   修复前的形态是「条件挂载」：
+#       BUSINESS_AUTH = [Depends(require_auth_if_enabled)] if config.auth_required else []
+#   它把一个**运行期**判断（"这次请求有没有带凭据"）提成了**启动期常量**。
+#   后果（老板实测：真实登录后在主页面仍看到别人的 4 个店铺）：
+#     · AUTH_REQUIRED=false（本地 .env 默认）时 BUSINESS_AUTH 直接是 `[]` ⇒
+#       router 级**根本没有依赖** ⇒ 只靠这一层把门的模块完全无鉴权；
+#     · 即便挂上，`require_auth_if_enabled` 自己也会在第一步 `return None`。
+#   两层叠加 ⇒ 业务路由在本地的鉴权是**结构性缺席**，而不是"被配置成了宽松"。
+#
+#   现在 `require_auth_if_enabled` 是 optional-auth（带真 token 就必须解析出
+#   身份），所以正确做法是**永远挂上**，让它自己按请求判断：
+#     · 生产：无凭据 → 401；无效凭据 → 401
+#     · 本地演示：无凭据 / demo 哨兵 → 返回 None（router 级返回值本就被忽略，
+#       等价于放行），而**带真 token 时依然强制校验** —— 这正是修复点。
+#   如此「路由上有依赖」== 「请求真的会被拦」这句话才继续成立。
 from fastapi import Depends
 from core.auth.dependencies import require_auth_if_enabled
 
-BUSINESS_AUTH = [Depends(require_auth_if_enabled)] if config.auth_required else []
+BUSINESS_AUTH = [Depends(require_auth_if_enabled)]
 
 # ====== 配额护栏（★ P0 安全修复 2026-09-15）======
 #

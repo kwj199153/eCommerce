@@ -87,8 +87,12 @@ async def get_current_shop_id(
         修复前：直接 `return request.headers.get(TENANT_HEADER)`，零校验
         ⇒ 任何带有效 token 的用户改一下 X-Shop-ID 就能读别人全部业务数据
           （实测 6/6 端点 200：SPU/候选品/素材/监控/规则/音色）。
-        修复后：config.auth_required=True（生产模式）时强制做归属校验，
-          不符一律 403；平台超管放行。
+        修复后：**只要请求带了真 token 就强制做归属校验**，不符一律 403；
+          平台超管放行。
+          ★ 2026-09-17 补正：原文写的是「config.auth_required=True（生产模式）
+            时强制做归属校验」—— 那把「校验」挂在了错误的开关上，结果是
+            演示模式下**已正式登录的用户**校验整段不执行（老板实测：登录后
+            仍看到别人的 4 个店铺）。现在开关口径改为「有没有解析出真身份」。
         ★★ P1-c（2026-09-16）判定口径更新为
           `stores_store.account_id ∈ 当前用户可见账户集合`
           （含成员表命中；实现见 `core/auth/accounts.py::can_access_store`）。
@@ -112,8 +116,13 @@ async def get_current_shop_id(
 
     ⚠️ 三个设计取舍：
       1. 用 403 不用 404 —— 404 会泄露「该店铺 ID 是否存在」，帮攻击者枚举。
-      2. 演示模式（auth_required=False）require_auth_if_enabled 返回 None，
-         不做校验，行为与修复前一致 ⇒ 本地演示/联调不受影响。
+      2. ★ 2026-09-17 更新：归属校验**只在「确实没有身份」时才跳过**。
+         修复前这里是「auth_required=False ⇒ require_auth_if_enabled 返回 None
+         ⇒ 不做校验」，等于演示模式下**连真实登录用户的归属也不查** ——
+         改一下 `X-Shop-ID` 就能读写任意店铺的业务数据（BOLA 回归）。
+         现在 `require_auth_if_enabled` 是 optional auth（带真 token 就必须解析
+         出身份）：只有 `auth_required=False` 且**完全不带凭据**（或带的是
+         `demo_mode` 下那条演示哨兵）时才返回 None ⇒ 本地匿名联调不受影响。
          **注意：空值守卫不受演示模式影响**（它是请求形状校验，与"你是谁"无关）
          —— 演示模式下同样禁止空 shop 写入。
       3. 存量无主店铺（account_id IS NULL **且** owner_id IS NULL）生产模式下
@@ -180,7 +189,17 @@ async def _resolve_current_shop_id(
             )
         return None
 
-    # ② 认证（你是谁）。演示模式返回 None → 放行，保持原有行为
+    # ② 认证（你是谁）。
+    #   ★★★ 2026-09-17：这里的 `None` 现在**只代表真匿名** —— 完全没带凭据
+    #   （且 auth_required=False），或带的是 demo_mode 下那条演示哨兵。
+    #
+    #   带了真 token 时，`require_auth_if_enabled` 必然**解析出身份**或直接
+    #   401/403 抛出去，不会再落到这个分支。
+    #
+    #   修复前的形态是「auth_required=False ⇒ 连 token 都不解析 ⇒ 恒返回 None」
+    #   ⇒ 真实登录的用户在这里也拿到 None ⇒ **下面的归属校验被整段跳过**，
+    #   改一下 `X-Shop-ID` 即可读写任意店铺的业务数据（2026-09-15 修的 BOLA
+    #   在演示模式下原样回归）。本次与 dependencies 侧一并修掉。
     current_user = await require_auth_if_enabled(request, db)
     if current_user is None:
         return shop_id

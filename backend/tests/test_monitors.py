@@ -424,18 +424,17 @@ def test_monitors_routes_under_business_auth_gate():
     """
     monitors 与 candidates / products / assets 一致，走 `main.BUSINESS_AUTH` 统一闸门。
 
-    **这个常量是「启动期快照」，不是运行期开关**：
-        BUSINESS_AUTH = [Depends(require_auth_if_enabled)] if config.auth_required else []
+    **这个常量现在是「无条件挂载」，不再是启动期快照**（第 106 轮修正）：
+        BUSINESS_AUTH = [Depends(require_auth_if_enabled)]        # 恒为此形态
 
-    它在 `import main` 时求值一次，所以：
-      · 演示模式启动 → 空列表，业务端点全部放行；此后运行期把 config.auth_required
-        改成 True **也不会生效**，必须重启进程（这是「条件挂载」的设计代价，
-        换来的是「路由上有依赖 == 请求真会被拦」，鉴权覆盖报告不失真）。
-      · 生产模式启动（AUTH_REQUIRED=true）→ 挂上依赖，未带 token 返回 401。
+    历史写法是 `[Depends(...)] if config.auth_required else []` —— 那等于把
+    「放不放行」这个**运行期**判断提成了**启动期**常量，AUTH_REQUIRED=false 时
+    router 级根本没有依赖。详见本文件
+    `test_business_auth_mounted_unconditionally` 的说明。
 
-    因此这里**不能**用 `auth_on` 夹具去断言 401（改的是运行期 config，对已经被
-    求值成空列表的 BUSINESS_AUTH 无效）。本用例改为锁住「monitors 确实被纳入
-    该闸门」，防止以后新增模块时漏挂。
+    ⇒ 现在**可以**用 `auth_on` 夹具断言 401 了（依赖在请求期读 config）。
+      本用例仍然只做源码断言，因为它要锁的是「monitors 被纳入该闸门」这件事，
+      防止以后新增模块时漏挂 —— 与端点级 401 行为是两件事。
     """
     import inspect
     import main
@@ -450,15 +449,34 @@ def test_monitors_routes_under_business_auth_gate():
         "monitors 路由未挂在 BUSINESS_AUTH 闸门下（生产模式将不受鉴权保护）"
 
 
-def test_business_auth_empty_in_demo_mode_by_design():
-    """演示模式下 BUSINESS_AUTH 为空列表 —— 明确记录这个设计，避免误判为漏挂"""
-    import main
-    from core.config import config
+def test_business_auth_mounted_unconditionally():
+    """
+    ★★ 形态 + 行为双断言：`BUSINESS_AUTH` **任何配置下**都挂着 `require_auth_if_enabled`。
 
-    if not config.auth_required:
-        assert main.BUSINESS_AUTH == []
-    else:
-        assert len(main.BUSINESS_AUTH) == 1
+    ★ 本用例的前身是 `test_business_auth_empty_in_demo_mode_by_design`，
+      它把「演示模式 ⇒ 空列表」当成"设计"记录了下来。那个空列表**就是越权漏洞本体**：
+        AUTH_REQUIRED=false 时 router 级没挂依赖 ⇒ `require_auth_if_enabled`
+        连 token 都不解析 ⇒ 任何登录用户看到全库店铺
+        （老板实测：在自己账号下看到别人名下的 4 家店）。
+      旧断言把缺陷钉成了"预期行为"，所以它必须被**改写**而不是删掉。
+
+    ★ 为什么这里能直接断言依赖对象，而 `test_auth_optional_semantics.py` 里
+      还要另做一次源码断言：两者防的是不同的复发路径 ——
+        · 这里（行为）：有人把 `BUSINESS_AUTH` 整个改成 `[]` / 换掉依赖；
+        · 源码门（形态）：有人又写回 `if config.auth_required else []`，
+          而测试进程恰好以 auth_required=False 启动 → 行为断言**看不出来**。
+      所以两条都留，不是重复。
+    """
+    from core.auth.dependencies import require_auth_if_enabled
+    import main
+
+    assert len(main.BUSINESS_AUTH) == 1, (
+        "BUSINESS_AUTH 变长了或变空了 —— 它应当恒为单个 optional-auth 依赖"
+    )
+    assert main.BUSINESS_AUTH[0].dependency is require_auth_if_enabled, (
+        "BUSINESS_AUTH 挂的依赖被换掉了 —— 「放不放行」必须收敛在 "
+        "require_auth_if_enabled 内部的 optional-auth 三档里。"
+    )
 
 
 # ====== 4. seed ======
