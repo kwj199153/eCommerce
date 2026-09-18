@@ -36,7 +36,7 @@ router = APIRouter(prefix="/api/v1", tags=["产品库"])
 
 # ====== 转换工具 ======
 
-def _spu_to_dict(r: SpuRecord) -> dict:
+def spu_to_dict(r: SpuRecord) -> dict:
     return {
         "id": r.id,
         "title": r.title,
@@ -117,9 +117,9 @@ async def list_spus(shop_id: Optional[str] = Depends(get_current_shop_id)):
         return {"items": [], "total": 0}
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(SpuRecord).where(SpuRecord.shop_id == shop_id)
+            scoped(select(SpuRecord), SpuRecord, shop_id)
         )).scalars().all()
-    items = [_spu_to_dict(r) for r in rows]
+    items = [spu_to_dict(r) for r in rows]
     return {"items": items, "total": len(items)}
 
 
@@ -128,11 +128,11 @@ async def get_spu(spu_id: str, shop_id: Optional[str] = Depends(get_current_shop
     async with async_session_factory() as session:
         q = select(SpuRecord).where(SpuRecord.id == spu_id)
         if shop_id:
-            q = q.where(SpuRecord.shop_id == shop_id)
+            q = scoped(q, SpuRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="SPU 不存在")
-    return _spu_to_dict(r)
+    return spu_to_dict(r)
 
 
 @router.post("/spus", status_code=201)
@@ -164,7 +164,7 @@ async def create_spu(payload: dict, shop_id: Optional[str] = Depends(get_current
         session.add(record)
         await session.commit()
         await session.refresh(record)
-    return _spu_to_dict(record)
+    return spu_to_dict(record)
 
 
 @router.put("/spus/{spu_id}")
@@ -188,7 +188,7 @@ async def update_spu(spu_id: str, payload: dict, shop_id: Optional[str] = Depend
         r.updated_at = datetime.utcnow().isoformat()
         await session.commit()
         await session.refresh(r)
-        return _spu_to_dict(r)
+        return spu_to_dict(r)
 
 
 @router.delete("/spus/{spu_id}")

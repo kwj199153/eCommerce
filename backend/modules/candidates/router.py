@@ -214,11 +214,12 @@ async def approve_candidate(candidate_id: str, payload: dict = None, shop_id: Op
         r.updated_at = now
         await session.commit()
 
-    from modules.products.router import _spu_to_dict as _product_to_dict
+    # SPU → dict 的唯一真源在 products/router.py（公开符号，勿再取私有名）
+    from modules.products.router import spu_to_dict
     return {
         "message": "评审通过，已复制到自有产品库，候选保留为已通过评估基线",
         "candidate_id": candidate_id,
-        "product": _product_to_dict(product),
+        "product": spu_to_dict(product),
     }
 
 
