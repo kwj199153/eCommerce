@@ -14,6 +14,7 @@ from typing import Optional
 from sqlalchemy import select
 
 from core.database import async_session_factory
+from core.tenant.scoping import scoped
 from modules.monitors.db_model import MonitorRecord
 from modules.monitors.snapshot import build_time_series, derive_baseline
 
@@ -200,8 +201,7 @@ async def monitor_exists(asin: str, shop_id: Optional[str]) -> bool:
         return False
     async with async_session_factory() as session:
         row = (await session.execute(
-            select(MonitorRecord.id)
-            .where(MonitorRecord.shop_id == shop_id)
+            scoped(select(MonitorRecord.id), MonitorRecord, shop_id)
             .where(MonitorRecord.asin == asin)
             .limit(1)
         )).scalar_one_or_none()
@@ -213,7 +213,7 @@ async def get_monitor_by_id(monitor_id: str, shop_id: Optional[str] = None) -> O
     async with async_session_factory() as session:
         q = select(MonitorRecord).where(MonitorRecord.id == monitor_id)
         if shop_id:
-            q = q.where(MonitorRecord.shop_id == shop_id)
+            q = scoped(q, MonitorRecord, shop_id)
         return (await session.execute(q)).scalar_one_or_none()
 
 
@@ -228,7 +228,7 @@ async def upsert_monitor(payload: dict, shop_id: Optional[str] = None) -> dict:
     asin = normalize_asin(payload.get("asin"))
     async with async_session_factory() as session:
         q = select(MonitorRecord).where(MonitorRecord.asin == asin)
-        q = q.where(MonitorRecord.shop_id == (shop_id or ""))
+        q = scoped(q, MonitorRecord, shop_id or '')
         existing = (await session.execute(q)).scalar_one_or_none()
 
         if existing is not None:

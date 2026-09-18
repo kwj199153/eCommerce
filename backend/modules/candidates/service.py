@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Optional
 
 from core.database import async_session_factory
+from core.tenant.scoping import scoped
 from modules.candidates.db_model import CandidateRecord
 
 
@@ -175,8 +176,7 @@ async def candidate_exists(asin: str, shop_id: Optional[str]) -> bool:
 
     async with async_session_factory() as session:
         row = (await session.execute(
-            select(CandidateRecord.id)
-            .where(CandidateRecord.shop_id == shop_id)
+            scoped(select(CandidateRecord.id), CandidateRecord, shop_id)
             .where(CandidateRecord.asin == asin)
             .limit(1)
         )).scalar_one_or_none()

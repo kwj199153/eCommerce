@@ -28,6 +28,7 @@ from typing import List, Optional
 from sqlalchemy import select
 
 from core.database import async_session_factory
+from core.tenant.scoping import scoped
 from modules.platform_rules.db_model import PlatformRuleDocRecord, PlatformRuleRecord
 
 
@@ -193,8 +194,7 @@ async def list_rules(shop_id: Optional[str]) -> List[dict]:
         return []
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(PlatformRuleRecord)
-            .where(PlatformRuleRecord.shop_id == shop_id)
+            scoped(select(PlatformRuleRecord), PlatformRuleRecord, shop_id)
             # 与前端 filteredItems 的排序一致：生效日期倒序
             .order_by(PlatformRuleRecord.effective_date.desc())
         )).scalars().all()
@@ -206,7 +206,7 @@ async def get_rule_by_id(rule_id: str, shop_id: Optional[str] = None) -> Optiona
     async with async_session_factory() as session:
         q = select(PlatformRuleRecord).where(PlatformRuleRecord.id == rule_id)
         if shop_id:
-            q = q.where(PlatformRuleRecord.shop_id == shop_id)
+            q = scoped(q, PlatformRuleRecord, shop_id)
         return (await session.execute(q)).scalar_one_or_none()
 
 
@@ -243,7 +243,7 @@ async def update_rule(rule_id: str, payload: dict, shop_id: Optional[str] = None
     async with async_session_factory() as session:
         q = select(PlatformRuleRecord).where(PlatformRuleRecord.id == rule_id)
         if shop_id:
-            q = q.where(PlatformRuleRecord.shop_id == shop_id)
+            q = scoped(q, PlatformRuleRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return None
@@ -259,7 +259,7 @@ async def delete_rule(rule_id: str, shop_id: Optional[str] = None) -> bool:
     async with async_session_factory() as session:
         q = select(PlatformRuleRecord).where(PlatformRuleRecord.id == rule_id)
         if shop_id:
-            q = q.where(PlatformRuleRecord.shop_id == shop_id)
+            q = scoped(q, PlatformRuleRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return False
@@ -276,8 +276,7 @@ async def list_docs(shop_id: Optional[str]) -> List[dict]:
         return []
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(PlatformRuleDocRecord)
-            .where(PlatformRuleDocRecord.shop_id == shop_id)
+            scoped(select(PlatformRuleDocRecord), PlatformRuleDocRecord, shop_id)
             .order_by(PlatformRuleDocRecord.uploaded_at.asc())
         )).scalars().all()
         return [doc_to_dict(d) for d in rows]
@@ -287,7 +286,7 @@ async def get_doc_by_id(doc_id: str, shop_id: Optional[str] = None) -> Optional[
     async with async_session_factory() as session:
         q = select(PlatformRuleDocRecord).where(PlatformRuleDocRecord.id == doc_id)
         if shop_id:
-            q = q.where(PlatformRuleDocRecord.shop_id == shop_id)
+            q = scoped(q, PlatformRuleDocRecord, shop_id)
         return (await session.execute(q)).scalar_one_or_none()
 
 
@@ -312,7 +311,7 @@ async def delete_doc(doc_id: str, shop_id: Optional[str] = None) -> bool:
     async with async_session_factory() as session:
         q = select(PlatformRuleDocRecord).where(PlatformRuleDocRecord.id == doc_id)
         if shop_id:
-            q = q.where(PlatformRuleDocRecord.shop_id == shop_id)
+            q = scoped(q, PlatformRuleDocRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return False

@@ -31,6 +31,7 @@ from sqlalchemy import select, delete
 
 from core.database import async_session_factory
 from core.tenant.middleware import get_current_shop_id
+from core.tenant.scoping import scoped
 from modules.monitors.db_model import MonitorRecord, MonitorGroupRecord
 from modules.monitors.service import (
     upsert_monitor,
@@ -52,8 +53,7 @@ async def list_monitors(shop_id: Optional[str] = Depends(get_current_shop_id)):
         return {"items": [], "total": 0}
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(MonitorRecord)
-            .where(MonitorRecord.shop_id == shop_id)
+            scoped(select(MonitorRecord), MonitorRecord, shop_id)
             .order_by(MonitorRecord.created_at.desc())
         )).scalars().all()
     items = [record_to_dict(r) for r in rows]
@@ -65,7 +65,7 @@ async def get_monitor(monitor_id: str, shop_id: Optional[str] = Depends(get_curr
     async with async_session_factory() as session:
         q = select(MonitorRecord).where(MonitorRecord.id == monitor_id)
         if shop_id:
-            q = q.where(MonitorRecord.shop_id == shop_id)
+            q = scoped(q, MonitorRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="监控记录不存在")
@@ -90,7 +90,7 @@ async def update_monitor(monitor_id: str, payload: dict, shop_id: Optional[str] 
     async with async_session_factory() as session:
         q = select(MonitorRecord).where(MonitorRecord.id == monitor_id)
         if shop_id:
-            q = q.where(MonitorRecord.shop_id == shop_id)
+            q = scoped(q, MonitorRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="监控记录不存在")
@@ -107,7 +107,7 @@ async def delete_monitor(monitor_id: str, shop_id: Optional[str] = Depends(get_c
     async with async_session_factory() as session:
         q = select(MonitorRecord).where(MonitorRecord.id == monitor_id)
         if shop_id:
-            q = q.where(MonitorRecord.shop_id == shop_id)
+            q = scoped(q, MonitorRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="监控记录不存在")
@@ -124,8 +124,7 @@ async def batch_delete_monitors(payload: dict, shop_id: Optional[str] = Depends(
         return {"deleted": 0, "asins": []}
     async with async_session_factory() as session:
         result = await session.execute(
-            delete(MonitorRecord)
-            .where(MonitorRecord.shop_id == (shop_id or ""))
+            scoped(delete(MonitorRecord), MonitorRecord, shop_id or '')
             .where(MonitorRecord.asin.in_(asins))
         )
         await session.commit()
@@ -162,8 +161,7 @@ async def _monitor_exists_session(asin: str, shop_id: Optional[str]) -> bool:
         return False
     async with async_session_factory() as session:
         row = (await session.execute(
-            select(MonitorRecord.id)
-            .where(MonitorRecord.shop_id == shop_id)
+            scoped(select(MonitorRecord.id), MonitorRecord, shop_id)
             .where(MonitorRecord.asin == asin)
             .limit(1)
         )).scalar_one_or_none()
@@ -189,8 +187,7 @@ async def _mutate_groups(payload: dict, shop_id: Optional[str], attach: bool) ->
         return {"updated": 0}
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(MonitorRecord)
-            .where(MonitorRecord.shop_id == (shop_id or ""))
+            scoped(select(MonitorRecord), MonitorRecord, shop_id or '')
             .where(MonitorRecord.asin.in_(asins))
         )).scalars().all()
         for r in rows:
@@ -214,8 +211,7 @@ async def list_monitor_groups(shop_id: Optional[str] = Depends(get_current_shop_
         return {"groups": []}
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(MonitorGroupRecord)
-            .where(MonitorGroupRecord.shop_id == shop_id)
+            scoped(select(MonitorGroupRecord), MonitorGroupRecord, shop_id)
             .order_by(MonitorGroupRecord.createdAt.asc())
         )).scalars().all()
     return {"groups": [group_to_dict(g) for g in rows]}
@@ -245,7 +241,7 @@ async def update_monitor_group(group_id: str, payload: dict, shop_id: Optional[s
     async with async_session_factory() as session:
         q = select(MonitorGroupRecord).where(MonitorGroupRecord.id == group_id)
         if shop_id:
-            q = q.where(MonitorGroupRecord.shop_id == shop_id)
+            q = scoped(q, MonitorGroupRecord, shop_id)
         g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
@@ -270,7 +266,7 @@ async def delete_monitor_group(group_id: str, shop_id: Optional[str] = Depends(g
     async with async_session_factory() as session:
         q = select(MonitorGroupRecord).where(MonitorGroupRecord.id == group_id)
         if shop_id:
-            q = q.where(MonitorGroupRecord.shop_id == shop_id)
+            q = scoped(q, MonitorGroupRecord, shop_id)
         g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
@@ -278,7 +274,7 @@ async def delete_monitor_group(group_id: str, shop_id: Optional[str] = Depends(g
 
         # 把该分组从所有记录的 group_ids 里摘掉
         rows = (await session.execute(
-            select(MonitorRecord).where(MonitorRecord.shop_id == (shop_id or ""))
+            scoped(select(MonitorRecord), MonitorRecord, shop_id or '')
         )).scalars().all()
         detached = 0
         for r in rows:

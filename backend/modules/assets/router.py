@@ -25,6 +25,7 @@ from datetime import datetime
 from sqlalchemy import select
 from core.database import async_session_factory
 from core.tenant.middleware import get_current_shop_id
+from core.tenant.scoping import scoped
 from modules.assets.db_model import AssetRecord, AssetGroupRecord
 
 router = APIRouter(prefix="/api/v1", tags=["素材库"])
@@ -74,7 +75,7 @@ async def list_assets(shop_id: Optional[str] = Depends(get_current_shop_id)):
         return {"items": [], "total": 0}
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(AssetRecord).where(AssetRecord.shop_id == shop_id)
+            scoped(select(AssetRecord), AssetRecord, shop_id)
         )).scalars().all()
     items = [_record_to_dict(r) for r in rows]
     return {"items": items, "total": len(items)}
@@ -85,7 +86,7 @@ async def get_asset(asset_id: str, shop_id: Optional[str] = Depends(get_current_
     async with async_session_factory() as session:
         q = select(AssetRecord).where(AssetRecord.id == asset_id)
         if shop_id:
-            q = q.where(AssetRecord.shop_id == shop_id)
+            q = scoped(q, AssetRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="素材不存在")
@@ -130,7 +131,7 @@ async def update_asset(asset_id: str, payload: dict, shop_id: Optional[str] = De
     async with async_session_factory() as session:
         q = select(AssetRecord).where(AssetRecord.id == asset_id)
         if shop_id:
-            q = q.where(AssetRecord.shop_id == shop_id)
+            q = scoped(q, AssetRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="素材不存在")
@@ -152,7 +153,7 @@ async def delete_asset(asset_id: str, shop_id: Optional[str] = Depends(get_curre
     async with async_session_factory() as session:
         q = select(AssetRecord).where(AssetRecord.id == asset_id)
         if shop_id:
-            q = q.where(AssetRecord.shop_id == shop_id)
+            q = scoped(q, AssetRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="素材不存在")
@@ -168,7 +169,7 @@ async def batch_delete_assets(payload: dict, shop_id: Optional[str] = Depends(ge
         for aid in ids:
             q = select(AssetRecord).where(AssetRecord.id == aid)
             if shop_id:
-                q = q.where(AssetRecord.shop_id == shop_id)
+                q = scoped(q, AssetRecord, shop_id)
             r = (await session.execute(q)).scalar_one_or_none()
             if r:
                 await session.delete(r)
@@ -184,7 +185,7 @@ async def list_groups(shop_id: Optional[str] = Depends(get_current_shop_id)):
         return {"groups": []}
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(AssetGroupRecord).where(AssetGroupRecord.shop_id == shop_id)
+            scoped(select(AssetGroupRecord), AssetGroupRecord, shop_id)
         )).scalars().all()
     return {"groups": [_group_to_dict(g) for g in rows]}
 
@@ -213,7 +214,7 @@ async def update_group(group_id: str, payload: dict, shop_id: Optional[str] = De
     async with async_session_factory() as session:
         q = select(AssetGroupRecord).where(AssetGroupRecord.id == group_id)
         if shop_id:
-            q = q.where(AssetGroupRecord.shop_id == shop_id)
+            q = scoped(q, AssetGroupRecord, shop_id)
         g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
@@ -232,14 +233,14 @@ async def delete_group(group_id: str, shop_id: Optional[str] = Depends(get_curre
     async with async_session_factory() as session:
         q = select(AssetGroupRecord).where(AssetGroupRecord.id == group_id)
         if shop_id:
-            q = q.where(AssetGroupRecord.shop_id == shop_id)
+            q = scoped(q, AssetGroupRecord, shop_id)
         g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
         await session.delete(g)
         aq = select(AssetRecord)
         if shop_id:
-            aq = aq.where(AssetRecord.shop_id == shop_id)
+            aq = scoped(aq, AssetRecord, shop_id)
         assets = (await session.execute(aq)).scalars().all()
         for a in assets:
             if a.groups and group_id in a.groups:
@@ -254,7 +255,7 @@ async def move_group(group_id: str, payload: dict, shop_id: Optional[str] = Depe
     async with async_session_factory() as session:
         q = select(AssetGroupRecord)
         if shop_id:
-            q = q.where(AssetGroupRecord.shop_id == shop_id)
+            q = scoped(q, AssetGroupRecord, shop_id)
         rows = (await session.execute(
             q.order_by(AssetGroupRecord.createdAt)
         )).scalars().all()

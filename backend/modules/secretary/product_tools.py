@@ -19,6 +19,7 @@ from langchain_core.tools import StructuredTool
 from sqlalchemy import select
 
 from core.database import async_session_factory
+from core.tenant.scoping import scoped
 from modules.products.db_model import SkuRecord, SpuRecord
 
 
@@ -31,9 +32,7 @@ async def _select_product(shop_id: str, nth: int = 1) -> str:
     """
     async with async_session_factory() as session:
         q = (
-            select(SkuRecord, SpuRecord.title)
-            .join(SpuRecord, SkuRecord.spu_id == SpuRecord.id)
-            .where(SpuRecord.shop_id == shop_id)
+            scoped(select(SkuRecord, SpuRecord.title).join(SpuRecord, SkuRecord.spu_id == SpuRecord.id), SpuRecord, shop_id)
             .order_by(SkuRecord.created_at, SkuRecord.id)
         )
         rows = (await session.execute(q)).all()

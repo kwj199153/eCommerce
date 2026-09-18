@@ -27,6 +27,7 @@ from datetime import datetime
 from sqlalchemy import select
 from core.database import async_session_factory
 from core.tenant.middleware import get_current_shop_id
+from core.tenant.scoping import scoped
 from modules.candidates.db_model import CandidateRecord, CandidateGroupRecord
 from modules.candidates.service import create_candidate, record_to_dict as _record_to_dict
 from modules.products.db_model import SpuRecord
@@ -57,8 +58,7 @@ async def list_candidates(shop_id: Optional[str] = Depends(get_current_shop_id))
         return {"items": [], "total": 0}
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(CandidateRecord)
-            .where(CandidateRecord.shop_id == shop_id)
+            scoped(select(CandidateRecord), CandidateRecord, shop_id)
             .order_by(CandidateRecord.updated_at.desc())
         )).scalars().all()
     items = [_record_to_dict(r) for r in rows]
@@ -70,7 +70,7 @@ async def get_candidate(candidate_id: str, shop_id: Optional[str] = Depends(get_
     async with async_session_factory() as session:
         q = select(CandidateRecord).where(CandidateRecord.id == candidate_id)
         if shop_id:
-            q = q.where(CandidateRecord.shop_id == shop_id)
+            q = scoped(q, CandidateRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="候选不存在")
@@ -88,7 +88,7 @@ async def update_candidate(candidate_id: str, payload: dict, shop_id: Optional[s
     async with async_session_factory() as session:
         q = select(CandidateRecord).where(CandidateRecord.id == candidate_id)
         if shop_id:
-            q = q.where(CandidateRecord.shop_id == shop_id)
+            q = scoped(q, CandidateRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="候选不存在")
@@ -119,7 +119,7 @@ async def review_candidate(candidate_id: str, payload: dict, shop_id: Optional[s
     async with async_session_factory() as session:
         q = select(CandidateRecord).where(CandidateRecord.id == candidate_id)
         if shop_id:
-            q = q.where(CandidateRecord.shop_id == shop_id)
+            q = scoped(q, CandidateRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="候选不存在")
@@ -144,7 +144,7 @@ async def monitor_candidate(candidate_id: str, payload: dict, shop_id: Optional[
     async with async_session_factory() as session:
         q = select(CandidateRecord).where(CandidateRecord.id == candidate_id)
         if shop_id:
-            q = q.where(CandidateRecord.shop_id == shop_id)
+            q = scoped(q, CandidateRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="候选不存在")
@@ -166,7 +166,7 @@ async def approve_candidate(candidate_id: str, payload: dict = None, shop_id: Op
     async with async_session_factory() as session:
         q = select(CandidateRecord).where(CandidateRecord.id == candidate_id)
         if shop_id:
-            q = q.where(CandidateRecord.shop_id == shop_id)
+            q = scoped(q, CandidateRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="候选不存在")
@@ -227,7 +227,7 @@ async def delete_candidate(candidate_id: str, shop_id: Optional[str] = Depends(g
     async with async_session_factory() as session:
         q = select(CandidateRecord).where(CandidateRecord.id == candidate_id)
         if shop_id:
-            q = q.where(CandidateRecord.shop_id == shop_id)
+            q = scoped(q, CandidateRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="候选不存在")
@@ -243,7 +243,7 @@ async def batch_delete_candidates(payload: dict, shop_id: Optional[str] = Depend
         for cid in ids:
             q = select(CandidateRecord).where(CandidateRecord.id == cid)
             if shop_id:
-                q = q.where(CandidateRecord.shop_id == shop_id)
+                q = scoped(q, CandidateRecord, shop_id)
             r = (await session.execute(q)).scalar_one_or_none()
             if r:
                 await session.delete(r)
@@ -259,7 +259,7 @@ async def list_groups(shop_id: Optional[str] = Depends(get_current_shop_id)):
         return {"groups": []}
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(CandidateGroupRecord).where(CandidateGroupRecord.shop_id == shop_id)
+            scoped(select(CandidateGroupRecord), CandidateGroupRecord, shop_id)
         )).scalars().all()
     return {"groups": [_group_to_dict(g) for g in rows]}
 
@@ -288,7 +288,7 @@ async def update_group(group_id: str, payload: dict, shop_id: Optional[str] = De
     async with async_session_factory() as session:
         q = select(CandidateGroupRecord).where(CandidateGroupRecord.id == group_id)
         if shop_id:
-            q = q.where(CandidateGroupRecord.shop_id == shop_id)
+            q = scoped(q, CandidateGroupRecord, shop_id)
         g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
@@ -307,7 +307,7 @@ async def delete_group(group_id: str, shop_id: Optional[str] = Depends(get_curre
     async with async_session_factory() as session:
         q = select(CandidateGroupRecord).where(CandidateGroupRecord.id == group_id)
         if shop_id:
-            q = q.where(CandidateGroupRecord.shop_id == shop_id)
+            q = scoped(q, CandidateGroupRecord, shop_id)
         g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
@@ -315,7 +315,7 @@ async def delete_group(group_id: str, shop_id: Optional[str] = Depends(get_curre
         # 从当前店铺候选的 groups 里移除该分组 id
         cq = select(CandidateRecord)
         if shop_id:
-            cq = cq.where(CandidateRecord.shop_id == shop_id)
+            cq = scoped(cq, CandidateRecord, shop_id)
         candidates = (await session.execute(cq)).scalars().all()
         for c in candidates:
             if c.groups and group_id in c.groups:

@@ -24,6 +24,7 @@ from sqlalchemy import select
 
 from core.database import async_session_factory
 from core.logger import get_logger
+from core.tenant.scoping import scoped
 
 from . import client
 from . import mirror
@@ -192,7 +193,7 @@ async def get_record(shop_id: str):
 
     async with async_session_factory() as session:
         row = (
-            await session.execute(select(ShopVoice).where(ShopVoice.shop_id == shop_id))
+            await session.execute(scoped(select(ShopVoice), ShopVoice, shop_id))
         ).scalars().first()
         return row
 
@@ -205,7 +206,7 @@ async def upsert_record(shop_id: str, **fields):
 
     async with async_session_factory() as session:
         row = (
-            await session.execute(select(ShopVoice).where(ShopVoice.shop_id == shop_id))
+            await session.execute(scoped(select(ShopVoice), ShopVoice, shop_id))
         ).scalars().first()
         if row is None:
             row = ShopVoice(
@@ -243,7 +244,7 @@ async def delete_record(shop_id: str, *, also_remote: bool = True, force: bool =
     remote_deleted = False
     async with async_session_factory() as session:
         row = (
-            await session.execute(select(ShopVoice).where(ShopVoice.shop_id == shop_id))
+            await session.execute(scoped(select(ShopVoice), ShopVoice, shop_id))
         ).scalars().first()
         if row is None:
             return {"removed": False, "remote_deleted": False, "warning": ""}

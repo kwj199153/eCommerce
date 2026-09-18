@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import config
 from core.logger import get_logger
+from core.tenant.scoping import scope_condition
 
 from .db_model import (
     INFLIGHT_STATUSES,
@@ -191,7 +192,7 @@ def _inflight_filter(user_id: str, shop_id: str, dedupe_key: str):
     if user_id:
         conds.append(AIGCJobRecord.user_id == user_id)
     else:
-        conds.append(AIGCJobRecord.shop_id == (shop_id or ""))
+        conds.append(scope_condition(AIGCJobRecord, shop_id or ''))
     return conds
 
 
@@ -277,7 +278,7 @@ async def count_inflight(db: AsyncSession, *, user_id: str = "", shop_id: str = 
     if user_id:
         conds.append(AIGCJobRecord.user_id == user_id)
     else:
-        conds.append(AIGCJobRecord.shop_id == (shop_id or ""))
+        conds.append(scope_condition(AIGCJobRecord, shop_id or ''))
     rows = (await db.execute(select(AIGCJobRecord.id).where(*conds))).scalars().all()
     return len(rows)
 

@@ -30,6 +30,7 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 
 from core.database import async_session_factory
+from core.tenant.scoping import scoped, scoped_if
 from modules.knowledge_base.db_model import (
     KnowledgeBaseRecord,
     KnowledgeDocRecord,
@@ -218,20 +219,14 @@ def apply_doc_fields(record: KnowledgeDocRecord, payload: dict) -> None:
             setattr(record, field, payload[field])
 
 
-# ====== 内部：计数与租户过滤 ======
-
-def _scoped(model, shop_id: Optional[str], stmt):
-    """给查询挂上租户条件（空 shop_id 时列表接口会提前返回空，不走这里）"""
-    if shop_id:
-        stmt = stmt.where(model.shop_id == shop_id)
-    return stmt
+# 租户过滤一律走 core.tenant.scoping（唯一真源）；
+# 本模块原来的私有 `_scoped` helper 已删除。
 
 
 async def _count_map(session, model, shop_id: str, column) -> dict:
     """按 kb_id 统计数量 → {kb_id: count}"""
     rows = (await session.execute(
-        select(column, func.count())
-        .where(model.shop_id == shop_id)
+        scoped(select(column, func.count()), model, shop_id)
         .group_by(column)
     )).all()
     return {kb_id: cnt for kb_id, cnt in rows}
@@ -250,8 +245,7 @@ async def list_knowledge_bases(shop_id: Optional[str]) -> List[dict]:
         return []
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(KnowledgeBaseRecord)
-            .where(KnowledgeBaseRecord.shop_id == shop_id)
+            scoped(select(KnowledgeBaseRecord), KnowledgeBaseRecord, shop_id)
             # 默认库永远置顶，其余按创建时间正序（与前端列表渲染顺序一致）
             .order_by(KnowledgeBaseRecord.is_default.desc(), KnowledgeBaseRecord.created_at.asc())
         )).scalars().all()
@@ -268,7 +262,7 @@ async def get_kb_by_id(kb_id: str, shop_id: Optional[str] = None) -> Optional[Kn
     """按主键取知识库（带租户校验：给了 shop_id 就必须匹配）"""
     async with async_session_factory() as session:
         q = select(KnowledgeBaseRecord).where(KnowledgeBaseRecord.id == kb_id)
-        q = _scoped(KnowledgeBaseRecord, shop_id, q)
+        q = scoped_if(q, KnowledgeBaseRecord, shop_id)
         return (await session.execute(q)).scalar_one_or_none()
 
 
@@ -276,7 +270,7 @@ async def get_kb_dict(kb_id: str, shop_id: Optional[str] = None) -> Optional[dic
     """按主键取知识库（含计数）"""
     async with async_session_factory() as session:
         q = select(KnowledgeBaseRecord).where(KnowledgeBaseRecord.id == kb_id)
-        q = _scoped(KnowledgeBaseRecord, shop_id, q)
+        q = scoped_if(q, KnowledgeBaseRecord, shop_id)
         kb = (await session.execute(q)).scalar_one_or_none()
         if kb is None:
             return None
@@ -303,7 +297,7 @@ async def update_kb(kb_id: str, payload: dict, shop_id: Optional[str] = None) ->
     """更新知识库元信息；不存在（或不属于该租户）返回 None"""
     async with async_session_factory() as session:
         q = select(KnowledgeBaseRecord).where(KnowledgeBaseRecord.id == kb_id)
-        q = _scoped(KnowledgeBaseRecord, shop_id, q)
+        q = scoped_if(q, KnowledgeBaseRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return None
@@ -322,7 +316,7 @@ async def delete_kb(kb_id: str, shop_id: Optional[str] = None) -> Optional[dict]
     """
     async with async_session_factory() as session:
         q = select(KnowledgeBaseRecord).where(KnowledgeBaseRecord.id == kb_id)
-        q = _scoped(KnowledgeBaseRecord, shop_id, q)
+        q = scoped_if(q, KnowledgeBaseRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return None
@@ -349,8 +343,7 @@ async def list_faqs(shop_id: Optional[str]) -> List[dict]:
         return []
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(KnowledgeFaqRecord)
-            .where(KnowledgeFaqRecord.shop_id == shop_id)
+            scoped(select(KnowledgeFaqRecord), KnowledgeFaqRecord, shop_id)
             .order_by(KnowledgeFaqRecord.created_at.asc())
         )).scalars().all()
         return [faq_to_dict(f) for f in rows]
@@ -359,7 +352,7 @@ async def list_faqs(shop_id: Optional[str]) -> List[dict]:
 async def get_faq_by_id(faq_id: str, shop_id: Optional[str] = None) -> Optional[KnowledgeFaqRecord]:
     async with async_session_factory() as session:
         q = select(KnowledgeFaqRecord).where(KnowledgeFaqRecord.id == faq_id)
-        q = _scoped(KnowledgeFaqRecord, shop_id, q)
+        q = scoped_if(q, KnowledgeFaqRecord, shop_id)
         return (await session.execute(q)).scalar_one_or_none()
 
 
@@ -394,7 +387,7 @@ async def update_faq(faq_id: str, payload: dict, shop_id: Optional[str] = None) 
     """更新话术；不存在（或不属于该租户）返回 None"""
     async with async_session_factory() as session:
         q = select(KnowledgeFaqRecord).where(KnowledgeFaqRecord.id == faq_id)
-        q = _scoped(KnowledgeFaqRecord, shop_id, q)
+        q = scoped_if(q, KnowledgeFaqRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return None
@@ -409,7 +402,7 @@ async def delete_faq(faq_id: str, shop_id: Optional[str] = None) -> bool:
     """删除话术；不存在（或不属于该租户）返回 False"""
     async with async_session_factory() as session:
         q = select(KnowledgeFaqRecord).where(KnowledgeFaqRecord.id == faq_id)
-        q = _scoped(KnowledgeFaqRecord, shop_id, q)
+        q = scoped_if(q, KnowledgeFaqRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return False
@@ -429,7 +422,7 @@ async def delete_faqs_batch(ids: List[str], shop_id: Optional[str] = None) -> in
     async with async_session_factory() as session:
         stmt = sa_delete(KnowledgeFaqRecord).where(KnowledgeFaqRecord.id.in_(ids))
         if shop_id:
-            stmt = stmt.where(KnowledgeFaqRecord.shop_id == shop_id)
+            stmt = scoped(stmt, KnowledgeFaqRecord, shop_id)
         res = await session.execute(stmt)
         await session.commit()
         return res.rowcount or 0
@@ -443,8 +436,7 @@ async def list_docs(shop_id: Optional[str]) -> List[dict]:
         return []
     async with async_session_factory() as session:
         rows = (await session.execute(
-            select(KnowledgeDocRecord)
-            .where(KnowledgeDocRecord.shop_id == shop_id)
+            scoped(select(KnowledgeDocRecord), KnowledgeDocRecord, shop_id)
             .order_by(KnowledgeDocRecord.uploaded_at.asc())
         )).scalars().all()
         return [doc_to_dict(d) for d in rows]
@@ -453,7 +445,7 @@ async def list_docs(shop_id: Optional[str]) -> List[dict]:
 async def get_doc_by_id(doc_id: str, shop_id: Optional[str] = None) -> Optional[KnowledgeDocRecord]:
     async with async_session_factory() as session:
         q = select(KnowledgeDocRecord).where(KnowledgeDocRecord.id == doc_id)
-        q = _scoped(KnowledgeDocRecord, shop_id, q)
+        q = scoped_if(q, KnowledgeDocRecord, shop_id)
         return (await session.execute(q)).scalar_one_or_none()
 
 
@@ -471,7 +463,7 @@ async def delete_doc(doc_id: str, shop_id: Optional[str] = None) -> bool:
     """删除文档素材；不存在（或不属于该租户）返回 False"""
     async with async_session_factory() as session:
         q = select(KnowledgeDocRecord).where(KnowledgeDocRecord.id == doc_id)
-        q = _scoped(KnowledgeDocRecord, shop_id, q)
+        q = scoped_if(q, KnowledgeDocRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return False
