@@ -130,15 +130,15 @@ async def get_current_shop_id(
          建账户并挂 account_id；`scripts/backfill_owner_id.py` 处理无主店铺）。
 
     用法：
-        @router.get("/products")
-        async def list_products(shop_id: Optional[str] = Depends(get_current_shop_id)):
+        @router.get("/widgets")
+        async def list_widgets(shop_id: Optional[str] = Depends(get_current_shop_id)):
             if shop_id:
                 q = q.where(Record.shop_id == shop_id)
             else:
                 return {"items": [], "total": 0}  # 未选店铺返回空
 
-        @router.post("/products")   # 写端点不用写守卫：缺 X-Shop-ID 自动 400
-        async def create_product(shop_id: Optional[str] = Depends(get_current_shop_id)):
+        @router.post("/widgets")   # 写端点不用写守卫：缺 X-Shop-ID 自动 400
+        async def create_widget(shop_id: Optional[str] = Depends(get_current_shop_id)):
             ...
     """
     return await _resolve_current_shop_id(request, db, require_for_write=True)

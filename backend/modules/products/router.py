@@ -18,11 +18,6 @@ PUT    /api/v1/skus/{id}            - 更新 SKU
 DELETE /api/v1/skus/{id}            - 删除 SKU
 PATCH  /api/v1/skus/{id}/listing    - 写回 SKU 的 Listing 内容
 
-GET    /api/v1/products             - 聚合列表（SPU 树 + SKU 平铺，兼容前端旧消费方）
-GET    /api/v1/products/{id}        - 聚合详情（SPU 带 skus children）
-
-POST   /api/v1/products/batch-delete - 批量删除（兼容）
-
 分组端点（product-groups）保持不变。
 """
 
@@ -387,87 +382,6 @@ async def update_sku_listing(sku_id: str, payload: dict, shop_id: Optional[str] 
         await session.commit()
         await session.refresh(r)
         return _sku_to_dict(r)
-
-
-# ====== 聚合端点（兼容旧 /products 消费方） ======
-
-@router.get("/products")
-async def list_products_aggregated(shop_id: Optional[str] = Depends(get_current_shop_id)):
-    """返回 SPU 树（带 skus children）+ 独立 SKU 平铺，兼容前端旧消费方。"""
-    if not shop_id:
-        return {"items": [], "total": 0}
-    async with async_session_factory() as session:
-        spus = (await session.execute(
-            select(SpuRecord).where(SpuRecord.shop_id == shop_id)
-        )).scalars().all()
-        skus = (await session.execute(
-            select(SkuRecord).join(SpuRecord, SkuRecord.spu_id == SpuRecord.id).where(SpuRecord.shop_id == shop_id)
-        )).scalars().all()
-    sku_map = {}
-    for s in skus:
-        sku_map.setdefault(s.spu_id, []).append(s)
-
-    items: List[dict] = []
-    for spu in spus:
-        d = _spu_to_dict(spu)
-        d["is_spu"] = True
-        d["skus"] = [_sku_to_dict(s) for s in sku_map.get(spu.id, [])]
-        items.append(d)
-    return {"items": items, "total": len(items)}
-
-
-@router.get("/products/{product_id}")
-async def get_product_aggregated(product_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
-    """按 id 查 SPU 或 SKU，返回带类型标记的聚合详情。"""
-    async with async_session_factory() as session:
-        spu_q = select(SpuRecord).where(SpuRecord.id == product_id)
-        if shop_id:
-            spu_q = spu_q.where(SpuRecord.shop_id == shop_id)
-        spu = (await session.execute(spu_q)).scalar_one_or_none()
-        if spu:
-            d = _spu_to_dict(spu)
-            d["is_spu"] = True
-            skus = (await session.execute(
-                select(SkuRecord).where(SkuRecord.spu_id == product_id)
-            )).scalars().all()
-            d["skus"] = [_sku_to_dict(s) for s in skus]
-            return d
-        sku_q = select(SkuRecord).where(SkuRecord.id == product_id)
-        if shop_id:
-            sku_q = sku_q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id).where(SpuRecord.shop_id == shop_id)
-        sku = (await session.execute(sku_q)).scalar_one_or_none()
-        if sku:
-            d = _sku_to_dict(sku)
-            d["is_spu"] = False
-            return d
-    raise HTTPException(status_code=404, detail="产品不存在")
-
-
-@router.post("/products/batch-delete")
-async def batch_delete_products(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
-    ids = payload.get("ids") or []
-    async with async_session_factory() as session:
-        for pid in ids:
-            spu_q = select(SpuRecord).where(SpuRecord.id == pid)
-            if shop_id:
-                spu_q = spu_q.where(SpuRecord.shop_id == shop_id)
-            spu = (await session.execute(spu_q)).scalar_one_or_none()
-            if spu:
-                skus = (await session.execute(
-                    select(SkuRecord).where(SkuRecord.spu_id == pid)
-                )).scalars().all()
-                for s in skus:
-                    await session.delete(s)
-                await session.delete(spu)
-                continue
-            sku_q = select(SkuRecord).where(SkuRecord.id == pid)
-            if shop_id:
-                sku_q = sku_q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id).where(SpuRecord.shop_id == shop_id)
-            sku = (await session.execute(sku_q)).scalar_one_or_none()
-            if sku:
-                await session.delete(sku)
-        await session.commit()
-    return {"message": f"已删除 {len(ids)} 个产品", "deleted": len(ids)}
 
 
 # ====== 分组 CRUD ======

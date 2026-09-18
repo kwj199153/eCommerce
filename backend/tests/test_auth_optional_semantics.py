@@ -179,14 +179,14 @@ async def test_cross_store_business_data_access_forbidden(auth_off, client, make
 
     # 车主本人：放行（不误伤）
     ok = await client.get(
-        "/api/v1/products",
+        "/api/v1/spus",
         headers={**a["headers"], "X-Shop-ID": store["id"]},
     )
     assert ok.status_code == 200, f"车主自己被误伤: {ok.status_code} {ok.text[:200]}"
 
     # 他人：403
     bad = await client.get(
-        "/api/v1/products",
+        "/api/v1/spus",
         headers={**b["headers"], "X-Shop-ID": store["id"]},
     )
     assert bad.status_code == 403, (
