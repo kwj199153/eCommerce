@@ -118,7 +118,6 @@ const workingProduct = inject<Ref<any>>('workingProduct', ref(null))
 // 监听工作商品变化，自动回填 ASIN
 watch(() => workingProduct?.value, (product) => {
   try {
-    console.log('[SEOConfig watch] product:', product?.asin || null)
     if (product?.asin) {
       form.value.asin = product.asin
     }

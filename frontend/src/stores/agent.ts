@@ -108,7 +108,6 @@ export const useAgentStore = defineStore('agent', () => {
     chatStore.setActiveAgent(agent.id)
     // 触发点击计数（即便 agent 没变，watch 也能响应）
     agentClickCounter.value++
-    console.log('✅ 切换 Agent:', agent.name)
   }
 
   // 初始化：把默认 Agent（店秘书）同步到 chatStore，保证首屏消息路由正确

@@ -214,7 +214,6 @@ const productAsin = ref('')
 // 监听工作商品变化，产品模式下自动同步显示
 watch(() => workingProduct?.value, (p) => {
   try {
-    console.log('[KeywordMinerConfig watch] product:', p?.title || null)
     if (p) {
       productTitle.value = p.title || ''
       productAsin.value = p.asin || ''

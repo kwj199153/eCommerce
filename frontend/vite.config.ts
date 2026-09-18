@@ -5,6 +5,17 @@ import { resolve } from 'path'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [vue()],
+  // ------------------------------------------------------------
+  //  生产构建剥离调试日志（第 135 轮）
+  //  ★ 只删 console.log / console.debug：
+  //    全前端 120+ 处 console.warn/error 是 catch 块里的**有意诊断记录**，
+  //    用 terser 的 drop_console（整体删 console）会连它们一起删掉，
+  //    等于「出错时什么都看不到」。esbuild 的 pure 精确到函数名。
+  //  ★ pure 只在结果未被使用时生效；dev 模式不剥离，本地调试不受影响。
+  // ------------------------------------------------------------
+  esbuild: {
+    pure: ['console.log', 'console.debug'],
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

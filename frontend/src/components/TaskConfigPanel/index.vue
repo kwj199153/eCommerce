@@ -340,7 +340,6 @@ const panelTitle = computed(() =>
 watch(() => agentStore.currentAgent, (newAgent) => {
   if (newAgent && props.currentTool) {
     // Agent 切换了但 currentTool 还残留 → 强制通知父组件清空
-    console.log('🛡️ TaskConfigPanel 检测到 Agent 切换，强制清空工具选择')
     emit('clearTool')
   }
 })

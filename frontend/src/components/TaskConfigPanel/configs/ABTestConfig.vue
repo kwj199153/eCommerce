@@ -111,7 +111,6 @@ const workingProduct = inject<Ref<any>>('workingProduct', ref(null))
 // 监听工作商品变化，自动回填原始 Listing
 watch(() => workingProduct?.value, (product) => {
   try {
-    console.log('[ABTestConfig watch] product:', product?.title || null)
     if (product) {
       const lines = [
         product.title || '',
