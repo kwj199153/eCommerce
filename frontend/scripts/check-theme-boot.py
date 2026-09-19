@@ -14,7 +14,7 @@
      漏改的表现：「老板说『换成马卡龙』→ 主 Agent 找不到该枚举 → 答没有这个主题」。
   ④ `src/api/secretary.ts` 的 `mode` 类型（已消除：改引 `ThemeMode`，本脚本反向断言它别退化）。
 
-用法：python frontend/scripts/check_theme_boot.py   （退出码 0 = 全一致；1 = 有漂移）
+用法：python frontend/scripts/check-theme-boot.py   （退出码 0 = 全一致；1 = 有漂移）
 """
 import io
 import re

@@ -76,8 +76,8 @@ EXTRA_MAP = {
 # 前端改动触发的检查（非 pytest）
 FRONTEND_CHECKS = [
     "cd frontend && npx vue-tsc --noEmit",          # 类型
-    "python frontend/scripts/check_theme_boot.py",   # 主题跨文件一致
-    "python frontend/scripts/check_app_actions.py",  # 动作契约
+    "python frontend/scripts/check-theme-boot.py",   # 主题跨文件一致
+    "python frontend/scripts/check-app-actions.py",  # 动作契约
 ]
 
 

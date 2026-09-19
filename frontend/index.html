@@ -8,7 +8,7 @@
     <!--
       首屏防白闪：早于任何 JS bundle 与样式表执行。
       本脚本里有 4 组字面量是「复制点」（无 TS 类型可依赖），全部由
-      `scripts/check_theme_boot.py` 机检，改任何一处都必须同步改本文件：
+      `scripts/check-theme-boot.py` 机检，改任何一处都必须同步改本文件：
         · 键名 'theme_mode'            == stores/theme.ts 的 STORAGE_KEY
         · 值 'system'                  == presets.ts 的 SYSTEM_MODE
         · THEMES 列表                  == presets.ts 的 ThemeName（**加主题必须加进来**，
@@ -47,7 +47,7 @@
     <!--
       首帧兜底色：在 JS 注入的完整变量表（presets.ts 的 resolveVars）到达前用。
       只兜「底色 + 文字色」两处，与 App.vue :root 的浅色兜底对称。
-      ⚠️ 下面每个主题的两个值必须与 presets.ts 同名键逐字一致（自检：check_theme_boot.py）。
+      ⚠️ 下面每个主题的两个值必须与 presets.ts 同名键逐字一致（自检：check-theme-boot.py）。
          需要兜底块的是「底色与 App.vue :root 兜底不同」的主题：dark、macaron；
          light 与 :root 同值，故只给 color-scheme。
       color-scheme 让浏览器原生控件（滚动条 / 表单）首帧就是深色，否则仍会闪白。

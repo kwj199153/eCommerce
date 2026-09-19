@@ -28,6 +28,9 @@
 #    - mypy：**仍未接入**（存量无标注，接入前要先跑基线）；
 #    - 前端 ESLint：package.json 有 lint 脚本，但 devDependencies 里**没有 eslint**
 #      ⇒ 该脚本是死的，直接加进 CI 会失败。补 devDeps + 配置文件是独立任务；
+#    - 前端 `scripts/check-*.py` 门禁：**第 161 轮已接进 CI**。此前 glob 写死
+#      `.cjs` 后缀（且 .py 用下划线命名，连 `check-*` 都匹配不上）⇒ 两道门禁
+#      存在却从未执行。现改 `check-*.*` + 覆盖率自证 + 文件名统一连字符；
 #    - 覆盖率 / 安全扫描：**已接入**（见 backend job 的覆盖率步骤与 security job）；
 #      npm audit 暂以 critical 为线，2 项 high 是已知待办（理由写在 security job 里）。
 # ============================================================
@@ -226,23 +229,58 @@ jobs:
         # npm ci 严格按 lock 安装，保证 CI 与本地一致
         run: npm ci
 
+      - name: 安装 Python（.py 门禁用）
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
       - name: 前端门禁（静态真伪检查）
         # ★★ 为什么必须显式跑这一步：
-        #   `package.json` 的 `build` = `8 道 check-*.cjs && vue-tsc && vite build`，
+        #   `package.json` 的 `build` 里串着一批 `check-*.cjs`，
         #   而本 job 之前跑的是 `npx vue-tsc` + `npx vite build`
-        #   —— **绕过了 build 脚本** ⇒ 这 8 道门禁从未在 CI 里执行过。
-        #   它们之前只在两处真跑：本地 `npm run build`，
-        #   以及 `frontend/Dockerfile` 的 `RUN npm run build`。
+        #   —— **绕过了 build 脚本** ⇒ 这些门禁从未在 CI 里执行过。
         #   第 155 轮新增的 `check-plan-consumption.cjs` 因此是 CI 里的死脚本
         #   —— 典型「配置写了但不生效」。
         #   用 **glob** 而不是逐条列举：新增门禁自动纳入，不会再漂移。
+        #
+        # ★★ 第 161 轮修（同类缺陷第二次出现，这次换了后缀）：
+        #   原 glob 写的是 `scripts/check-*.cjs` —— 后缀限定成 `.cjs`，
+        #   于是 `scripts/check-theme-boot.py` / `scripts/check-app-actions.py`
+        #   两道真实存在的门禁**从未在 CI 里执行过**。更隐蔽的是：
+        #   它们连 `check-*` 都匹配不上（原名用下划线 `check_theme_boot.py`），
+        #   所以「门禁存在但静默不执行」有两层原因 —— 后缀 + 分隔符。
+        #   修法 = ①文件名后缀分隔符统一成 `-`；②glob 放开到 `check-*.*`；
+        #          ③下面加「覆盖率自证」，谁再被排除就直接红。
+        #
+        # ★ 为什么 `.py` 门禁**没有**并进 `npm run build`：
+        #   `frontend/Dockerfile` 的构建阶段是 `node:22-alpine`（**镜像里没有 python**），
+        #   并进 build 会让 `RUN npm run build` 直接失败、镜像构建挂掉。
+        #   ⇒ build 保持只跑 `.cjs`；`.py` 由本步骤 + `npm run check:py` 承担。
         run: |
           set -e
-          for f in scripts/check-*.cjs; do
-            echo "::group::$f"
-            node "$f"
-            echo "::endgroup::"
+          shopt -s nullglob
+          ran=0
+          for f in scripts/check-*.*; do
+            echo "--- $f"
+            case "$f" in
+              *.cjs) node "$f" ;;
+              *.py)  python "$f" ;;
+              *)
+                echo "::error::门禁 $f 后缀未知，无法执行（新增门禁请用 .cjs 或 .py）"
+                exit 1
+                ;;
+            esac
+            ran=$((ran + 1))
           done
+          # ★ 覆盖率自证：`check-*`（**不限后缀**）都必须被上面那条 glob 跑到。
+          #   少了就是「门禁文件在、却从未被执行」—— 正是本轮修掉的缺陷形态。
+          total=$(ls -1 scripts/check-* | wc -l)
+          if [ "$ran" -ne "$total" ]; then
+            echo "::error::门禁覆盖率不足：磁盘 $total 个，实际执行 $ran 个"
+            echo "被排除的文件：$(ls -1 scripts/check-* | tr '\n' ' ')"
+            exit 1
+          fi
+          echo "前端门禁执行 $ran/$total 个 ✓"
 
       - name: 类型检查
         run: npx vue-tsc --noEmit

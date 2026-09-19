@@ -11,7 +11,7 @@
  *     open_drawer / account_menu / handoff / set_theme / switch_shop）
  *     ★★ **加新动作必须同时补下面的 dispatchAppAction 分支** —— if 链没有 never 兜底，
  *        tsc 不会检查穷尽性，漏写只在运行时静默 `return false`（曾导致「AI 说已切换店铺、
- *        界面没换」）。自检：`python frontend/scripts/check_app_actions.py`。
+ *        界面没换」）。自检：`python frontend/scripts/check-app-actions.py`。
  *   - dispatchAppAction()：唯一执行入口，返回是否成功（供调用方决定回复文案）
  *   - 白名单：target 只在已知视图 / 已知 Agent 内匹配，非法目标直接拒绝（防 LLM 幻觉跳转）
  *

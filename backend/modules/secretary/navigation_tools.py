@@ -51,7 +51,7 @@ AccountMenuTarget = Literal["settings", "memory", "subscription", "logout"]
 # ⚠️ 必须与前端 frontend/src/theme/presets.ts 的 `ThemeName` 保持一致（外加 system）。
 # 本枚举是**工具签名**的一部分 → LLM 只能从这里取值，所以加主题时漏改这里，
 # 表现是「老板说『换成马卡龙』，主 Agent 找不到该枚举值 → 答『没这个主题』或切错」。
-# 漂移由前端自检脚本兜底：frontend/scripts/check_theme_boot.py
+# 漂移由前端自检脚本兜底：frontend/scripts/check-theme-boot.py
 ThemeMode = Literal["light", "dark", "macaron", "system"]
 
 

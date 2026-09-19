@@ -20,7 +20,7 @@
   ③ 返回值被消费：调用方（useChatOrchestrator）不得静默丢弃 dispatchAppAction 的布尔结果 ——
      对**可能失败**的动作（switch_shop 等有时间/状态前提的），必须检查并如实回报。
 
-用法：python frontend/scripts/check_app_actions.py   （退出码 0 = 通过；1 = 有漏实现/漏检查）
+用法：python frontend/scripts/check-app-actions.py   （退出码 0 = 通过；1 = 有漏实现/漏检查）
 """
 import io
 import re

@@ -111,11 +111,22 @@ backend/alembic/                迁移
 
 ```bash
 cd frontend && npx vue-tsc --noEmit          # 类型
-python frontend/scripts/check_theme_boot.py   # 主题跨文件一致（新增配色必查）
-python frontend/scripts/check_app_actions.py  # 动作契约（新增动作必查）
+python frontend/scripts/check-theme-boot.py   # 主题跨文件一致（新增配色必查）
+python frontend/scripts/check-app-actions.py  # 动作契约（新增动作必查）
 ```
 
 后端测试**永远测不出前端的问题**——这三点漏一个，就是「后端全绿但页面白屏」。
+
+> ★ 第 161 轮补记（真实缺陷）：上面两个 `.py` 自检脚本此前**从未在 CI 里执行过** ——
+> CI 的门禁 glob 写死 `scripts/check-*.cjs`（后缀限定），而这两个脚本原名用**下划线**
+> （`check_theme_boot.py`），连 `check-*` 这个前缀都匹配不上 ⇒ 「存在却静默不执行」。
+> 现修法：①文件名分隔符统一成连字符；②CI glob 放开到 `scripts/check-*.*` 并按后缀分派
+> （`.cjs` → node、`.py` → python、未知后缀直接失败）；③循环内**覆盖率自证**
+> （glob 命中数 vs 该目录 `check-*` 总数，不等就红）。
+> 门禁本体 = `backend/tests/test_ci_gate_coverage.py`（7 条）⇒ 谁再改回 `.cjs` 限定、
+> 或把门禁改名回下划线，都会立刻红。
+> **`.py` 门禁没有并进 `npm run build`**：`frontend/Dockerfile` 构建阶段是
+> `node:22-alpine`（镜像里没有 python），并进去会让镜像构建失败。本地要跑用 `npm run check:py`。
 
 ---
 
