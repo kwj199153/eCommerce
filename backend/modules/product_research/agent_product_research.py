@@ -49,6 +49,8 @@ logger = get_logger("product_research.agent")
 # LLM 能力（可用性判据 / 降级 / RAG）已统一到唯一基类 BaseAgent：
 # 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
 from ai_infra.base_agent import BaseAgent
+from ai_infra.budget import BUDGET_ROUTER
+from ai_infra.context import CONTEXT_ROUTER
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
 from modules.product_research import prompts as _prompts  # noqa: F401
 
@@ -403,21 +405,38 @@ class ProductResearchAgent(BaseAgent):
                 agent_name=f"{self.agent_name}_router",
                 system_prompt=self.system_prompt,
                 tools=product_research_tools,
-                max_iterations=4,
+                # ★ 第 145 轮 批 C5：裸数字 → 具名档位（同 listing 路由子层）。
+                budget=BUDGET_ROUTER,
+                # ★ 第 147 轮 批 C4：上下文档位与预算档位**同档**（ROUTER）。
+                #   路由子层「单次决策 + 一串工具调用、用完即答」⇒ 历史最短、裁得最狠
+                #   （12k / 保底 2 轮），与 `checkpoint_ns="product_research"` 同一层。
+                context_policy=CONTEXT_ROUTER,
                 metadata={"role": "sub_agent_router"},
                 checkpointer=get_checkpointer(),
                 checkpoint_ns="product_research",
                 # ★★★ 第 131 轮：`save_candidate` 是全仓**唯一**「有外部副作用
                 #   （真写 PG：`candidates/service.create_candidate`）+ 真被生产
                 #   代码装配」的 agent 工具 ⇒ 它是 HITL 的首选、也是唯一目标。
-                #   （全仓 8 个工具注册表 / 41 个工具：`create_ticket` 零持久化、
-                #    `track_batch_asins` 只读内存 mock，且两者所在注册表的
-                #    **生产装配点数都是 0**，见 probe `out-r131-a2-toolmatrix.txt`。）
+                #   （全仓 8 个工具注册表：`track_batch_asins` 只读内存 mock，
+                #    `create_ticket` 所在注册表的生产装配点数是 0（悬空）——
+                #    ★ 第 143 轮 A4 起 `create_ticket` 已**真落库**（cs_tickets 表），
+                #    所以它落选的理由是「注册表悬空」而**不是**「零副作用」，
+                #    两者不要混为一谈。见 probe `out-r131-a2-toolmatrix.txt`。）
                 #   为什么必须有上面那两行：`interrupt()` 在**没有 checkpointer 的
                 #   图上直接抛**，不是「降级为不审批」⇒ HITL 与 checkpointer 是
                 #   **同一个前提**。`checkpoint_ns` 再把本 Agent 的会话与
                 #   secretary 隔开（见 `BaseAgent.resolve_thread_id`）。
-                hitl_tools=["save_candidate"],
+                #
+                # ★★★ 第 145 轮 批 B2：**删掉了手写的 `hitl_tools=["save_candidate"]`**。
+                #   审批名单从此由 `ai_infra.tools.side_effects` 的副作用策略
+                #   自动推导（见 `BaseAgent._wrap_hitl_tools`）—— 本文件的
+                #   职责是「装配哪张注册表」，不是「哪个工具危险」。
+                #   行为不变：`product_research_tools` 5 个工具里只有
+                #   `save_candidate` 不在只读豁免名单内 ⇒ 推导结果仍是
+                #   `{"save_candidate"}`（由 `test_hitl_wiring.py` 钉住）。
+                #   为什么必须删而不是留：留着就等于留了**第二份真源**，
+                #   而两份真源迟早会漂移 —— 那时「策略表里是 A、Agent 里是 B」
+                #   会让审批范围变成一个没人能说清的东西。
             )
         except Exception as e:
             logger.warning(f"[product_research] router build failed: {e}")

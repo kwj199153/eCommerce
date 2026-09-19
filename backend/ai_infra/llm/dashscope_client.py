@@ -33,6 +33,27 @@ from core.resilience import RetryPolicy, call_with_retry, retrying_stream
 
 logger = get_logger(__name__)
 
+def estimate_tokens(char_count: int) -> int:
+    """字符数 → token 数的**估算**（中文场景经验值，**唯一真源**）。
+
+    ★ 这是估算，**不是计费口径**：计费一律优先用服务端返回的 `usage`
+      （见 `chat` / `chat_stream` 里的 `record_llm_usage` 调用点）。
+      估算只在两种场合使用：
+        ① 服务端没给 `usage` 时的兜底计量；
+        ② 需要**在不发请求的前提下**预判输入大小 —— 上下文裁剪
+           （`ai_infra.context.trim_history`）就是靠它做决策。
+
+    口径：qwen 系列对中文约 1 token ≈ 1.5 字符，取下界估计（宁可高估 token）。
+      · 0 字符 ⇒ 0（空内容不产生消耗）
+      · 非空至少 1（否则「很短但非空」会被算成 0，让预算与裁剪判定失真）
+
+    ★ 第 147 轮 · 批 C4：从 `DashScopeLLM._estimate_tokens` 提升而来。
+      提升的原因是它开始有**第二个消费者**（上下文裁剪）；把口径留在私有方法里
+      会逼着调用方要么直打私有实现、要么自己再写一份 —— 两条路都在制造问题。
+    """
+    return max(1, int(char_count / 1.5)) if char_count else 0
+
+
 
 # ====== 配置 ======
 def _load_config() -> Dict[str, Any]:
@@ -567,13 +588,14 @@ class DashScopeLLM:
 
     @staticmethod
     def _estimate_tokens(char_count: int) -> int:
-        """
-        无 usage 时的 token 估算（中文场景经验值）。
+        """【兼容包装】真源已提升为模块级 `estimate_tokens`（第 147 轮 · 批 C4）。
 
-        qwen 系列对中文约 1 token ≈ 1.5 字符，这里做保守估计，
-        仅用于流式接口服务端未返回 usage 时的兜底计量。
+        ★ 保留这个私有名的唯一理由：`tests/test_llm_client.py::test_estimate_tokens`
+          直接钉住了它（`DashScopeLLM._estimate_tokens(150) == 100`）。
+          它**不构成第二份实现** —— 只有一行转发，口径永远只有一处。
+        ★ 新增调用方请用模块级 `estimate_tokens`，不要直打私有名。
         """
-        return max(1, int(char_count / 1.5)) if char_count else 0
+        return estimate_tokens(char_count)
 
     def _update_stats(self, response: LLMResponse):
         """更新使用统计"""

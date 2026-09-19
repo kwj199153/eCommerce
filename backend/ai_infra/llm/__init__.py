@@ -14,6 +14,7 @@ from .dashscope_client import (
     PROMPT_TEMPLATES,
     register_prompt_template,
     get_prompt_template,
+    estimate_tokens,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     "PROMPT_TEMPLATES",
     "register_prompt_template",
     "get_prompt_template",
+    "estimate_tokens",
 ]

@@ -204,6 +204,8 @@ class EmotionType(str, Enum):
 # LLM 能力（可用性判据 / 降级 / RAG）已统一到唯一基类 BaseAgent：
 # 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
 from ai_infra.base_agent import BaseAgent
+from ai_infra.budget import BUDGET_ROUTER
+from ai_infra.context import CONTEXT_ROUTER
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
 from modules.listing_generator import prompts as _prompts  # noqa: F401
 
@@ -339,7 +341,14 @@ class ListingGeneratorAgent(BaseAgent):
                 agent_name=f"{self.agent_name}_router",
                 system_prompt=self.system_prompt,
                 tools=listing_tools,
-                max_iterations=4,
+                # ★ 第 145 轮 批 C5：裸数字 → 具名档位（见 `ai_infra/budget.py`）。
+                #   路由子层是「单次决策 + 一串工具调用、用完即答」，
+                #   不是多轮对话 ⇒ 用 ROUTER 档而非 INTERACTIVE 档。
+                budget=BUDGET_ROUTER,
+                # ★ 第 147 轮 批 C4：上下文档位与预算档位**同档**（ROUTER）。
+                #   路由子层「单次决策 + 一串工具调用、用完即答」⇒ 历史最短、裁得最狠
+                #   （12k / 保底 2 轮）。与 `checkpoint_ns="listing"` 同属这一层的口径。
+                context_policy=CONTEXT_ROUTER,
                 metadata={"role": "sub_agent_router"},
                 checkpointer=get_checkpointer(),
                 checkpoint_ns="listing",

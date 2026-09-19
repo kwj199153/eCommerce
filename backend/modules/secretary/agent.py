@@ -19,6 +19,9 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from loguru import logger
 
 from ai_infra.base_agent import BaseAgent
+from ai_infra.budget import BUDGET_INTERACTIVE
+from ai_infra.context import CONTEXT_INTERACTIVE
+from ai_infra.plan import TODOS_STATE_KEY, plan_summary
 from modules.secretary import intent_shortcut
 from modules.secretary.navigation_tools import navigation_tools
 from modules.secretary.subscription_tools import subscription_tools
@@ -73,6 +76,24 @@ SECRETARY_SYSTEM_PROMPT = """你是「店管家 AI」的店秘书，一个跨境
 class SecretaryAgent(BaseAgent):
     """店秘书主 Agent"""
 
+    #: ★ 第 148 轮 批 C3：开启**自主规划器**（`ai_infra.plan`）。
+    #:
+    #: 为什么开在店秘书：它是唯一的**全局入口**，也是唯一会收到**复合意图**的地方
+    #: ——「先选中第 2 个产品，再切到 Listing 优化师，带上这条诉求」这类请求天然
+    #: 是**多步工具序列**，而本档位的 `max_iterations=6` 会在第 7 步硬截断。
+    #: 开启后：① 计划存进 `state["todos"]`，随 checkpointer 落 PG，
+    #: **不随历史裁剪丢失**（第 147 轮批 C4 的裁剪只作用于消息序列）；
+    #: ② 调用方能拿到 `plan`（进度 N/M），被截断时也说得清「停在第几步」，
+    #: 而不是只看到一句「处理完成」。
+    #:
+    #: ★ 它**不违反** `SECRETARY_SYSTEM_PROMPT` 的规则 8（「一次只做最贴合意图的
+    #: 一件事，不要多调无关工具」）：那条防的是「乱调无关工具」，而规划描述的是
+    #: **同一件事的多个必要步骤** —— 两者不冲突，且 `PLANNING_GUIDE` 会追加在
+    #: 业务 prompt 之后（见 `BaseAgent._system_prompt_with_plan`）。
+    #: ★ 两个规划工具声明为 `LOCAL_STATE_METADATA`（只写本地 state）⇒ **免 HITL
+    #: 审批**，不会给老板多出「请批准规划」的确认步骤。
+    ENABLE_PLANNING = True
+
     def __init__(self, llm=None, shop_id: Optional[str] = None, checkpointer=None, **kwargs):
         # 产品选择工具按店铺动态构建（shop_id 为空时返回空标记，由前端提示）
         product_tools = build_product_tools(shop_id)
@@ -82,7 +103,16 @@ class SecretaryAgent(BaseAgent):
             system_prompt=SECRETARY_SYSTEM_PROMPT,
             tools=navigation_tools + subscription_tools + product_tools + shop_tools,
             llm=llm,
-            max_iterations=6,
+            # ★ 第 145 轮 批 C5：裸数字 `max_iterations=6` → 具名档位。
+            #   此前没有任何地方解释「为什么是 6」；现在它是「多轮对话型
+            #   Agent（边问边查）」这一档的取值，且同档位一次说清三个维度
+            #   （迭代 / token / 墙钟）—— 见 `ai_infra/budget.py`。
+            budget=BUDGET_INTERACTIVE,
+            # ★ 第 147 轮 批 C4：上下文档位与预算档位**同档**（INTERACTIVE）。
+            #   多轮对话型主 Agent：历史最长，但裁得最轻（48k / 保底 8 轮）。
+            #   两者管的是不同维度 —— 预算管「跑多久」，上下文管「这一次发出去多大」；
+            #   同档只是让「为什么是这个数」在一处说得清（见 `ai_infra/context.py`）。
+            context_policy=CONTEXT_INTERACTIVE,
             metadata={"role": "orchestrator"},
             checkpointer=checkpointer,
             **kwargs,

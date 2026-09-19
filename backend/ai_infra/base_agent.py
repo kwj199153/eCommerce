@@ -53,6 +53,7 @@ BaseAgent 基类 - **所有业务 Agent 的唯一基类**
   业务维度（如 shop_id）都归业务模块。分层门禁见 `tests/test_infra_layering.py`。
 """
 
+import asyncio
 import json
 import time
 from dataclasses import dataclass, field
@@ -71,8 +72,33 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 
+from ai_infra.budget import (
+    DEFAULT_BUDGET,
+    AgentBudget,
+    BudgetExceeded,
+    BudgetVerdict,
+    check_budget,
+)
+from ai_infra.context import (
+    DEFAULT_CONTEXT_POLICY,
+    ContextPolicy,
+    trim_history,
+)
+from ai_infra.plan import (
+    PLANNING_GUIDE,
+    TODOS_STATE_KEY,
+    normalize_todos,
+    plan_summary,
+    planner_tools,
+    render_plan_block,
+)
+from ai_infra.prompt_sections import (
+    PromptContext,
+    collect_prompt_sections,
+)
 from core.config import config
 from core.logger import get_logger
+from core.observability.context import current_user_id
 
 logger = get_logger(__name__)
 
@@ -114,6 +140,40 @@ class AgentState(MessagesState):
     #   （全仓 0 处读 `state["metadata"]`），属死重量而非真耦合。
     metadata: dict = {}
 
+    #: 预算耗用与超限结论（第 145 轮 · 批 C5）。
+    #:
+    #: ★ 生产者 `_llm_call_node`，消费者 `_respond_node`（以及直接读
+    #:   `graph.ainvoke()` 返回 state 的业务调用方）。它存在的意义是把
+    #:   「这次是被预算截断的」变成**调用方读得到**的状态 —— 此前只有一条
+    #:   WARNING 日志，图返回的 state 与「模型自己答完了」完全一样。
+    #:
+    #: 键：`spent_tokens` / `iterations`（本轮耗用）、`truncated`（超限维度，
+    #:     仅**真截断**时写）、`limit` / `used` / `message`（超限结论）、
+    #:     `context`（本次请求的**上下文裁剪**结论，见 `ai_infra.context.TrimReport`；
+    #:     第 147 轮 · 批 C4）。
+    #:
+    #: ★ `context` 与 `truncated` **不是**同一件事，别合并看待：
+    #:   裁剪是长会话的**常态**（会话继续跑下去），截断是预算耗尽的**终局**
+    #:   （本轮到此为止）。前者不该让 status 变红，后者必须让它变红 ——
+    #:   把两者合成一个字段，就会要么「长会话每次都被报成失败」，
+    #:   要么「真截断了却没人知道」。
+    budget: dict = {}
+
+    #: 子任务清单（第 148 轮 · 批 C3）。生产者 = `ai_infra.plan` 的两个工具
+    #: （`plan_tasks` / `update_task`），消费者 = `_llm_call_node`（每轮渲染进
+    #: system prompt）、`_respond_node`（进 `structured_response.plan`），
+    #: 以及直接读图返回 state 的业务调用方与前端。
+    #:
+    #: ★ 它**不在 `messages` 里**，这是设计要点而非偶然：`ai_infra.context` 的
+    #:   历史裁剪只作用于消息序列，计划放在这里就**结构上不可能被裁掉**。
+    #:   此前若把计划写在回复正文里，第 147 轮批 C4 加的历史裁剪会把它当旧历史
+    #:   一起裁掉 —— 裁完模型就"忘了还要做什么"。
+    #:
+    #: ★ 为什么用默认的「覆盖」更新语义、不自定义 reducer：两个规划工具**总是
+    #:   返回完整的新列表**，覆盖即正确语义。自定义 reducer（把两份列表合并）
+    #:   反而引入歧义 —— 重规划本该整体替换，合并会让旧步骤赖着不走。
+    todos: list = []
+
 
 class BaseAgent:
     """
@@ -135,6 +195,10 @@ class BaseAgent:
     ENABLE_LLM: bool = True              # 总开关（关闭则全部走降级）
     ENABLE_RAG: bool = False             # 是否启用 RAG（通用检索增强，业务按需开启）
     FALLBACK_TO_MOCK: bool = True        # LLM 失败时是否降级
+    #: 是否启用**自主规划器**（第 148 轮 · 批 C3）。开启后基类自动装配
+    #: `plan_tasks` / `update_task` 两个工具，并在每轮把当前计划渲染进 system prompt。
+    #: 默认关 —— 「先规划后执行」对多步骤任务有价值，对单轮问答只是多余开销。
+    ENABLE_PLANNING: bool = False
     #: checkpointer 的线程命名空间（`thread_id` 前缀）。
     #: 空串 ⇒ `thread_id` 就是裸 `session_id`（`secretary` 的历史口径，勿改）；
     #: 非空 ⇒ `f"{ns}:{session_id}"`，用于隔离不同 Agent 的会话记忆。
@@ -182,7 +246,10 @@ class BaseAgent:
         tools: Optional[list[BaseTool]] = None,
         llm: Optional[BaseChatModel] = None,
         hitl_tools: Optional[list[str]] = None,
-        max_iterations: int = 10,
+        budget: Optional[AgentBudget] = None,
+        context_policy: Optional[ContextPolicy] = None,
+        enable_planning: Optional[bool] = None,
+        max_iterations: Optional[int] = None,
         metadata: Optional[dict] = None,
         checkpointer: Optional[AsyncPostgresSaver] = None,
         checkpoint_ns: Optional[str] = None,
@@ -199,7 +266,26 @@ class BaseAgent:
             tools: 工具列表（业务专属，由子类定义）
             llm: LangChain 模型实例（默认懒加载 DashScope Qwen 兼容端点）
             hitl_tools: 需要 HITL 审批的工具名列表
-            max_iterations: 最大推理迭代次数（防止死循环）
+            budget: 运行预算（迭代 / token / 墙钟，见 `ai_infra.budget`）。
+                缺省 `DEFAULT_BUDGET`。★ 业务 Agent 应传一个**具名档位**
+                （`BUDGET_ROUTER` / `BUDGET_INTERACTIVE`），而不是自己写数字。
+            context_policy: 上下文窗口策略（历史裁剪 + 旧工具结果折叠，
+                见 `ai_infra.context`）。缺省 `DEFAULT_CONTEXT_POLICY`。
+                ★ 业务 Agent 应传一个**具名档位**（`CONTEXT_ROUTER` /
+                `CONTEXT_INTERACTIVE`），而不是自己写数字。
+                ★ 它与 `budget` 是**两件事**：预算管「跑多久 / 一共花多少」，
+                上下文管「这一次发出去多大」。多轮会话必然需要裁剪，
+                而裁剪不是失败。
+            enable_planning: 是否启用**自主规划器**（`ai_infra.plan`）。
+                缺省取类属性 `ENABLE_PLANNING`。开启后：① 自动装配
+                `plan_tasks` / `update_task` 两个工具；② 每轮把当前计划渲染进
+                system prompt —— 于是计划**不随历史裁剪而丢失**。
+                ★ 与 `budget` / `context_policy` 的分工：后两者分别管「跑多久」
+                与「一次发多大」，本项管「有没有一张跨轮存活的计划」。
+                三者是三个维度，不是同一件事的三个开关。
+            max_iterations: 【兼容形参，建议改用 `budget`】只改写预算里的
+                迭代上限。★ 它**不构成第二份真源**：内部被折进 `budget`，
+                此后一切判定只读预算（见同名 property）。
             metadata: 额外元数据
             checkpointer: LangGraph checkpointer（PostgreSQL 持久化，None 则内存态）
             checkpoint_ns: checkpointer 的线程命名空间（`thread_id` 前缀）。
@@ -208,7 +294,32 @@ class BaseAgent:
         """
         self.agent_name = agent_name or self.__class__.__name__
         self.system_prompt = system_prompt
-        self.max_iterations = max_iterations
+        # ---- 运行预算：**唯一真源**（第 145 轮 批 C5）----
+        # ★ `max_iterations=` 兼容形参在这里被**折进**预算，而不是与它并存：
+        #   `AgentBudget` 是 frozen 的，`with_max_iterations` 返回新实例 ——
+        #   于是「形参覆盖」也只是一个预算法，判定路径永远只有一条。
+        self.budget = budget if budget is not None else DEFAULT_BUDGET
+        if max_iterations is not None:
+            self.budget = self.budget.with_max_iterations(max_iterations)
+        # ---- 上下文窗口：历史裁剪的口径（第 147 轮 · 批 C4）----
+        # ★ 与预算**分开**是真源划分，不是重复：若把「单次输入上限」塞进
+        #   `AgentBudget`，`max_tokens` 这一个名字就同时指两件事
+        #   （本轮累计耗用 vs 这一次的输入），而「一个名字两种含义」
+        #   正是两份实现的开端（同族判据：同一概念两套 ID 空间）。
+        self.context_policy = (
+            context_policy if context_policy is not None else DEFAULT_CONTEXT_POLICY
+        )
+
+        # ---- 自主规划器开关（第 148 轮 · 批 C3）----
+        # ★ 解析结果必须落成 **bool**：`None` 是「未指定」的哨兵（取类属性），
+        #   若把 None 原样留着，下游 `if self.enable_planning:` 与
+        #   `self.enable_planning is False` 两处判定会分叉 —— 一个当假、
+        #   一个当"没说过"。同一个值有两种解释正是两份实现的开端。
+        self.enable_planning = (
+            bool(enable_planning)
+            if enable_planning is not None
+            else bool(self.ENABLE_PLANNING)
+        )
         # ★ 可变默认参数的经典坑：`def f(x=[])` 的默认对象在**函数定义时创建一次**，
         #   所有调用者共享同一个 list/dict。原写法 `hitl_tools=[]` / `metadata={}`
         #   意味着任意 Agent 实例对它们的改动会传染给后续所有实例 ——
@@ -248,7 +359,26 @@ class BaseAgent:
         }
 
         # 处理 HITL 工具包装
-        self.tools = self._wrap_hitl_tools(list(tools) if tools else [])
+        #
+        # ★ 第 148 轮 批 C3：开启规划时由**基类自己**追加两个规划工具。
+        #   为什么不让各业务 Agent 手写进 `tools=`：规划是基类能力
+        #   （`AgentState.todos` 与 system prompt 注入都在基类），业务侧漏写一处
+        #   的症状是「模型调不到 plan_tasks」—— 而模型**不会报错**，它只是不规划，
+        #   界面上看不出任何异常。由基类无条件装配，业务侧只剩一个布尔开关。
+        #
+        # ★ `planner_tools` 是模块级共享对象：工具本身**无状态**（计划存在图的
+        #   state 里，不在工具实例上），多个 Agent 复用同一批实例不会串数据；
+        #   而 `_wrap_hitl_tools` 只在最外层建新 list、不改动元素。
+        # ★ 它们声明为 `LOCAL_STATE_METADATA`（只写本地 state）⇒ 免 HITL 审批，
+        #   所以「追加进去」不会给用户多出一步「请批准规划」的确认。
+        _planner = list(planner_tools) if self.enable_planning else []
+        self.tools = self._wrap_hitl_tools((list(tools) if tools else []) + _planner)
+        if _planner:
+            logger.info(
+                f"🧭 [{self.agent_name}] 已启用自主规划器 "
+                f"{[t.name for t in _planner]}（计划存于 state['{TODOS_STATE_KEY}']，"
+                f"不随历史裁剪丢失）"
+            )
 
         # ---- LangGraph 图懒构建 ----
         # ★ 不在 __init__ 建图：业务 Agent 只用 LLM 原语、不成为一张图，
@@ -802,6 +932,57 @@ class BaseAgent:
             if isinstance(m, AIMessage) or m.__class__.__name__ == "AIMessage"
         )
 
+    @staticmethod
+    def _carried_tokens(state: dict, *, iterations_done: int) -> int:
+        """本轮**此前**已消耗的 token（0 表示本轮第一次迭代）。
+
+        ★ 为什么从 state 读、不记在实例上：Agent 实例是**进程内单例**
+          （`get_secretary_agent()` 就是），记在 `self` 上等于把一个会话的
+          耗用记到另一个会话头上 —— 并发下预算会随机误伤。state 随图执行走，
+          一次调用一份。
+
+        ★ 为什么 `iterations_done == 0` 一定要归零：`state["budget"]` 会随
+          checkpointer **跨轮持久化**。不归零的话预算会被历史越攒越多，
+          一个健康的会话聊到第 N 轮突然被判「token 超限」。口径与
+          `_iterations_in_current_turn` 一致：预算按**轮**算，不按会话算。
+        """
+        if iterations_done <= 0:
+            return 0
+        return int((state.get("budget") or {}).get("spent_tokens") or 0)
+
+    def _system_prompt_with_plan(self, state: dict, *, sections: str = "") -> str:
+        """本轮要发给模型的 system prompt。
+
+        组成**按顺序**（空的部分整段跳过）：
+            业务提示词 → 外部段落（`sections`）→ 规划说明 → 当前计划
+
+        ★★ 这是「计划不随历史裁剪丢失」的**第二半**（第一半是计划不在 `messages`
+          里）。计划存在 `state["todos"]`，但模型不会自动知道它 —— 必须每轮把它
+          渲染进 system prompt。因为渲染是**每轮现算**的，历史被裁掉多少轮都不影响
+          这一段：裁剪器只看 messages，看不见这里。
+
+        ★★ 第 152 轮修：原实现在未开启规划时 `return self.system_prompt`，
+          把**后来加的一切**一起丢掉了。任何「附加段落」只要不属于规划器，
+          在那个早退分支上都会静默消失 —— 而「静默」正是最难发现的那种失效：
+          未开规划的 Agent 上记忆永远不注入、日志全绿、门禁全绿。
+          ⇒ 早退只能跳过**规划器那两段**，不能跳过整个拼接。
+          由 `tests/test_memory_injection.py::test_sections_survive_without_planning`
+          钉住（关规划 + 有 sections ⇒ sections 必须仍在）。
+
+        ★ 为什么拼进 system prompt、而不是往 `messages` 里塞一条 SystemMessage：
+          messages 会被 `trim_history()` 按轮裁剪，塞进去等于把刚建好的保障
+          又交回给裁剪器去处理。
+        """
+        parts = [self.system_prompt]
+        if sections:
+            parts.append(sections)
+        if self.enable_planning:
+            parts.append(PLANNING_GUIDE)
+            block = render_plan_block(normalize_todos(state.get(TODOS_STATE_KEY)))
+            if block:
+                parts.append(block)
+        return "\n\n".join(p for p in parts if p)
+
     async def _llm_call_node(self, state: AgentState) -> dict:
         """LLM 决策节点：决定是否调用工具或直接回复"""
         raw_messages = state["messages"]
@@ -816,7 +997,68 @@ class BaseAgent:
                 f"已从本次 LLM 输入中剔除（checkpoint 历史保持不变，下次读取仍会清洗）"
             )
 
-        messages = [SystemMessage(content=self.system_prompt)] + clean_messages
+        # ★★★ 第 147 轮 批 C4：**上下文裁剪** —— 按 token 预算裁历史 +
+        #   折叠旧工具结果为摘要。在此之前这里只有**结构性**清洗
+        #   （上一行的 orphan 配对剔除），它不减少一个字节 ⇒ 多轮会话的输入
+        #   token 单调增长，直到被对端以「上下文超长」拒绝，而那时**整条会话
+        #   从此不可用**（每次恢复历史都会再次超长）。
+        #
+        #   ★ 裁剪只作用于 `clean_messages`（不含 system prompt）；
+        #   ★ **当前轮永不裁** —— 裁掉它等于把用户这次问的话删了；
+        #   ★ 保底保留 `keep_recent_turns` 轮 —— 否则一次裁剪就把上下文炸成空。
+        #   四条不变量详见 `ai_infra/context.py`。
+        clean_messages, context_report = trim_history(clean_messages, self.context_policy)
+        if context_report.changed:
+            logger.info(
+                f"✂️ [{self.agent_name}] 上下文裁剪：轮 {context_report.turns_total} → "
+                f"{context_report.turns_kept}（删 {context_report.turns_dropped}），"
+                f"折叠工具结果 {context_report.folded_tool_results} 条，"
+                f"估算 token {context_report.tokens_before} → {context_report.tokens_after}"
+                f"（档位 {context_report.label}）"
+            )
+        if context_report.over_budget:
+            # ★ 显式声明「没裁到位」：保底轮数用尽后仍超预算。
+            #   这里**不抛异常** —— 此刻消息里装的是用户这次问的东西，
+            #   丢掉它比超长更糟。让请求照发、由对端决定，但日志必须说清
+            #   是**这里没做到**，而不是让下一次失败看起来像对端的问题。
+            logger.warning(
+                f"⚠️ [{self.agent_name}] 上下文裁剪未回到预算内：估算 "
+                f"{context_report.tokens_after} > {self.context_policy.max_input_tokens}"
+                f"（已保留保底 {self.context_policy.keep_recent_turns} 轮）"
+            )
+
+        # ★ 第 148 轮 批 C3：system prompt 里带上当前计划（开启规划时）。
+        #   从 `state` 取而不是从 `self` 取：计划是**这个会话**的，
+        #   而 Agent 实例是进程内单例。
+        #
+        # ★ 第 152 轮 批 C2 读口：**每轮现取**外部段落（今天是长期记忆）。
+        #   它与 `state["todos"]` 一样不进 messages ⇒ 历史裁剪动不到它；
+        #   不同的是它的真源在库里（用户跨会话的画像），不在图状态里。
+        #   ★ 身份**只从服务端上下文取**（`core.observability.context`，
+        #     由鉴权依赖写入）：工具入参由 LLM 生成，塞不进身份；
+        #     客户端自报的身份也不该被采纳。
+        #   ★ 匿名请求（或 Celery 里的任务）`current_user_id()` 是空串
+        #     ⇒ provider 返回空串 ⇒ 本段为空，这一轮**照常继续**：
+        #     记忆是增益不是门禁，让增益的故障否决主流程是更差的选择。
+        injected = await collect_prompt_sections(
+            PromptContext(
+                agent_name=self.agent_name,
+                user_id=current_user_id() or None,
+            )
+        )
+        if injected.failed:
+            # ★ 「失败了」必须与「本来就没有内容」**可分**：这里点名说是哪几段。
+            #   只记一条没有主语的数量没有价值 —— 排查时不知道去找谁。
+            logger.warning(
+                f"⚠️ [{self.agent_name}] system prompt 段落注入失败 "
+                f"{len(injected.failed)} 段，本次已跳过（其余段落照常注入）："
+                f"{list(injected.failed)}"
+            )
+        messages = [
+            SystemMessage(
+                content=self._system_prompt_with_plan(state, sections=injected.text)
+            )
+        ] + clean_messages
 
         response = await self._llm_with_tools().ainvoke(messages)
 
@@ -827,6 +1069,11 @@ class BaseAgent:
         # ChatOpenAI 的 usage_metadata 键名是 input_tokens/output_tokens/total_tokens；
         # LangChain 在 on_llm_end 时挂上，ainvoke 返回的 AIMessage 亦带该属性。
         usage = getattr(response, "usage_metadata", None)
+        # ★ 批 C5：本次 token 消耗提到外层 —— 预算的 token 维度要用它。
+        #   原实现里这两个名字只活在 `if usage:` 的 try 块内，无 usage 时
+        #   根本不存在（下游直接引用会 NameError）。
+        in_tok = 0
+        out_tok = 0
         if usage:
             try:
                 in_tok = int(usage.get("input_tokens") or 0)
@@ -855,16 +1102,64 @@ class BaseAgent:
         #
         # 注意：计数必须用「本轮迭代数」而非全部历史 AIMessage 数（否则多轮会话
         # 累积几条后每轮都被判超限，工具调用彻底失效）——见 _iterations_in_current_turn。
+        # ★★★ 第 145 轮 批 C5：预算从「只数迭代」扩到「迭代 + token」两维，
+        #   且**超限必须留下调用方读得到的状态**。
+        #
+        #   改之前：只有一条 `logger.warning`。图返回的 state 与「模型自己
+        #   答完了」一模一样，调用方（前端 / 业务 Agent）无从分辨「这次是被
+        #   截断的」—— 用户看到一句像样的回答，以为任务完成了。
+        #   改之后：`state["budget"]["truncated"]` 是显式结论，`_respond_node`
+        #   据此把 status 标成非 completed；日志升到 ERROR（可告警）。
+        #
+        #   ⚠️ 清空 tool_calls 这一步**不能删** —— 它是「本轮到此为止」的善后，
+        #   否则下一轮 checkpointer 恢复历史时会因 orphan tool_calls 被
+        #   DashScope 400 拒绝（见 test_max_iterations_strips_orphan_tool_calls）。
+        #
+        #   ⚠️ **墙钟**维度不在这里判：节点内看不到本轮起点（state 随
+        #   checkpointer 跨轮持久化，塞进去的 t0 下一轮就过期了），它由入口层
+        #   `run_session` / `stream_session` 用 `asyncio.timeout` 兜。
+        #   两个层次不是「一处做了另一处没做」，而是同一个预算的两种正确反应。
         existing_ai_count = self._iterations_in_current_turn(raw_messages)
-        if existing_ai_count >= self.max_iterations - 1 and response.tool_calls:
+        spent_tokens = (
+            self._carried_tokens(state, iterations_done=existing_ai_count)
+            + in_tok
+            + out_tok
+        )
+        # 迭代维度用 `existing_ai_count + 1`：本次输出将成为本轮第 N 条
+        # AIMessage ⇒ 与旧写法 `existing_ai_count >= max_iterations - 1` 等价。
+        verdict = check_budget(
+            {"iterations": existing_ai_count + 1, "tokens": spent_tokens},
+            self.budget,
+        )
+
+        budget_state: dict = {
+            "spent_tokens": spent_tokens,
+            "iterations": existing_ai_count + 1,
+            # ★ 批 C4：把上下文裁剪结论落到**调用方读得到**的地方。
+            #   它不参与「是否截断」的判定（裁剪是常态、截断是终局），
+            #   但消费方需要它来解释「模型为什么像忘了前几轮」。
+            "context": context_report.as_dict(),
+        }
+
+        if verdict is not None and response.tool_calls:
+            dropped_calls = len(response.tool_calls)
             # 用更干净的构造方式去掉 tool_calls（保留 content）
             response = response.model_copy(update={"tool_calls": [], "invalid_tool_calls": []})
-            logger.warning(
-                f"⚠️ 已达 max_iterations={self.max_iterations}，本次 AIMessage 的 "
-                f"tool_calls 被清空以避免留下 orphan tool_calls 污染历史"
+            budget_state.update(
+                {
+                    "truncated": verdict.dimension,
+                    "limit": verdict.limit,
+                    "used": verdict.used,
+                    "message": verdict.message,
+                }
+            )
+            logger.error(
+                f"🛑 [{self.agent_name}] {verdict.message} —— 本次 AIMessage 的 "
+                f"{dropped_calls} 个 tool_calls 已被清空以避免留下 orphan "
+                f"tool_calls 污染历史；本轮到此为止（已产出的消息与工具结果保留）"
             )
 
-        return {"messages": [response]}
+        return {"messages": [response], "budget": budget_state}
 
     def _llm_with_tools(self) -> BaseChatModel:
         """绑定工具的 LLM。
@@ -898,14 +1193,35 @@ class BaseAgent:
         elif isinstance(last_message, ToolMessage):
             response_content = f"工具执行结果: {str(last_message.content)[:500]}"
 
-        return {
-            "structured_response": {
-                "status": "completed",
-                "message": response_content,
-                "agent_name": self.agent_name,
-                "timestamp": datetime.now().isoformat(),
-            },
+        # ★ 第 145 轮 批 C5：把「被预算截断」写进终态结论。
+        #   此前无论正常答完还是被截断，`status` 恒为 "completed" ——
+        #   调用方拿到的是一份**看起来成功**的结构化结果。
+        budget_state = state.get("budget") or {}
+        truncated = budget_state.get("truncated")
+        structured: dict = {
+            "status": "budget_truncated" if truncated else "completed",
+            "message": response_content,
+            "agent_name": self.agent_name,
+            "timestamp": datetime.now().isoformat(),
         }
+        # ★ 第 148 轮 批 C3：「子任务状态可在 UI 展示」靠的是这一处 ——
+        #   前端读 `structured_response.plan` 即可，不必再去翻 checkpointer。
+        # ★ 只在**开启规划且确实有计划**时才带这个键：恒带一个 `{"total": 0}`
+        #   会让消费方分不清「这个 Agent 没开启规划」与「开启了但还没规划」——
+        #   前者永远不会有计划，后者只是时候未到。
+        if self.enable_planning:
+            todos = normalize_todos(state.get(TODOS_STATE_KEY))
+            if todos:
+                structured["plan"] = plan_summary(todos)
+        if truncated:
+            structured["budget"] = {
+                "truncated": truncated,
+                "limit": budget_state.get("limit"),
+                "used": budget_state.get("used"),
+                "reason": budget_state.get("message"),
+            }
+
+        return {"structured_response": structured}
 
     def _should_continue(self, state: AgentState) -> str:
         """
@@ -917,6 +1233,13 @@ class BaseAgent:
         last_message = messages[-1]
 
         # 检查是否超过最大迭代次数（只数「本轮」，避免跨轮历史累积导致误判）
+        #
+        # ★ 第 145 轮 批 C5：这条分支**不**记 ERROR —— 它只在「计数到顶」时
+        #   触发，而「到顶」不等于「被截断」：模型恰好在最后一轮给出完整回答
+        #   也会走到这里。真正的截断（想调工具但预算已尽）由 `_llm_call_node`
+        #   判定并写 `state["budget"]["truncated"]` + 记 ERROR。
+        #   两处都记 ERROR 的话，正常收尾的长会话会持续刷错误日志，
+        #   把信号稀释成噪声。
         if self._iterations_in_current_turn(messages) >= self.max_iterations:
             logger.warning(f"⚠️ 达到最大迭代次数 ({self.max_iterations})，强制结束")
             return "respond"
@@ -1053,7 +1376,26 @@ class BaseAgent:
           thread_id`、以及「缺任一个就不留记忆」。
         """
         graph, cfg = self.graph_for_session(session_id, user_id)
-        return await graph.ainvoke(state, config=cfg)
+        # ★ 第 145 轮 批 C5：**墙钟预算**在入口层执行。
+        #   · 为什么不在节点里：节点看不到「本轮」的起点 —— state 随
+        #     checkpointer 跨轮持久化，塞进去的 t0 下一轮就是过期的，
+        #     会把历史累计成耗时。
+        #   · 为什么这里**抛异常**而节点内只标记：入口层没有「部分结果」
+        #     可保，超时就是这次调用失败；静默返回半截比报错更糟。
+        #     见 `BudgetExceeded` 的 docstring。
+        started = time.monotonic()
+        try:
+            async with asyncio.timeout(self.budget.max_seconds):
+                return await graph.ainvoke(state, config=cfg)
+        except TimeoutError as e:
+            verdict = BudgetVerdict(
+                dimension="seconds",
+                used=time.monotonic() - started,
+                limit=self.budget.max_seconds,
+                label=self.budget.label,
+            )
+            logger.error(f"🛑 [{self.agent_name}] {verdict.message} —— 本次调用已中止")
+            raise BudgetExceeded(verdict) from e
 
     async def stream_session(
         self,
@@ -1065,8 +1407,24 @@ class BaseAgent:
     ) -> AsyncIterable:
         """★ 统一入口（流式）：同 `run_session`，产出 `astream_events` 事件流。"""
         graph, cfg = self.graph_for_session(session_id, user_id)
-        async for ev in graph.astream_events(state, config=cfg, version=version):
-            yield ev
+        # 墙钟预算同 `run_session`（理由见那里）。★ 流式场景的代价更明确：
+        # 超时会把**已经开始下发**的事件流切断，调用方拿到半个流 ——
+        # 这正是「显式报错」要的效果：宁可让调用方看到 BudgetExceeded，
+        # 也不要让它以为流是正常结束的。
+        started = time.monotonic()
+        try:
+            async with asyncio.timeout(self.budget.max_seconds):
+                async for ev in graph.astream_events(state, config=cfg, version=version):
+                    yield ev
+        except TimeoutError as e:
+            verdict = BudgetVerdict(
+                dimension="seconds",
+                used=time.monotonic() - started,
+                limit=self.budget.max_seconds,
+                label=self.budget.label,
+            )
+            logger.error(f"🛑 [{self.agent_name}] {verdict.message} —— 本次流式调用已中止")
+            raise BudgetExceeded(verdict) from e
 
     # ====== 关于「统一调用入口」 ======
     #
