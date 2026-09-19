@@ -20,6 +20,10 @@ from modules.conversation.service import (
     history_of,
     recent_messages_of_owner,
 )
+from modules.conversation.state_store import (
+    hydrate_state,
+    persist_state,
+)
 
 __all__ = [
     "append_message",
@@ -32,4 +36,7 @@ __all__ = [
     "create_conversation",
     "get_owned_conversation",
     "history_of",
+    # 第 145 轮批 C1：Agent 内部槽位（指代 / 多轮补齐）的读写
+    "hydrate_state",
+    "persist_state",
 ]

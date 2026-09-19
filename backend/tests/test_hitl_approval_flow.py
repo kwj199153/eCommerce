@@ -482,9 +482,17 @@ async def test_resume_rebind_context_before_rerun(monkeypatch):
     agent = ProductResearchAgent()
     monkeypatch.setattr(agent, "_get_router", lambda: fake)
     bound = []
+    # ★ 第 145 轮批 C1：形参从 `(ctx, shop)` 变成 `(ctx, shop, user)` ——
+    #   会话状态的作用域键含 `user_id`，不绑 ⇒ 被中断的工具会在**另一个作用域**
+    #   里找会话状态（`_save_candidate` 要靠它把「第 1 个」解析成具体商品）。
+    #   这里**不写成 `*a`**：那样等于放弃对实参的断言，把新增的身份约束放走。
     monkeypatch.setattr(
-        agent, "_bind_context", staticmethod(lambda ctx, shop=None: bound.append((ctx, shop)))
+        agent,
+        "_bind_context",
+        staticmethod(lambda ctx, shop=None, user=None: bound.append((ctx, shop, user))),
     )
 
     await agent.resume_approval("sess-9", "reject", user_id="u-1", shop_id="sh-9")
-    assert bound == [("sess-9", "sh-9")], f"续跑前没绑定上下文，实际 {bound}"
+    assert bound == [("sess-9", "sh-9", "u-1")], (
+        f"续跑前没绑定完整上下文（会话 + 归属 + 身份），实际 {bound}"
+    )

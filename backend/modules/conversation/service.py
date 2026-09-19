@@ -24,7 +24,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, func, update
+from sqlalchemy import desc, func, select, update
 
 from core.auth.accounts import can_access_conversation
 from core.database import get_async_session
@@ -40,6 +40,13 @@ from .db_model import ConversationRecord, ConversationMessageRecord
 #:   统一 403（而非 404）是同一条理由。
 #: ★ 也**不回显**调用方传入的 ID —— 那是把用户输入原样反射进响应与日志。
 NO_SESSION_DETAIL = "会话不存在或无权访问"
+
+#: `recent_messages_of_owner` 的条数**防呆**上界（不是业务口径）。
+#: 真正的口径在 `ai_infra/memory/limits.MAX_DISTILL_MESSAGES`，由调用方传进来 ——
+#: 本模块属 SHARED 层，不该知道「蒸馏」这个概念。
+MAX_RECENT_MESSAGES = 500
+#: `active_owner_ids` 的默认条数上界（同上，防呆）。
+MAX_ACTIVE_OWNERS = 500
 
 
 def _new_id(prefix: str) -> str:
@@ -197,3 +204,113 @@ async def append_message(
             .where(ConversationRecord.id == conversation_id)
             .values(updated_at=datetime.utcnow())
         )
+
+
+# ====== 跨会话只读原语（第 149 轮批 C2-4：长期记忆夜间整理的**读口**）======
+#
+# ★ 为什么这两个函数必须住在**本模块**，而不是让 memory 自己查 conversation 的表：
+#   一旦 memory 自己写 SQL 去读 `conversation_messages`，"一个人有哪些消息"
+#   就有了第二份实现 —— 归属口径（`owner_id` 从哪来、无主会话怎么算）
+#   也会跟着抄一遍。抄出来的那份将来必然与这份漂移，而漂移的表现是
+#   「夜间整理读了不该读的对话」或「漏读了对话」，两者都不报错。
+#
+# ★ 两个函数都**只读**，且都 fail-closed（`owner_id` 为空 ⇒ 返回空结果，
+#   而不是退化成"查全部"）：它们会被 Celery 任务调用，而任务的一大类故障
+#   就是"参数丢了"。丢参数时返回"什么都没有"是安全的；返回"所有人的东西"是灾难。
+
+
+async def recent_messages_of_owner(
+    owner_id: Optional[str],
+    *,
+    since: Optional[datetime] = None,
+    limit: int = 200,
+) -> list[dict]:
+    """取某个人**跨所有会话**的最近消息（**时间升序**返回）。
+
+    用途：长期记忆的夜间整理要从"他最近说了什么"里归纳偏好。
+    与 `_load_history`（单个会话内）刻意分开 —— 那是"这次对话的上下文"，
+    这是"这个人最近的表达"，两者的边界与治理方式完全不同。
+
+    ★ 先 `desc` 取最近的 `limit` 条、再反转成升序。反过来写（`asc` + limit）
+      拿到的是**最早**的 N 条 —— 而夜间整理关心的是"他最近在想什么"。
+      这个错误不会报错，只会让整理结果永远滞后于用户当前的关注点。
+
+    ★ `since` 是**下界**（含），用于限定回溯窗口。为 `None` 表示不设窗口
+      （调用方自己负责给它一个有界的值；夜间任务传 `DISTILL_LOOKBACK_HOURS` 之前）。
+    """
+    oid = str(owner_id or "").strip()
+    if not oid:
+        return []
+
+    size = max(1, min(int(limit or 1), MAX_RECENT_MESSAGES))
+    conds = [ConversationRecord.owner_id == oid]
+    if since is not None:
+        conds.append(ConversationMessageRecord.created_at >= since)
+
+    async with get_async_session() as session:
+        rows = (
+            await session.execute(
+                select(
+                    ConversationMessageRecord.role,
+                    ConversationMessageRecord.content,
+                )
+                .join(
+                    ConversationRecord,
+                    ConversationRecord.id
+                    == ConversationMessageRecord.conversation_id,
+                )
+                .where(*conds)
+                .order_by(
+                    ConversationMessageRecord.created_at.desc(),
+                    ConversationMessageRecord.id.desc(),
+                )
+                .limit(size)
+            )
+        ).all()
+
+    # 反转为时间升序：LLM 的转录必须按时间读 —— 倒序会把"后来改口"读成"最早的想法"。
+    return [{"role": r.role, "content": r.content} for r in reversed(rows)]
+
+
+async def active_owner_ids(
+    *,
+    since: Optional[datetime] = None,
+    limit: int = MAX_ACTIVE_OWNERS,
+) -> list[str]:
+    """取**最近活跃过**的人（按最后活动时间**倒序**）。
+
+    用途：夜间整理要决定"给谁跑"。判据取 `conversations.updated_at` ——
+    它由 `append_message` 在每条消息落库时刷新（见本文件上方），
+    因此"最近说过话" ≡ "最近有被整理的价值"。
+
+    ★ 为什么按活跃度倒序 + 截断，而不是"全库扫一遍"：
+      整理是**花钱**的动作（每人一次 LLM 调用）。用户量涨上来之后，
+      "有多少人处理多少人"会在某一晚把成本放大一个数量级，而且不报错。
+      倒序 + 上限保证"最可能有新内容的那些人"优先被处理；
+      剩下的人次日会被轮到（回溯窗口足够长，对话不会丢）。
+
+    ★ 无主会话（`owner_id IS NULL`）**不进结果**：它没有可归属的对象，
+      整理出来的记忆也无处可放（`memory.service._require_owner` 会拒）。
+    """
+    size = max(1, int(limit or 1))
+    conds = [
+        ConversationRecord.owner_id.isnot(None),
+        ConversationRecord.owner_id != "",
+    ]
+    if since is not None:
+        conds.append(ConversationRecord.updated_at >= since)
+
+    async with get_async_session() as session:
+        rows = (
+            await session.execute(
+                select(
+                    ConversationRecord.owner_id,
+                    func.max(ConversationRecord.updated_at).label("last_active"),
+                )
+                .where(*conds)
+                .group_by(ConversationRecord.owner_id)
+                .order_by(desc("last_active"))
+                .limit(size)
+            )
+        ).all()
+    return [r.owner_id for r in rows if r.owner_id]

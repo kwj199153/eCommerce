@@ -132,7 +132,7 @@ def register_all_models() -> None:
         ListingSnapshot, ReportTask, InventoryHealth, CompetitorSnapshot,
     )
     from modules.conversation.db_model import (  # noqa: F401
-        ConversationRecord, ConversationMessageRecord,
+        AgentSessionStateRecord, ConversationRecord, ConversationMessageRecord,
     )
     from modules.monitors.db_model import MonitorRecord, MonitorGroupRecord  # noqa: F401
     from modules.platform_rules.db_model import (  # noqa: F401

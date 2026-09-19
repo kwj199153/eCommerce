@@ -51,8 +51,16 @@ logger = get_logger("product_research.agent")
 from ai_infra.base_agent import BaseAgent
 from ai_infra.budget import BUDGET_ROUTER
 from ai_infra.context import CONTEXT_ROUTER
+# ★ 第 145 轮批 C1：会话级状态的**容器机制**（脏追踪 + 有界缓存）——
+#   它不认识数据库；落库那一半在 `modules/conversation`，两者在这里接起来。
+from ai_infra.session_state import SessionStateRegistry
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
 from modules.product_research import prompts as _prompts  # noqa: F401
+# 第 145 轮批 C1：会话级状态的**持久化出口** —— 走 conversation 门面
+# （跨模块引用只允许 `from modules.B import <已声明出口>`，见
+#   tests/test_module_facades.py）。
+from modules.conversation import hydrate_state as _hydrate_session_state
+from modules.conversation import persist_state as _persist_session_state
 
 
 # 深层分层路由：子 Agent 的工具化路由层（bind_tools + LangGraph 图）。
@@ -207,6 +215,27 @@ _current_shop_id: ContextVar[Optional[str]] = ContextVar(
     "product_research_shop_id", default=None
 )
 
+# 当前**身份**（ContextVar）。
+#
+# 用途：会话级状态的**作用域**键里含 user_id（与 checkpointer 的 thread_id
+# 同口径）。同一个 session_id 在两个身份下必须是两份状态 —— 否则「把第 1 个
+# 加进选品库」可能拿别人的上一轮结果去解析指代。
+#
+# ★ 只由 `_bind_context()` 在入口写；**只读方**是 `_state_scope()`。
+#   不接受「把 user_id 当参数传进来」的写法：两个真源必然分叉。
+_current_user_id: ContextVar[Optional[str]] = ContextVar(
+    "product_research_user_id", default=None
+)
+
+# 会话级状态的**默认作用域**（没有 context_id 时用它）。
+#
+# ★ 为什么这个字符串是常量而不是就地写的字面量：它同时出现在「取容器」
+#   （`_session`）与「算落盘键」（`_state_key`）两处。两处各写一份字面量，
+#   改名时漏一处就会让「有会话」与「无会话」两条路径撞进同一个容器 ——
+#   而那种错误只在单会话场景下不显形。
+_DEFAULT_STATE_SCOPE = "_default"
+
+
 # 全类目高潜关键词——老板没指定类目时用它，替代原先的 "general" 泛化词表。
 #
 # 为什么不用泛化词（smart home / organizer / portable…）：这些词在关键词库里
@@ -279,18 +308,120 @@ class ProductResearchAgent(BaseAgent):
         # ⚠️ 必须按会话隔离。service 层持有的是**全局单例** Agent，早先把状态直接
         # 挂在实例上（`self._last_blue_ocean`）→ A 会话挖完蓝海，B 会话说
         # 「把第 1 个加进选品库」会存进 A 的商品，**跨会话串数据**。
-        self._session_state: dict = {}
+        #
+        # ★ 第 145 轮批 C1：从一个普通 dict 换成**有界 + 脏追踪**的注册表。
+        #   前者有两个洞：键只增不减（长跑进程持续吃内存）、且完全活在进程里
+        #   （多 worker 不可见、重启即丢）。现在这里当**内存视图**，持久层是
+        #   `agent_session_state` 表 —— 见 `_session()` / `_hydrate_state()`
+        #   / `_flush_state()` 三段注释。
+        self._session_states = SessionStateRegistry()
 
-    # ====== 会话级状态 ======
+    # ====== 会话级状态（第 145 轮批 C1：进程内存 → PG）======
+    #
+    # 迁移前的形态是一个挂在单例上的普通 dict：
+    #     self._session_state: dict = {}                     # 进程内存
+    #     return self._session_state.setdefault(context_id or "_default", {})
+    #
+    # 两个洞（r141 §2.4 实测）：
+    #   · 键只增不减 —— 长跑进程持续吃内存；
+    #   · 完全活在进程里 —— 进程数 > 1 时跨 worker 不可见；重启即丢。
+    #     后者的表现最迷惑：「聊天记录还在（消息在 PG 里），但 AI 忘了我在补什么」。
+    #
+    # 现在的形状：`self._session_states`（有界缓存 + 脏追踪）当**内存视图**，
+    # `agent_session_state` 表当**持久层**；异步只出现在入口 hydrate / 出口 flush。
+    #
+    # ★ 为什么读接口仍是**同步**的：8 个消费点里有一半在同步私有方法里
+    #   （`_ask_for_save` / `_last_products` / `_resolve_named_product`），
+    #   把它们全掀成 async 只为迁就一处 IO，收益为零、风险不小。
 
-    def _session(self, context_id: Optional[str] = None) -> dict:
+    def _state_scope(self, context_id: Optional[str] = None) -> str:
         """
-        取（必要时创建）该会话的状态容器。
+        当前请求的**状态作用域** —— 唯一一份口径，`_session()` 与
+        `_hydrate_state()` / `_flush_state()` 三方共用它。
+
+        · 有会话 + 有身份 ⇒ `resolve_thread_id()`（= checkpointer 的 thread_id）
+        · 只有会话（单测 / 未登录）⇒ 会话 ID 本身，**纯内存、不落库**
+        · 无会话 ⇒ `_default`，同样不落库
+
+        ★★ 为什么不自己拼一份键：状态与 checkpoint 描述的是"同一个会话"。
+           两处各拼一份必然漂移，而漂移的表现是「历史还在、槽位没了」——
+           两边都不报错。第 138 轮的 `X-Shop-ID` 事故正是"同一概念两套 ID 空间"。
+
+        ★ 只读 ContextVar（由 `_bind_context` 写入），不接受 user_id 入参：
+           入参与 ContextVar 是**两个真源**，测试把 `_bind_context` 换掉之后
+           两者就会分叉（hydrate 读 A、业务写 B），而那种错不报错、只丢状态。
+        """
+        if not context_id:
+            return _DEFAULT_STATE_SCOPE
+        user_id = _current_user_id.get()
+        if user_id:
+            return self.resolve_thread_id(context_id, user_id)
+        return context_id
+
+    def _state_key(self, context_id: Optional[str] = None) -> tuple:
+        """
+        返回 `(内存作用域, 落盘键)`；落盘键为 `None` ⇒ 本次不落库。
+
+        ★ 把「作用域」与「要不要落库」放在**同一个函数**里算：它们必须同源。
+          分两处判断迟早出现「hydrate 用 A 键、flush 用 B 键」—— 同样不报错。
+        """
+        scope = self._state_scope(context_id)
+        persistable = bool(context_id and _current_user_id.get())
+        return scope, (scope if persistable else None)
+
+    def _session(self, context_id: Optional[str] = None):
+        """
+        取（必要时创建）该会话的状态容器（`ai_infra.session_state.SessionState`）。
 
         没有 context_id 时退化为 `_default` —— 单会话场景（含既有测试）仍可用；
         多会话并发下**必须由调用方传 context_id**，否则还是会串。
+
+        ★ 作用域里带上身份：同一个 session_id 在不同身份下必须是两份状态。
+          只按 context_id 分片，在"会话归谁"这件事上就完全依赖上游校验 ——
+          而这条路径上没有第二道防线。
         """
-        return self._session_state.setdefault(context_id or "_default", {})
+        return self._session_states.scope(self._state_scope(context_id))
+
+    async def _hydrate_state(self, context_id: Optional[str] = None) -> None:
+        """
+        入口：把该会话的状态从 PG 读回内存（无身份 / 无会话 ⇒ 空操作，零 DB 往返）。
+
+        ★ 先补写、再读：上一轮可能**没写成功**（落盘失败，或流式生成器被客户端
+          中断而 finally 里的 await 被取消）。那笔改动仍在内存容器里且标记为脏，
+          而 `hydrate_state()` 对脏容器是"不覆盖"的 ⇒ 若不在入口先补写，
+          这次请求就一直拿着内存那份，库里那份（更早的）永远回不来，
+          而这笔改动也永远不出门。补写把两个方向都堵上。
+        """
+        scope, thread_id = self._state_key(context_id)
+        state = self._session_states.scope(scope)
+        if thread_id is not None and state.is_dirty:
+            await self._flush_state(context_id)
+        await _hydrate_session_state(
+            state, owner_id=_current_user_id.get(), thread_id=thread_id
+        )
+
+    async def _flush_state(self, context_id: Optional[str] = None) -> None:
+        """
+        出口：把内存里未落盘的改动写回 PG（无改动 ⇒ 空操作）。
+
+        ★ 这里再包一层 try/except：`persist_state()` 自己已经吞掉了 DB 异常，
+          但**生成器被关闭**（客户端断流 / `aclose()`）时，`finally` 里的 await
+          还可能抛 `RuntimeError`（事件循环正在关）。那种异常不该从 finally 里
+          冒出来，把一次已经生成完的回答变成错误页 —— 状态没写上是小损失，
+          把回答炸掉是大的。
+        """
+        scope, thread_id = self._state_key(context_id)
+        if thread_id is None:
+            return
+        try:
+            await _persist_session_state(
+                self._session_states.scope(scope),
+                owner_id=_current_user_id.get(),
+                thread_id=thread_id,
+                session_id=context_id,
+            )
+        except Exception as e:  # noqa: BLE001 —— 见 docstring
+            logger.warning(f"[product_research] 会话状态落盘跳过：{e}")
 
     def _last_products(self, context_id: Optional[str] = None) -> List[dict]:
         """该会话上一轮蓝海产出的候选商品（没有则空列表）。"""
@@ -308,19 +439,28 @@ class ProductResearchAgent(BaseAgent):
 
     @staticmethod
     def _bind_context(
-        context_id: Optional[str], shop_id: Optional[str] = None
+        context_id: Optional[str],
+        shop_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> None:
         """
-        把会话 ID 与**已校验的**店铺 ID 绑定到 ContextVar，供 tools.py 读回。
+        把会话 ID、**已校验的**店铺 ID 与**身份**绑定到 ContextVar。
+
+        三个值都由**服务端**在入口写入，用途各不相同：
+          · `context_id` —— tools.py 靠它找到本会话的状态（`_session()`）；
+          · `shop_id`    —— `_write_candidates` 的写入归属，必须是已校验的值；
+          · `user_id`    —— 会话状态的**作用域**键（`_state_scope()`）。
+            漏传的后果不是「少记一点」，而是状态落到另一个作用域下 ——
+            表现为「刚补的槽位下一轮又不见了」，且没有任何报错。
+
+        `shop_id` 绝不能是原始请求头 —— 详见 `_current_shop_id` 的注释。
 
         **有意不 reset**：每个请求是独立的 asyncio Task，ContextVar 天然按 Task 隔离，
         且下一次调用会覆盖 —— 这样可省掉「用 try/finally 缩进整个 async 生成器体」。
-
-        `shop_id` 必须是**服务端校验过归属**的值（来自 `get_current_shop_id*`
-        依赖），绝不能是原始请求头 —— 详见 `_current_shop_id` 的注释。
         """
         _current_context_id.set(context_id)
         _current_shop_id.set(shop_id)
+        _current_user_id.set(user_id)
 
     async def invoke(
         self,
@@ -330,7 +470,34 @@ class ProductResearchAgent(BaseAgent):
         user_id: Optional[str] = None,
     ) -> AgentResponse:
         """
-        同步调用 Agent（简单任务）
+        同步调用 Agent（简单任务）—— **外层入口**。
+
+        ★ 第 145 轮批 C1：本方法现在只做四件事 ——
+          绑上下文 → 入口 hydrate → 委托实现体 → 出口 flush。
+          真正的决策路径在 `_invoke_impl()` 里。
+
+        为什么必须包一层、而不是在实现体首尾各加一行：
+          · hydrate / flush 都要 `user_id`，而它是本方法的入参；
+          · flush 必须落在实现体的**每一条** return 上。实现体里有 5 个 return，
+            逐个补等于给自己留一个"以后新增 return 就忘了 flush"的坑；
+            `try/finally` 是这里唯一能覆盖全部出口的形状。
+        """
+        self._bind_context(context_id, shop_id, user_id)
+        await self._hydrate_state(context_id)
+        try:
+            return await self._invoke_impl(query, context_id, shop_id, user_id)
+        finally:
+            await self._flush_state(context_id)
+
+    async def _invoke_impl(
+        self,
+        query: str,
+        context_id: str = None,
+        shop_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> AgentResponse:
+        """
+        同步调用 Agent（简单任务）的**实现体**；入口见 `invoke()`。
 
         Args:
             query: 用户查询
@@ -347,10 +514,10 @@ class ProductResearchAgent(BaseAgent):
           3. 未命中（general）→ LLM 工具路由兜底（router 自主选工具）
           4. 路由不可用 → 关键词表的 general 分支
         """
-        # 0. 绑定会话 ID + 已校验的店铺 ID
-        #    （LLM 工具路由里的 tools.py 需要读回它们才能找到本会话状态与写库归属）
-        self._bind_context(context_id, shop_id)
-
+        # 0. 会话 ID / 店铺归属 / 身份 三者已在**外层 `invoke()`** 里绑好，那里
+        #    还负责入口 hydrate 与出口 flush。这里不再绑 —— 重复绑定一旦少传一个
+        #    参数，就会把 ContextVar 覆盖成 None（作用域随之漂移）。
+        #
         # 1. 入库槽位续填优先（上一轮追问过「还差什么」，本轮回答直接当槽位填充）
         if self._session(context_id).get("pending_save"):
             resumed = await self._resume_pending_save(query, context_id, shop_id)
@@ -726,8 +893,15 @@ class ProductResearchAgent(BaseAgent):
                 display_type="text",
             )
 
-        # 续跑前重新绑定上下文（被中断的工具会重新执行，需要会话 + 归属）
-        self._bind_context(context_id, shop_id)
+        # 续跑前重新绑定上下文（被中断的工具会重新执行，需要会话 + 归属 + 身份）
+        # ★ 第 145 轮批 C1：身份也要绑 —— 会话状态的作用域键含 user_id，漏传会让
+        #   被中断的工具在**另一个作用域**里找会话状态（`_save_candidate` 要靠它
+        #   把「第 1 个」解析成具体商品）。
+        # ★ 为什么这里只 hydrate 不 flush：本次调用能触达的写路径（`_save_candidate`
+        #   → `_write_candidates`）**不改会话状态**（不写也不删任何键）。若将来它
+        #   改了，入口 hydrate 的"先补写"仍会把它写出去，不会永久滞留。
+        self._bind_context(context_id, shop_id, user_id)
+        await self._hydrate_state(context_id)
 
         graph, cfg = router.graph_for_session(context_id, user_id)
         try:
@@ -1867,7 +2041,34 @@ class ProductResearchAgent(BaseAgent):
         user_id: Optional[str] = None,
     ) -> AsyncIterable[str]:
         """
-        流式对话（逐 token 返回 LLM 文本）。
+        流式对话 —— **外层入口**：绑上下文 → 入口 hydrate → 委托实现体 → 出口 flush。
+
+        ★ `finally` 里的 flush 是**尽力而为**：消费者中途断开（客户端断流）时
+          生成器被 `aclose()`，`finally` 仍会跑，但那时任务往往已被取消，
+          里面的 await 会立刻抛 `CancelledError` ⇒ 这次落盘跳过。
+          可接受：未落盘的内存态还在容器里，而 `_hydrate_state()` 会在下一个请求
+          的入口先把它补写出去（见其 docstring），状态不会丢。
+        ★ 实现体是 `_stream_chat_impl()` —— 决策路径一个字都没变。
+        """
+        self._bind_context(context_id, shop_id, user_id)
+        await self._hydrate_state(context_id)
+        try:
+            async for chunk in self._stream_chat_impl(
+                query, context_id, shop_id, user_id
+            ):
+                yield chunk
+        finally:
+            await self._flush_state(context_id)
+
+    async def _stream_chat_impl(
+        self,
+        query: str,
+        context_id: str = None,
+        shop_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> AsyncIterable[str]:
+        """
+        流式对话（逐 token 返回 LLM 文本）的**实现体**；入口见 `stream_chat()`。
 
         **决策路径与 `invoke` 完全一致** —— 流式只是输出形式，不是另一套智能：
           1. pending 入库槽位 → 续填
@@ -1882,10 +2083,10 @@ class ProductResearchAgent(BaseAgent):
         Yields:
             文本片段 / progress / meta 事件（供 ai_infra.sse.sse_event_stream 包装成 SSE）
         """
-        # 0. 绑定会话 ID + **已校验的**店铺 ID
-        #    （工具路由里的 tools.py 要读回它们才能找到会话状态与写库归属）
-        self._bind_context(context_id, shop_id)
-
+        # 0. 会话 ID / 店铺归属 / 身份 已在外层 `stream_chat()` 里绑好（连同入口
+        #    hydrate）。这里不再绑 —— 重复绑定一旦少传参数就会把 ContextVar
+        #    覆盖成 None，作用域随之漂移。
+        #
         # 1. 入库槽位续填优先：上一轮追问过「还差什么」，本轮回答直接当槽位填充。
         #    少了这一步，「多轮补齐」就无从进行 —— 用户回「就那个加湿器」会被判成 general。
         if self._session(context_id).get("pending_save"):
