@@ -917,6 +917,73 @@ class BaseAgent:
         )
 
     @staticmethod
+    def tool_activity_in_turn(messages: list) -> dict:
+        """把「本轮」的工具活动收成**结构化摘要**（第 159 轮 批 D1：委派契约）。
+
+        返回 `{"tool_calls": [名…], "tool_result": …, "reply": …}`；
+        **本轮没有任何工具活动时返回 `{}`** —— 不是「全空骨架」：
+        恒带三个空键会让消费方分不清「这轮没调工具」与「摘要压根没生成」。
+
+        ★ 为什么必须有它（批 D1 的另一半）：
+          父层（`listing` / `product_research` 的路由子层调用方）此前必须
+          **自己扫整段 `messages`** 才能还原「调了哪个工具、结果是什么、
+          最后由谁作答」—— 也就是「拿原始 state 自行组装业务响应」。
+          那种写法让父层对**历史形态**（消息顺序 / 类型 / 条数）产生硬依赖：
+          换个图、加个节点、改一次上下文裁剪，父层的解析就**静默错位**
+          （不报错，只是工具名变空 ⇒ `display_type` 退化成默认值）。
+          摘要把这件事前移到**源头**（`_respond_node`），父层只依赖契约。
+
+        ★ 为什么切轮口径与 `_iterations_in_current_turn` **完全一致**：
+          都锚在「最后一条 `HumanMessage` 之后」。两份口径若不一致，
+          摘要与迭代计数会在多轮会话里指向不同的两段 —— 而**不会报错**。
+
+        ★ 为什么 `tool_calls` 保序去重：父层要的是「这轮用了哪些工具」（用于定
+          `display_type`），同一工具调 3 次不该产生 3 个候选。
+
+        ★ 为什么 `tool_result` 取**最后一个非空**：工具链的最后一步才是决定性的
+          （前置工具常常只做查询）。
+
+        ★ 为什么**不截断** `tool_result`：父层把它交给 `_parse_tool_output` 解析 JSON，
+          截断会破坏解析。体积上不会累积 —— `structured_response` 是每轮**覆盖写**
+          的终态快照，只保留最新一份。
+        """
+        last_human_idx = -1
+        for i, m in enumerate(messages):
+            if isinstance(m, HumanMessage) or m.__class__.__name__ == "HumanMessage":
+                last_human_idx = i
+        turn = messages[last_human_idx + 1:]
+
+        names: list = []
+        tool_result = None
+        reply = ""
+        for m in turn:
+            cn = m.__class__.__name__
+            if isinstance(m, AIMessage) or cn == "AIMessage":
+                for tc in (getattr(m, "tool_calls", None) or []):
+                    name = tc.get("name") if isinstance(tc, dict) else None
+                    if name and name not in names:
+                        names.append(name)
+                if getattr(m, "content", None):
+                    reply = m.content
+            elif isinstance(m, ToolMessage) or cn == "ToolMessage":
+                if getattr(m, "content", None):
+                    tool_result = m.content
+
+        # ★ 判据是「**有没有工具活动**」，不是「有没有内容」：
+        #   只有 AI 回复、没调工具的轮次同样返回 `{}` ⇒ 父层走回退路径扫历史
+        #   （那条路径能拿到 reply），行为与改造前**完全一致**。
+        if not names and tool_result is None:
+            return {}
+        out: dict = {}
+        if names:
+            out["tool_calls"] = names
+        if tool_result is not None:
+            out["tool_result"] = tool_result
+        if reply:
+            out["reply"] = reply
+        return out
+
+    @staticmethod
     def _carried_tokens(state: dict, *, iterations_done: int) -> int:
         """本轮**此前**已消耗的 token（0 表示本轮第一次迭代）。
 
@@ -1204,6 +1271,14 @@ class BaseAgent:
                 "used": budget_state.get("used"),
                 "reason": budget_state.get("message"),
             }
+
+        # ★ 第 159 轮 批 D1：把「本轮工具活动」一并收进结构化摘要 —— 这是**委派**的落地。
+        #   父层（listing / product_research 的子层调用方）从此**读摘要**即可，
+        #   不必再扫整段 `messages`（见 `tool_activity_in_turn` 的 docstring）。
+        #   ★ 与 `plan` / `budget` 同一个口径：**没有活动就不带这个键**。
+        activity = self.tool_activity_in_turn(state["messages"])
+        if activity:
+            structured["activity"] = activity
 
         return {"structured_response": structured}
 

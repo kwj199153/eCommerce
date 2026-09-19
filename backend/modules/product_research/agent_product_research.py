@@ -1002,20 +1002,31 @@ class ProductResearchAgent(BaseAgent):
             if pending is not None:
                 return pending
 
-            messages = state.get("messages", [])
-            tool_result = None
-            tool_name = ""
-            final_reply = ""
-            for m in messages:
-                if isinstance(m, AIMessage):
-                    if getattr(m, "tool_calls", None):
-                        for tc in m.tool_calls:
-                            if tc.get("name"):
-                                tool_name = tc["name"]
-                    if m.content:
-                        final_reply = m.content
-                elif isinstance(m, ToolMessage):
-                    tool_result = m.content
+            # ★ 第 159 轮 批 D1：**优先读结构化摘要**（由 `_respond_node` 产出），
+            #   不再一上来就扫整段 `messages`。此前这段解析让父层对**历史形态**
+            #   （消息顺序 / 类型 / 条数）产生硬依赖 —— 换个图或改一次裁剪就静默错位。
+            activity = (state.get("structured_response") or {}).get("activity") or {}
+            if activity:
+                tool_name = (activity.get("tool_calls") or [""])[-1]
+                tool_result = activity.get("tool_result")
+                final_reply = activity.get("reply") or ""
+            else:
+                # 回退：摘要缺失时（自定义图 / 旧 checkpoint 恢复）仍按老路径扫历史。
+                # **安全失败方向**：宁可多扫一次，也不要让工具名静默变空。
+                messages = state.get("messages", [])
+                tool_result = None
+                tool_name = ""
+                final_reply = ""
+                for m in messages:
+                    if isinstance(m, AIMessage):
+                        if getattr(m, "tool_calls", None):
+                            for tc in m.tool_calls:
+                                if tc.get("name"):
+                                    tool_name = tc["name"]
+                        if m.content:
+                            final_reply = m.content
+                    elif isinstance(m, ToolMessage):
+                        tool_result = m.content
 
             data = self._parse_tool_output(tool_name, tool_result)
             if data is not None:
