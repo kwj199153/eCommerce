@@ -113,7 +113,6 @@ class SecretaryAgent(BaseAgent):
             #   两者管的是不同维度 —— 预算管「跑多久」，上下文管「这一次发出去多大」；
             #   同档只是让「为什么是这个数」在一处说得清（见 `ai_infra/context.py`）。
             context_policy=CONTEXT_INTERACTIVE,
-            metadata={"role": "orchestrator"},
             checkpointer=checkpointer,
             **kwargs,
         )
@@ -121,6 +120,13 @@ class SecretaryAgent(BaseAgent):
 
 # 单例（不含店铺绑定；店铺相关工具按请求动态重建）
 _agent: Optional[SecretaryAgent] = None
+
+
+# ★ 第 159 轮（批 D3）：预算截断时给用户的提示前缀。
+#   由 `route()` 在读到 `structured_response["status"] == "budget_truncated"` 时拼上。
+#   这是 `structured_response` 的**第一个真消费者** —— 此前全仓生产代码 0 读点，
+#   于是「被预算截断」与「正常答完」在调用方看来完全一样（C5 的承诺只做了一半）。
+TRUNCATED_NOTICE = "（提示：本轮回答因预算限制被截断，结果可能不完整。）\n\n"
 
 
 def get_secretary_agent(shop_id: Optional[str] = None) -> SecretaryAgent:
@@ -327,6 +333,22 @@ async def route(
     }
     if _plan["total"]:
         result["plan"] = _plan
+
+    # ★ 第 159 轮（批 D3）：读 `structured_response` —— 兑现 C5 的承诺。
+    #   `_respond_node` 一直把「本轮是否被预算截断」写进
+    #   `structured_response["status"]`，但**没有任何调用方读它** ⇒ 截断与正常
+    #   答完在调用方看来完全一样。这里读它，并且在截断时把提示**拼进 reply**：
+    #   这样即使前端不渲染 `truncated` 字段，用户也已经看得到。
+    #   ★ 为什么从图状态读而不是解析 messages：这条结论本就不在消息里
+    #     （它由 `_respond_node` 写进状态），解析消息只会得到「模型说了什么」，
+    #     得不到「模型是否被截断」。
+    #   ★ 无读者 = 死重量，门禁见 `tests/test_agent_state_fields_have_readers.py`。
+    _structured = state.get("structured_response") or {}
+    if _structured.get("status") == "budget_truncated":
+        result["truncated"] = True
+        result["truncated_reason"] = (_structured.get("budget") or {}).get("reason")
+        result["reply"] = TRUNCATED_NOTICE + reply
+
     return result
 
 

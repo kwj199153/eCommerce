@@ -132,13 +132,12 @@ class AgentState(MessagesState):
     """Agent 状态 Schema"""
     # 结构化响应（用于返回标准化结果）
     structured_response: Optional[dict] = None
-    # 元数据：**自由字典**。基类只保证 `agent_name` / `created_at`；
-    # 租户、店铺等维度由调用方经 `invoke(..., metadata={...})` 注入。
-    #
-    # ★ 原先这里硬编码了 `tenant_id` / `shop_id` / `token_usage` / `cost_estimate`
-    #   四个键 —— 基类因此认识了「店铺」这一电商业务概念；而且这些键**只写不读**
-    #   （全仓 0 处读 `state["metadata"]`），属死重量而非真耦合。
-    metadata: dict = {}
+    # ★ 第 159 轮（批 D3）：这里原先有一个 `metadata: dict = {}` —— 已删除。
+    #   它是**只写不读的死重量**：唯一出口是 `default_metadata` → 本字段，
+    #   而全仓 0 处读 `state["metadata"]`；写进去的只有「角色标记」
+    #   （`metadata={"role": "sub_agent_router"}`），而那些标记也从未被读过。
+    #   ★ 旧的护航门禁只钉「是不是自由字典」（形式），所以它合规地死了下去 ——
+    #     判据必须钉**有没有人读**（性质）。见 `DETAILS/架构与横切收敛.md`。
 
     #: 预算耗用与超限结论（第 145 轮 · 批 C5）。
     #:
@@ -250,7 +249,6 @@ class BaseAgent:
         context_policy: Optional[ContextPolicy] = None,
         enable_planning: Optional[bool] = None,
         max_iterations: Optional[int] = None,
-        metadata: Optional[dict] = None,
         checkpointer: Optional[AsyncPostgresSaver] = None,
         checkpoint_ns: Optional[str] = None,
     ):
@@ -286,7 +284,6 @@ class BaseAgent:
             max_iterations: 【兼容形参，建议改用 `budget`】只改写预算里的
                 迭代上限。★ 它**不构成第二份真源**：内部被折进 `budget`，
                 此后一切判定只读预算（见同名 property）。
-            metadata: 额外元数据
             checkpointer: LangGraph checkpointer（PostgreSQL 持久化，None 则内存态）
             checkpoint_ns: checkpointer 的线程命名空间（`thread_id` 前缀）。
                 缺省取类属性 `CHECKPOINT_NAMESPACE`；空串 ⇒ 直接用 `session_id`
@@ -326,7 +323,6 @@ class BaseAgent:
         #   在「一个进程内建多个 Agent」的场景下会串数据。
         #   改用 None 哨兵 + 进函数体后新建，彻底切断共享。
         hitl_tools = list(hitl_tools) if hitl_tools else []
-        metadata = dict(metadata) if metadata else {}
         self.hitl_tool_names = set(hitl_tools)
         self.checkpointer = checkpointer
         # ★ 线程命名空间：见 `resolve_thread_id()`。子类可用类属性声明，
@@ -334,7 +330,6 @@ class BaseAgent:
         self.checkpoint_namespace = (
             checkpoint_ns if checkpoint_ns is not None else self.CHECKPOINT_NAMESPACE
         )
-        self._metadata_extra = metadata
 
         # ---- LLM 槽位 ①：LangChain 模型（图内核）----
         # ★ 懒解析，不在 __init__ 立即创建。原因（实测）：
@@ -397,17 +392,6 @@ class BaseAgent:
             f"工具数: {len(self.tools)} | "
             f"HITL工具: {sorted(self.hitl_tool_names)}"
         )
-
-    # ====== 元数据 ======
-
-    @property
-    def default_metadata(self) -> dict:
-        """默认元数据。
-
-        用 property 而非实例属性：子类常在 `super().__init__()` **之后**才设置
-        `self.agent_name`，若在 __init__ 里固化成 dict，会一直挂着构造时的旧值。
-        """
-        return {"agent_name": self.agent_name, **self._metadata_extra}
 
     # ====== LLM 槽位 ①：LangChain 模型（图内核） ======
 
@@ -1458,7 +1442,7 @@ class BaseAgent:
     #            config={"configurable": {"thread_id": ...}},
     #        )
     #   ② 组合式：listing / product_research 各自 `_build_router()` **new 一个裸
-    #      BaseAgent 实例**当路由子层（`metadata={"role": "sub_agent_router"}`），
+    #      BaseAgent 实例**当路由子层（`checkpoint_ns="listing"` / `"product_research"`），
     #      再 `self._router.graph.ainvoke(...)`，自己解析 messages 组装业务响应。
     #
     # ★ 为什么 `invoke()` 的抽象层级是错的：①② 都需要**原始 state（messages

@@ -8,7 +8,7 @@
 | L1 | `base_agent.initialize_rag()` else 分支 | `KnowledgeBaseBuilder.build_customer_service_kb` | **死分支**（唯一调用点永远传 faq_items） |
 | L2 | `ai_infra/rag/hybrid_engine.py` | `KnowledgeBaseBuilder` + 5 条客服 FAQ 语料 | 活代码 |
 | L3 | `ai_infra/llm/dashscope_client.py` | `PROMPT_TEMPLATES` 6 份业务提示词 | **4 份被真实消费（9 个调用点）** |
-| L4 | `base_agent.invoke()/stream()` + `AgentState.metadata` | 硬编码 `tenant_id` / `shop_id` | 只写不读（0 消费者） |
+| L4 | `base_agent.invoke()/stream()` + `AgentState.metadata` | 硬编码 `tenant_id` / `shop_id` | 只写不读（0 消费者）→ **两者均已删除**（第 159 轮批 D3） |
 
 ★ L4 的后续（R66）：`invoke()` / `stream()` **已被删除** —— 不只是收敛签名。
   全量测试带运行时 spy（全量 620 项）实测其**动态可达性 = 0**：21 处
@@ -20,7 +20,7 @@
   图驱动方的两种真实用法都直接用 `self.graph`（返回**原始 state**，不预设结构）：
     ① 继承式：secretary 的 `agent.graph.ainvoke(...)`；
     ② 组合式：listing / product_research 各自 new 一个裸 BaseAgent 当 router 子层
-       （`metadata={"role": "sub_agent_router"}`）后 `_router.graph.ainvoke`。
+       （`checkpoint_ns="listing"` / `"product_research"`）后 `_router.graph.ainvoke`。
   两条用法都需要原始 messages 流自行组装业务响应 —— 而 `invoke()` 恰好把它换成
   `structured_response`，拿走的正是唯一需要的东西。
 
@@ -175,12 +175,19 @@ def test_base_agent_public_signature_has_no_business_params():
                 if a.arg in forbidden:
                     offenders.append((n.name, a.arg, a.lineno))
     assert not offenders, (
-        f"BaseAgent 签名夹带业务参数: {offenders} —— 应改为 `metadata={{\"...\": ...}}` 自由字典"
+        f"BaseAgent 签名夹带业务参数: {offenders} —— 业务维度归业务模块，不进基类签名"
     )
 
 
-def test_agent_state_metadata_is_free_form_dict():
-    """`AgentState.metadata` 应是自由字典，不预置业务键。"""
+def test_agent_state_has_no_dead_metadata_field():
+    """`AgentState` 不得再有 `metadata` 字段（第 159 轮批 D3 删除）。
+
+    ★ 为什么判据从「必须是自由字典」改成「不得存在」：
+      旧断言只钉**形式**（默认空字典、不预置业务键），于是它**通过**了 ——
+      而那个字段从头到尾是**只写不读的死重量**（全仓 0 处读 `state["metadata"]`，
+      上游 `default_metadata` 也无人调用，3 处 `metadata={"role": ...}` 从未被读）。
+      **形式合规掩盖了性质失效**。⇒ 判据改钉性质：字段没人读，就不该存在。
+    """
     src = (AI_INFRA / "base_agent.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
     node = None
@@ -188,14 +195,27 @@ def test_agent_state_metadata_is_free_form_dict():
         if isinstance(n, ast.ClassDef) and n.name == "AgentState":
             node = n
     assert node is not None, "未找到 AgentState"
-    md = None
-    for n in node.body:
-        if isinstance(n, ast.AnnAssign) and getattr(n.target, "id", "") == "metadata":
-            md = n
-    assert md is not None, "AgentState 没有 metadata 字段"
-    assert isinstance(md.value, ast.Dict) and not md.value.keys, (
-        "AgentState.metadata 应默认空字典（原先硬编码了 tenant_id/shop_id/"
-        "token_usage/cost_estimate 四个业务/死键）"
+    fields = {t.id for n in node.body if isinstance(n, ast.AnnAssign)
+              for t in [n.target] if isinstance(t, ast.Name)}
+    assert "metadata" not in fields, (
+        "AgentState.metadata 又回来了 —— 它是只写不读的死重量（第 159 轮批 D3 已删）。"
+        "若确要新增状态字段，先给出**读它的地方**（消费者），否则不要加。"
+    )
+
+
+def test_base_agent_init_takes_no_metadata_param():
+    """`BaseAgent.__init__` 不得再有 `metadata` 形参（随死字段一起删）。"""
+    src = (AI_INFRA / "base_agent.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    hit = []
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "__init__":
+            for a in list(n.args.args) + list(n.args.kwonlyargs):
+                if a.arg == "metadata":
+                    hit.append((n.name, a.lineno))
+    assert not hit, (
+        f"BaseAgent.__init__ 仍有 metadata 形参 {hit} —— 它的唯一去处是 AgentState.metadata，"
+        "而那个字段已因「0 消费者」被删。"
     )
 
 

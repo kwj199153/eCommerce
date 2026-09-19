@@ -215,8 +215,9 @@ def test_bare_super_call_is_supported():
     s = _Sub()
     assert s.agent_name == "sub_agent"
     assert s.tools == []
-    # default_metadata 是 property，必须反映**覆盖后**的 agent_name
-    assert s.default_metadata["agent_name"] == "sub_agent"
+    # ★ 第 159 轮（批 D3）：`default_metadata` 断言已删 —— 该 property 连同
+    #   `AgentState.metadata` 一起被删（只写不读的死重量）。此处不再断言它的存在，
+    #   反向门禁见 `test_infra_layering.py::test_agent_state_has_no_dead_metadata_field`。
 
 
 def test_llm_with_tools_raises_explicitly_when_llm_unavailable():

@@ -65,6 +65,16 @@ class OrchestratorResponse(BaseModel):
             "因此不会因为对话变长被上下文裁剪而丢失。"
         ),
     )
+    truncated: bool = Field(
+        False,
+        description=(
+            "本轮是否因预算限制被截断（第 159 轮 批 D3）。"
+            "`true` 时 `reply` **已经带上提示前缀** —— 所以即使前端不渲染这个字段，"
+            "用户也看得到「结果可能不完整」。它同时是图状态 `structured_response` "
+            "的第一个真消费者：此前 `_respond_node` 写进去的 `status` 全仓无人读。"
+            "短路路径（关键词命中、不跑图）恒为 False。"
+        ),
+    )
 
 
 class PlanResponse(BaseModel):
@@ -189,6 +199,8 @@ async def secretary_chat(
         session_id=session_id,
         # ★ 第 148 轮 批 C3：把子任务计划一并回传（短路路径没有 plan ⇒ None）。
         plan=result.get("plan"),
+        # ★ 第 159 轮 批 D3：截断标记（短路路径不跑图 ⇒ False）。
+        truncated=result.get("truncated", False),
     )
 
 

@@ -350,7 +350,6 @@ class ListingGeneratorAgent(BaseAgent):
                 #   路由子层「单次决策 + 一串工具调用、用完即答」⇒ 历史最短、裁得最狠
                 #   （12k / 保底 2 轮）。与 `checkpoint_ns="listing"` 同属这一层的口径。
                 context_policy=CONTEXT_ROUTER,
-                metadata={"role": "sub_agent_router"},
                 checkpointer=get_checkpointer(),
                 checkpoint_ns="listing",
             )
