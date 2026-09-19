@@ -32,6 +32,20 @@ BACKEND = pathlib.Path(__file__).resolve().parents[1]
 CONV_ROUTER = BACKEND / "modules" / "conversation" / "router.py"
 CONV_SERVICE = BACKEND / "modules" / "conversation" / "service.py"
 
+#: ★ **故意不分归属**的公开函数（第 151 轮登记）。
+#:
+#: `active_owner_ids` 是夜间调度的**枚举器**（「该给谁跑」的输入）。
+#: 它返回的是 owner **id 列表**，不返回任何人的数据 —— 所以它没有、
+#: 也不该有 `owner_id` 参数。
+#:
+#: ★★ 豁免不是「忘了」的委婉说法：登记在这里的同时，
+#:   必须由 `test_platform_wide_readers_are_not_reachable_from_http`
+#:   证明它**不可从 HTTP 触达**（两边共用这份名单，不各抄一份）。
+PLATFORM_WIDE = {
+    "active_owner_ids": "夜间整理枚举活跃 owner（只返回 id 列表）",
+}
+
+
 
 # ============================================================ 夹具
 
@@ -337,6 +351,10 @@ def test_service_public_api_declares_authorship_param():
         "history_of": ("first", "conv"),
         "get_history": ("first", "user"),
         "append_message": ("first", "user"),
+        # 第 149–151 轮批 C2-4：夜间整理的**读口**（跨会话只读原语）
+        "recent_messages_of_owner": ("first", "owner_id"),
+        # 不分归属的**枚举器**：理由见模块级 PLATFORM_WIDE（同一事实不抄两遍）
+        "active_owner_ids": ("platform_wide", ""),
     }
     tree = ast.parse(CONV_SERVICE.read_text(encoding="utf-8"))
     public = {
@@ -350,6 +368,18 @@ def test_service_public_api_declares_authorship_param():
     )
     for name, (kind, param) in expected.items():
         fn = public[name]
+        if kind == "platform_wide":
+            # ★ 登记为 platform_wide 的函数**不许**带 owner_id 参数 ——
+            #   带了就说明它不是「平台级」，而是漏了归属过滤，罪更重。
+            args = fn.args.posonlyargs + fn.args.args + fn.args.kwonlyargs
+            assert not any(a.arg == "owner_id" for a in args), (
+                f"{name} 登记为 platform_wide，却带着 owner_id 参数 —— "
+                f"请改成正常登记或去掉该参数"
+            )
+            # ★ 豁免必须与 PLATFORM_WIDE 对得上：登记处说「故意不分归属」，
+            #   豁免名单里却没有它 ⇒ 两处口径已经分叉了。
+            assert name in PLATFORM_WIDE, f"{name} 未在 PLATFORM_WIDE 里登记"
+            continue
         if kind == "first":
             args = fn.args.posonlyargs + fn.args.args
             assert args and args[0].arg == param, \
@@ -363,6 +393,48 @@ def test_service_public_api_declares_authorship_param():
             assert fn.args.kw_defaults[idx] is None, (
                 f"{name}.{param} 不能有默认值 —— 有默认值就失去「忘传即报错」的保护"
             )
+
+
+def test_platform_wide_readers_are_not_reachable_from_http():
+    """★★★ `PLATFORM_WIDE` 里的豁免必须**配一条不可达断言**。
+
+    否则「豁免」就只是「忘了」的委婉说法：一个不分归属的公开函数，
+    只要有人把它挂上一个端点，读的就是**全库所有人的 id/数据**。
+
+    ★ 本用例与 `PLATFORM_WIDE` **共用同一份名单**（不从别处再抄一遍）：
+      同一事实两份写法必然漂移，而漂移的方向是「豁免了但没测」。
+
+    ★ 为什么扫 `router.py` 而不是扫「谁 import 了它」：HTTP 触达的**唯一**
+      入口就是各模块的 `router.py`。扫 import 图会把「被 service 内部复用」
+      也算成违规（那是正常复用，不是触达），反而逼人把名字改晦涩。
+
+    反向注入已验：在 `modules/memory/router.py` 里写一行
+    `from modules.conversation import active_owner_ids`（哪怕只是 import 不用）
+    ⇒ 本条变红。
+    """
+    offenders = []
+    for name in PLATFORM_WIDE:
+        for p in (BACKEND / "modules").rglob("router.py"):
+            if "__pycache__" in p.parts:
+                continue
+            tree = ast.parse(p.read_text(encoding="utf-8"))
+            for n in ast.walk(tree):
+                # ★ 三态齐查：`Name`（直接引用）、`Attribute`（模块属性）、
+                #   `alias`（import 进来 —— **哪怕当下没用**）。
+                #   只查前两态时漏掉「先 import 备用」这一步，而它正是
+                #   「挂上端点」的前一步；反向注入实测：只加一行 import，
+                #   旧判据不红 —— 而本用例的 docstring 却承诺了它会红。
+                #   （注释承诺型假门禁，见 r141 §2.4 那条铁律。）
+                if isinstance(n, ast.Name) and n.id == name:
+                    offenders.append(f"{p.relative_to(BACKEND)}:{n.lineno} NAME {name}")
+                elif isinstance(n, ast.Attribute) and n.attr == name:
+                    offenders.append(f"{p.relative_to(BACKEND)}:{n.lineno} ATTR {name}")
+                elif isinstance(n, ast.alias) and n.name.split(".")[-1] == name:
+                    offenders.append(f"{p.relative_to(BACKEND)}:{n.lineno} IMPORT {name}")
+    assert not offenders, (
+        f"平台级（不分归属）的读口被 HTTP 层引用了: {offenders} —— "
+        f"它没有归属过滤，一旦挂上端点就是全库可读"
+    )
 
 
 def test_legacy_unauthenticated_reader_is_gone():

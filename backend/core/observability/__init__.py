@@ -38,6 +38,7 @@ from core.observability.metrics import (
     HTTP_REQUESTS,
     LLM_CALLS,
     LLM_TOKENS,
+    MEMORY_DISTILL_RUNS,
     QUOTA_REJECTIONS,
     normalize_path,
     render_prometheus,
@@ -65,5 +66,6 @@ __all__ = [
     "AIGC_TASK_DURATION",
     "QUOTA_REJECTIONS",
     "CELERY_TASK_RESULTS",
+    "MEMORY_DISTILL_RUNS",
     "DEPENDENCY_UP",
 ]

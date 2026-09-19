@@ -194,6 +194,40 @@ services:
       - logs:/app/logs
     networks: [storekeeper]
 
+  # ========== 4b. Celery Beat（定时任务：长期记忆每晚自动整理）==========
+  # ★ 为什么不给 worker 加 `-B`（内嵌调度器）：Celery 官方文档明确说 -B 只适合开发；
+  #   本项目还有一条更具体的理由 —— 调度器需要**独占**一个 schedule 文件
+  #   （记录 last_run_at），与任务执行共进程时会互抢，报 PermissionError 或
+  #   **静默不触发**（现象是"整晚没跑"，最难排查）。见 backend/beat.py 顶部论证。
+  # ★ 单副本：调度器**不能**水平扩容 —— 两个 beat 会各触发一次，
+  #   同一晚的整理被投递两遍。冷却窗口是第二道保险，但这里从一开始就只跑一个实例。
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: storekeeper-api:latest
+    container_name: storekeeper-beat
+    restart: unless-stopped
+    command: ["python", "beat.py"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://kevin:123456@postgres:5432/postgres
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      LOG_JSON: "true"
+    volumes:
+      # schedule 文件落在 logs/ 下（beat.py 的选择）⇒ 必须持久化；
+      # 与 worker 共用同一个卷，避免两个容器各持一份互相覆盖。
+      - logs:/app/logs
+    networks: [storekeeper]
+
   # ========== 5. 前端（nginx 托管 dist + 反代 /api、/static）==========
   frontend:
     build:

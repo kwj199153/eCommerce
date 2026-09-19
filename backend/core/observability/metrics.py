@@ -271,6 +271,19 @@ CELERY_TASK_RESULTS = _Counter(
     ("task", "status"),
 )
 
+# --- 长期记忆的夜间自动整理 ---
+# ★ 为什么要单独一个指标，而不是复用上面的 `CELERY_TASK_RESULTS`：
+#   后者记的是「Celery 层面把任务判成功还是失败」，而本指标记的是
+#   **业务结局**。两者刻意不重合，因为最需要看见的那一档恰恰是
+#   「Celery 判成功、业务上什么都没做」—— 例如「因为冷却被跳过」
+#   与「没有对话可整理」。把它们混成一个数字，调度坏掉时
+#   （每天都 skip）看起来会和「每晚正常整理、只是没新内容」一模一样。
+MEMORY_DISTILL_RUNS = _Counter(
+    "memory_distill_runs_total",
+    "长期记忆整理次数（按业务结局：ok / no_messages / skipped / failed）",
+    ("status",),
+)
+
 # 对外暴露的顺序（/metrics 输出顺序稳定，便于 diff）
 _REGISTRY = (
     HTTP_REQUESTS,
@@ -282,6 +295,7 @@ _REGISTRY = (
     AIGC_TASK_DURATION,
     QUOTA_REJECTIONS,
     CELERY_TASK_RESULTS,
+    MEMORY_DISTILL_RUNS,
     DEPENDENCY_UP,
 )
 

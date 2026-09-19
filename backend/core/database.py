@@ -147,7 +147,15 @@ def register_all_models() -> None:
     # AIGC 异步任务表（aigc_jobs）—— 长任务的状态权威源
     from modules.aigc_media.db_model import AIGCJobRecord  # noqa: F401
     # 客服工单表（cs_tickets）—— 第 143 轮 A4：工单从「只在内存里造一个就返回」
+    # 变成真的落库（此前 success=True 的工单号指向不了任何记录）。
     from modules.customer_service.db_model import TicketRecord  # noqa: F401
+    # 长期记忆三张表（memory_profiles / memory_entries / memory_logs）
+    # —— 第 149 轮 C2：让「记忆与进化」页从硬编码假页面变成有真存储。
+    # ★ 键是 owner_id（人）而不是 thread_id（会话）⇒ 跨会话有效，
+    #   这也是它不能复用 conversation 那三张表的原因。
+    from modules.memory.db_model import (  # noqa: F401
+        MemoryEntryRecord, MemoryLogRecord, MemoryProfileRecord,
+    )
 
 
 async def init_db():

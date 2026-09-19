@@ -6,7 +6,9 @@ Redis 连接 & Celery 配置模块
 
 import redis.asyncio as aioredis
 from celery import Celery
+from celery.schedules import crontab
 
+from ai_infra.memory.limits import DISTILL_HOUR, DISTILL_MINUTE
 from core.config import config
 
 
@@ -73,4 +75,32 @@ celery_app.conf.task_default_queue = "default"
 #   于是永远命中 0 个任务。现象是：Broker/Worker/compose 全部就绪、
 #   `worker.py` 正常打印启动日志，但 `celery inspect registered` 是空的，
 #   提交任务永远停在 pending。⇒ 必须指到**子包**。
-celery_app.autodiscover_tasks(["modules.aigc_media"])
+celery_app.autodiscover_tasks(["modules.aigc_media", "modules.memory"])
+
+# ====== 定时任务（Celery Beat）======
+# ★ 调度表定义在这里而不是 `modules/memory/tasks.py`：`beat_schedule` 是
+#   **应用级**配置，beat 进程只读它、不 import 任何任务模块。
+#   写在任务模块里的话，beat 就得先 import 业务代码才能知道"该调度什么" ——
+#   一个语法错误会让整晚的调度一起消失。
+#
+# ★ 这里 import 的是一个**叶子常量模块**（`ai_infra/memory/limits.py` 零依赖，
+#   不 import 任何 core / modules）⇒ 不构成 `core → ai_infra → core` 的环。
+#   `test_core_internal_layering.py` 只登记 `core → core` 的边，本行不在它的网内。
+#
+# ★ 触发时刻与冷却窗口共用同一份真源（见 limits 的「蒸馏节奏」一节）：
+#   两者写在同一个文件里，"改周期"不会漏改冷却。
+#
+# ★★ 任务名是**字面量**，这是刻意的（core 不得 import modules）——
+#   于是它与 `modules/memory/tasks.py::TASK_DISTILL_ALL` 构成了"同一事实两份写法"。
+#   写错时 beat 会往一个没人注册的名字投递：现象是"整晚没跑"。
+#   ⇒ 由 `tests/test_memory_distill.py` 把两者**钉成相等**（而不是靠注释提醒）。
+celery_app.conf.beat_schedule = {
+    "memory-nightly-distill": {
+        "task": "memory.distill_all_owners",
+        # 用 crontab 而不是 timedelta：crontab 每次按**当前时间**重算下次触发点，
+        # 不依赖调度文件的 last_run_at ⇒ 调度文件丢失/重建时不会漏掉一整天。
+        "schedule": crontab(hour=DISTILL_HOUR, minute=DISTILL_MINUTE),
+        # 明确投 default 队列（worker.py 的 --queues 已含它）。
+        "options": {"queue": "default"},
+    },
+}

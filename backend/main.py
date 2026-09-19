@@ -461,6 +461,11 @@ app.include_router(competitor_intel_router, prefix="/api/v1", dependencies=BUSIN
 from modules.aigc_media.router import router as aigc_media_router
 app.include_router(aigc_media_router, prefix="/api/v1", dependencies=BUSINESS_AUTH + API_QUOTA)
 
+# 运营复盘师模块 (Phase 8) —— 第 143 轮 A4 补齐
+# ★ 此前本模块**只有 service/tools，没有 router、也没挂载** ⇒ 六大复盘能力
+#   在后端零 HTTP 入口，前端「运营复盘师」看板一直吃 mock（282 行假数据）。
+# ★ 挂 BUSINESS_AUTH + API_QUOTA 的理由与其它业务模块一致：复盘要按店铺维度取数，
+#   且每次调用都会真的打数据源（真实档下是 SP-API 配额）。
 from modules.review_analyst.router import router as review_analyst_router
 app.include_router(review_analyst_router, prefix="/api/v1", dependencies=BUSINESS_AUTH + API_QUOTA)
 
@@ -499,6 +504,23 @@ app.include_router(secretary_router, dependencies=BUSINESS_AUTH + CHAT_QUOTA)  #
 # 会话持久化（决策层 B：跨会话记忆）
 from modules.conversation.router import router as conversation_router
 app.include_router(conversation_router, prefix="/api/v1", dependencies=BUSINESS_AUTH)
+
+# 长期记忆（第 149 轮批 C2）—— 「记忆与进化」页的真后端。
+#
+# ★ 不挂 BUSINESS_AUTH：那条依赖是 **optional-auth**（完全不带凭据且
+#   AUTH_REQUIRED=false 时返回 None），而长期记忆按**人**归属 ——
+#   匿名会话没有可归属的对象，也不存在可降级形态（一份不属于任何人的
+#   记忆谁都读不到，却会一直被每晚任务花钱整理）。
+#   本模块各端点**各自**声明 require_authenticated_user（fail-closed）。
+#   ★ 这也解决了「路由级依赖不向 handler 注入参数」那个老问题：
+#     只挂路由级的话 handler 拿不到 current_user，也就取不到 owner_id。
+#
+# ★ 不挂 API_QUOTA：本路由全是 CRUD，不烧钱；挂上去只会让
+#   「配额用完」的用户连自己的记忆都改不了（同本文件里其它纯 CRUD 的处理）。
+#   真正会调模型的是 POST /memory/distill —— 它随 modules/memory/tasks.py
+#   在 C2-4 落地，并由那个端点**自己**声明配额依赖。
+from modules.memory.router import router as memory_router
+app.include_router(memory_router, prefix="/api/v1")
 
 
 # ====== 附加模块（可插拔，默认关闭）======

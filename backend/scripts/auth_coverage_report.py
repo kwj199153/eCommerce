@@ -13,6 +13,7 @@
 """
 
 import argparse
+import asyncio
 import os
 import sys
 from collections import defaultdict
@@ -34,6 +35,14 @@ from fastapi.routing import APIRoute  # noqa: E402
 #   - 加上 `_current_user` —— `core/auth/accounts_router.py` 的
 #     fail-closed 身份门（无身份一律 401）。不登记它，整个
 #     `/api/v1/accounts` 模块会在报告里显示成"无鉴权"，与事实相反。
+#   - 加上 `_REQUIRE_USER` —— `modules/memory/router.py` 的 fail-closed 身份门
+#     （★ 第 153 轮）。它此前写成 `functools.partial(require_authenticated_user,
+#     what="长期记忆")`，而 **partial 没有 `__name__`** ⇒ 本脚本取到 None
+#     ⇒ `/api/v1/memory` 的 6 个端点全被报成 **0% 无鉴权**，与事实完全相反
+#     （它一直是 fail-closed 的）。同一批端点当时还 100% 500：
+#     `AttributeError: 'coroutine' object has no attribute 'id'`
+#     —— 因为 FastAPI 不 await partial 包装过的依赖（见该文件 docstring）。
+#     ★ 所以本报告现在多了第 ④ 节，直接点名这种形态，不再只靠名单。
 #   ★ 判据：这份清单必须与实际存在的依赖函数名保持一致；
 #     名字写错**不会报错**，只会让覆盖率数字静默失真。
 AUTH_DEPENDENCY_NAMES = {
@@ -44,6 +53,7 @@ AUTH_DEPENDENCY_NAMES = {
     "require_permissions",
     "require_admin",
     "_current_user",
+    "_REQUIRE_USER",
     "get_current_tenant",
 }
 
@@ -60,6 +70,35 @@ def collect_dependency_names(dependant, acc=None):
         if name:
             acc.add(name)
         collect_dependency_names(dep, acc)
+    return acc
+
+
+def collect_form_anomalies(dependant, acc=None):
+    """收集「形态自相矛盾」的依赖：asyncio 说是协程，FastAPI 却**不会** await 它。
+
+    ★ 第 153 轮新增。这一档此前在本报告里**完全不可见**：它既不是"没挂依赖"
+      （名单判定会显示已鉴权），也不报错（除非真发一次请求）。
+      `modules/memory/router.py` 的 6 个端点因此 100% 500，而本报告当时
+      把它们算成 **0% 无鉴权** —— 方向刚好相反（它们其实一直是 fail-closed 的）。
+
+    ★ 为什么必须用 `is_coroutine_callable` 而不是 `asyncio.iscoroutinefunction`：
+      后者对 `functools.partial(require_authenticated_user, ...)` 返回 **True**，
+      而 FastAPI 判"要不要 await"用的是前者（返回 **False**）。
+      两个判定分歧的地方，就是本函数要找的地方。
+    """
+    from fastapi.dependencies.utils import is_coroutine_callable
+
+    if acc is None:
+        acc = []
+    for dep in getattr(dependant, "dependencies", []) or []:
+        call = getattr(dep, "call", None)
+        if (
+            call is not None
+            and asyncio.iscoroutinefunction(call)
+            and not is_coroutine_callable(call)
+        ):
+            acc.append(call)
+        collect_form_anomalies(dep, acc)
     return acc
 
 
@@ -84,6 +123,7 @@ def main() -> int:
     protected = 0
     per_module = defaultdict(lambda: {"total": 0, "protected": 0})
     unauth_routes = []
+    form_anomalies = []  # (methods, path, call)
 
     for route in app.routes:
         if not isinstance(route, APIRoute):
@@ -103,6 +143,8 @@ def main() -> int:
             per_module[mod]["protected"] += 1
         else:
             unauth_routes.append((mod, ",".join(methods), route.path))
+        for _call in collect_form_anomalies(route.dependant):
+            form_anomalies.append((",".join(methods), route.path, _call))
 
     print("=" * 68)
     print("鉴权覆盖体检报告")
@@ -122,6 +164,19 @@ def main() -> int:
         flag = "" if cov >= 100 else ("  <-- 无鉴权" if cov == 0 else "  <-- 部分覆盖")
         print(f"{mod:<24}{stat['total']:>6}{stat['protected']:>8}{cov:>9.0f}%{flag}")
 
+    # ④ 依赖形态（★ 第 153 轮）：见 collect_form_anomalies 的 docstring。
+    #    这一档的症状是 **500** 而不是 401 —— 名单覆盖率 100% 也照样中招。
+    print()
+    print("依赖形态（asyncio 说是协程、而 FastAPI 不会 await 的依赖）:")
+    print("-" * 68)
+    if form_anomalies:
+        for _m, _p, _c in form_anomalies:
+            print(f"  [BAD] {_m:<12} {_p}  {_c!r}")
+        print(f"  ==> {len(form_anomalies)} 处：这些端点在真实请求下会 500"
+              "（handler 拿到的是协程对象，不是依赖的返回值）")
+    else:
+        print("  （无 —— 全应用没有 partial 包装 async 依赖这一形态）")
+
     if args.show_unauth and unauth_routes:
         print()
         print("未鉴权路由明细:")
@@ -129,8 +184,8 @@ def main() -> int:
         for mod, methods, path in unauth_routes:
             print(f"  [{mod:<18}] {methods:<18} {path}")
 
-    # 出口码：存在未鉴权端点时返回 1，便于接 CI
-    return 1 if protected < total else 0
+    # 出口码：存在未鉴权端点或依赖形态异常时返回 1，便于接 CI
+    return 1 if (protected < total or form_anomalies) else 0
 
 
 if __name__ == "__main__":
