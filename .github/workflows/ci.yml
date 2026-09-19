@@ -226,6 +226,24 @@ jobs:
         # npm ci 严格按 lock 安装，保证 CI 与本地一致
         run: npm ci
 
+      - name: 前端门禁（静态真伪检查）
+        # ★★ 为什么必须显式跑这一步：
+        #   `package.json` 的 `build` = `8 道 check-*.cjs && vue-tsc && vite build`，
+        #   而本 job 之前跑的是 `npx vue-tsc` + `npx vite build`
+        #   —— **绕过了 build 脚本** ⇒ 这 8 道门禁从未在 CI 里执行过。
+        #   它们之前只在两处真跑：本地 `npm run build`，
+        #   以及 `frontend/Dockerfile` 的 `RUN npm run build`。
+        #   第 155 轮新增的 `check-plan-consumption.cjs` 因此是 CI 里的死脚本
+        #   —— 典型「配置写了但不生效」。
+        #   用 **glob** 而不是逐条列举：新增门禁自动纳入，不会再漂移。
+        run: |
+          set -e
+          for f in scripts/check-*.cjs; do
+            echo "::group::$f"
+            node "$f"
+            echo "::endgroup::"
+          done
+
       - name: 类型检查
         run: npx vue-tsc --noEmit
 
