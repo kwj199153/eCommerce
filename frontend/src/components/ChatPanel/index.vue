@@ -25,6 +25,12 @@
         <component :is="recentComponent" :data="recentForCurrentAgent.data" />
       </div>
 
+      <!-- 店秘书「当前计划」（第 155 轮）：它是**会话级状态**、不是某条消息的
+           附件（后端刻意把计划放在图状态而非消息序列里，好让它不随历史裁剪
+           丢失），所以这里独立于消息流渲染在列表上方 —— 对话滚到哪都看得见。
+           详见 PlanChecklist.vue 头注释。 -->
+      <PlanChecklist :plan="secretaryPlan" />
+
       <!-- 对话消息区域（始终显示） -->
       <div class="message-list" ref="messageListRef">
           <div v-if="messages.length === 0 && !agentStore.currentAgent" class="empty-state">
@@ -504,6 +510,9 @@ import BuyBoxAnalysisResult from './results/BuyBoxAnalysisResult.vue'
 import CompareGridResult from './results/CompareGridResult.vue'
 import AIGCMediaResult from './results/AIGCMediaResult.vue'
 
+// 店秘书「当前计划」条（第 155 轮 · 批 C3 的前端消费端）
+import PlanChecklist from './PlanChecklist.vue'
+
 // 会话结论卡（display_type → 组件映射表）与「最近结果」槽
 import { resolveConversationResult } from './results/conversation/registry'
 import { useRecentResultStore } from '@/stores/recentResult'
@@ -549,6 +558,8 @@ function clearRecentResult() {
 
 // 其余全部编排逻辑下沉到 composable，此处仅解构模板所需出口
 const {
+  // 店秘书计划（第 155 轮）
+  secretaryPlan,
   // 状态
   messages,
   isLoading,

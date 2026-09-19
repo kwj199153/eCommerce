@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.metering.usage_tracker import meter_agent_chat
@@ -13,7 +13,7 @@ from core.metering.usage_tracker import meter_agent_chat
 from core.auth.dependencies import require_auth_if_enabled
 from core.identity.models import User
 from core.tenant.middleware import get_current_shop_id_optional
-from modules.secretary.agent import route
+from modules.secretary.agent import current_plan, route
 
 router = APIRouter(prefix="/api/v1/orchestrator", tags=["店秘书"])
 
@@ -53,6 +53,32 @@ class OrchestratorResponse(BaseModel):
     )
     session_id: Optional[str] = Field(
         None, description="会话 ID（回显，未传时后端新建并返回，供前端持久化）"
+    )
+    plan: dict | None = Field(
+        None,
+        description=(
+            "本会话的子任务计划（第 148 轮 批 C3）："
+            "{total, completed, by_status, items:[{id, content, status, note}]}。"
+            "仅在店秘书建立了计划时出现 —— 恒返回空计划会让调用方分不清"
+            "「该 Agent 没开启规划」与「开启了但这一轮还没规划」。"
+            "计划存在图状态（随 checkpointer 落 PG），**不在消息历史里**，"
+            "因此不会因为对话变长被上下文裁剪而丢失。"
+        ),
+    )
+
+
+class PlanResponse(BaseModel):
+    """`GET /plan` 的响应：**只含一个字段**，且刻意不区分"没有计划"与"读不到"。"""
+
+    plan: dict | None = Field(
+        default=None,
+        description=(
+            "会话当前的子任务计划，形状与 `POST /chat` 的 `plan` 字段**完全相同**"
+            "（`{total, completed, by_status, items:[{id, content, status, note}]}`）。"
+            "`null` 表示：还没有计划 / 没有可用会话 / 未登录 —— **三者同一个响应**。"
+            "★ 刻意不区分原因：一旦区分，这个端点就成了「这个 session_id 存不存在」"
+            "的探针，可被用来枚举别人的会话。"
+        ),
     )
 
 
@@ -161,4 +187,61 @@ async def secretary_chat(
         tool_calls=result.get("tool_calls", []),
         route_mode=result.get("route_mode", "llm"),
         session_id=session_id,
+        # ★ 第 148 轮 批 C3：把子任务计划一并回传（短路路径没有 plan ⇒ None）。
+        plan=result.get("plan"),
     )
+
+
+@router.get("/plan", response_model=PlanResponse, summary="读会话当前子任务计划")
+async def secretary_plan(
+    session_id: str = Query(
+        ...,
+        min_length=1,
+        description="会话 ID（前端持久化后带回；与 `POST /chat` 用的是同一个）",
+    ),
+    shop_id: Optional[str] = Depends(get_current_shop_id_optional),
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
+):
+    """
+    读当前会话的**子任务计划**（只读：不推进图、不调 LLM、零副作用）。
+
+    为什么端点要单独存在
+    --------------------
+    `POST /chat` 已经把 `plan` 带在响应里了，但那是**对话的副产品**：
+    老板刷新页面后，前端手上没有"最近一次响应"，计划条就会空着 —— 直到他
+    再随便说一句话。而计划是**跨轮持续的状态**（后端刻意把它放在图状态而非
+    消息序列里，正是为了让它不随上下文裁剪消失），所以它也该有个不依赖
+    「刚好聊过一句」的读取方式。
+
+    ★ 查询参数而不是请求体：`session_id` 是裸标量，按本仓口径**走 query**。
+      写成 body 会踩到那个已修过一次的坑（`refresh_token` 按 query 解析 ⇒
+      前端发 body 稳定 422 ⇒ 功能"看起来做了"但从未生效）。
+
+    归属与枚举防护
+    --------------
+    - `user_id` 只从**服务端身份**取（`current_user`），不接受任何自报字段；
+      `thread_id = ns:user_id:session_id` ⇒ 别人拿你的 session_id 来读，
+      算出的是**他自己**的键，物理上读不到你的计划。
+    - 未登录 / 没有会话 / 没有计划 / 读失败 ⇒ **一律 `plan: null`**，
+      不区分原因（区分即成为会话存在性探针）。
+
+    ★ 为什么一个只读端点也在配额门禁之下（第 155 轮实测记录）
+    -----------------------------------------------------------
+    `main.py` 给本 router 挂了 `BUSINESS_AUTH` + `CHAT_QUOTA` 两个**路由级**
+    依赖，因此 `/plan` 会自动继承它们（实测：`/plan` 顶层依赖 4 条，与
+    `/chat` 的差集只有 `meter_agent_chat` 一条）。这不是负担，两条都恰当：
+      · `BUSINESS_AUTH`（`require_auth_if_enabled`）—— optional 语义，
+        演示模式返回 None，与本端点"没身份就没有计划"的设计一致；
+      · `CHAT_QUOTA`（`check_agent_chat_quota`）—— 它的 docstring 写得很清楚：
+        **「仅检查额度（不计量、不扣减）」**。所以刷新页面读计划**不会消耗**
+        任何对话次数；额度用尽时它 429，而那时读计划本来也没有意义。
+    ★ 真正**计费**的 `meter_agent_chat` 只在 `/chat` 上，本端点**刻意不挂**
+      —— 读一次状态不该产生费用。
+    """
+    plan = await current_plan(
+        session_id=session_id,
+        # ★ 归属只能来自服务端上下文。
+        user_id=current_user.id if current_user else None,
+        shop_id=shop_id,
+    )
+    return PlanResponse(plan=plan)

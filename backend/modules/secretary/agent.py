@@ -311,7 +311,13 @@ async def route(
         f"tools={tool_calls or '-'} actions={len(actions)} query={query[:40]!r}"
     )
 
-    return {
+    # ★ 第 148 轮 批 C3：把子任务计划透出给调用方（前端按 `plan.items` 展示进度）。
+    #   从 `state` 读、**不**从 messages 里解析：计划不在消息序列里 ——
+    #   这正是它能跨上下文压缩存活的原因，所以只能从图状态取。
+    #   ★ 只在真有计划时才带上这个键：恒返回 `{"total": 0}` 会让消费方分不清
+    #   「这个 Agent 没开启规划」与「开启了但这一轮还没规划」。
+    _plan = plan_summary(state.get(TODOS_STATE_KEY) or [])
+    result: dict = {
         "reply": reply,
         "actions": actions,
         "action": actions[-1] if actions else None,
@@ -319,3 +325,65 @@ async def route(
         "route_mode": "llm",
         "shortcut_rule": "",
     }
+    if _plan["total"]:
+        result["plan"] = _plan
+    return result
+
+
+async def current_plan(
+    session_id: Optional[str],
+    user_id: Optional[str],
+    shop_id: Optional[str] = None,
+) -> Optional[dict]:
+    """只读：取当前会话的子任务计划（**不推进图、不调 LLM、不写任何东西**）。
+
+    为什么需要一个「读口」
+    ----------------------
+    `route()` 确实每次都把计划带在响应里，但那是**对话的副产品**：老板刷新
+    页面之后，前端手上没有任何"最近一次响应"，计划条就只能空着 —— 直到他
+    再随便说一句话。而计划是**跨轮持续的状态**（后端刻意把它放在图状态而不是
+    消息序列里，正是为了让它不随上下文裁剪消失），所以它也该有一个不依赖
+    「刚好聊过一句」的读取方式。
+
+    ★ 这里**只 `aget_state`**，绝不 `ainvoke`：读一次计划不该产生 LLM 费用，
+      也不该在图里留下任何痕（它连一条消息都不写）。
+
+    归属（为什么读到的只可能是你自己的）
+    ------------------------------------
+    ① `thread_id = ns:user_id:session_id`（`BaseAgent.resolve_thread_id`），
+       而 `user_id` 来自**服务端身份**、不接受任何自报字段 ⇒ 物理上隔开
+       不同用户。别人拿着你的 session_id 来读，算出的是**他自己**的键。
+    ② 缺 `session_id` 或 `user_id` ⇒ 直接返回 None，**不去猜**一个默认线程
+       （原则同 `graph_for_session`：没有会话 ⇒ 不留记忆）。
+    ③ 读不到与"没有计划"返回**同一个东西**（`None`），不区分原因
+       —— 一旦区分，这个端点就成了"这个 session_id 是否存在"的探针。
+
+    Args:
+        session_id: 会话 ID（客户端提供）。
+        user_id: **服务端**身份（`current_user.id`）。
+        shop_id: 当前店铺（只用于挑 agent 实例，不影响归属）。
+
+    Returns:
+        与 `route()` 的 `plan` 字段同形状的 dict；没有计划 / 没有会话 / 读失败
+        一律返回 `None`。
+    """
+    if not session_id or not user_id:
+        return None
+
+    agent = get_secretary_agent(shop_id)
+    if agent.checkpointer is None:
+        return None
+
+    graph, cfg = agent.graph_for_session(session_id, user_id)
+    try:
+        snapshot = await graph.aget_state(cfg)
+    except Exception as e:
+        # ★ 读失败**不抛**：这个端点是"锦上添花"的读口，它挂掉不该把
+        #   前端的整个计划区变成错误页。返回 None = 没有计划，界面自己
+        #   决定要不要提示（前端有 `planError` 出口时再区分）。
+        logger.warning(f"[secretary] 读计划失败 session={session_id or '-'}: {e}")
+        return None
+
+    values = getattr(snapshot, "values", None) or {}
+    plan = plan_summary(values.get(TODOS_STATE_KEY) or [])
+    return plan if plan["total"] else None

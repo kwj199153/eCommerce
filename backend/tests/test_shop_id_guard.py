@@ -58,7 +58,7 @@ OPTIONAL = "get_current_shop_id_optional"
 #     ① 它会落业务数据吗？
 #     ② 若会 —— 它的**写路径**在缺店铺上下文时是否硬拒绝？
 #        会落 且 写路径不拒绝 → 不许加（那才是真的开后门）。
-#   现有四条（含第 131 轮新增的 resume_approval）的成立理由（每条都有测试背书，不是自述）：
+#   现有五条（含第 131 轮 resume_approval、第 155 轮 secretary_plan）的成立理由（每条都有测试背书，不是自述）：
 #     · secretary/router.py::secretary_chat  —— ① 不会（纯对话/导航；工具层拿不到
 #       shop_id 时只回「产品库为空」）。
 #     · product_research/router.py::chat / chat_stream —— ① 会（候选入库），
@@ -80,9 +80,22 @@ ALLOWED_OPTIONAL = {
     #      （thread_id 由 (命名空间, 用户, 会话) 重算，不含 shop_id）。
     #      用严格版会让「想拒绝但没选店铺」的用户连拒绝都点不动（400）。
     ("modules/product_research/router.py", "resume_approval"),
+    # ★ 第 155 轮新增（两条问答）：
+    #   ① 会落业务数据吗？—— **不会**。
+    #      `modules/secretary/agent.py::current_plan()` 只 `aget_state`，
+    #      不推进图 / 不调 LLM / 不 `append_message`，
+    #      连一条消息都不写；路由层拿到后只构造 `PlanResponse` 返回。
+    #   ② 不适用（没有写路径）。
+    #   为何不用严格版：刚注册、**还没有店铺**的用户同样会刷新页面，
+    #     严格版给他 400，而正确语义是 `plan: null`（他本来就没计划）；
+    #     400 还会被前端读成「读计划失败」，把「没有计划」错报成「出错了」。
+    #   归属不靠这个依赖：`thread_id = ns:user_id:session_id`，
+    #     `user_id` 只从服务端身份取 ⇒ 别人拿你的 session_id
+    #     算出的是**他自己**的键，物理上读不到。
+    ("modules/secretary/router.py", "secretary_plan"),
 }
 
-# 严格依赖的使用方（8 个业务模块）。少一个都意味着某个模块的租户过滤被摘掉了。
+# 严格依赖的使用方（12 个业务模块）。少一个都意味着某个模块的租户过滤被摘掉了。
 EXPECTED_STRICT_MODULES = {
     "modules/aigc_media/router.py",
     "modules/assets/router.py",
@@ -92,6 +105,33 @@ EXPECTED_STRICT_MODULES = {
     "modules/platform_rules/router.py",
     "modules/products/router.py",
     "modules/voice_clone/router.py",
+    # ★ 第 142 轮 A2-3 新增两个。为什么必须用**严格版**而不是豁免：
+    #   这两个模块（广告分析 / 竞品情报）的 service 在第 142 轮改接
+    #   `amazon_sp.get_data_source()`，取数入口是 `store_id` —— 也就是说
+    #   **没有店铺就取不到任何数据**，只会走显式空状态（no_data）。
+    #   它们的端点全是 POST（被守卫判为写方法），strict 版自然命中。
+    #   为什么不豁免成 optional：豁免在这里只会把「你没选店铺」这句
+    #   可行动的提示，换成一句看起来像「AI 变笨了」的空结果（归因错误）。
+    #   前端两条通道都会自动带该头（`api/request.ts:124-127`、
+    #   `api/stream.ts:48-51`），所以真实用户不会被挡；
+    #   这条守卫挡的是"绕过前端直接调 API"的那种请求。
+    "modules/ad_analysis/router.py",
+    "modules/competitor_intel/router.py",
+    # ★ 第 143 轮 A4 新增。 此前**只有 service/tools、没有 router**
+    #   （六大复盘能力后端零 HTTP 入口），A4 补 router 并挂 main.py 时一次性接上
+    #   strict 版。理由与上面两个同构：复盘取数**必须**按 store_id（没有店铺就取不到
+    #   任何数据），且它的 6 个端点全是 POST ⇒ 自然命中 strict。
+    #   为什么不豁免成 optional：Mock 数据源对任意 store_id 都返回同一批数据
+    #   （实测 35 行 ×4 张表），豁免会把「你没选店铺」这句**可行动**的提示，
+    #   换成一份看起来正常、却不知属于谁的报告 —— 归因错误。
+    "modules/review_analyst/router.py",
+    # ★ 第 143 轮 A4 新增。`/customer-service/ticket/create` 在 A4 之前**连
+    #   X-Shop-ID 都不取** —— 所以即便建了表也落不下租户维度（`shop_id` 为空
+    #   会被外键拒绝，用户看到 500 且报错里带约束名）。A4 一边给工单建表落库、
+    #   一边把 strict 守卫接到这个端点上，两件事必须同时做。
+    #   为什么用 strict 而不是豁免：工单是**写业务数据**，缺店铺就该硬拒绝；
+    #   而本模块的读端点（chat / faq / order track）并不带这个依赖 ⇒ 不受影响。
+    "modules/customer_service/router.py",
 }
 
 

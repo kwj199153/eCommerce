@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import type { PlanSummary } from '@/api/secretary'
 
 export interface Message {
   role: 'user' | 'assistant'
@@ -31,6 +32,51 @@ export const useChatStore = defineStore('chat', () => {
    * 分散去记必然漏一处（漏了就是静默不播报），所以收敛到这里。
    */
   const lastUserMessage = ref<{ agentId: string; at: number } | null>(null)
+
+  /**
+   * 按 Agent 分组的「当前子任务计划」（店秘书规划器产出）。
+   *
+   * ★ 为什么是**会话级状态**、而不是挂在某条消息上：
+   *   后端的计划存在图状态里（`state["todos"]`，随 checkpointer 落 PG），
+   *   **刻意不放进消息序列** —— 所以对话变长、历史被裁剪，它都不会丢。
+   *   前端若把它当作某条消息的附件，那条消息一变成"历史"、或用户一刷新，
+   *   计划就"看起来没了"，与后端的语义直接矛盾。
+   * ★ 只在**店秘书**这一路有值（`ENABLE_PLANNING` 目前只有它开着）。
+   * ★ **刻意不持久化到 localStorage**：它可以从后端 `GET /orchestrator/plan`
+   *   重新拉回来（`fetchCurrentPlan`），本地再存一份没有任何收益，却会在
+   *   「切换账号」时把**上一个身份**的计划留在界面上 —— 那是归属事故。
+   *   （对比 `sessionIdByAgent`：那个必须持久化，否则刷新就丢会话。）
+   */
+  const planByAgent = ref<Record<string, PlanSummary>>({})
+
+  const getPlan = (agentId: string): PlanSummary | undefined =>
+    planByAgent.value[agentId]
+
+  /**
+   * 写入计划。
+   *
+   * ★★ 三态，**不要**简化成两态 —— 这是本函数唯一容易写错的地方：
+   *   · `undefined` = **不知道**：该响应压根没带这个字段。最典型的来路是
+   *     店秘书的**短路路径**（「打开设置」这类纯导航请求，`route_mode='shortcut'`
+   *     时后端直接返回动作、**根本没走图**，自然也没有 plan）⇒ **保留旧值**。
+   *     项目既有判据：「拿不到权威清单 ≠ 清单为空」—— 两个方向的代价不对称，
+   *     误清会让老板看到计划莫名消失（而后端状态其实好好的）。
+   *   · `null` / `{total: 0}` = **明确没有计划** ⇒ 清掉。否则会在界面上留一条
+   *     "0/0 已完成"的僵尸条。
+   *   · 正常对象 ⇒ 覆盖。
+   */
+  const setPlan = (agentId: string, plan: PlanSummary | null | undefined) => {
+    if (plan === undefined) return
+    if (!plan || !plan.total) {
+      delete planByAgent.value[agentId]
+      return
+    }
+    planByAgent.value[agentId] = plan
+  }
+
+  const clearPlan = (agentId: string) => {
+    delete planByAgent.value[agentId]
+  }
 
   // sessionId 持久化 key
   const SESSION_KEY = 'secretary_session_ids'
@@ -186,6 +232,8 @@ export const useChatStore = defineStore('chat', () => {
   const resetSessionState = () => {
     messagesByAgent.value = {}
     sessionIdByAgent.value = {}
+    // ★ 计划同样按身份隔离：它是「你正在做的事」，不是公共状态。
+    planByAgent.value = {}
     try {
       localStorage.removeItem(SESSION_KEY)
     } catch (e) {
@@ -214,6 +262,10 @@ export const useChatStore = defineStore('chat', () => {
     removeMessage,
     clearMessages,
     clearAllMessages,
+    planByAgent,
+    getPlan,
+    setPlan,
+    clearPlan,
     resetSessionState,
   }
 })
