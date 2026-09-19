@@ -213,6 +213,7 @@ class VideoScript:
 # LLM 能力（可用性判据 / 降级 / RAG）已统一到唯一基类 BaseAgent：
 # 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
 from ai_infra.base_agent import BaseAgent
+from ai_infra.intent import Route, first_match
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
 from modules.aigc_media import prompts as _prompts  # noqa: F401
 
@@ -1632,53 +1633,29 @@ class AIGCMediaAgent(BaseAgent):
             logger.warning(f"[aigc_media] stream_chat failed: {e}")
             yield "（流式生成中断，请重试或改用顶部工具）"
 
+    #: 意图路由表（**策略数据**留业务模块；控制流见 `ai_infra.intent.first_match`）。
+    #: 顺序即优先级，逐项保持收敛前的原序。
+    _INTENT_ROUTES = (
+        Route("generate_image", ("生成图片", "生成主图", "ai图片", "产品图片",
+                                 "生成场景图", "product image", "generate image")),
+        Route("analyze_main_image", ("主图分析", "主图优化", "图片质量", "点击率",
+                                     "main image", "ctr")),
+        Route("generate_a_plus", ("a+", "ebc", "enhanced", "图文版", "详情页",
+                                  "a plus content")),
+        Route("generate_brand_story", ("品牌故事", "品牌介绍", "about us",
+                                       "brand story", "品牌文案")),
+        Route("translate", ("翻译", "translate", "多语言", "本地化", "localization",
+                            "english", "德语", "日语")),
+        Route("generate_infographic", ("信息图", "infographic", "对比图", "宣传图", "海报")),
+        Route("check_compliance", ("合规", "违规", "compliance", "审核", "图片规则")),
+        Route("generate_video_script", ("视频", "短视频", "脚本", "video", "tiktok",
+                                        "reels", "抖音")),
+    )
+
     def classify_intent(self, user_input: str) -> str:
+        """分类用户意图（控制流与兜底见 `ai_infra.intent.first_match`）。
+
+        ★ 方法名**保持公开且不改名**：`modules/aigc_media/service.py`
+          仍按 `agent.classify_intent(...)` 调用它。
         """
-        分类用户意图
-
-        Returns:
-            intent 类型
-        """
-        input_lower = user_input.lower()
-
-        # 图片生成相关
-        img_gen_keywords = ["生成图片", "生成主图", "ai图片", "产品图片", "生成场景图", "product image", "generate image"]
-        if any(kw in input_lower for kw in img_gen_keywords):
-            return "generate_image"
-
-        # 主图优化
-        main_img_keywords = ["主图分析", "主图优化", "图片质量", "点击率", "main image", "ctr"]
-        if any(kw in input_lower for kw in main_img_keywords):
-            return "analyze_main_image"
-
-        # A+ 内容
-        aplus_keywords = ["a+", "ebc", "enhanced", "图文版", "详情页", "a plus content"]
-        if any(kw in input_lower for kw in aplus_keywords):
-            return "generate_a_plus"
-
-        # 品牌故事
-        brand_keywords = ["品牌故事", "品牌介绍", "about us", "brand story", "品牌文案"]
-        if any(kw in input_lower for kw in brand_keywords):
-            return "generate_brand_story"
-
-        # 翻译
-        trans_keywords = ["翻译", "translate", "多语言", "本地化", "localization", "english", "德语", "日语"]
-        if any(kw in input_lower for kw in trans_keywords):
-            return "translate"
-
-        # 信息图
-        info_keywords = ["信息图", "infographic", "对比图", "宣传图", "海报"]
-        if any(kw in input_lower for kw in info_keywords):
-            return "generate_infographic"
-
-        # 合规检查
-        compliance_keywords = ["合规", "违规", "compliance", "审核", "图片规则"]
-        if any(kw in input_lower for kw in compliance_keywords):
-            return "check_compliance"
-
-        # 视频脚本
-        video_keywords = ["视频", "短视频", "脚本", "video", "tiktok", "reels", "抖音"]
-        if any(kw in input_lower for kw in video_keywords):
-            return "generate_video_script"
-
-        return "general"
+        return first_match(user_input, self._INTENT_ROUTES, "general")

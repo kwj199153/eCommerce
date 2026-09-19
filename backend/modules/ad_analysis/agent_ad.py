@@ -299,6 +299,7 @@ class AnomalyReport(BaseModel):
 # LLM 能力（可用性判据 / 降级 / RAG）已统一到唯一基类 BaseAgent：
 # 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
 from ai_infra.base_agent import BaseAgent
+from ai_infra.intent import Route, first_match
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
 from modules.ad_analysis import prompts as _prompts  # noqa: F401
 
@@ -402,71 +403,31 @@ Amazon PPC 关键指标基准（参考值）：
             # 默认通用回答
             return await self._general_response(query)
 
+    #: 意图路由表（**策略数据**留业务模块；控制流见 `ai_infra.intent.first_match`）。
+    #: 顺序即优先级 —— 保持收敛前的原序「异常 → 预算 → 竞品 → 出价 → 搜索词 → 诊断」，
+    #: 后几组关键词之间存在交集，换序会改变判定结果。
+    _INTENT_ROUTES = (
+        Route("anomaly", ("异常", "突然", "骤降", "突增", "不对劲",
+                          "波动", "anomaly", "alert", "警告")),
+        Route("budget", ("预算", "budget", "分配", "调拨", "花费",
+                         "钱花在哪", "投放")),
+        Route("competitor", ("竞品", "对手", "竞争", "competitor", "别人",
+                             "展示份额", "share of voice", "soy")),
+        Route("bid_optimize", ("出价", "bid", "竞价", "调价", "降价", "加价",
+                               "cpc", "建议出价", "优化出价")),
+        Route("search_terms", ("搜索词", "search term", "关键词报告", "词报告",
+                               "哪些词", "客户搜什么", "高效词", "低效词", "浪费")),
+        Route("diagnosis", ("诊断", "体检", "健康", "状况", "表现", "怎么样", "如何",
+                            "diagnosis", "health", "check", "audit", "review", "score")),
+    )
+
     def _classify_intent(self, query: str) -> str:
-        """
-        分类用户意图
+        """分类用户意图（控制流与兜底见 `ai_infra.intent.first_match`）。
 
         Returns:
             diagnosis / search_terms / bid_optimize / competitor / budget / anomaly / general
         """
-        query_lower = query.lower()
-
-        # 诊断类
-        diagnosis_kw = [
-            "诊断", "体检", "健康", "状况", "表现", "怎么样", "如何",
-            "diagnosis", "health", "check", "audit", "review", "score"
-        ]
-        # 搜索词类
-        search_term_kw = [
-            "搜索词", "search term", "关键词报告", "词报告",
-            "哪些词", "客户搜什么", "高效词", "低效词", "浪费"
-        ]
-        # 出价类
-        bid_kw = [
-            "出价", "bid", "竞价", "调价", "降价", "加价",
-            "cpc", "建议出价", "优化出价"
-        ]
-        # 竞品类
-        competitor_kw = [
-            "竞品", "对手", "竞争", "competitor", "别人",
-            "展示份额", "share of voice", "soy"
-        ]
-        # 预算类
-        budget_kw = [
-            "预算", "budget", "分配", "调拨", "花费",
-            "钱花在哪", "投放"
-        ]
-        # 异常类
-        anomaly_kw = [
-            "异常", "突然", "骤降", "突增", "不对劲",
-            "波动", "anomaly", "alert", "警告"
-        ]
-
-        for kw in anomaly_kw:
-            if kw in query_lower:
-                return "anomaly"
-
-        for kw in budget_kw:
-            if kw in query_lower:
-                return "budget"
-
-        for kw in competitor_kw:
-            if kw in query_lower:
-                return "competitor"
-
-        for kw in bid_kw:
-            if kw in query_lower:
-                return "bid_optimize"
-
-        for kw in search_term_kw:
-            if kw in query_lower:
-                return "search_terms"
-
-        for kw in diagnosis_kw:
-            if kw in query_lower:
-                return "diagnosis"
-
-        return "general"
+        return first_match(query, self._INTENT_ROUTES, "general")
 
     # ========== 核心分析方法 ==========
 

@@ -54,6 +54,7 @@ from ai_infra.context import CONTEXT_ROUTER
 # ★ 第 145 轮批 C1：会话级状态的**容器机制**（脏追踪 + 有界缓存）——
 #   它不认识数据库；落库那一半在 `modules/conversation`，两者在这里接起来。
 from ai_infra.session_state import SessionStateRegistry
+from ai_infra.intent import Route, first_match
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
 from modules.product_research import prompts as _prompts  # noqa: F401
 # 第 145 轮批 C1：会话级状态的**持久化出口** —— 走 conversation 门面
@@ -1184,71 +1185,43 @@ class ProductResearchAgent(BaseAgent):
 
     # ====== 意图分类 ======
 
+    #: 意图路由表（**策略数据**留业务模块；控制流见 `ai_infra.intent.first_match`）。
+    #: ★ 顺序即优先级，而**顺序本身承载一条实测教训**：`save_candidate` 必须排在
+    #:   `blue_ocean` 之前 —— 「选品库」里含「选品」，而「选品」是 `blue_ocean` 的
+    #:   关键词；顺序一换，「帮我进入选品库」会被判成 blue_ocean、把挖掘重跑一遍。
+    #: ★ 「入库」这类**口语说法**必须留在关键词里：漏它 = 最高频的表达判成 general，
+    #:   商品名于是被裸丢给 LLM 闲聊（实测编出一大段套话）。
+    #: ★ `"FBA"` / `"ROI"` 含大写字母 ⇒ 在小写归一后的查询里命不中；这是收敛前
+    #:   就存在的现象，本轮**原样保留**（改它等于改线上判定结果）。
+    _INTENT_ROUTES = (
+        Route("save_candidate", ("选品库", "候选库", "候选池", "入库",
+                                 "加入候选", "加入选品", "添加到选品", "加到选品",
+                                 "保存到选品", "存入选品", "加进选品", "存进选品")),
+        Route("blue_ocean", ("蓝海", "机会", "选品", "挖掘", "品类", "趋势", "什么好卖",
+                             "好卖", "好销", "热销", "热门", "爆款", "比较火", "很火",
+                             "火爆", "有市场", "值得做", "潜力", "好做", "能做吗",
+                             "有前途", "冷门")),
+        Route("profit", ("利润", "费用", "FBA", "成本", "ROI", "售价", "定价", "赚钱")),
+        Route("pain_points", ("痛点", "差评", "评论", "问题", "不满意", "抱怨")),
+        # ★ 绝不能收裸 "比较"：中文里 "比较" 绝大多数是**副词**（比较好卖 / 比较火），
+        #   只有带被比较对象时才是「对比」语义。收裸 "比较" 会让
+        #   「现在有哪些比较火的产品」被判成竞品对比（实测 bug）。
+        Route("competitor", ("对比", "竞品", "竞争对手", "比较一下", "比较下", "比较两",
+                             "比较这", "哪个更好", "哪个好", "哪款好", "买哪个",
+                             "选哪个", "vs", "versus", "analysis")),
+    )
+
     async def _classify_intent(self, query: str) -> str:
-        """
-        分类用户意图
+        """分类用户意图（兜底 `general`；控制流见 `ai_infra.intent.first_match`）。
 
         Returns:
             blue_ocean / profit / pain_points / competitor / save_candidate / general
         """
-        query_lower = query.lower()
-
-        # 「≥2 个 ASIN」是竞品对比的强信号，比关键词可靠，优先判定
+        # ★ 非关键词的**前置信号**：「≥2 个 ASIN」比关键词可靠，优先判定。
+        #   它不属于「关键词路由」这一机制，因此留在业务侧、在机制**之前**执行。
         if len(self._extract_multiple_asins(query)) >= 2:
             return "competitor"
-
-        # ⚠️ 「加入选品库 / 存入选品库」必须先于 blue_ocean 判定：
-        # 「选品库」里含有「选品」，而「选品」是 blue_ocean 的关键词 ——
-        # 实测「这个品帮我进入选品库」会被判成 blue_ocean，把挖掘重跑一遍。
-        #
-        # ⚠️ 口语化的「入库」必须收录。旧表只有「加入库 / 存进选品」这类书面说法，
-        # 实测老板说「Portable Mini Humidifier …帮我入库」→ 一个关键词都没命中 →
-        # 判成 general → 把商品名**裸丢给 LLM 闲聊**，编出一大段通用市场分析
-        # （Google Trends「搜索热度较高」/ CE·FCC 认证 / 液体容器物流风险，全是套话），
-        # 而商品池里恰好就有这个品（B0HUMI0001），本该一句话入库成功。
-        # 「入库」是电商语境里最高频的说法，漏它 = 漏掉最常见的表达。
-        save_keywords = [
-            "选品库", "候选库", "候选池", "入库",  # 「入库」覆盖 加入库/存进库/加进库
-            "加入候选", "加入选品", "添加到选品", "加到选品",
-            "保存到选品", "存入选品", "加进选品", "存进选品",
-        ]
-        for kw in save_keywords:
-            if kw in query_lower:
-                return "save_candidate"
-
-        # 关键词匹配规则
-        blue_ocean_keywords = [
-            "蓝海", "机会", "选品", "挖掘", "品类", "趋势", "什么好卖", "好卖", "好销",
-            "热销", "热门", "爆款", "比较火", "很火", "火爆", "有市场", "值得做", "潜力",
-            "好做", "能做吗", "有前途", "冷门",
-        ]
-        profit_keywords = ["利润", "费用", "FBA", "成本", "ROI", "售价", "定价", "赚钱"]
-        pain_keywords = ["痛点", "差评", "评论", "问题", "不满意", "抱怨"]
-        # ⚠️ 绝不能收裸 "比较"：中文里 "比较" 绝大多数是**副词**（比较好卖 / 比较火 /
-        # 比较便宜），只有带被比较对象时才是「对比」语义。收裸 "比较" 会让
-        # 「现在有哪些比较火的产品」被判成竞品对比（实测 bug）。
-        competitor_keywords = [
-            "对比", "竞品", "竞争对手", "比较一下", "比较下", "比较两", "比较这",
-            "哪个更好", "哪个好", "哪款好", "买哪个", "选哪个", "vs", "versus", "analysis",
-        ]
-
-        for kw in blue_ocean_keywords:
-            if kw in query_lower:
-                return "blue_ocean"
-
-        for kw in profit_keywords:
-            if kw in query_lower:
-                return "profit"
-
-        for kw in pain_keywords:
-            if kw in query_lower:
-                return "pain_points"
-
-        for kw in competitor_keywords:
-            if kw in query_lower:
-                return "competitor"
-
-        return "general"
+        return first_match(query, self._INTENT_ROUTES, "general")
 
     # ====== 核心分析方法 ======
 

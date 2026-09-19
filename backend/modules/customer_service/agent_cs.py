@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field
 # LLM 能力（可用性判据 / 降级 / RAG）已统一到唯一基类 BaseAgent：
 # 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
 from ai_infra.base_agent import BaseAgent
+from ai_infra.intent import Route, first_match
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
 from modules.customer_service import prompts as _prompts  # noqa: F401
 
@@ -412,69 +413,35 @@ class CustomerServiceAgent(BaseAgent):
 
     # ---- 意图分类 ----
 
+    #: 意图路由表（**策略数据**留业务模块；控制流见 `ai_infra.intent.first_match`）。
+    #: 顺序即优先级（`escalation` 最高），逐项保持收敛前的原序。
+    #: ★ `" BBB"`（带前导空格）与收敛前**逐字一致**：它本来就命不中小写归一后的
+    #:   查询，属既有现象，本轮原样保留 —— 收敛是搬逻辑，不是改策略。
+    _INTENT_ROUTES = (
+        Route("escalation", ("投诉", "举报", "律师", "诉讼", "消费者协会", "媒体",
+                             "complaint", "sue", "lawsuit", "scam", "fraud", " BBB",
+                             "经理", "主管", "领导", "manager", "supervisor")),
+        Route("order_tracking", ("订单", "order", "单号", "物流", "tracking", "快递",
+                                 "发货", "delivery", "到哪里了", "查一下", "status")),
+        Route("return_refund", ("退货", "退款", "退换", "return", "refund", "不满意",
+                                "不要了", "换一个", "exchange", "cancel order")),
+        Route("complaint", ("质量", "问题", "坏的", "破损", "缺陷", "defective",
+                            "broken", "damaged", "wrong", "error", "mistake",
+                            "欺骗", "虚假", "misleading")),
+        Route("shipping_inquiry", ("运费", "包邮", "shipping", "多久到", "几天", "配送",
+                                   "地址", "关税", "税", "customs", "duties")),
+        Route("payment_issue", ("支付", "付款", "pay", "信用卡", "paypal", "charge",
+                                "扣款", "账单", "invoice", "billing")),
+    )
+
     def _classify_intent(self, query: str) -> str:
-        """
-        分类用户意图
+        """分类用户意图（兜底 `faq_query`；控制流见 `ai_infra.intent.first_match`）。
 
         Returns:
             faq_query / order_tracking / return_refund / complaint /
             shipping inquiry / payment_issue / general / escalation
         """
-        query_lower = query.lower()
-
-        # 升级/投诉意图（最高优先级）
-        escalation_patterns = [
-            "投诉", "举报", "律师", "诉讼", "消费者协会", "媒体",
-            "complaint", "sue", "lawsuit", "scam", "fraud", " BBB",
-            "经理", "主管", "领导", "manager", "supervisor"
-        ]
-        for p in escalation_patterns:
-            if p in query_lower:
-                return "escalation"
-
-        # 订单追踪
-        order_patterns = [
-            "订单", "order", "单号", "物流", "tracking", "快递",
-            "发货", "delivery", "到哪里了", "查一下", "status"
-        ]
-        if any(p in query_lower for p in order_patterns):
-            return "order_tracking"
-
-        # 退换货
-        return_patterns = [
-            "退货", "退款", "退换", "return", "refund", "不满意",
-            "不要了", "换一个", "exchange", "cancel order"
-        ]
-        if any(p in query_lower for p in return_patterns):
-            return "return_refund"
-
-        # 投诉/质量问题
-        complaint_patterns = [
-            "质量", "问题", "坏的", "破损", "缺陷", "defective",
-            "broken", "damaged", "wrong", "error", "mistake",
-            "欺骗", "虚假", "misleading"
-        ]
-        if any(p in query_lower for p in complaint_patterns):
-            return "complaint"
-
-        # 物流询问
-        shipping_patterns = [
-            "运费", "包邮", "shipping", "多久到", "几天", "配送",
-            "地址", "关税", "税", "customs", "duties"
-        ]
-        if any(p in query_lower for p in shipping_patterns):
-            return "shipping_inquiry"
-
-        # 支付问题
-        payment_patterns = [
-            "支付", "付款", "pay", "信用卡", "paypal", "charge",
-            "扣款", "账单", "invoice", "billing"
-        ]
-        if any(p in query_lower for p in payment_patterns):
-            return "payment_issue"
-
-        # 默认走 FAQ 匹配
-        return "faq_query"
+        return first_match(query, self._INTENT_ROUTES, "faq_query")
 
     # ---- 情感分析 ----
 

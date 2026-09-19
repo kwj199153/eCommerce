@@ -154,6 +154,7 @@ class IntruderAlert:
 # LLM 能力（可用性判据 / 降级 / RAG）已统一到唯一基类 BaseAgent：
 # 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
 from ai_infra.base_agent import BaseAgent
+from ai_infra.intent import Route, first_match
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
 from modules.competitor_intel import prompts as _prompts  # noqa: F401
 
@@ -337,27 +338,25 @@ class CompetitorIntelligenceAgent(BaseAgent):
         result["intent"] = intent
         return result
 
+    #: 意图路由表（**策略数据**留业务模块；控制流见 `ai_infra.intent.first_match`）。
+    #: 顺序即优先级，逐项保持收敛前的原序（「更具体的意图优先匹配」）。
+    _INTENT_ROUTES = (
+        Route("buy_box", ("buy box", "购物车", "buybox")),
+        Route("intruder", ("新进入", "入侵者", "intruder", "新卖家", "新品牌")),
+        Route("reviews", ("评论", "review", "评价", "口碑")),
+        Route("pricing", ("定价", "价格策略", "pricing", "price strategy", "调价")),
+        Route("market_share", ("市场份额", "market share", "市场占比", "格局")),
+        # ★ 这一组是「同一组关键词、结果还要再判一次」的复合规则：命中后按查询里
+        #   是否另有 asin / 追踪，在两个标签之间二选一 —— 用 `label_fn` 表达。
+        #   它只在**该组已被关键词命中之后**才被调用，不会把未命中的查询提前定性。
+        Route("compare", ("批量", "batch", "多个", "一批", "对比", "compare"),
+              label_fn=lambda q: "track_batch" if ("asin" in q or "追踪" in q) else "compare"),
+        Route("monitor", ("监控", "monitor", "追踪", "track", "跟踪", "变化")),
+    )
+
     def _classify_intent(self, query: str) -> str:
-        """意图分类"""
-        q = query.lower()
-
-        # 更具体的意图优先匹配
-        if any(kw in q for kw in ["buy box", "购物车", "buybox"]):
-            return "buy_box"
-        if any(kw in q for kw in ["新进入", "入侵者", "intruder", "新卖家", "新品牌"]):
-            return "intruder"
-        if any(kw in q for kw in ["评论", "review", "评价", "口碑"]):
-            return "reviews"
-        if any(kw in q for kw in ["定价", "价格策略", "pricing", "price strategy", "调价"]):
-            return "pricing"
-        if any(kw in q for kw in ["市场份额", "market share", "市场占比", "格局"]):
-            return "market_share"
-        if any(kw in q for kw in ["批量", "batch", "多个", "一批", "对比", "compare"]):
-            return "track_batch" if "asin" in q or "追踪" in q else "compare"
-        if any(kw in q for kw in ["监控", "monitor", "追踪", "track", "跟踪", "变化"]):
-            return "monitor"
-
-        return "compare"  # 默认：竞品对比
+        """意图分类（兜底 `compare`：竞品对比；控制流见 `ai_infra.intent.first_match`）。"""
+        return first_match(query, self._INTENT_ROUTES, "compare")
 
     async def _monitor_competitor(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力1：竞品 Listing 监控"""

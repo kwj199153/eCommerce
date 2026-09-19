@@ -206,6 +206,7 @@ class EmotionType(str, Enum):
 from ai_infra.base_agent import BaseAgent
 from ai_infra.budget import BUDGET_ROUTER
 from ai_infra.context import CONTEXT_ROUTER
+from ai_infra.intent import Route, first_match
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
 from modules.listing_generator import prompts as _prompts  # noqa: F401
 
@@ -470,51 +471,28 @@ class ListingGeneratorAgent(BaseAgent):
 
     # ====== 意图分类 ======
 
+    #: 意图路由表（**策略数据**留业务模块；控制流见 `ai_infra.intent.first_match`）。
+    #: 顺序即优先级（具体 → 通用），逐项保持收敛前的原序。
+    _INTENT_ROUTES = (
+        Route("ab_test", ("ab测试", "a/b", "变体", "多个版本", "对比版本",
+                          "variant", "split test")),
+        Route("seo_analysis", ("seo", "诊断", "分析质量", "audit",
+                               "是否符合", "seo评分", "seo分析")),
+        Route("optimize", ("优化", "改进", "修改", "提升", "optimize", "improve",
+                           "更好", "如何改", "优化建议")),
+        Route("generate", ("生成", "创建", "写", "帮我做", "generate", "create", "write",
+                           "标题", "五点", "描述", "bullet", "description", "做listing")),
+    )
+
     async def _classify_intent(self, query: str) -> str:
-        """
-        分类用户意图
+        """分类用户意图（兜底 `generate`；控制流见 `ai_infra.intent.first_match`）。
+
+        ★ 保留 `async`：调用方（含测试）都是 `await self._classify_intent(...)`。
 
         Returns:
             generate / optimize / seo_analysis / ab_test / general
         """
-        query_lower = query.lower()
-
-        # 注意：按优先级从高到低检查，更具体的意图优先匹配
-        ab_keywords = [
-            "ab测试", "a/b", "变体", "多个版本", "对比版本",
-            "variant", "split test"
-        ]
-        seo_keywords = [
-            "seo", "诊断", "分析质量", "audit",
-            "是否符合", "seo评分", "seo分析"
-        ]
-        optimize_keywords = [
-            "优化", "改进", "修改", "提升", "optimize", "improve",
-            "更好", "如何改", "优化建议"
-        ]
-        generate_keywords = [
-            "生成", "创建", "写", "帮我做", "generate", "create", "write",
-            "标题", "五点", "描述", "bullet", "description", "做listing"
-        ]
-
-        # 按优先级检查（具体 → 通用）
-        for kw in ab_keywords:
-            if kw in query_lower:
-                return "ab_test"
-
-        for kw in seo_keywords:
-            if kw in query_lower:
-                return "seo_analysis"
-
-        for kw in optimize_keywords:
-            if kw in query_lower:
-                return "optimize"
-
-        for kw in generate_keywords:
-            if kw in query_lower:
-                return "generate"
-
-        return "generate"  # 默认走生成流程
+        return first_match(query, self._INTENT_ROUTES, "generate")
 
     # ====== 核心功能：完整 Listing 生成 ======
 
