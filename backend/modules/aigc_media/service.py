@@ -35,7 +35,7 @@ agent = AIGCMediaAgent()
 # ============================================================
 
 async def generate_product_image_service(request: ImageGenerationRequest) -> Dict[str, Any]:
-    """生成产品图片"""
+    """产出产品图片提示词包（**不返回图片文件**；真出图走 generate_assets_service）。"""
     try:
         result = await agent.generate_product_image(request)
         # 缺参追问：透出 needs_clarification 标记，让主 Agent 逐项追问而非硬凑
@@ -49,7 +49,7 @@ async def generate_product_image_service(request: ImageGenerationRequest) -> Dic
         return {
             "success": True,
             "data": result,
-            "message": "图片生成请求已提交"
+            "message": "已产出图片提示词包（本能力不返回图片文件；需要真出图请调用 generate_assets）"
         }
     except Exception as e:
         logger.error(f"图片生成失败: {e}")

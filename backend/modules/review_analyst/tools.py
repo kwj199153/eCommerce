@@ -9,6 +9,22 @@
   利润审计），不包粗粒度 chat 入口。
 - 参数扁平化，工具函数内自构造 Pydantic request。
 - 工具层只做「调用 service + 序列化」，不碰数据源本体。
+★★★ 第 143 轮 A4：`store_id` 从「`int = 1` 默认值」改成**必填、无默认值**。
+    修复前 6 个工具都写着 `store_id: int = 1`：忘传就**静默**复盘 1 号店 ——
+    错得完全没有声音。改成必填后，忘传直接 `TypeError`（签名即门禁）。
+    ★ 并且类型统一成 `str`：归属的真源是 `stores_store.id`（形态 `store_xxx`），
+      与 `X-Shop-ID` 同一个 ID 空间；旧口径声明 `int` 与真源不符
+      （`competitor_intel` 早就在传字符串，只是 Mock 只做等值过滤，一直没暴露）。
+
+⚠️ 本注册表当前**全仓零消费点**（悬空），由
+   `tests/test_tool_registry_guard.py::test_orphan_registry_ratchet` 钉着。
+   **接线时必须做的一件事**：`store_id` 不能由 LLM 生成 —— 那是「客户端可控」的
+   同一个坑。本仓已有两种服务端注入范式，任选其一：
+     · `modules/secretary/product_tools.py::build_product_tools(shop_id)`
+       —— 工厂把已校验的 shop_id 闭包进工具；
+     · `modules/product_research/agent_product_research.py::_current_shop_id`
+       —— 模块级 ContextVar，只由 service 层写入已校验值，工具读回。
+   两者都**不**把店铺 ID 放进对 LLM 可见的入参里。
 """
 
 import json
@@ -34,80 +50,80 @@ def _dump(resp) -> str:
     return str(resp)
 
 
-async def _weekly_report_tool(store_id: int = 1, days: int = 7) -> str:
+async def _weekly_report_tool(store_id: str, days: int = 7) -> str:
     """经营概览（周报）：汇总销售、广告、库存、退款数据，生成结构化周报。
 
     Args:
-        store_id: 店铺 ID（默认 1）。
+        store_id: 店铺 ID（**由系统注入**，LLM 不得自行指定）。
         days: 复盘周期天数（默认 7）。
     """
-    req = WeeklyReportRequest(store_id=store_id, days=days)
-    resp = await _service.weekly_report(req)
+    req = WeeklyReportRequest(days=days)
+    resp = await _service.weekly_report(req, store_id)
     return _dump(resp)
 
 
-async def _monthly_review_tool(store_id: int = 1, days: int = 30) -> str:
+async def _monthly_review_tool(store_id: str, days: int = 30) -> str:
     """月度复盘：GMV/ACoS/转化率/退货率趋势对比 + SKU 贡献排名。
 
     Args:
-        store_id: 店铺 ID（默认 1）。
+        store_id: 店铺 ID（**由系统注入**，LLM 不得自行指定）。
         days: 复盘周期天数（默认 30）。
     """
-    req = MonthlyReviewRequest(store_id=store_id, days=days)
-    resp = await _service.monthly_review(req)
+    req = MonthlyReviewRequest(days=days)
+    resp = await _service.monthly_review(req, store_id)
     return _dump(resp)
 
 
-async def _ad_review_tool(store_id: int = 1, days: int = 7) -> str:
+async def _ad_review_tool(store_id: str, days: int = 7) -> str:
     """广告归因分析：ROAS/ACoS/CPC/CTR 多维度回顾 + campaign 评级。
 
     Args:
-        store_id: 店铺 ID（默认 1）。
+        store_id: 店铺 ID（**由系统注入**，LLM 不得自行指定）。
         days: 复盘周期天数（默认 7）。
     """
-    req = AdReviewRequest(store_id=store_id, days=days)
-    resp = await _service.ad_review(req)
+    req = AdReviewRequest(days=days)
+    resp = await _service.ad_review(req, store_id)
     return _dump(resp)
 
 
 async def _product_performance_tool(
-    store_id: int = 1,
+    store_id: str,
     days: int = 7,
     asins: Optional[list[str]] = None,
 ) -> str:
     """商品表现分析：SKU 级销量/利润/评分/BSR/周转排名，识别爆款与滞销品。
 
     Args:
-        store_id: 店铺 ID（默认 1）。
+        store_id: 店铺 ID（**由系统注入**，LLM 不得自行指定）。
         days: 复盘周期天数（默认 7）。
         asins: 指定 ASIN 列表（可选，为空分析全部）。
     """
-    req = ProductPerformanceRequest(store_id=store_id, days=days, asins=asins)
-    resp = await _service.product_performance(req)
+    req = ProductPerformanceRequest(days=days, asins=asins)
+    resp = await _service.product_performance(req, store_id)
     return _dump(resp)
 
 
-async def _inventory_health_tool(store_id: int = 1, days: int = 7) -> str:
+async def _inventory_health_tool(store_id: str, days: int = 7) -> str:
     """库存健康分析：滞销预警/断货风险/周转天数/补货建议。
 
     Args:
-        store_id: 店铺 ID（默认 1）。
+        store_id: 店铺 ID（**由系统注入**，LLM 不得自行指定）。
         days: 复盘周期天数（默认 7，仅用于标注）。
     """
-    req = InventoryHealthRequest(store_id=store_id, days=days)
-    resp = await _service.inventory_health(req)
+    req = InventoryHealthRequest(days=days)
+    resp = await _service.inventory_health(req, store_id)
     return _dump(resp)
 
 
-async def _profit_audit_tool(store_id: int = 1, days: int = 30) -> str:
+async def _profit_audit_tool(store_id: str, days: int = 30) -> str:
     """利润审计：销售额 - 佣金 - 广告 - 退货等全链路核算净利润与净利率。
 
     Args:
-        store_id: 店铺 ID（默认 1）。
+        store_id: 店铺 ID（**由系统注入**，LLM 不得自行指定）。
         days: 复盘周期天数（默认 30）。
     """
-    req = ProfitAuditRequest(store_id=store_id, days=days)
-    resp = await _service.profit_audit(req)
+    req = ProfitAuditRequest(days=days)
+    resp = await _service.profit_audit(req, store_id)
     return _dump(resp)
 
 

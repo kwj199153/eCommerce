@@ -20,7 +20,8 @@ import logging
 from datetime import date, timedelta
 from typing import Optional
 
-from modules.amazon_sp.data_sources import get_data_source
+from core.tenant.middleware import MissingShopContext, require_shop_context
+from modules.amazon_sp import get_data_source
 
 from .schemas import (
     WeeklyReportRequest, MonthlyReviewRequest, AdReviewRequest,
@@ -46,6 +47,36 @@ def _date_range(days: int):
     """返回 (date_from, date_to)，复盘最近 days 天（含今天）。"""
     today = date.today()
     return today - timedelta(days=days - 1), today
+
+
+# ★★★ 归属校验的唯一真源是 `core.tenant.middleware.require_shop_context`
+#   （第 143 轮 A4 收拢）。为什么这里还留一个同名薄包装：
+#     ① 调用点写成 `_require_store(store_id)` 更短，且 6 个能力里都要写一行；
+#     ② 本模块的**拒绝文案**与写路径不同（这里是"复盘取数必须按店铺维度"，
+#        写路径是"写操作必须携带 X-Shop-ID"）—— 文案按站点定制，判定逻辑共享。
+#   ⚠️ 不要在这里重新实现 `if not store_id` —— 那就是第二份实现，必然漂移
+#      （见 `require_shop_context` 的 docstring）。
+def _require_store(store_id: "str | None") -> str:
+    """校验并归一化店铺 ID；无效即抛 `MissingShopContext`。
+
+    为什么 service 层还要再拦一道（router 的 strict 守卫已经会 400）：
+
+      ① **直接调用方不只 router**：`tools.py` 的 6 个工具、以及任何测试/脚本都能
+         直接调 service。少了这道，`store_id=""` 会一路传到数据源。
+      ② 数据源**不会**因此返回空 —— 实测（探针 `r142_a4_source_probe.py`）：
+         `MockAmazonDataSource` 对 `store_test` / 未知店铺 / 空串 / `None` /
+         整数 1 **返回完全相同的 35 行销售数据**（它只把 store_id 打进行里做标签，
+         不按它过滤）。也就是说缺店铺**不会**得到「空列表」，而会得到一份
+         **看起来完全正常、却不知属于谁**的报告 —— 归因错误，比报错更糟。
+
+    ⇒ 所以这里 fail-closed：拿不到有效店铺就**拒绝出报告**，绝不用
+      「GMV $0」之类的全 0 兜底（那正是本仓「降级路径禁用全 0 兜底」那条铁律）。
+    """
+    return require_shop_context(
+        store_id,
+        detail="缺少店铺上下文：复盘取数必须按店铺维度。"
+               "请先在界面左上角选择一个店铺再重试。",
+    )
 
 
 def _sum_sales(sales: list[dict]) -> dict:
@@ -81,13 +112,16 @@ def _sum_ad(ads: list[dict]) -> dict:
 
 # ==================== 六大复盘能力 ====================
 
-async def weekly_report(request: WeeklyReportRequest) -> dict:
+async def weekly_report(request: WeeklyReportRequest, store_id: str) -> dict:
     """经营概览（周报）：销售 + 广告 + 库存 + 客诉汇总。"""
+    # ★ A4：归属只能服务端注入（router 的 strict 守卫）——
+    #   本行是「拿不到有效店铺就不出报告」的第二道闸（见 _require_store）。
+    store_id = _require_store(store_id)
     d_from, d_to = _date_range(request.days)
     source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
-    sales = source.fetch_daily_sales(request.store_id, d_from, d_to)
-    ads = source.fetch_ad_metrics(request.store_id, d_from, d_to)
-    inventory = source.fetch_inventory(request.store_id)
+    sales = source.fetch_daily_sales(store_id, d_from, d_to)
+    ads = source.fetch_ad_metrics(store_id, d_from, d_to)
+    inventory = source.fetch_inventory(store_id)
 
     s = _sum_sales(sales)
     a = _sum_ad(ads)
@@ -96,7 +130,7 @@ async def weekly_report(request: WeeklyReportRequest) -> dict:
     data = {
         "report_type": "weekly_report",
         "period_days": request.days,
-        "store_id": request.store_id,
+        "store_id": store_id,
         "summary": f"近 {request.days} 天 GMV ${s['revenue']:,.0f}、订单 {s['units']}、ACoS {a['acos']}%、净利约 ${s['estimated_profit']:,.0f}",
         "metrics": [
             {"label": "GMV", "value": s["revenue"], "unit": "USD", "status": "normal"},
@@ -117,12 +151,15 @@ async def weekly_report(request: WeeklyReportRequest) -> dict:
     return data
 
 
-async def monthly_review(request: MonthlyReviewRequest) -> dict:
+async def monthly_review(request: MonthlyReviewRequest, store_id: str) -> dict:
     """月度复盘：GMV/ACoS/转化/退货趋势对比。"""
+    # ★ A4：归属只能服务端注入（router 的 strict 守卫）——
+    #   本行是「拿不到有效店铺就不出报告」的第二道闸（见 _require_store）。
+    store_id = _require_store(store_id)
     d_from, d_to = _date_range(request.days)
     source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
-    sales = source.fetch_daily_sales(request.store_id, d_from, d_to)
-    ads = source.fetch_ad_metrics(request.store_id, d_from, d_to)
+    sales = source.fetch_daily_sales(store_id, d_from, d_to)
+    ads = source.fetch_ad_metrics(store_id, d_from, d_to)
 
     s = _sum_sales(sales)
     a = _sum_ad(ads)
@@ -143,7 +180,7 @@ async def monthly_review(request: MonthlyReviewRequest) -> dict:
     data = {
         "report_type": "monthly_review",
         "period_days": request.days,
-        "store_id": request.store_id,
+        "store_id": store_id,
         "summary": f"近 {request.days} 天月 GMV ${s['revenue']:,.0f}、净利 ${s['estimated_profit']:,.0f}（净利率 {s['estimated_profit']/s['revenue']*100:.1f}%）",
         "metrics": [
             {"label": "月 GMV", "value": s["revenue"], "unit": "USD"},
@@ -159,11 +196,14 @@ async def monthly_review(request: MonthlyReviewRequest) -> dict:
     return data
 
 
-async def ad_review(request: AdReviewRequest) -> dict:
+async def ad_review(request: AdReviewRequest, store_id: str) -> dict:
     """广告归因：ROAS/ACoS/CPC/CTR 多维分析，campaign 评级。"""
+    # ★ A4：归属只能服务端注入（router 的 strict 守卫）——
+    #   本行是「拿不到有效店铺就不出报告」的第二道闸（见 _require_store）。
+    store_id = _require_store(store_id)
     d_from, d_to = _date_range(request.days)
     source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
-    ads = source.fetch_ad_metrics(request.store_id, d_from, d_to)
+    ads = source.fetch_ad_metrics(store_id, d_from, d_to)
 
     a = _sum_ad(ads)
 
@@ -200,7 +240,7 @@ async def ad_review(request: AdReviewRequest) -> dict:
     data = {
         "report_type": "ad_review",
         "period_days": request.days,
-        "store_id": request.store_id,
+        "store_id": store_id,
         "summary": f"广告花费 ${a['spend']:,.0f}、ACoS {a['acos']}%、ROAS {a['roas']}，{sum(1 for c in campaigns if c['grade']=='C')} 个 campaign 待优化",
         "metrics": [
             {"label": "广告花费", "value": a["spend"], "unit": "USD"},
@@ -217,13 +257,16 @@ async def ad_review(request: AdReviewRequest) -> dict:
     return data
 
 
-async def product_performance(request: ProductPerformanceRequest) -> dict:
+async def product_performance(request: ProductPerformanceRequest, store_id: str) -> dict:
     """商品表现：SKU 级销量/利润/周转排名，识别爆款与滞销。"""
+    # ★ A4：归属只能服务端注入（router 的 strict 守卫）——
+    #   本行是「拿不到有效店铺就不出报告」的第二道闸（见 _require_store）。
+    store_id = _require_store(store_id)
     d_from, d_to = _date_range(request.days)
     source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
-    sales = source.fetch_daily_sales(request.store_id, d_from, d_to, asins=request.asins)
-    listings = source.fetch_listings(request.store_id, d_from, d_to, asins=request.asins)
-    inventory = source.fetch_inventory(request.store_id)
+    sales = source.fetch_daily_sales(store_id, d_from, d_to, asins=request.asins)
+    listings = source.fetch_listings(store_id, d_from, d_to, asins=request.asins)
+    inventory = source.fetch_inventory(store_id)
 
     # 最新 listing 快照（评分/BSR）
     latest_listing: dict[str, dict] = {}
@@ -261,7 +304,7 @@ async def product_performance(request: ProductPerformanceRequest) -> dict:
     data = {
         "report_type": "product_performance",
         "period_days": request.days,
-        "store_id": request.store_id,
+        "store_id": store_id,
         "summary": f"共 {len(products)} 个 SKU，爆款 {products[0]['asin'] if products else '无'} 贡献最高",
         "metrics": [
             {"label": "SKU 数", "value": len(products), "unit": "个"},
@@ -274,10 +317,13 @@ async def product_performance(request: ProductPerformanceRequest) -> dict:
     return data
 
 
-async def inventory_health(request: InventoryHealthRequest) -> dict:
+async def inventory_health(request: InventoryHealthRequest, store_id: str) -> dict:
     """库存健康：滞销预警 / 断货风险 / 补货建议。"""
+    # ★ A4：归属只能服务端注入（router 的 strict 守卫）——
+    #   本行是「拿不到有效店铺就不出报告」的第二道闸（见 _require_store）。
+    store_id = _require_store(store_id)
     source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
-    inventory = source.fetch_inventory(request.store_id)
+    inventory = source.fetch_inventory(store_id)
 
     status_map = {"HEALTHY": 0, "WARNING": 0, "CRITICAL": 0, "STAGNANT": 0}
     items = []
@@ -295,7 +341,7 @@ async def inventory_health(request: InventoryHealthRequest) -> dict:
     data = {
         "report_type": "inventory_health",
         "period_days": request.days,
-        "store_id": request.store_id,
+        "store_id": store_id,
         "summary": f"健康 {status_map['HEALTHY']} / 预警 {status_map['WARNING']} / 断货 {status_map['CRITICAL']} / 滞销 {status_map['STAGNANT']}",
         "metrics": [
             {"label": "健康", "value": status_map["HEALTHY"], "unit": "个", "status": "good"},
@@ -310,12 +356,15 @@ async def inventory_health(request: InventoryHealthRequest) -> dict:
     return data
 
 
-async def profit_audit(request: ProfitAuditRequest) -> dict:
+async def profit_audit(request: ProfitAuditRequest, store_id: str) -> dict:
     """利润审计：销售额 - 佣金 - FBA - 广告 - 退货 - 仓储 = 净利润。"""
+    # ★ A4：归属只能服务端注入（router 的 strict 守卫）——
+    #   本行是「拿不到有效店铺就不出报告」的第二道闸（见 _require_store）。
+    store_id = _require_store(store_id)
     d_from, d_to = _date_range(request.days)
     source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
-    sales = source.fetch_daily_sales(request.store_id, d_from, d_to)
-    ads = source.fetch_ad_metrics(request.store_id, d_from, d_to)
+    sales = source.fetch_daily_sales(store_id, d_from, d_to)
+    ads = source.fetch_ad_metrics(store_id, d_from, d_to)
 
     s = _sum_sales(sales)
     a = _sum_ad(ads)
@@ -325,7 +374,7 @@ async def profit_audit(request: ProfitAuditRequest) -> dict:
     data = {
         "report_type": "profit_audit",
         "period_days": request.days,
-        "store_id": request.store_id,
+        "store_id": store_id,
         "summary": f"净利润 ${s['estimated_profit']:,.0f}，净利率 {s['estimated_profit']/s['revenue']*100:.1f}%（销售额 ${s['revenue']:,.0f}）",
         "metrics": [
             {"label": "销售额", "value": s["revenue"], "unit": "USD"},

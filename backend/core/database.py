@@ -146,6 +146,8 @@ def register_all_models() -> None:
     from modules.voice_clone.db_model import ShopVoice  # noqa: F401
     # AIGC 异步任务表（aigc_jobs）—— 长任务的状态权威源
     from modules.aigc_media.db_model import AIGCJobRecord  # noqa: F401
+    # 客服工单表（cs_tickets）—— 第 143 轮 A4：工单从「只在内存里造一个就返回」
+    from modules.customer_service.db_model import TicketRecord  # noqa: F401
 
 
 async def init_db():

@@ -14,13 +14,22 @@ import json
 import pytest
 
 
+# 第 142 轮 A2-3 起：`ad_analysis` / `competitor_intel` 的 router 挂了 **strict**
+# 店铺依赖（`get_current_shop_id`）。这两个端点都是 POST ⇒ 被守卫判为写方法
+# ⇒ 缺 `X-Shop-ID` 时返回 400（可读原因），而不是 200 + 空结果。
+# 前端 `api/request.ts` 与 `api/stream.ts` 都会自动带该头，故真实用户不会撞到；
+# 这里补上 header 是为了让本用例继续验证它真正要验的东西：**SSE 协议本身**。
+# 新契约由 `test_shop_scoped_stream_endpoints_require_shop_header` 单独钉住。
+SHOP_FOR_STREAM = "store_test"
+
+# (path, payload, kind, needs_shop)
 STREAM_ENDPOINTS = [
-    ("/api/v1/listing/chat/stream", {"message": "生成一款便携咖啡研磨器的标题"}, "json"),
-    ("/api/v1/ad-analysis/chat/stream", {"message": "给我一些广告优化建议"}, "json"),
-    ("/api/v1/customer-service/chat/stream", {"message": "你们的退换货政策是什么"}, "json"),
-    ("/api/v1/aigc/chat/stream", {"message": "帮我写一段品牌故事"}, "json"),
-    ("/api/v1/competitor/chat/stream?query=分析市场", None, "query"),
-    ("/api/v1/product-research/chat/stream", {"message": "帮我分析厨房用品"}, "json"),
+    ("/api/v1/listing/chat/stream", {"message": "生成一款便携咖啡研磨器的标题"}, "json", False),
+    ("/api/v1/ad-analysis/chat/stream", {"message": "给我一些广告优化建议"}, "json", True),
+    ("/api/v1/customer-service/chat/stream", {"message": "你们的退换货政策是什么"}, "json", False),
+    ("/api/v1/aigc/chat/stream", {"message": "帮我写一段品牌故事"}, "json", False),
+    ("/api/v1/competitor/chat/stream?query=分析市场", None, "query", True),
+    ("/api/v1/product-research/chat/stream", {"message": "帮我分析厨房用品"}, "json", False),
 ]
 
 
@@ -99,15 +108,44 @@ async def test_listing_stream_degrades_without_llm(client, auth_off, monkeypatch
     assert total.strip(), "降级输出为空"
 
 
-@pytest.mark.parametrize("path,payload,kind", STREAM_ENDPOINTS)
-async def test_all_stream_endpoints_respond(client, auth_off, fake_llm, path, payload, kind):
-    """所有流式端点都应返回 SSE 且不 5xx"""
+@pytest.mark.parametrize("path,payload,kind,needs_shop", STREAM_ENDPOINTS)
+async def test_all_stream_endpoints_respond(client, auth_off, fake_llm, path, payload, kind, needs_shop):
+    """所有流式端点都应返回 SSE 且不 5xx（挂了店铺依赖的端点带头调用）"""
+    headers = {"X-Shop-ID": SHOP_FOR_STREAM} if needs_shop else None
+    if kind == "json":
+        r = await client.post(path, json=payload, headers=headers)
+    else:
+        r = await client.post(path, headers=headers)
+    assert r.status_code == 200, f"{path} -> {r.status_code} {r.text[:200]}"
+    assert "text/event-stream" in r.headers.get("content-type", ""), path
+
+
+@pytest.mark.parametrize(
+    "path,payload,kind",
+    [t[:3] for t in STREAM_ENDPOINTS if t[3]],
+)
+async def test_shop_scoped_stream_endpoints_require_shop_header(
+    client, auth_off, fake_llm, path, payload, kind
+):
+    """★ 新契约（第 142 轮 A2-3）：挂了 strict 店铺依赖的流式端点，缺头 ⇒ 400 且原因可读。
+
+    为什么是 400 而不是「200 + 在 SSE 里说没数据」：
+      这两个端点的 Agent 要按店铺取数，没有店铺时任何回答都是编的。
+      「请先在界面左上角选择一个店铺」是**可行动**的指引；
+      换成 200 + 空结果，用户读到的是「AI 变笨了」——那是归因错误。
+
+    为什么允许在**流式**端点上做这种硬拒绝：SSE 的契约是"连上之后才流"，
+      参数级前置校验失败就该在握手阶段（HTTP 状态码）说清楚，
+      而不是先建立 200 的连接再往里推一条 error 事件。
+    """
     if kind == "json":
         r = await client.post(path, json=payload)
     else:
         r = await client.post(path)
-    assert r.status_code == 200, f"{path} -> {r.status_code} {r.text[:200]}"
-    assert "text/event-stream" in r.headers.get("content-type", ""), path
+    assert r.status_code == 400, (
+        f"{path} 缺 X-Shop-ID 应为 400（fail-closed），实为 {r.status_code}：{r.text[:200]}"
+    )
+    assert "店铺" in r.text, f"拒绝原因不可读（应指明缺店铺上下文）：{r.text[:200]}"
 
 
 async def test_sse_event_stream_emits_progress_without_polluting_body():

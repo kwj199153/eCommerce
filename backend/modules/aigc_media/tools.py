@@ -16,6 +16,7 @@ from langchain_core.tools import StructuredTool
 
 from .service import (
     generate_product_image_service,
+    generate_assets_service,
     analyze_main_image_service,
     generate_a_plus_content_service,
     generate_brand_story_service,
@@ -26,6 +27,7 @@ from .service import (
 )
 from .schemas import (
     ImageGenerationRequest,
+    AssetGenerationRequest,
     MainImageAnalysisRequest,
     APlusContentRequest,
     BrandStoryRequest,
@@ -54,7 +56,14 @@ async def _generate_product_image_tool(
     product_detail: str = "",
     background_rule: str = "",
 ) -> str:
-    """生成产品图片（含提示词、SEO 关键词、文案建议、风格指南）。
+    """产出产品图片的**提示词包**（提示词、SEO 关键词、文案建议、风格指南）。
+
+    ★★ 能力边界（勿误读）：本工具**不生成、也不返回任何图片文件** —— 返回体里没有
+    image_url，只有 prompt / 关键词 / 文案 / 风格参数，外加一行 note 说明
+    「当前为模拟模式」。需要真正的图片请改用 `generate_assets`。
+
+    - 适用：用户只要「出图方案 / 提示词 / 拍摄脚本 / 主图文案」。
+    - 不适用：用户要「图」本身（白底图、场景图、主图成品）→ 用 `generate_assets`。
 
     注意：若关键信息（材质/造型/视角/是否需要 logo/产品细节/背景规则）缺失，
     本工具会返回 needs_clarification=true 和缺失字段清单。此时**不要**再用
@@ -264,6 +273,48 @@ async def _generate_video_script_tool(
         duration_target=duration_target,
     )
     resp = await generate_video_script_service(req)
+    return _dump(resp)
+
+
+async def _generate_assets_tool(
+    product_name: str,
+    image_types: list[str] | None = None,
+    category: str = "general",
+    extra_description: str = "",
+    count_per_type: int = 1,
+    size: str = "1024*1024",
+    source_image: str = "",
+) -> str:
+    """真正出图：生成产品静态素材图片，返回带 URL 的 assets 列表。
+
+    ★ 与 generate_product_image 的分工（务必分清，别选错）：
+      - 本工具：**真出图**，返回 assets[].url。用户要的是"图"本身时用它。
+      - generate_product_image：只产出提示词包/文案建议，**不返回任何图片文件**。
+
+    失败语义：整批全失败才 success=false（逐项原因见 data.degraded_reason）；
+    部分失败仍 success=true，失败明细在 data.failed。
+
+    Args:
+        product_name: 产品名称（必填）。
+        image_types: 素材类型列表，可选 spu-main / white-bg / scene / lifestyle /
+            infographic / ad-main；留空默认 ["spu-main"]。
+        category: 产品类目（默认 general）。
+        extra_description: 补充描述（卖点关键词、场景描述等）。
+        count_per_type: 每种类型生成张数，1-4（默认 1）。
+        size: 分辨率，必须用星号分隔（如 1024*1024；写成小写 x 会被服务端拒绝）。
+        source_image: 产品原图（图生图底图），公网 URL 或 base64 data URI 均可；
+            留空则退回文生图。
+    """
+    req = AssetGenerationRequest(
+        product_name=product_name,
+        image_types=image_types or ["spu-main"],
+        category=category,
+        extra_description=extra_description,
+        count_per_type=count_per_type,
+        size=size,
+        source_image=source_image or None,
+    )
+    resp = await generate_assets_service(req)
     return _dump(resp)
 
 

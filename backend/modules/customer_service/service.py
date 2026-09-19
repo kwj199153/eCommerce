@@ -2,12 +2,24 @@
 智能客服模块 - 业务逻辑层 (Service)
 
 处理客服相关的业务逻辑
+
+★ 第 143 轮 A4：`create_ticket` 从「只造对象不落库」改为**真的写 PG**
+  （`cs_tickets` 表）。此前响应写「工单 XXX 创建成功！」而那个工单号
+  指向不了任何记录 —— 刷新即消失，属"伪成功"。
 """
 
+import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from uuid import uuid4
+
+from sqlalchemy.exc import IntegrityError
+
+from core.database import async_session_factory
+from core.tenant.middleware import MissingShopContext, require_shop_context
 
 from .agent_cs import CustomerServiceAgent, AgentResponse
+from .db_model import TicketRecord
 from .schemas import (
     ChatRequest, ChatResponse, FAQSearchRequest, FAQSearchResponse,
     TicketCreateRequest, TicketResponse, OrderTrackRequest, OrderTrackResponse,
@@ -15,9 +27,65 @@ from .schemas import (
     ConversationSummaryResponse, CapabilityResponse
 )
 
+logger = logging.getLogger(__name__)
+
 
 # 单例 Agent 实例
 _agent_instance: Optional[CustomerServiceAgent] = None
+
+
+async def _persist_ticket(ticket, request: TicketCreateRequest, shop_id: str,
+                          estimated_response_time: str) -> Optional[str]:
+    """把工单写进 `cs_tickets`，返回**最终落库**的工单号；三次都冲突则返回 None。
+
+    ★ 为什么需要重试：Agent 生成的工单号形如 `TKT-20260918-48213`，
+      末 5 位是 `random.randint(10000, 99999)` —— 同一天内并非全局唯一。
+      直接 insert 撞主键会抛 `IntegrityError`，若不处理就是 500
+      （用户看到"服务器内部错误"，但工单其实只是编号撞车）。
+
+    ★ 为什么是「换后缀重试」而不是「先查后插」：先 `SELECT` 再 `INSERT`
+      是非原子的 —— 并发下两个请求可以同时查到"不存在"然后双双插入，
+      一个成功一个 500。让**数据库**来裁决唯一性，捕获冲突再换号，才是原子的。
+
+    ★ 三次都失败 ⇒ 返回 None，由调用方转成 `success=False` + 可读原因。
+      **绝不**在写库失败时仍然回 `success=True`（那正是本批次要修的形态）。
+    """
+    base = ticket.ticket_id
+    last_err: Optional[Exception] = None
+    for attempt in range(3):
+        # 第 0 次用 Agent 生成的原始号；之后追加短后缀（uuid4 前 4 位 hex）
+        tid = base if attempt == 0 else f"{base}-{uuid4().hex[:4]}"
+        async with async_session_factory() as db:
+            db.add(TicketRecord(
+                id=tid,
+                shop_id=shop_id,
+                subject=ticket.subject,
+                description=ticket.description,
+                category=ticket.category,
+                priority=ticket.priority,
+                status=ticket.status,
+                customer_id=ticket.customer_id,
+                order_id=ticket.order_id,
+                created_at=ticket.created_at,
+                updated_at=ticket.created_at,
+                sla_deadline=ticket.sla_deadline,
+                estimated_response_time=estimated_response_time,
+                auto_replies=None,
+                tags=list(ticket.tags or []),
+                attachments=list(request.attachments or []),
+            ))
+            try:
+                await db.commit()
+                return tid
+            except IntegrityError as e:
+                await db.rollback()
+                last_err = e
+                logger.warning(
+                    "工单号冲突，换后缀重试：id=%s attempt=%d", tid, attempt + 1
+                )
+    logger.error("工单落库连续 3 次冲突，放弃：base=%s err=%s", base, last_err)
+    return None
+
 
 
 def get_cs_agent() -> CustomerServiceAgent:
@@ -109,16 +177,24 @@ class CustomerServiceService:
         )
 
     @staticmethod
-    async def create_ticket(request: TicketCreateRequest) -> TicketResponse:
+    async def create_ticket(request: TicketCreateRequest,
+                            store_id: str) -> TicketResponse:
         """
-        创建工单
+        创建工单（**落库**）
 
         Args:
             request: 工单创建请求
+            store_id: 当前店铺 ID —— **由服务端注入**（router 的 strict 守卫），
+                不来自请求体。缺/空即抛 `MissingShopContext`（fail-closed）。
 
         Returns:
             TicketResponse 工单信息 + 预计响应时间
+
+        ★ 第 143 轮 A4：返回的 `ticket_id` 是**真的写进 `cs_tickets` 的那个**
+          （若发生编号冲突会被换成带后缀的号）—— 前端/客服报的单号必须能查到记录。
+        ★ 写库失败时返回 `success=False` + 可读原因，**不谎报成功**。
         """
+        shop_id = require_shop_context(store_id)
         agent = get_cs_agent()
 
         result = await agent.create_ticket(
@@ -130,19 +206,33 @@ class CustomerServiceService:
             customer_id=request.customer_id
         )
 
-        if result.success and result.ticket:
-            return TicketResponse(
-                success=True,
-                ticket=result.ticket.model_dump(),
-                estimated_response_time=result.estimated_response_time,
-                auto_replies=result.auto_replies,
-                message=f"工单 {result.ticket.ticket_id} 创建成功！"
-            )
-        else:
+        if not (result.success and result.ticket):
             return TicketResponse(
                 success=False,
                 message="工单创建失败，请稍后重试或联系人工客服"
             )
+
+        persisted_id = await _persist_ticket(
+            result.ticket, request, shop_id, result.estimated_response_time
+        )
+        if persisted_id is None:
+            return TicketResponse(
+                success=False,
+                ticket=None,
+                estimated_response_time=result.estimated_response_time,
+                auto_replies=result.auto_replies,
+                message="工单创建失败：工单号冲突，请重试",
+            )
+
+        data = result.ticket.model_dump()
+        data["ticket_id"] = persisted_id     # ★ 回给调用方的是**落库那个号**
+        return TicketResponse(
+            success=True,
+            ticket=data,
+            estimated_response_time=result.estimated_response_time,
+            auto_replies=result.auto_replies,
+            message=f"工单 {persisted_id} 创建成功！"
+        )
 
     @staticmethod
     async def track_order(request: OrderTrackRequest) -> OrderTrackResponse:

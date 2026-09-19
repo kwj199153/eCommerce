@@ -7,6 +7,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from core.metering.usage_tracker import meter_agent_chat
+from core.tenant.middleware import MissingShopContext, get_current_shop_id
 from typing import Optional
 
 from ai_infra.sse import sse_event_stream
@@ -136,13 +137,25 @@ def _get_category_icon(category: str) -> str:
 # ====== 工单接口 ======
 
 @router.post("/ticket/create", response_model=TicketResponse, summary="创建工单")
-async def create_ticket_endpoint(request: TicketCreateRequest):
+async def create_ticket_endpoint(
+    request: TicketCreateRequest,
+    store_id: Optional[str] = Depends(get_current_shop_id),
+):
     """
-    创建客户服务工单
+    创建客户服务工单（**落库到 `cs_tickets`**）
 
-    自动计算优先级和 SLA
+    自动计算优先级和 SLA。
+
+    ★ 归属由 `X-Shop-ID` 请求头注入（strict 版）：缺/空 ⇒ 400；
+      带真 token ⇒ 强制校验该店铺 ∈ 当前用户可见账户（不符 403）。
+      请求体里**没有** store_id 字段 —— 归属只能是服务端注入的。
     """
-    return await CustomerServiceService.create_ticket(request)
+    try:
+        return await CustomerServiceService.create_ticket(request, store_id)
+    except MissingShopContext as e:
+        # 映射成 400（请求形状问题）而不是 500（服务端故障）——
+        # 混进 500 会让人去查日志找一个根本不存在的异常。
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ====== 订单追踪接口 ======

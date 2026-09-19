@@ -45,6 +45,9 @@ from core.auth.dependencies import require_auth_if_enabled
 from core.database import get_db
 # ★ P0-2（2026-09-16）：account_id（= 本项目的租户语义）的唯一写入点。
 from core.observability.context import set_request_context
+# ★ 第 140 轮：`StoreRecord` 已归位 `core/stores/`（同为内核层）。
+#   原先是把导入压在函数体内（注释写「避免循环依赖」）——
+#   那是「内核层伸手进业务目录」才需要的补丁。现在 core → core，无环，直接顶层。
 from core.stores import StoreRecord
 
 
@@ -69,6 +72,46 @@ MISSING_SHOP_DETAIL = (
     "缺少店铺上下文：写操作必须携带 X-Shop-ID 请求头。"
     "请先在界面左上角选择一个店铺再重试。"
 )
+
+
+class MissingShopContext(ValueError):
+    """缺少（有效的）店铺上下文 —— **服务层**的 fail-closed 异常。
+
+    第 143 轮 A4 新增。与上面的 `MISSING_SHOP_DETAIL` 是**同一个概念的两个形态**：
+      · `MISSING_SHOP_DETAIL` = 依赖层拒绝时写进 400 响应的文案；
+      · 本异常               = service 层拿不到有效店铺时抛出的东西。
+
+    为什么需要它（而不是各模块自己 `raise ValueError("...")`）：
+      router 要把它映射成 **400**（请求形状问题）而不是 500（服务端故障）。
+      若每个模块各抛 `ValueError`，`except ValueError` 会把「参数校验失败」等
+      无关异常一起吞进来当 400 —— 归因就乱了。有具名类型才能精确捕获。
+
+    ★ 继承 `ValueError` 是有意的：保留「按 ValueError 抓」的兼容面，
+      同时给出一个可按名字精确捕获的窄类型。
+    """
+
+    def __init__(self, detail: "str | None" = None) -> None:
+        super().__init__(detail or MISSING_SHOP_DETAIL)
+
+
+def require_shop_context(store_id: "str | None", *, detail: "str | None" = None) -> str:
+    """归一化并校验店铺 ID；无效即抛 `MissingShopContext`。
+
+    ★ 本函数是「空店铺一律拒绝」这条判定的**唯一真源**（第 143 轮 A4 收拢）。
+      修复前各模块自己写 `if not store_id: raise`，两份实现必然漂移
+      （例如一处 `.strip()`、另一处不 strip ⇒ `"   "` 在一个模块被拒、
+      在另一个模块被当成合法 ID 拿去查库）。
+
+    ★ 为什么服务层还要拦：依赖层的 400 只覆盖「router 端点」这一条路，
+      而 service 还有**其它直接调用方**（工具层、脚本、测试）。
+      并且数据源不会因为 store_id 为空就返回空 —— 实测 Mock 对
+      `store_test` / 未知店铺 / `""` / `None` 返回**同一批数据**，
+      于是产出一份「看起来正常、却不知属于谁」的结果（归因错误 > 报错）。
+    """
+    sid = (store_id or "").strip()
+    if not sid:
+        raise MissingShopContext(detail)
+    return sid
 
 
 async def get_current_shop_id(

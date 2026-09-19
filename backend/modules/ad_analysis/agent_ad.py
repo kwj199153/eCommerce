@@ -18,9 +18,9 @@
 """
 
 import json
+import re
 from typing import List, Dict, Any, Optional, AsyncIterable
-from datetime import datetime, timedelta
-import random
+from datetime import date, datetime, timedelta
 
 from pydantic import BaseModel, Field
 
@@ -28,6 +28,77 @@ from core.logger import get_logger
 from ai_infra.sse import progress
 
 logger = get_logger(__name__)
+
+
+# ====== 数据源接入（唯一取数点）======
+
+def _days_of(time_range) -> int:
+    """把 "7d" / "30d" / "90d" 解析成天数（解析不出按 30）。"""
+    m = re.match(r"(\d+)\s*d", str(time_range or ""), re.I)
+    return int(m.group(1)) if m else 30
+
+
+def _agg_rows(rows: List[Dict]) -> Dict[str, float]:
+    """把一组广告记录聚合成账户级指标（纯函数，无副作用）。
+
+    字段口径与 `amazon_sp.data_sources.sp_api_source` / `mock_source`
+    的 `fetch_ad_metrics()` 输出一致（`_make_ad_row` 定义）。
+    """
+    imp = sum(int(r.get("impressions") or 0) for r in rows)
+    clk = sum(int(r.get("clicks") or 0) for r in rows)
+    spend = sum(float(r.get("spend") or 0) for r in rows)
+    orders = sum(int(r.get("orders") or 0) for r in rows)
+    sales = sum(float(r.get("sales") or 0) for r in rows)
+    return {
+        "impressions": imp, "clicks": clk,
+        "spend": round(spend, 2), "orders": orders, "sales": round(sales, 2),
+        "acos": (spend / sales * 100) if sales else 0.0,
+        "roas": (sales / spend) if spend else 0.0,
+        "ctr": (clk / imp * 100) if imp else 0.0,
+        "cvr": (orders / clk * 100) if clk else 0.0,
+        "cpc": (spend / clk) if clk else 0.0,
+    }
+
+
+def _load_ad_rows(store_id, time_range="30d") -> List[Dict]:
+    """取本店铺的广告指标（唯一入口，经工厂）。
+
+    ★ 为什么必须经 `get_data_source()`：配好 SP-API 凭据后，这里会自动切到
+      真实现；绕过工厂直连 Mock（模块级单例那种写法）会让「配了凭据也永远
+      跑假数据且不报错」—— `modules/review_analyst/service.py` 的 docstring
+      记录了同一个坑。
+
+    ★ 拿不到 `store_id`（未选店铺）时**不猜测、不取默认店**，直接返回空列表，
+      由调用方给显式空状态。
+    """
+    if not store_id:
+        return []
+    from modules.amazon_sp import get_data_source
+
+    src = get_data_source(prefer="auto", seed=42)
+    d_to = date.today()
+    d_from = d_to - timedelta(days=_days_of(time_range) - 1)
+    try:
+        return list(src.fetch_ad_metrics(store_id, d_from, d_to))
+    except Exception as e:  # 数据源故障不得伪装成「无数据」
+        logger.error(f"[ad_analysis] 取广告指标失败 store={store_id}: {e}")
+        raise
+
+
+def _load_competitor_rows(store_id, time_range="30d") -> List[Dict]:
+    """取本店铺的竞品快照（唯一入口，经工厂）。语义同 `_load_ad_rows`。"""
+    if not store_id:
+        return []
+    from modules.amazon_sp import get_data_source
+
+    src = get_data_source(prefer="auto", seed=42)
+    d_to = date.today()
+    d_from = d_to - timedelta(days=_days_of(time_range) - 1)
+    try:
+        return list(src.fetch_competitors(store_id, d_from, d_to))
+    except Exception as e:
+        logger.error(f"[ad_analysis] 取竞品快照失败 store={store_id}: {e}")
+        raise
 
 
 # 结构化意图 → 阶段进度文案（stream_chat 在耗时分析前发给前端，避免空转）
@@ -44,10 +115,21 @@ _INTENT_PROGRESS = {
 # ====== 数据模型 ======
 
 class AgentResponse(BaseModel):
-    """Agent 响应包装"""
+    """Agent 响应包装。
+
+    ★ `data_status` 是「这份结果是真算出来的，还是根本没取到数据」的**唯一判据**：
+       - "ok"      ⇒ `data` 是由真实广告记录聚合出的结果
+       - "no_data" ⇒ 没取到数据，`data` 为空、`data_reason` 说明原因，
+                     `success=False`。**此时不要读数值字段**（它们是占位而非实测）。
+      改造前本类没有这两个字段，导致「取不到数据」只能靠「返回一份随机编的报告」
+      来掩盖 —— 前端完全无法区分「真数据」与「编的」。
+    """
     content: str  # 文本回复
     data: Optional[Dict[str, Any]] = None  # 结构化数据
     display_type: str = "text"  # 展示类型
+    success: bool = True          # False ⇒ 本次未产出有效结果
+    data_status: str = "ok"       # ok / no_data
+    data_reason: Optional[str] = None  # data_status != "ok" 时的可读原因
 
 
 # ---- 广告诊断相关 ----
@@ -390,9 +472,12 @@ Amazon PPC 关键指标基准（参考值）：
 
     async def _analyze_diagnosis(self, query: str, context: Optional[Dict] = None) -> AgentResponse:
         """广告账户健康诊断"""
-        # 模拟生成诊断数据（实际对接 Amazon Advertising API）
-        metrics = self._generate_metrics()
-        campaigns = self._generate_campaigns()
+        rows = _load_ad_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
+        if not rows:
+            return self._no_data("广告账户诊断", (context or {}).get("store_id"))
+        # 以下全部由真实广告记录聚合（改造前是 random 现编）
+        metrics = self._metrics_from_rows(rows)
+        campaigns = self._campaigns_from_rows(rows)
         issues = self._identify_issues(campaigns, metrics)
         recommendations = self._generate_recommendations(issues)
 
@@ -457,7 +542,10 @@ Amazon PPC 关键指标基准（参考值）：
 
     async def _analyze_search_terms(self, query: str, context: Optional[Dict] = None) -> AgentResponse:
         """搜索词效果分析"""
-        all_terms = self._generate_search_terms(50)
+        rows = _load_ad_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
+        if not rows:
+            return self._no_data("搜索词分析", (context or {}).get("store_id"))
+        all_terms = self._search_terms_from_rows(rows)
 
         # 分类筛选
         high_perf = [t for t in all_terms if t.efficiency == "high"][:10]
@@ -522,13 +610,20 @@ Amazon PPC 关键指标基准（参考值）：
 
     async def _optimize_bids(self, query: str, context: Optional[Dict] = None) -> AgentResponse:
         """出价优化建议"""
-        keywords_data = self._generate_bid_recommendations(15)
+        rows = _load_ad_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
+        if not rows:
+            return self._no_data("出价优化", (context or {}).get("store_id"))
+        target_acos = float((context or {}).get("target_acos") or 25.0)
+        keywords_data = self._bid_recs_from_rows(rows, target_acos=target_acos)
 
-        # 计算整体影响
+        # 计算整体影响（由真实建议推导，非随机数）
         total_current_bid = sum(k.current_bid for k in keywords_data)
         total_suggested_bid = sum(k.suggested_bid for k in keywords_data)
         budget_impact = total_suggested_bid - total_current_bid
-        avg_acos_change = random.uniform(-8, -2)  # 预期 ACoS 改善
+        _downs = [k for k in keywords_data if k.bid_change_pct < 0]
+        avg_acos_change = round(
+            sum(k.bid_change_pct for k in _downs) / len(_downs) * 0.4, 1
+        ) if _downs else 0.0
 
         # 提价/降价计数（先算，供下方 llm_context 与正文复用）
         increase_count = len([k for k in keywords_data if k.bid_change_pct > 0])
@@ -578,8 +673,12 @@ Amazon PPC 关键指标基准（参考值）：
 
     async def _analyze_competitors(self, query: str, context: Optional[Dict] = None) -> AgentResponse:
         """竞品广告分析"""
-        competitors = self._generate_competitor_data(5)
-        your_sov = round(random.uniform(12, 28), 1)  # 你的展示份额
+        comp_rows = _load_competitor_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
+        if not comp_rows:
+            return self._no_data("竞品广告分析", (context or {}).get("store_id"))
+        competitors = self._competitor_data_from_rows(comp_rows)
+        # ★ 数据源未提供「本店展示份额」，**不编造**：置 0，口径见 insights
+        your_sov = 0.0
 
         # 判断市场位置
         if your_sov > 25:
@@ -641,14 +740,28 @@ Amazon PPC 关键指标基准（参考值）：
 
     async def _optimize_budget(self, query: str, context: Optional[Dict] = None) -> AgentResponse:
         """预算分配优化"""
-        allocations = self._generate_budget_allocations(6)
+        rows = _load_ad_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
+        if not rows:
+            return self._no_data("预算分配优化", (context or {}).get("store_id"))
+        allocations = self._budget_from_rows(rows)
+        if not allocations:
+            return self._no_data("预算分配优化", (context or {}).get("store_id"))
         total_current = sum(a.current_budget for a in allocations)
         total_suggested = sum(a.suggested_budget for a in allocations)
 
+        # 预期改善：由加码/削减两组的预期 RoAS 相对基准推导（零随机数）
+        _all = [a.expected_roas for a in allocations]
+        _ups = [a.expected_roas for a in allocations if a.suggested_budget > a.current_budget]
+        _cuts = [a.expected_roas for a in allocations if a.suggested_budget < a.current_budget]
+        _avg_all = sum(_all) / len(_all) if _all else 0.0
+        _avg_up = sum(_ups) / len(_ups) if _ups else 0.0
+        _avg_cut = sum(_cuts) / len(_cuts) if _cuts else 0.0
         improvement = {
-            "expected_roas_increase": round(random.uniform(15, 35), 1),
-            "expected_acos_decrease": round(random.uniform(3, 8), 1),
-            "efficiency_gain": round(random.uniform(10, 25), 1),
+            "expected_roas_increase": round((_avg_up / _avg_all - 1) * 100, 1) if _avg_all else 0.0,
+            "expected_acos_decrease": round((1 - _avg_cut / _avg_all) * 100, 1) if _avg_all else 0.0,
+            "efficiency_gain": round(
+                (total_suggested - total_current) / total_current * 100, 1
+            ) if total_current else 0.0,
         }
 
         report = BudgetOptimizationReport(
@@ -699,7 +812,12 @@ Amazon PPC 关键指标基准（参考值）：
 
     async def _detect_anomalies(self, query: str, context: Optional[Dict] = None) -> AgentResponse:
         """广告异常检测"""
-        anomalies = self._generate_anomalies()
+        rows = _load_ad_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
+        if not rows:
+            return self._no_data("广告异常检测", (context or {}).get("store_id"))
+        anomalies = self._anomalies_from_rows(
+            rows, sensitivity=str((context or {}).get("sensitivity") or "medium")
+        )
         alert_count = len([a for a in anomalies if a.severity == "high"])
 
         summary_parts = []
@@ -752,6 +870,30 @@ Amazon PPC 关键指标基准（参考值）：
             display_type="anomaly_report"
         )
 
+    def _no_data(self, what: str, store_id=None) -> AgentResponse:
+        """显式空状态：没取到数据就如实说，不返回「编出来的报告」。
+
+        ★ 为什么不做「全 0 兜底」：恒为 0 的结果会被当成「实测出来是 0」，
+          属项目判据明令禁止的「假数据冒充实测」。这里 `success=False` +
+          `data_status="no_data"`，前端据此渲染空状态卡片并展示原因。
+        """
+        reason = (
+            "未绑定店铺上下文（请求缺少 X-Shop-ID）" if not store_id
+            else f"店铺 {store_id} 在当前数据源中暂无广告数据"
+        )
+        return AgentResponse(
+            content=(
+                f"暂时无法完成{what}：{reason}。\n\n"
+                "请确认：① 已选择店铺；② 该店铺已完成广告数据同步"
+                "（SP-API 授权或报表导入）。数据到位后重试即可。"
+            ),
+            data={"data_status": "no_data", "data_reason": reason},
+            display_type="text",
+            success=False,
+            data_status="no_data",
+            data_reason=reason,
+        )
+
     async def _general_response(self, query: str) -> AgentResponse:
         """通用回答"""
         content = f"""我是 **广告分析师**，可以帮你：
@@ -767,7 +909,8 @@ Amazon PPC 关键指标基准（参考值）：
 """
         return AgentResponse(content=content, display_type="text")
 
-    async def stream_chat(self, query: str) -> AsyncIterable[str]:
+    async def stream_chat(self, query: str,
+                          context: Optional[Dict[str, Any]] = None) -> AsyncIterable[str]:
         """
         流式对话（逐 token 返回 LLM 文本）。
 
@@ -784,7 +927,7 @@ Amazon PPC 关键指标基准（参考值）：
         # 不存在重复选工具的开销，故此处保留 invoke 调用。
         if intent != "general":
             yield progress(_INTENT_PROGRESS.get(intent, "正在分析广告数据…"))
-            result = await self.invoke(query)
+            result = await self.invoke(query, context)
             yield result.content
             return
 
@@ -810,65 +953,69 @@ Amazon PPC 关键指标基准（参考值）：
 
     # ====== 数据生成辅助方法（模拟数据）======
 
-    def _generate_metrics(self) -> List[AdMetric]:
-        """生成核心指标"""
+    def _metrics_from_rows(self, rows: List[Dict]) -> List[AdMetric]:
+        """核心指标 —— 全部由真实广告记录聚合，零随机数。
+
+        改造前这 5 个指标是 `random.uniform(...)` 现编的：同一店铺连点两次
+        「诊断」会得到两份不同的体检报告，且完全不受任何 API 影响。
+        benchmark 用 SYSTEM_PROMPT 里的行业参考值（常量），status 由
+        「实测值 vs 基准」推导。
+        """
+        a = _agg_rows(rows)
+
+        def _st(val: float, bench: float, higher_is_better: bool) -> str:
+            if higher_is_better:
+                if val >= bench:
+                    return "good"
+                return "warning" if val >= bench * 0.7 else "critical"
+            if val <= bench:
+                return "good"
+            return "warning" if val <= bench * 1.35 else "critical"
+
         return [
-            AdMetric(name="ACoS", value=random.uniform(18, 35), unit="%", benchmark=22.0,
-                     status="warning" if random.random() > 0.5 else "good"),
-            AdMetric(name="RoAS", value=random.uniform(2.8, 5.5), unit="x", benchmark=4.5,
-                     status="good" if random.random() > 0.4 else "warning"),
-            AdMetric(name="CTR", value=random.uniform(0.25, 0.65), unit="%", benchmark=0.40,
-                     status="good" if random.random() > 0.4 else "warning"),
-            AdMetric(name="CVR", value=random.uniform(5, 14), unit="%", benchmark=9.0,
-                     status="warning" if random.random() > 0.6 else "good"),
-            AdMetric(name="CPC", value=random.uniform(0.45, 1.2), unit="$", benchmark=0.75,
-                     status="good" if random.random() > 0.5 else "warning"),
+            AdMetric(name="ACoS", value=round(a["acos"], 2), unit="%",
+                     benchmark=22.0, status=_st(a["acos"], 22.0, False)),
+            AdMetric(name="RoAS", value=round(a["roas"], 2), unit="x",
+                     benchmark=4.5, status=_st(a["roas"], 4.5, True)),
+            AdMetric(name="CTR", value=round(a["ctr"], 2), unit="%",
+                     benchmark=0.40, status=_st(a["ctr"], 0.40, True)),
+            AdMetric(name="CVR", value=round(a["cvr"], 2), unit="%",
+                     benchmark=9.0, status=_st(a["cvr"], 9.0, True)),
+            AdMetric(name="CPC", value=round(a["cpc"], 2), unit="$",
+                     benchmark=0.75, status=_st(a["cpc"], 0.75, False)),
         ]
 
-    def _generate_campaigns(self, count: int = 5) -> List[CampaignHealth]:
-        """生成 Campaign 健康数据"""
-        campaign_names = [
-            ("自动广告-广泛", "SP"),
-            ("手动-精准-核心词", "SP"),
-            ("手动-短语-长尾词", "SP"),
-            ("品牌-SB-品牌词", "SB"),
-            ("展示-SD-竞品定向", "SD"),
-        ]
-        types_short = ["SP", "SP", "SP", "SB", "SD"]
+    def _campaigns_from_rows(self, rows: List[Dict]) -> List[CampaignHealth]:
+        """按 `campaign_name` 聚合出各 Campaign 真实健康度（零随机数）。"""
+        groups: Dict[str, List[Dict]] = {}
+        for r in rows:
+            name = str(r.get("campaign_name") or "未命名 Campaign").strip()
+            groups.setdefault(name, []).append(r)
 
-        campaigns = []
-        for i in range(min(count, len(campaign_names))):
-            name, ctype = campaign_names[i]
-            spend = random.uniform(200, 1500)
-            impr = random.randint(50000, 500000)
-            clicks = random.randint(500, 5000)
-            orders = random.randint(20, 200)
-            sales = orders * random.uniform(18, 45)
-            acos = (spend / sales * 100) if sales > 0 else 0
-            roas = sales / spend if spend > 0 else 0
-            ctr = clicks / impr * 100 if impr > 0 else 0
-            cvr = orders / clicks * 100 if clicks > 0 else 0
-            cpc = spend / clicks if clicks > 0 else 0
-            health = max(0, min(100, 100 - acos + roas * 10 - (30 - ctr * 50)))
-
-            campaigns.append(CampaignHealth(
+        out: List[CampaignHealth] = []
+        for name, rs in groups.items():
+            a = _agg_rows(rs)
+            types = [str(r.get("report_type") or "sp").upper() for r in rs]
+            ctype = max(set(types), key=types.count) if types else "SP"
+            health = max(0.0, min(100.0, 100.0 - a["acos"] + a["roas"] * 10.0))
+            out.append(CampaignHealth(
                 campaign_name=name,
                 campaign_type=ctype,
                 status="active",
-                spend=round(spend, 2),
-                impressions=impr,
-                clicks=clicks,
-                orders=orders,
-                sales=round(sales, 2),
-                acos=round(acos, 1),
-                roas=round(roas, 2),
-                ctr=round(ctr, 2),
-                cvr=round(cvr, 1),
-                cpc=round(cpc, 2),
-                health_score=round(health)
+                spend=a["spend"],
+                impressions=a["impressions"],
+                clicks=a["clicks"],
+                orders=a["orders"],
+                sales=a["sales"],
+                acos=round(a["acos"], 1),
+                roas=round(a["roas"], 2),
+                ctr=round(a["ctr"], 2),
+                cvr=round(a["cvr"], 1),
+                cpc=round(a["cpc"], 2),
+                health_score=round(health, 1),
             ))
-
-        return campaigns
+        out.sort(key=lambda c: c.spend, reverse=True)
+        return out
 
     def _identify_issues(self, campaigns: List[CampaignHealth], metrics: List[AdMetric]) -> List[Dict]:
         """识别主要问题"""
@@ -953,25 +1100,26 @@ Amazon PPC 关键指标基准（参考值）：
         return recs
 
     def _calculate_overall_score(self, metrics: List[AdMetric], campaigns: List[CampaignHealth]) -> float:
-        """计算综合评分"""
-        # 指标权重
-        metric_weights = [0.25, 0.25, 0.15, 0.15, 0.10]  # acos, roas, ctr, cvr, cpc
-        metric_scores = []
-
-        for m, w in zip(metrics, metric_weights):
+        """综合评分 —— 由真实指标与 Campaign 健康度推导（改造前是 random）。"""
+        if not metrics:
+            return 0.0
+        by = {m.name: m for m in metrics}
+        weights = {"ACoS": 18.0, "RoAS": 14.0, "CTR": 5.0, "CVR": 5.0, "CPC": 4.0}
+        score = 60.0
+        for name, weight in weights.items():
+            m = by.get(name)
+            if m is None:
+                continue
             if m.status == "good":
-                score = 85 + random.uniform(0, 15)
-            elif m.status == "warning":
-                score = 55 + random.uniform(0, 25)
+                score += weight
+            elif m.status == "critical":
+                score -= weight
             else:
-                score = 30 + random.uniform(0, 20)
-            metric_scores.append(score * w)
-
-        # Campaign 平均健康分
-        avg_campaign_health = sum(c.health_score for c in campaigns) / len(campaigns) if campaigns else 50
-        campaign_score = avg_campaign_health * 0.3
-
-        return round(sum(metric_scores) + campaign_score, 0)
+                score -= weight * 0.4
+        if campaigns:
+            avg_health = sum(c.health_score for c in campaigns) / len(campaigns)
+            score += (avg_health - 70.0) * 0.1
+        return round(max(0.0, min(100.0, score)), 1)
 
     def _score_to_grade(self, score: float) -> str:
         """分数转等级"""
@@ -1002,71 +1150,49 @@ Amazon PPC 关键指标基准（参考值）：
     def _status_emoji(self, status: str) -> str:
         return {"good": "✅", "warning": "⚠️", "critical": "❌"}.get(status, "➖")
 
-    def _generate_search_terms(self, count: int) -> List[SearchTermData]:
-        """生成搜索词数据"""
-        terms_pool = [
-            "portable coffee grinder manual", "ceramic burr coffee grinder small",
-            "hand coffee bean grinder travel", "espresso grinder manual ceramic",
-            "coffee mill hand crank stainless steel", "mini coffee grinder portable",
-            "adjustable coffee grinder manual", "best coffee grinder under 30",
-            "camping coffee grinder compact", "aeropress coffee grinder recommendation",
-            "cold brew coffee grinder coarse", "french press coffee grinder burr",
-            "electric vs manual coffee grinder", "coffee grinder cleaning brush",
-            "coffee grinder parts replacement", "kitchen aid coffee grinder attachment",
-            "hario mini mill slim plus", "porlex tall grinder review",
-            "comandante c40 review", "1zpresso jx pro review",
-            "timemore c2 review", "kingrinder k6 review",
-            "wholesale coffee grinder bulk", "amazon coffee grinder best seller",
-            "coffee gift set for dad", "barista tools kit beginner",
-        ]
+    def _search_terms_from_rows(self, rows: List[Dict]) -> List[SearchTermData]:
+        """按 `keyword_text` 聚合出真实搜索词报告（零随机数）。
 
-        match_types = ["exact", "phrase", "broad"]
-        efficiencies = ["high", "high", "medium", "medium", "low", "low", "waste"]
+        efficiency 分档（改动前是按随机数硬贴标签）：
+          waste    = 有花费、零出单 ⇒ 建议否定
+          high     = 有出单且 ACoS <= 20% ⇒ 加投
+          low      = ACoS > 35% ⇒ 优化
+          其余     = medium
+        """
+        groups: Dict[str, List[Dict]] = {}
+        for r in rows:
+            kw = str(r.get("keyword_text") or "").strip()
+            if not kw:
+                continue
+            groups.setdefault(kw, []).append(r)
 
-        result = []
-        for i in range(min(count, len(terms_pool))):
-            term = terms_pool[i % len(terms_pool)]
-            eff = efficiencies[i % len(efficiencies)]
-
-            impr = random.randint(100, 20000)
-            clicks = random.randint(5, max(5, int(impr * 0.01)))
-            spend = round(clicks * random.uniform(0.3, 1.5), 2)
-
-            if eff == "high":
-                sales = round(spend * random.uniform(3, 8), 2)
-                orders = random.randint(3, 20)
-            elif eff == "medium":
-                sales = round(spend * random.uniform(1.5, 3.5), 2)
-                orders = random.randint(1, 8)
-            elif eff == "low":
-                sales = round(spend * random.uniform(0.5, 1.5), 2)
-                orders = random.choice([0, 0, 1])
-            else:  # waste
-                sales = 0
-                orders = 0
-
-            acos = (spend / sales * 100) if sales > 0 else 999
-            roas = sales / spend if spend > 0 else 0
-            ctr = clicks / impr * 100 if impr > 0 else 0
-            cvr = orders / clicks * 100 if clicks > 0 else 0
-            cpc = spend / clicks if clicks > 0 else 0
-
-            result.append(SearchTermData(
-                term=term,
-                impressions=impr,
-                clicks=clicks,
-                ctr=round(ctr, 2),
-                spend=spend,
-                sales=sales,
-                acos=round(acos, 1),
-                roas=round(roas, 2),
-                orders=orders,
-                cpc=round(cpc, 2),
-                match_type=match_types[i % 3],
-                efficiency=eff
+        out: List[SearchTermData] = []
+        for kw, rs in groups.items():
+            a = _agg_rows(rs)
+            if a["orders"] == 0 and a["spend"] > 0:
+                eff = "waste"
+            elif a["acos"] <= 20 and a["orders"] >= 1:
+                eff = "high"
+            elif a["acos"] > 35:
+                eff = "low"
+            else:
+                eff = "medium"
+            out.append(SearchTermData(
+                term=kw,
+                impressions=a["impressions"],
+                clicks=a["clicks"],
+                ctr=round(a["ctr"], 2),
+                spend=a["spend"],
+                sales=a["sales"],
+                acos=round(a["acos"], 2),
+                roas=round(a["roas"], 2),
+                orders=a["orders"],
+                cpc=round(a["cpc"], 2),
+                match_type="broad",
+                efficiency=eff,
             ))
-
-        return result
+        out.sort(key=lambda t: t.spend, reverse=True)
+        return out
 
     def _generate_search_term_suggestions(self, high, low, waste) -> List[str]:
         """生成搜索词优化建议"""
@@ -1090,90 +1216,103 @@ Amazon PPC 关键指标基准（参考值）：
 
         return suggestions
 
-    def _generate_bid_recommendations(self, count: int) -> List[BidRecommendation]:
-        """生成出价建议"""
-        keywords = [
-            "coffee grinder manual", "portable coffee grinder", "ceramic burr grinder",
-            "hand coffee grinder", "small coffee grinder", "travel coffee maker",
-            "espresso grinder manual", "coffee bean grinder electric",
-            "best coffee grinder 2024", "affordable burr grinder",
-            "camping coffee equipment", "office coffee accessories",
-            "gift for coffee lover", "kitchen gadgets unique", "amazon choice coffee",
-        ]
+    def _bid_recs_from_rows(
+        self, rows: List[Dict], target_acos: float = 25.0
+    ) -> List[BidRecommendation]:
+        """按关键词**真实 ACoS** 给出价建议（确定性规则，零随机数）。
 
-        reasons_up = [
-            "该词转化率高且 ACoS 优于平均，提高出价可获得更多优质流量",
-            "近期该词转化有明显上升趋势，建议抢占更多曝光",
-            "竞品在该词上减少投放，是扩大份额的好时机",
-            "该词属于高价值长尾词，竞争相对较小但转化稳定",
-        ]
-
-        reasons_down = [
-            "该词长期 ACoS 偏高，降低出价以控制成本",
-            "该词点击量大但转化不稳定，先降低出价观察",
-            "该词 CPC 偏高但 ROI 不理想，建议降低至合理区间",
-            "季节性下降趋势，应随市场热度调整出价",
-        ]
-
-        result = []
-        for i in range(count):
-            keyword = keywords[i % len(keywords)]
-            current_bid = round(random.uniform(0.5, 2.5), 2)
-
-            is_increase = random.random() > 0.45
-            if is_increase:
-                change_pct = round(random.uniform(10, 35), 0)
-                suggested_bid = round(current_bid * (1 + change_pct / 100), 2)
-                reason = random.choice(reasons_up)
-                priority = "high" if change_pct > 25 else "medium"
+        current_bid 取该词的真实 CPC（唯一可得的出价代理）；
+        suggested_bid = current_bid × 规则倍数；倍数由 ACoS 与目标值的
+        相对位置决定，同一份数据必然给出同一份建议。
+        """
+        out: List[BidRecommendation] = []
+        for t in self._search_terms_from_rows(rows):
+            if t.clicks < 3:
+                continue
+            current = t.cpc or 0.5
+            if t.orders == 0:
+                factor, reason, prio = 0.75, (
+                    f"{t.clicks} 次点击零出单（花费 ${t.spend:.2f}），建议降价或加否词"
+                ), "high"
+            elif t.acos and t.acos <= target_acos * 0.6:
+                factor, reason, prio = 1.15, (
+                    f"ACoS {t.acos:.1f}% 远低于目标 {target_acos:.0f}%，可加价抢量"
+                ), "high"
+            elif t.acos and t.acos <= target_acos:
+                factor, reason, prio = 1.05, (
+                    f"ACoS {t.acos:.1f}% 在目标内，小幅加价试探"
+                ), "medium"
             else:
-                change_pct = round(random.uniform(-30, -5), 0)
-                suggested_bid = round(current_bid * (1 + change_pct / 100), 2)
-                reason = random.choice(reasons_down)
-                priority = "high" if change_pct < -20 else "low"
-
-            impact = f"预计{'+' if is_increase else ''}{abs(change_pct):.0f}% 点击量，ACoS {'↓' if is_increase and random.random() > 0.3 else '↑' if not is_increase else '~'}"
-
-            result.append(BidRecommendation(
-                keyword=keyword,
-                match_type=random.choice(["exact", "phrase"]),
-                current_bid=current_bid,
-                suggested_bid=suggested_bid,
-                bid_change_pct=change_pct,
+                factor, reason, prio = 0.85, (
+                    f"ACoS {t.acos:.1f}% 高于目标 {target_acos:.0f}%，降价控本"
+                ), "medium"
+            suggested = round(current * factor, 2)
+            change = ((suggested - current) / current * 100) if current else 0.0
+            out.append(BidRecommendation(
+                keyword=t.term,
+                match_type=t.match_type,
+                current_bid=round(current, 2),
+                suggested_bid=suggested,
+                bid_change_pct=round(change, 1),
                 reason=reason,
-                expected_impact=impact,
-                priority=priority
+                expected_impact=(
+                    "预计点击量提升、ACoS 略升" if change > 0
+                    else "预计花费下降、ACoS 改善"
+                ),
+                priority=prio,
             ))
+        out.sort(key=lambda k: abs(k.bid_change_pct), reverse=True)
+        return out[:15]
 
-        return result
+    def _competitor_data_from_rows(self, rows: List[Dict]) -> List[CompetitorAdData]:
+        """竞品格局 —— 只填数据源**真实提供**的字段（零随机数）。
 
-    def _generate_competitor_data(self, count: int) -> List[CompetitorAdData]:
-        """生成竞品数据"""
-        competitors_info = [
-            ("BrewMaster Pro", "B08XXXXXX1", ["高品质陶瓷磨芯", "调节粗细度高", "品牌知名度强"], ["价格偏高", "款式单一"]),
-            ("GrindElite", "B09XXXXXX2", ["性价比突出", "评价数量多", "促销频繁"], ["质量参差", "退货率略高"]),
-            ("CoffeeCraft", "B07XXXXXX3", ["设计精美", "配件丰富", "包装用心"], ["价格虚高", "发货慢"]),
-            ("BaristaBasics", "B0AXXXXXX4", ["SKU丰富", "物流快", "客服好"], ["缺乏创新", "同质化严重"]),
-            ("GrindKing", "B0BXXXXXX5", ["新品冲量", "价格激进", "广告强势"], ["口碑不稳", "复购率低"]),
-        ]
+        ★ 不编造：`amazon_competitor_snapshots` 里**没有**展示份额(SOV)、
+          关键词重叠数、竞品广告花费这三项。本方法对这些字段一律填 0/空，
+          并在 `_generate_competitor_insights` 的口径说明里讲清「未接入」。
+          改造前这三个字段全是 `random.uniform/randint` ⇒ 看着很专业，全是编的。
 
-        result = []
-        for i in range(min(count, len(competitors_info))):
-            name, asin, strengths, weaknesses = competitors_info[i]
+        可得字段映射：
+          brand / competitor_asin → competitor_name / asin
+          bsr_rank                → avg_position（真实排名）
+          review_count            → share_of_voice（近似口径：评论数占比）
+          rating / has_buybox / price_vs_own → strengths / weaknesses
+        """
+        if not rows:
+            return []
+        total_reviews = sum(int(r.get("review_count") or 0) for r in rows) or 1
 
-            result.append(CompetitorAdData(
-                competitor_name=name,
-                asin=asin,
-                share_of_voice=round(random.uniform(8, 25), 1),
-                overlap_keywords=random.randint(15, 60),
-                avg_position=round(random.uniform(1.5, 4.5), 1),
-                estimated_spend=round(random.uniform(100, 800), 2),
-                top_keywords=[f"keyword_{j}" for j in range(3)],
-                strengths=strengths,
-                weaknesses=weaknesses
+        out: List[CompetitorAdData] = []
+        for r in rows:
+            reviews = int(r.get("review_count") or 0)
+            rating = float(r.get("rating") or 0)
+            price_vs_own = float(r.get("price_vs_own") or 0)
+            strengths = []
+            weaknesses = []
+            if rating:
+                strengths.append(f"评分 {rating}")
+            strengths.append(f"评论 {reviews} 条")
+            if r.get("has_buybox"):
+                strengths.append("持有 Buy Box")
+            else:
+                weaknesses.append("未持有 Buy Box")
+            if price_vs_own > 0:
+                weaknesses.append(f"价格高于本店 ${price_vs_own:.2f}")
+            elif price_vs_own < 0:
+                strengths.append(f"价格低于本店 ${abs(price_vs_own):.2f}")
+            out.append(CompetitorAdData(
+                competitor_name=str(r.get("brand") or r.get("competitor_asin") or "未知竞品"),
+                asin=str(r.get("competitor_asin") or ""),
+                share_of_voice=round(reviews / total_reviews * 100, 1),
+                overlap_keywords=0,
+                avg_position=float(r.get("bsr_rank") or 0),
+                estimated_spend=0.0,
+                top_keywords=[],
+                strengths=strengths or ["数据不足"],
+                weaknesses=weaknesses or ["数据不足"],
             ))
-
-        return result
+        out.sort(key=lambda c: c.share_of_voice, reverse=True)
+        return out
 
     def _generate_competitor_insights(self, competitors: List[CompetitorAdData], your_sov: float) -> List[str]:
         """生成竞品洞察"""
@@ -1201,90 +1340,105 @@ Amazon PPC 关键指标基准（参考值）：
 
         return insights
 
-    def _generate_budget_allocations(self, count: int) -> List[BudgetAllocation]:
-        """生成预算分配"""
-        campaigns = [
-            ("自动广告-广泛", 300, "流量入口，保持稳定"),
-            ("手动-精准-核心词", 450, "主力转化，建议加码"),
-            ("手动-短语-长尾词", 250, "低成本拓量"),
-            ("品牌-SB-品牌词", 180, "品牌防御，维持现状"),
-            ("展示-SD-竞品定向", 220, "抢量渠道，适度增加"),
-            ("SD-再营销", 120, "高ROI，建议翻倍"),
-        ]
+    def _budget_from_rows(self, rows: List[Dict]) -> List[BudgetAllocation]:
+        """按 Campaign **真实 RoAS 排名**分配预算（确定性，零随机数）。
 
-        result = []
-        for i in range(min(count, len(campaigns))):
-            name, base_budget, reason = campaigns[i]
-
-            # 模拟优化后的预算调整
-            if "核心词" in name or "再营销" in name:
-                multiplier = random.uniform(1.2, 1.5)
-            elif "自动" in name or "品牌" in name:
-                multiplier = random.uniform(0.85, 1.05)
+        规则：RoAS 排名前 1/3 加码 25%、后 1/3 削减 20%、中间持平。
+        current_budget = 该 Campaign 的日均花费（近 N 天总花费 /天数）。
+        """
+        campaigns = self._campaigns_from_rows(rows)
+        if not campaigns:
+            return []
+        day_count = max(1, len({str(r.get("date") or "") for r in rows if r.get("date")}))
+        total_spend = sum(c.spend for c in campaigns) or 1.0
+        order = sorted(range(len(campaigns)), key=lambda i: campaigns[i].roas, reverse=True)
+        n = len(campaigns)
+        head = max(1, n // 3)
+        tier = {}
+        for rank, idx in enumerate(order):
+            if rank < head:
+                tier[idx] = 1.25
+            elif rank >= n - head:
+                tier[idx] = 0.8
             else:
-                multiplier = random.uniform(0.95, 1.2)
+                tier[idx] = 1.0
 
-            suggested = round(base_budget * multiplier, 0)
-
-            result.append(BudgetAllocation(
-                campaign_name=name,
-                current_budget=base_budget,
+        out: List[BudgetAllocation] = []
+        for i, c in enumerate(campaigns):
+            current = round(c.spend / day_count, 2)
+            factor = tier[i]
+            suggested = round(current * factor, 2)
+            if factor > 1:
+                reason = f"RoAS {c.roas:.2f} 排名靠前，加码抢量"
+            elif factor < 1:
+                reason = f"RoAS {c.roas:.2f} 偏低（ACoS {c.acos:.1f}%），削减控本"
+            else:
+                reason = f"RoAS {c.roas:.2f} 居中，维持观察"
+            out.append(BudgetAllocation(
+                campaign_name=c.campaign_name,
+                current_budget=current,
                 suggested_budget=suggested,
-                allocation_pct=round(suggested / sum([c[1] * (random.uniform(1.2, 1.5) if "核心词" in c[0] or "再营销" in c[0] else 1) for c in campaigns[:count]]) * 100, 1),
+                allocation_pct=round(current / total_spend * 100, 1),
                 reason=reason,
-                expected_roas=round(random.uniform(3, 7), 1)
+                expected_roas=round(max(c.roas, 0.1) * factor, 2),
             ))
+        return out
 
-        return result
+    def _anomalies_from_rows(
+        self, rows: List[Dict], sensitivity: str = "medium"
+    ) -> List[AnomalyItem]:
+        """按日趋势做**确定性**异常检测（零随机数）。
 
-    def _generate_anomalies(self) -> List[AnomalyItem]:
-        """生成异常数据"""
-        anomaly_templates = [
-            AnomalyItem(
-                type="spend_spike", severity="high",
-                campaign="手动-精准-核心词",
-                metric="日花费", current_value=280, expected_value=150,
-                deviation_pct=86.7,
-                detected_at=(datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"),
-                possible_cause="某关键词出价被意外调高或竞争加剧导致 CPC 飙升",
-                suggested_action="立即检查出价设置，必要时暂停高价词"
-            ),
-            AnomalyItem(
-                type="conversion_drop", severity="high",
-                campaign="自动广告-广泛",
-                metric="转化率", current_value=3.2, expected_value=8.5,
-                deviation_pct=-62.4,
-                detected_at=(datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d"),
-                possible_cause="Listing 被差评拉低转化率，或出现恶意竞争点击",
-                suggested_action="检查 Listing 评价情况，排查无效点击"
-            ),
-            AnomalyItem(
-                type="impression_anomaly", severity="medium",
-                campaign="品牌-SB-品牌词",
-                metric="展示量", current_value=8500, expected_value=25000,
-                deviation_pct=-66.0,
-                detected_at=(datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"),
-                possible_cause="品牌词搜索量季节性下降或预算耗尽提前",
-                suggested_action="确认预算是否充足，考虑拓展非品牌词"
-            ),
-            AnomalyItem(
-                type="ctr_drop", severity="medium",
-                campaign="展示-SD-竞品定向",
-                metric="CTR", current_value=0.12, expected_value=0.35,
-                deviation_pct=-65.7,
-                detected_at=(datetime.now() - timedelta(hours=12)).strftime("%Y-%m-%d %H:%M"),
-                possible_cause="创意素材疲劳或竞品更新了更有吸引力的素材",
-                suggested_action="轮换 SD 广告创意，A/B 测试新素材"
-            ),
-            AnomalyItem(
-                type="spend_spike", severity="low",
-                campaign="手动-短语-长尾词",
-                metric="周花费", current_value=420, expected_value=310,
-                deviation_pct=35.5,
-                detected_at=(datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d"),
-                possible_cause="正常波动范围，可能是某个长尾词突然获得更多曝光",
-                suggested_action="观察 3 天，如持续增长则检查具体来源词"
-            ),
+        方法：把记录按 `date` 分组，前一半为基期、后一半为近期的对比窗口；
+        花费突增 / 订单骤降 / CTR 下滑 / 曝光异动 任一超过阈值即报异常。
+        阈值随 sensitivity 缩放（high 更敏感）。同一份数据必然得到同一批异常。
+        """
+        by_date: Dict[str, List[Dict]] = {}
+        for r in rows:
+            d = str(r.get("date") or "")
+            if d:
+                by_date.setdefault(d, []).append(r)
+        if len(by_date) < 4:
+            return []
+
+        days = sorted(by_date)
+        half = len(days) // 2
+        older = _agg_rows([r for d in days[:half] for r in by_date[d]])
+        recent = _agg_rows([r for d in days[half:] for r in by_date[d]])
+
+        threshold = {"low": 0.60, "medium": 0.40, "high": 0.25}.get(sensitivity, 0.40)
+
+        def _dev(cur: float, base: float) -> float:
+            return ((cur - base) / base * 100.0) if base else 0.0
+
+        checks = [
+            ("spend_spike", "花费", recent["spend"], older["spend"], 1),
+            ("conversion_drop", "订单", recent["orders"], older["orders"], -1),
+            ("ctr_drop", "CTR", recent["ctr"], older["ctr"], -1),
+            ("impression_anomaly", "曝光", recent["impressions"], older["impressions"], 0),
         ]
-
-        return anomaly_templates
+        out: List[AnomalyItem] = []
+        for atype, label, cur, base, direction in checks:
+            dev = _dev(cur, base)
+            if direction == 1:
+                hit = dev >= threshold * 100
+            elif direction == -1:
+                hit = dev <= -threshold * 100
+            else:
+                hit = abs(dev) >= threshold * 100
+            if not hit:
+                continue
+            sev = "high" if abs(dev) >= 60 else ("medium" if abs(dev) >= 40 else "low")
+            out.append(AnomalyItem(
+                type=atype,
+                severity=sev,
+                campaign="账户整体",
+                metric=label,
+                current_value=round(cur, 2),
+                expected_value=round(base, 2),
+                deviation_pct=round(dev, 1),
+                detected_at=datetime.now().isoformat(),
+                possible_cause=("投放放量或竞价抬高" if dev > 0 else "竞争加剧或预算收缩"),
+                suggested_action=("复核预算上限与竞价" if dev > 0 else "检查 Listing 转化率与库存"),
+            ))
+        return out

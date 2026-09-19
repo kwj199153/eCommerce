@@ -40,11 +40,36 @@ def get_agent() -> AdAnalysisAgent:
     return _agent_instance
 
 
+class NoDataError(Exception):
+    """取不到数据（未绑定店铺 / 数据源无记录）。
+
+    ★ 为什么不直接抛 HTTPException：「没数据」在语义上不是服务端故障，
+      路由层要把它转成 `success=False` + 显式原因的业务响应，
+      而不是 500 —— 否则前端只能看到「服务器错误」，真实缺口被掩盖。
+    """
+
+    def __init__(self, status: str, reason, payload: dict):
+        super().__init__(reason or status)
+        self.status = status or "no_data"
+        self.reason = reason or "数据源未返回可用数据"
+        self.payload = payload or {}
+
+
+def _guard(response, data: dict) -> None:
+    """空状态**原样透传**，不进 Response 模型。
+
+    `_no_data()` 只给 `data_status/data_reason`，而各 Response 类字段多为
+    **必填** ⇒ `XResponse(**data)` 会抛 ValidationError ⇒ router 转 500。
+    """
+    if not response.success or response.data_status != "ok":
+        raise NoDataError(response.data_status, response.data_reason, data)
+
+
 class AdAnalysisService:
     """广告分析服务"""
 
     @staticmethod
-    async def diagnose(request: AdDiagnosisRequest) -> DiagnosisResponse:
+    async def diagnose(request: AdDiagnosisRequest, store_id: Optional[str] = None) -> DiagnosisResponse:
         """
         广告账户健康诊断
 
@@ -58,6 +83,7 @@ class AdAnalysisService:
         query = f"请对广告账户进行全面诊断，时间范围 {request.time_range}"
 
         context = {
+            "store_id": store_id,
             "time_range": request.time_range,
             "campaign_ids": request.campaign_ids,
             "include_benchmark": request.include_benchmark,
@@ -66,10 +92,11 @@ class AdAnalysisService:
         response = await agent.invoke(query, context)
         data = response.data or {}
 
+        _guard(response, data)
         return DiagnosisResponse(**data)
 
     @staticmethod
-    async def analyze_search_terms(request: SearchTermAnalysisRequest) -> SearchTermResponse:
+    async def analyze_search_terms(request: SearchTermAnalysisRequest, store_id: Optional[str] = None) -> SearchTermResponse:
         """
         搜索词效果分析
 
@@ -83,6 +110,7 @@ class AdAnalysisService:
         query = f"分析搜索词表现，按 {request.sort_by} 排序"
 
         context = {
+            "store_id": store_id,
             "time_range": request.time_range,
             "campaign_type": request.campaign_type,
             "min_spend": request.min_spend,
@@ -93,10 +121,11 @@ class AdAnalysisService:
         response = await agent.invoke(query, context)
         data = response.data or {}
 
+        _guard(response, data)
         return SearchTermResponse(**data)
 
     @staticmethod
-    async def optimize_bids(request: BidOptimizationRequest) -> BidStrategyResponse:
+    async def optimize_bids(request: BidOptimizationRequest, store_id: Optional[str] = None) -> BidStrategyResponse:
         """
         出价优化建议
 
@@ -118,6 +147,7 @@ class AdAnalysisService:
             query += f"，目标 ACoS {request.target_acos}%"
 
         context = {
+            "store_id": store_id,
             "strategy": request.strategy,
             "keywords": request.keywords,
             "max_budget_change": request.max_budget_change,
@@ -127,10 +157,11 @@ class AdAnalysisService:
         response = await agent.invoke(query, context)
         data = response.data or {}
 
+        _guard(response, data)
         return BidStrategyResponse(**data)
 
     @staticmethod
-    async def analyze_competitors(request: CompetitorAnalysisRequest) -> CompetitorResponse:
+    async def analyze_competitors(request: CompetitorAnalysisRequest, store_id: Optional[str] = None) -> CompetitorResponse:
         """
         竞品广告分析
 
@@ -146,6 +177,7 @@ class AdAnalysisService:
         query = f"分析竞品广告策略，目标 ASIN：{asin_str}"
 
         context = {
+            "store_id": store_id,
             "competitor_asins": request.competitor_asins,
             "auto_detect": request.auto_detect,
             "include_keywords": request.include_keywords,
@@ -155,10 +187,11 @@ class AdAnalysisService:
         response = await agent.invoke(query, context)
         data = response.data or {}
 
+        _guard(response, data)
         return CompetitorResponse(**data)
 
     @staticmethod
-    async def optimize_budget(request: BudgetOptimizationRequest) -> BudgetOptimizationResponse:
+    async def optimize_budget(request: BudgetOptimizationRequest, store_id: Optional[str] = None) -> BudgetOptimizationResponse:
         """
         预算分配优化
 
@@ -185,6 +218,7 @@ class AdAnalysisService:
             query += f"，总日预算 ${request.total_daily_budget}"
 
         context = {
+            "store_id": store_id,
             "total_daily_budget": request.total_daily_budget,
             "target_roas": request.target_roas,
             "min_campaign_budget": request.min_campaign_budget,
@@ -194,10 +228,11 @@ class AdAnalysisService:
         response = await agent.invoke(query, context)
         data = response.data or {}
 
+        _guard(response, data)
         return BudgetOptimizationResponse(**data)
 
     @staticmethod
-    async def detect_anomalies(request: AnomalyDetectionRequest) -> AnomalyResponse:
+    async def detect_anomalies(request: AnomalyDetectionRequest, store_id: Optional[str] = None) -> AnomalyResponse:
         """
         广告异常检测
 
@@ -217,6 +252,7 @@ class AdAnalysisService:
         query = f"检测广告数据异常，{sensitivity_map.get(request.sensitivity, '中灵敏度')}"
 
         context = {
+            "store_id": store_id,
             "check_period": request.check_period,
             "sensitivity": request.sensitivity,
             "alert_thresholds": request.alert_thresholds,
@@ -226,10 +262,11 @@ class AdAnalysisService:
         response = await agent.invoke(query, context)
         data = response.data or {}
 
+        _guard(response, data)
         return AnomalyResponse(**data)
 
     @staticmethod
-    async def chat(request: AdChatRequest) -> ChatResponse:
+    async def chat(request: AdChatRequest, store_id: Optional[str] = None) -> ChatResponse:
         """
         自然语言对话（主入口）
 
@@ -243,7 +280,7 @@ class AdAnalysisService:
 
         response = await agent.invoke(
             query=request.message,
-            context={"context_id": request.context_id}
+            context={"context_id": request.context_id, "store_id": store_id}
         )
 
         # 生成后续建议
@@ -264,10 +301,10 @@ class AdAnalysisService:
         )
 
     @staticmethod
-    async def stream_chat(message: str):
+    async def stream_chat(message: str, store_id: Optional[str] = None):
         """流式对话入口（返回逐 token 异步迭代器）"""
         agent = get_agent()
-        async for chunk in agent.stream_chat(message):
+        async for chunk in agent.stream_chat(message, {"store_id": store_id}):
             yield chunk
 
     @staticmethod

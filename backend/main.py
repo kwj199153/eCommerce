@@ -461,6 +461,9 @@ app.include_router(competitor_intel_router, prefix="/api/v1", dependencies=BUSIN
 from modules.aigc_media.router import router as aigc_media_router
 app.include_router(aigc_media_router, prefix="/api/v1", dependencies=BUSINESS_AUTH + API_QUOTA)
 
+from modules.review_analyst.router import router as review_analyst_router
+app.include_router(review_analyst_router, prefix="/api/v1", dependencies=BUSINESS_AUTH + API_QUOTA)
+
 # 店铺群管理 + 动态利润测算模块 (Phase 10)
 from modules.stores.router import router as stores_router
 app.include_router(stores_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀

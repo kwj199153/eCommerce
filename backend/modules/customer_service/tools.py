@@ -52,6 +52,7 @@ async def _search_faq_tool(
 
 
 async def _create_ticket_tool(
+    store_id: str,
     subject: str,
     description: str,
     category: str = "general",
@@ -59,9 +60,11 @@ async def _create_ticket_tool(
     priority: Optional[str] = None,
     customer_id: str = "",
 ) -> str:
-    """创建客服工单，返回工单号与预计响应时间。
+    """创建客服工单（**落库**到 cs_tickets），返回工单号与预计响应时间。
 
     Args:
+        store_id: 店铺 ID（**由系统注入**，LLM 不得自行指定）——工单必须有租户维度，
+            否则 `cs_tickets.shop_id` 的外键会把写入拒掉。
         subject: 工单标题（必填，至少 2 字）。
         description: 问题描述（必填，至少 10 字）。
         category: 分类：售后/物流/质量/投诉/咨询/支付/订单（默认 general）。
@@ -77,7 +80,7 @@ async def _create_ticket_tool(
         priority=priority,
         customer_id=customer_id,
     )
-    resp = await _service.create_ticket(req)
+    resp = await _service.create_ticket(req, store_id)
     return _dump(resp)
 
 

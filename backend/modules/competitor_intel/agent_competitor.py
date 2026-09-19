@@ -12,8 +12,7 @@
 """
 
 from typing import Optional, List, Dict, Any, AsyncIterable
-from datetime import datetime, timedelta
-import random
+from datetime import date, datetime, timedelta
 import re
 from dataclasses import dataclass, asdict
 
@@ -21,6 +20,41 @@ from core.logger import get_logger
 from ai_infra.sse import progress
 
 logger = get_logger(__name__)
+
+
+# ====== 数据源接入（唯一取数点）======
+
+def _days_of(time_range) -> int:
+    """把 "7d" / "30d" / "90d" 解析成天数（解析不出按 30）。"""
+    m = re.match(r"(\d+)\s*d", str(time_range or ""), re.I)
+    return int(m.group(1)) if m else 30
+
+
+def _load_competitor_rows(store_id, time_range="30d", asins=None) -> List[Dict]:
+    """取本店铺的竞品快照（唯一入口，经工厂）。
+
+    ★ 为什么必须经 `get_data_source()`：配好 SP-API 凭据后这里会自动切到真实现；
+      绕过工厂直连 Mock（模块级单例那种写法）会让「配了凭据也永远跑假数据且不报错」。
+
+    ★ 拿不到 `store_id`（未选店铺）时**不猜测、不取默认店**，直接返回空列表，
+      由调用方给显式空状态。
+
+    ★ `asins` 透传给数据源做过滤。注意数据源只能在**它自己的竞品集合内**过滤，
+      查不到的 ASIN 会落空 —— 这是事实，不由本层编造补上。
+    """
+    if not store_id:
+        return []
+    from modules.amazon_sp import get_data_source
+
+    src = get_data_source(prefer="auto", seed=42)
+    d_to = date.today()
+    d_from = d_to - timedelta(days=_days_of(time_range) - 1)
+    kw = {"asins": list(asins)} if asins else {}
+    try:
+        return list(src.fetch_competitors(store_id, d_from, d_to, **kw))
+    except Exception as e:  # 数据源故障不得伪装成「无数据」
+        logger.error(f"[competitor_intel] 取竞品快照失败 store={store_id}: {e}")
+        raise
 
 
 # 结构化意图 → 阶段进度文案（stream_chat 在耗时分析前发给前端，避免空转）
@@ -138,21 +172,23 @@ class CompetitorIntelligenceAgent(BaseAgent):
     ENABLE_LLM = True
     FALLBACK_TO_MOCK = True
 
-    # 模拟竞品数据库
-    _competitor_db: Dict[str, CompetitorProduct] = {}
-
-    # 价格历史数据库
-    _price_history_db: Dict[str, List[PriceHistory]] = {}
-
-    # 排名历史数据库
-    _ranking_history_db: Dict[str, List[RankingHistory]] = {}
+    # ★ 竞品视图这三个 dict 改造前是**类属性**，且 `__init__` 会调
+    #   `_initialize_mock_data()` 写死 5 个耳机竞品 ⇒ 两个后果：
+    #     ① 所有实例共享同一份可变 dict，后建的实例把先建的覆盖掉；
+    #     ② `store_id` 在整个模块里**零出现** —— 「看哪个店铺」无从谈起。
+    #   现在改为**实例级**，由 `_ensure_source(context)` 按「店铺 + 时间范围」装载。
 
     def __init__(self):
         # 初始化 LLM 基类
         super().__init__()
 
         self.agent_name = "competitor_intel"
-        self._initialize_mock_data()
+        self._competitor_db: Dict[str, CompetitorProduct] = {}
+        self._price_history_db: Dict[str, List[PriceHistory]] = {}
+        self._ranking_history_db: Dict[str, List[RankingHistory]] = {}
+        self._loaded_key: Optional[tuple] = None
+        self._data_status: str = "no_data"
+        self._data_reason: Optional[str] = None
 
     async def _llm_insights(self, context: str, max_tokens: int = 800) -> Optional[str]:
         """
@@ -176,115 +212,114 @@ class CompetitorIntelligenceAgent(BaseAgent):
             logger.warning(f"[competitor_intel] LLM insights failed: {e}")
         return None
 
-    def _initialize_mock_data(self):
-        """初始化模拟数据"""
-        competitors = [
-            CompetitorProduct(
-                asin="B08ABC1234",
-                title="Premium Wireless Bluetooth Earbuds with Active Noise Cancellation",
-                brand="SoundMax Pro",
-                price=79.99,
-                bsr_rank=1523,
-                review_count=12456,
-                rating=4.5,
-                category="Electronics > Headphones",
-                is_prime=True,
-                buy_box_price=79.99,
-                buy_box_seller="SoundMax Pro",
-            ),
-            CompetitorProduct(
-                asin="B08DEF5678",
-                title="Wireless Earbuds Bluetooth 5.3 IPX7 Waterproof 40H Playtime",
-                brand="TechBeat",
-                price=49.99,
-                bsr_rank=892,
-                review_count=8234,
-                rating=4.3,
-                category="Electronics > Headphones",
-                is_prime=True,
-                buy_box_price=49.99,
-                buy_box_seller="TechBeat Official",
-            ),
-            CompetitorProduct(
-                asin="B08GHI9012",
-                title="True Wireless Earbuds Hi-Fi Sound Quality Touch Control",
-                brand="AudioElite",
-                price=129.99,
-                bsr_rank=3456,
-                review_count=3421,
-                rating=4.7,
-                category="Electronics > Headphones",
-                is_prime=True,
-                buy_box_price=129.99,
-                buy_box_seller="AudioElite Store",
-            ),
-            CompetitorProduct(
-                asin="B08JKL3456",
-                title="Budget Bluetooth Earbuds Long Battery Life Microphone",
-                brand="ValueSound",
-                price=29.99,
-                bsr_rank=456,
-                review_count=15678,
-                rating=4.1,
-                category="Electronics > Headphones",
-                is_prime=False,
-                buy_box_price=29.99,
-                buy_box_seller="ValueSound Direct",
-            ),
-            CompetitorProduct(
-                asin="BMNO789012",
-                title="Pro Studio Monitor Headphones Noise Cancelling Over Ear",
-                brand="StudioMaster",
-                price=199.99,
-                bsr_rank=5678,
-                review_count=892,
-                rating=4.8,
-                category="Electronics > Headphones",
-                is_prime=True,
-                buy_box_price=189.99,
-                buy_box_seller="Third-Party Seller",
-            ),
-        ]
+    # ==================== 数据源装载（唯一入口）====================
 
-        for comp in competitors:
-            self._competitor_db[comp.asin] = comp
-            comp.last_updated = datetime.now().isoformat()
-            self._generate_history_data(comp.asin)
+    def _ensure_source(self, context: Optional[Dict] = None) -> bool:
+        """按「店铺 + 时间范围」把数据源快照装载进**实例**视图。
 
-    def _generate_history_data(self, asin: str):
-        """生成历史数据（模拟30天）"""
-        base_date = datetime.now() - timedelta(days=30)
-        base_price = self._competitor_db[asin].price
+        True  ⇒ 本实例已有可用竞品数据，可继续分析。
+        False ⇒ 应走显式空状态（`self._data_reason` 说明原因）。
 
-        # 价格历史（带随机波动）
-        price_history = []
-        for i in range(30):
-            date = (base_date + timedelta(days=i)).strftime("%Y-%m-%d")
-            # 随机波动 ±10%，偶尔有促销
-            if random.random() < 0.1:
-                price = base_price * 0.85  # 促销价
-            else:
-                price = base_price * (1 + random.uniform(-0.05, 0.08))
-            price_history.append(PriceHistory(date=date, price=round(price, 2)))
-        self._price_history_db[asin] = price_history
+        同一 (store_id, time_range) 重复调用不重复取数。
+        """
+        ctx = context or {}
+        store_id = ctx.get("store_id")
+        time_range = ctx.get("time_range") or f"{ctx.get('days') or 30}d"
+        key = (store_id, time_range)
 
-        # 排名历史（带趋势）
-        base_bsr = self._competitor_db[asin].bsr_rank
-        ranking_history = []
-        current_rank = base_bsr
-        for i in range(30):
-            date = (base_date + timedelta(days=i)).strftime("%Y-%m-%d")
-            # 排名随机波动 ±20%
-            change = int(current_rank * random.uniform(-0.15, 0.2))
-            current_rank = max(1, current_rank + change)
-            ranking_history.append(RankingHistory(date=date, bsr_rank=current_rank))
-        self._ranking_history_db[asin] = ranking_history
+        if key == self._loaded_key:
+            return bool(self._competitor_db)
+
+        self._competitor_db = {}
+        self._price_history_db = {}
+        self._ranking_history_db = {}
+        self._loaded_key = key
+
+        if not store_id:
+            self._data_status = "no_data"
+            self._data_reason = "未绑定店铺上下文（请求缺少 X-Shop-ID）"
+            return False
+
+        rows = _load_competitor_rows(store_id, time_range)
+        if not rows:
+            self._data_status = "no_data"
+            self._data_reason = f"店铺 {store_id} 在当前数据源中暂无竞品快照"
+            return False
+
+        self._build_from_rows(rows)
+        self._data_status = "ok"
+        self._data_reason = None
+        return True
+
+    def _build_from_rows(self, rows: List[Dict]) -> None:
+        """按 `competitor_asin` 归组：最新一行 → 当前视图，全序列 → 价格/排名历史。
+
+        字段口径与 `amazon_sp.data_sources.*.fetch_competitors()` 一致。
+        改造前这些历史是 `_generate_history_data()` 用 `random.uniform` 现编 30 天的；
+        数据源本身按「每 2 天一个点」给出**真实快照序列**，无需再编。
+        """
+        grouped: Dict[str, List[Dict]] = {}
+        for r in rows:
+            asin = r.get("competitor_asin")
+            if asin:
+                grouped.setdefault(str(asin).upper(), []).append(r)
+
+        for asin, recs in grouped.items():
+            recs.sort(key=lambda x: str(x.get("snapshot_date") or ""))
+            last = recs[-1]
+            has_bb = bool(last.get("has_buybox"))
+            bb_price = last.get("buybox_price")
+            self._competitor_db[asin] = CompetitorProduct(
+                asin=asin,
+                title=str(last.get("title") or ""),
+                brand=str(last.get("brand") or ""),
+                price=float(last.get("price") or 0.0),
+                bsr_rank=int(last.get("bsr_rank") or 0),
+                review_count=int(last.get("review_count") or 0),
+                rating=float(last.get("rating") or 0.0),
+                # ★ 数据源不含类目 / 主图字段 ⇒ 留空，不编造
+                category="",
+                image_url="",
+                is_prime=(last.get("fulfillment") == "FBA"),
+                buy_box_price=(float(bb_price) if bb_price is not None else None),
+                buy_box_seller=(str(last.get("brand") or "") if has_bb else ""),
+                stock_status="In Stock",
+                last_updated=str(last.get("snapshot_date") or ""),
+            )
+            self._price_history_db[asin] = [
+                PriceHistory(date=str(r.get("snapshot_date") or ""),
+                             price=float(r.get("price") or 0.0))
+                for r in recs
+            ]
+            self._ranking_history_db[asin] = [
+                RankingHistory(date=str(r.get("snapshot_date") or ""),
+                               bsr_rank=int(r.get("bsr_rank") or 0))
+                for r in recs
+            ]
+
+    def _no_data(self, what: str, status: str = "no_data",
+                 reason: Optional[str] = None) -> Dict:
+        """显式空状态：拿不到数据就**明说**，绝不返回编出来的报告。"""
+        r = reason or self._data_reason or "数据源未返回可用数据"
+        return {
+            "type": status,
+            "success": False,
+            "data_status": status,
+            "data_reason": r,
+            "message": f"{what}未执行：{r}",
+        }
 
     async def analyze(self, query: str, context: Optional[Dict] = None) -> Dict[str, Any]:
         """
         主入口：意图分类 + 路由到对应能力
         """
         intent = self._classify_intent(query)
+
+        # ★ 一切能力都以真实竞品数据为前提：装载失败 ⇒ 显式空状态，不进 handler。
+        if not self._ensure_source(context):
+            out = self._no_data("竞品分析")
+            out["intent"] = intent
+            return out
 
         handlers = {
             "monitor": self._monitor_competitor,
@@ -326,6 +361,8 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
     async def _monitor_competitor(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力1：竞品 Listing 监控"""
+        if not self._ensure_source(context):
+            return self._no_data("竞品 Listing 监控")
         asin = self._resolve_asin(query, context)
 
         if not asin:
@@ -389,6 +426,8 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
     async def _track_batch_asins(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力2：ASIN 批量追踪"""
+        if not self._ensure_source(context):
+            return self._no_data("ASIN 批量追踪")
         asins = self._resolve_asins(query, context)
 
         if not asins:
@@ -425,6 +464,8 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
     async def _analyze_market_share(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力3：市场份额分析"""
+        if not self._ensure_source(context):
+            return self._no_data("市场份额分析")
         category = self._extract_category(query) or context.get("category") if context else "Headphones"
 
         estimates = []
@@ -433,9 +474,10 @@ class CompetitorIntelligenceAgent(BaseAgent):
         for asin, comp in self._competitor_db.items():
             # 基于 BSR 估算市场份额（简化算法）
             # BSR 越低，市场份额越大
+            # ★ 改造前这里乘了 `random.uniform(0.8, 1.2)` 的「噪声」——纯人工抖动，
+            #   同一店铺连点两次份额不同。现改为**纯由 BSR 推导**，可复现。
             base_share = max(0.5, 100 / (comp.bsr_rank ** 0.5))
-            noise = random.uniform(0.8, 1.2)
-            market_share = base_share * noise
+            market_share = base_share
 
             # 估算月营收（基于评论数和价格）
             daily_sales_est = comp.review_count * 0.02  # 假设每天销量约为评论数的2%
@@ -472,6 +514,8 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
     async def _analyze_pricing_strategy(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力4：定价策略分析"""
+        if not self._ensure_source(context):
+            return self._no_data("定价策略分析")
         asin = self._resolve_asin(query, context)
 
         target_asins = [asin] if asin else list(self._competitor_db.keys())
@@ -512,8 +556,10 @@ class CompetitorIntelligenceAgent(BaseAgent):
             # 价格波动率
             volatility = (max_price - min_price) / avg_price * 100 if avg_price > 0 else 0
 
-            # 价格弹性（模拟）
-            elasticity = round(random.uniform(-1.5, -2.5), 2)
+            # ★ 价格弹性需要「价格 → 销量」配对，而竞品快照**不含销量**
+            #   ⇒ 不编造数字：置 0，由调用方按「不可估」呈现
+            #   （改造前是 `random.uniform(-1.5, -2.5)` 的假弹性）。
+            elasticity = 0.0
 
             recommendations = self._generate_pricing_recommendations(
                 strategy_type, avg_price, volatility, promo_freq
@@ -538,6 +584,8 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
     async def _analyze_competitor_reviews(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力5：竞品评论深度分析"""
+        if not self._ensure_source(context):
+            return self._no_data("竞品评论深度分析")
         asin = self._resolve_asin(query, context)
 
         target_asins = [asin] if asin else list(self._competitor_db.keys())[:3]
@@ -548,8 +596,8 @@ class CompetitorIntelligenceAgent(BaseAgent):
             if not comp:
                 continue
 
-            # 模拟评论分析结果
-            insights = self._mock_review_analysis(comp)
+            # 由数据源可得字段推导（数据源不含评论正文）
+            insights = self._review_insights_from_data(comp)
             analyses.append({
                 "asin": comp_asin,
                 "brand": comp.brand,
@@ -565,109 +613,32 @@ class CompetitorIntelligenceAgent(BaseAgent):
             "type": "review_analysis",
             "analyzed_products": len(analyses),
             "analyses": analyses,
+            "data_status": "partial",
+            "data_reason": "数据源仅提供评论数量与评分，不含评论正文 ⇒ 主题级洞察与"
+                           "原文引用不可得；本结果只含由评分推导的口碑档位。",
         }
 
     async def _detect_intruders(self, query: str, context: Optional[Dict] = None) -> Dict:
-        """能力6：入侵者检测（新竞争者）"""
-        category = self._extract_category(query) or (context.get("category") if context else "Headphones")
+        """能力6：入侵者检测（新竞争者）—— **显式不可用**。
 
-        # 模拟检测到的新进入者
-        intruders = [
-            IntruderAlert(
-                asin="B0NEW001",
-                title="Ultra Bass Wireless Earbuds 60H Battery graphene drivers",
-                brand="NewWave Audio",
-                entry_date=(datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d"),
-                price=39.99,
-                threat_level="high",
-                reasons=[
-                    "价格低于市场均价35%",
-                    "7天内获得200+评论",
-                    "使用石墨烯单元作为差异化卖点",
-                    "Prime包邮 + 闪电发货",
-                ],
-                our_product_affected=True,
-            ),
-            IntruderAlert(
-                asin="B0NEW002",
-                title="AI-Powered Smart Earbuds Translation Health Monitoring",
-                brand="FutureTech",
-                entry_date=(datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d"),
-                price=159.99,
-                threat_level="medium",
-                reasons=[
-                    "AI功能作为差异化卖点",
-                    "定位高端市场",
-                    "健康监测功能创新",
-                    "目前评论较少但增长快",
-                ],
-                our_product_affected=False,
-            ),
-            IntruderAlert(
-                asin="B0NEW003",
-                title="Kids Safe Volume Limited Wireless Earbuds Cute Design",
-                brand="KidSound",
-                entry_date=(datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d"),
-                price=19.99,
-                threat_level="low",
-                reasons=[
-                    "定位细分市场（儿童）",
-                    "超低价策略",
-                    "与我们目标客群重叠度低",
-                ],
-                our_product_affected=False,
-            ),
-        ]
-
-        # 生成应对建议
-        response_strategies = []
-        for intruder in intruders:
-            if intruder.threat_level == "high":
-                response_strategies.append({
-                    "target": intruder.asin,
-                    "strategy": "immediate_response",
-                    "actions": [
-                        "立即分析其供应链成本结构",
-                        "评估是否需要临时降价应对",
-                        "加强我们产品的差异化营销",
-                        "监控其评论寻找弱点",
-                    ],
-                    "priority": "P0",
-                })
-            elif intruder.threat_level == "medium":
-                response_strategies.append({
-                    "target": intruder.asin,
-                    "strategy": "monitor_and_prepare",
-                    "actions": [
-                        "持续跟踪其销售趋势",
-                        "准备差异化卖点材料",
-                        "关注其广告投放策略",
-                    ],
-                    "priority": "P1",
-                })
-            else:
-                response_strategies.append({
-                    "target": intruder.asin,
-                    "strategy": "watch_only",
-                    "actions": ["定期检查其排名变化"],
-                    "priority": "P2",
-                })
-
-        return {
-            "type": "intruder_detection",
-            "category": category,
-            "detection_date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "new_competitors": [asdict(i) for i in intruders],
-            "threat_summary": {
-                "high_threat": sum(1 for i in intruders if i.threat_level == "high"),
-                "medium_threat": sum(1 for i in intruders if i.threat_level == "medium"),
-                "low_threat": sum(1 for i in intruders if i.threat_level == "low"),
-            },
-            "response_strategies": response_strategies,
-        }
+        ★ 改造前这里返回 3 个硬编码的假新进入者（B0NEW001/002/003，
+          「7 天内获得 200+ 评论」之类的理由全是编的）。
+        ★ 竞品快照数据源**没有「新进入者」这个维度**：它给出的是当前竞品集合的
+          快照序列，无法回答「谁是最近才出现的」。要恢复此能力需要接
+          ① 商品上架时间（Listings 的 created_at）或 ② 类目新品榜。
+          在那之前宁可明说不可用，也不返回编出来的入侵者名单。
+        """
+        return self._no_data(
+            "入侵者检测",
+            status="unsupported",
+            reason="当前数据源不提供「新进入竞品」维度（仅有竞品快照序列），"
+                   "本能力暂不可用；接入商品上架时间或类目新品榜后恢复。",
+        )
 
     async def _analyze_buy_box(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力7：Buy Box 竞争分析"""
+        if not self._ensure_source(context):
+            return self._no_data("Buy Box 竞争分析")
         asin = self._resolve_asin(query, context)
 
         target_asins = [asin] if asin else list(self._competitor_db.keys())
@@ -678,8 +649,8 @@ class CompetitorIntelligenceAgent(BaseAgent):
             if not comp:
                 continue
 
-            # 模拟 Buy Box 数据
-            buy_box_data = self._mock_buy_box_data(comp)
+            # 由数据源可得字段推导
+            buy_box_data = self._buy_box_from_data(comp)
 
             analyses.append({
                 "asin": comp_asin,
@@ -694,10 +665,14 @@ class CompetitorIntelligenceAgent(BaseAgent):
             "analyzed_count": len(analyses),
             "analyses": analyses,
             "best_practices": self._generate_buy_box_best_practices(),
+            "data_status": "partial",
+            "data_reason": "数据源不含卖家清单与 Buy Box 占有率，仅含归属与价格。",
         }
 
     async def _compare_competitors(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力8：多维度竞品对比"""
+        if not self._ensure_source(context):
+            return self._no_data("多维度竞品对比")
         asins = self._resolve_asins(query, context)
 
         if not asins:
@@ -759,7 +734,8 @@ class CompetitorIntelligenceAgent(BaseAgent):
             ],
         }
 
-    async def stream_chat(self, query: str) -> AsyncIterable[str]:
+    async def stream_chat(self, query: str,
+                          context: Optional[Dict] = None) -> AsyncIterable[str]:
         """
         流式对话（逐 token 返回 LLM 文本）。
 
@@ -774,7 +750,7 @@ class CompetitorIntelligenceAgent(BaseAgent):
         # 结构化意图：走 analyze 一次性返回（含结构化数据）
         if intent != "general":
             yield progress(_INTENT_PROGRESS.get(intent, "正在分析竞品数据…"))
-            result = await self.analyze(query)
+            result = await self.analyze(query, context)
             # 提取可读文本（message 或摘要字段）
             text = result.get("message") or result.get("summary") or result.get("analysis", "")
             if isinstance(text, str) and text:
@@ -1124,12 +1100,13 @@ class CompetitorIntelligenceAgent(BaseAgent):
                 "dynamic": {"x": 60, "y": 40},
             }
             pos = type_coords.get(s.strategy_type, {"x": 50, "y": 50})
+            # ★ 改造前这里还叠加 `random.randint(-5, 5)` 的散点抖动（纯装饰性随机）⇒ 去掉。
             positions.append({
                 "id": i,
                 "strategy": s.strategy_type,
                 "price_level": s.base_price,
-                "x": pos["x"] + random.randint(-5, 5),
-                "y": pos["y"] + random.randint(-5, 5),
+                "x": pos["x"],
+                "y": pos["y"],
             })
 
         return {
@@ -1140,68 +1117,37 @@ class CompetitorIntelligenceAgent(BaseAgent):
             },
         }
 
-    def _mock_review_analysis(self, comp: CompetitorProduct) -> List[ReviewInsight]:
-        """模拟评论分析"""
-        # 根据产品特性生成不同的评论洞察
-        base_insights = [
-            ReviewInsight(
-                aspect="positive",
-                topic="音质表现",
-                sentiment_score=0.75,
-                mention_count=int(comp.review_count * 0.35),
-                example_quotes=["音质超出预期", "低音效果很好", "清晰度高"],
-            ),
-            ReviewInsight(
-                aspect="positive",
-                topic="佩戴舒适度",
-                sentiment_score=0.65,
-                mention_count=int(comp.review_count * 0.28),
-                example_quotes=["戴着很舒服", "长时间不累", "耳塞尺寸合适"],
-            ),
-            ReviewInsight(
-                aspect="negative",
-                topic="电池续航",
-                sentiment_score=-0.45,
-                mention_count=int(comp.review_count * 0.22),
-                example_quotes=["续航没有宣传的那么长", "用一天就得充电"],
-            ),
-            ReviewInsight(
-                aspect="negative",
-                topic="连接稳定性",
-                sentiment_score=-0.35,
-                mention_count=int(comp.review_count * 0.18),
-                example_quotes=["偶尔断连", "距离远了会卡"],
-            ),
-            ReviewInsight(
-                aspect="neutral",
-                topic="外观设计",
-                sentiment_score=0.15,
-                mention_count=int(comp.review_count * 0.15),
-                example_quotes=["外观一般", "中规中矩的设计"],
-            ),
-        ]
+    def _review_insights_from_data(self, comp: CompetitorProduct) -> List[ReviewInsight]:
+        """从**数据源可得字段**推导评论洞察（不编造评论主题与原句）。
 
-        # 根据品牌调整
-        if comp.brand == "ValueSound":
-            base_insights[0].sentiment_score = 0.5  # 便宜货音质一般
-            base_insights.append(ReviewInsight(
-                aspect="positive",
-                topic="性价比",
-                sentiment_score=0.8,
-                mention_count=int(comp.review_count * 0.4),
-                example_quotes=["这个价位很值了", "便宜好用"],
-            ))
-        elif comp.brand == "AudioElite":
-            base_insights[2].sentiment_score = -0.2  # 高端产品电池问题少
-            base_insights.append(ReviewInsight(
-                aspect="positive",
-                topic="降噪效果",
-                sentiment_score=0.85,
-                mention_count=int(comp.review_count * 0.3),
-                example_quotes=["降噪很厉害", "地铁上完全听不到"],
-            ))
+        ★ 口径（重要）：竞品快照数据源只提供 `review_count` / `rating`，
+          **不提供评论正文**。因此这里只输出**可由评分推导**的结论：
+          `topic` 用中性档位标签、`example_quotes` 一律为空。
+          真实的「评论主题 / 原文引用」需要另接评论数据源，属**已知缺口**，
+          不在本层用编造数据填补。
 
-        return base_insights
+        ★ 改造前 `_mock_review_analysis` 硬编码了「音质表现 / 佩戴舒适度 /
+          电池续航 / 连接稳定性 / 外观设计」5 个主题 + 假引文，且按
+          0.35/0.28/0.22/0.18/0.15 的比例把 `review_count` 凭空拆成 5 份 ——
+          那些比例没有任何数据依据。
+        """
+        rating = float(comp.rating or 0.0)
+        # 评分 → 情感分（-1..1）：4.3 是亚马逊类目常见中位，以此为中性锚
+        sentiment = round(max(-1.0, min(1.0, (rating - 4.3) / 0.7)), 2)
+        if sentiment > 0.15:
+            aspect = "positive"
+        elif sentiment < -0.15:
+            aspect = "negative"
+        else:
+            aspect = "neutral"
+
+        return [ReviewInsight(
+            aspect=aspect,
+            topic="整体口碑",
+            sentiment_score=sentiment,
+            mention_count=int(comp.review_count or 0),
+            example_quotes=[],
+        )]
 
     def _generate_review_swot(self, insights: List[ReviewInsight]) -> Dict:
         """从评论生成 SWOT"""
@@ -1229,26 +1175,31 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
         return intel[:5]
 
-    def _mock_buy_box_data(self, comp: CompetitorProduct) -> Dict:
-        """模拟 Buy Box 数据"""
-        # 模拟多个卖家
-        sellers = [
-            {"seller_name": comp.brand + " Official", "price": comp.price, "shipping": 0, "in_stock": True},
-            {"seller_name": "Third-Party Pro", "price": comp.price * 1.05, "shipping": 4.99, "in_stock": True},
-            {"seller_name": "Discount Seller", "price": comp.price * 0.95, "shipping": 9.99, "in_stock": True},
-        ]
+    def _buy_box_from_data(self, comp: CompetitorProduct) -> Dict:
+        """从**数据源可得字段**推导 Buy Box 竞争情况（不编造卖家清单）。
 
-        # Buy Box 赢家
-        winner = sellers[0]
-
+        ★ 口径：竞品快照提供 `has_buybox` 与 `buybox_price`，**不提供**
+          卖家清单、各卖家报价、Buy Box 占有率。因此：
+          - `current_winner` 只能是**品牌级归属**（由 has_buybox 判定），不是卖家账号
+          - `all_sellers` 一律为空列表
+          - `buy_box_percentage` 退化为「是否持有」的 0/100
+          改造前这里硬编 3 个卖家（Official / Third-Party Pro / Discount Seller）
+          并给 `buy_box_percentage` 配 `random.uniform(70, 98)`。
+        """
+        ref_price = comp.buy_box_price if comp.buy_box_price else comp.price
+        holds = bool(comp.buy_box_seller)
         return {
-            "current_winner": winner["seller_name"],
-            "winning_price": winner["price"],
-            "our_price_competitiveness": round(comp.price / winner["price"] * 100, 2),
-            "all_sellers": sellers,
-            "buy_box_percentage": round(random.uniform(70, 98), 1),  # 品牌方通常占比较高
-            "price_to_win": round(winner["price"] * 0.98, 2),  # 需要多少价格才能赢
-            "featured_offer_reason": "Lowest price + Prime shipping",
+            "current_winner": comp.buy_box_seller or None,
+            "winning_price": ref_price,
+            "our_price_competitiveness": (
+                round(comp.price / ref_price * 100, 2) if ref_price else 100.0
+            ),
+            "all_sellers": [],
+            "buy_box_percentage": 100.0 if holds else 0.0,
+            "price_to_win": round(ref_price * 0.98, 2) if ref_price else None,
+            "featured_offer_reason": None,
+            "data_status": "partial",
+            "data_reason": "数据源仅提供 Buy Box 归属与价格，卖家清单/占有率不可得",
         }
 
     def _calculate_buy_box_competitiveness(self, data: Dict) -> float:

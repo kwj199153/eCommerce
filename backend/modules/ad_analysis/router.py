@@ -22,13 +22,17 @@ from .schemas import (
     ApiResponse,
     ErrorResponse,
 )
-from .service import AdAnalysisService
+from core.tenant.middleware import get_current_shop_id
+from .service import AdAnalysisService, NoDataError
 
 router = APIRouter(prefix="/ad-analysis", tags=["广告分析"])
 
 
 @router.post("/diagnose", summary="广告账户健康诊断")
-async def diagnose(request: AdDiagnosisRequest):
+async def diagnose(
+    request: AdDiagnosisRequest,
+    store_id: Optional[str] = Depends(get_current_shop_id),
+):
     """
     对广告账户进行全面健康诊断
 
@@ -39,14 +43,19 @@ async def diagnose(request: AdDiagnosisRequest):
     - A-F 综合评级
     """
     try:
-        result = await AdAnalysisService.diagnose(request)
+        result = await AdAnalysisService.diagnose(request, store_id=store_id)
         return ApiResponse(success=True, message="诊断完成", data=result.model_dump())
+    except NoDataError as e:
+        return ApiResponse(success=False, message=e.reason, data=e.payload)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/search-terms", summary="搜索词效果分析")
-async def analyze_search_terms(request: SearchTermAnalysisRequest):
+async def analyze_search_terms(
+    request: SearchTermAnalysisRequest,
+    store_id: Optional[str] = Depends(get_current_shop_id),
+):
     """
     分析搜索词表现，识别机会与问题
 
@@ -56,14 +65,19 @@ async def analyze_search_terms(request: SearchTermAnalysisRequest):
     - 新机会词挖掘（有初步转化潜力）
     """
     try:
-        result = await AdAnalysisService.analyze_search_terms(request)
+        result = await AdAnalysisService.analyze_search_terms(request, store_id=store_id)
         return ApiResponse(success=True, message="分析完成", data=result.model_dump())
+    except NoDataError as e:
+        return ApiResponse(success=False, message=e.reason, data=e.payload)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/bid-optimize", summary="出价优化建议")
-async def optimize_bids(request: BidOptimizationRequest):
+async def optimize_bids(
+    request: BidOptimizationRequest,
+    store_id: Optional[str] = Depends(get_current_shop_id),
+):
     """
     生成智能出价优化建议
 
@@ -74,14 +88,19 @@ async def optimize_bids(request: BidOptimizationRequest):
     - 整体预算影响预估
     """
     try:
-        result = await AdAnalysisService.optimize_bids(request)
+        result = await AdAnalysisService.optimize_bids(request, store_id=store_id)
         return ApiResponse(success=True, message="出价建议生成完成", data=result.model_dump())
+    except NoDataError as e:
+        return ApiResponse(success=False, message=e.reason, data=e.payload)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/competitors", summary="竞品广告分析")
-async def analyze_competitors(request: CompetitorAnalysisRequest):
+async def analyze_competitors(
+    request: CompetitorAnalysisRequest,
+    store_id: Optional[str] = Depends(get_current_shop_id),
+):
     """
     分析竞争对手的广告策略
 
@@ -91,14 +110,19 @@ async def analyze_competitors(request: CompetitorAnalysisRequest):
     - 可执行的市场洞察
     """
     try:
-        result = await AdAnalysisService.analyze_competitors(request)
+        result = await AdAnalysisService.analyze_competitors(request, store_id=store_id)
         return ApiResponse(success=True, message="竞品分析完成", data=result.model_dump())
+    except NoDataError as e:
+        return ApiResponse(success=False, message=e.reason, data=e.payload)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/budget", summary="预算分配优化")
-async def optimize_budget(request: BudgetOptimizationRequest):
+async def optimize_budget(
+    request: BudgetOptimizationRequest,
+    store_id: Optional[str] = Depends(get_current_shop_id),
+):
     """
     优化多 Campaign 预算分配
 
@@ -108,14 +132,19 @@ async def optimize_budget(request: BudgetOptimizationRequest):
     - 风险评估与实施建议
     """
     try:
-        result = await AdAnalysisService.optimize_budget(request)
+        result = await AdAnalysisService.optimize_budget(request, store_id=store_id)
         return ApiResponse(success=True, message="预算方案生成完成", data=result.model_dump())
+    except NoDataError as e:
+        return ApiResponse(success=False, message=e.reason, data=e.payload)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/anomalies", summary="广告异常检测")
-async def detect_anomalies(request: AnomalyDetectionRequest):
+async def detect_anomalies(
+    request: AnomalyDetectionRequest,
+    store_id: Optional[str] = Depends(get_current_shop_id),
+):
     """
     检测广告数据异常情况
 
@@ -126,8 +155,10 @@ async def detect_anomalies(request: AnomalyDetectionRequest):
     - 可能原因分析与建议操作
     """
     try:
-        result = await AdAnalysisService.detect_anomalies(request)
+        result = await AdAnalysisService.detect_anomalies(request, store_id=store_id)
         return ApiResponse(success=True, message="异常检测完成", data=result.model_dump())
+    except NoDataError as e:
+        return ApiResponse(success=False, message=e.reason, data=e.payload)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -135,6 +166,7 @@ async def detect_anomalies(request: AnomalyDetectionRequest):
 @router.post("/chat", summary="自然语言对话")
 async def chat(
     request: AdChatRequest,
+    store_id: Optional[str] = Depends(get_current_shop_id),
     _meter=Depends(meter_agent_chat),
 ):
     """
@@ -149,7 +181,7 @@ async def chat(
     - "有没有异常" → 异常检测
     """
     try:
-        result = await AdAnalysisService.chat(request)
+        result = await AdAnalysisService.chat(request, store_id=store_id)
         return ApiResponse(
             success=True,
             message="OK",
@@ -167,6 +199,7 @@ async def chat(
 @router.post("/chat/stream", summary="自然语言对话（SSE 流式）")
 async def chat_stream(
     request: AdChatRequest,
+    store_id: Optional[str] = Depends(get_current_shop_id),
     _meter=Depends(meter_agent_chat),
 ):
     """广告分析师对话，SSE 流式返回（打字机效果）。"""
@@ -174,7 +207,7 @@ async def chat_stream(
 
     async def _wrapped():
         try:
-            async for event in sse_event_stream(AdAnalysisService.stream_chat(request.message)):
+            async for event in sse_event_stream(AdAnalysisService.stream_chat(request.message, store_id)):
                 yield event
         except Exception as e:
             yield f"event: error\ndata: {_json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
@@ -194,16 +227,18 @@ async def get_capabilities():
 @router.get("/quick/diagnose", summary="快速诊断（GET）")
 async def quick_diagnose(
     time_range: str = Query(default="30d", description="时间范围"),
+    store_id: Optional[str] = Depends(get_current_shop_id),
 ):
     """快捷诊断接口，无需 POST 完整请求体"""
     request = AdDiagnosisRequest(time_range=time_range)
-    return await diagnose(request)
+    return await diagnose(request, store_id)
 
 
 @router.get("/quick/anomalies", summary="快速异常检测（GET）")
 async def quick_anomalies(
     period: str = Query(default="7d", description="检测周期"),
+    store_id: Optional[str] = Depends(get_current_shop_id),
 ):
     """快捷异常检测"""
     request = AnomalyDetectionRequest(check_period=period)
-    return await detect_anomalies(request)
+    return await detect_anomalies(request, store_id)
