@@ -137,10 +137,24 @@ def add_human_in_the_loop(
         #   发生，而不是"悄悄照做"。
         thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
         if not thread_id:
+            # ★ 第 145 轮 批 B4：把「无会话」的**原因**原样带进拒绝文案。
+            #   此前只能看到症状（没有 thread_id），用户分不清是「没登录」
+            #   还是「前端没带 session_id」—— 两种情况的处置完全不同，
+            #   而文案一样，等于把人支去瞎猜。
+            #   原因由 `BaseAgent.graph_for_session()` 在
+            #   `config["metadata"]["session_mode_reason"]` 里显式声明
+            #   （具名常量 `BaseAgent.MEMORYLESS_REASON`）。
+            md = (config or {}).get("metadata") or {}
+            why = (
+                md.get("session_mode_reason")
+                if md.get("session_mode") == "memoryless"
+                else None
+            )
             raise HITLPrerequisiteError(
                 f"[{tool.name}] 该操作需人工审批，但当前调用没有可用的会话上下文"
                 "（缺少 `thread_id`）—— 审批记录无处落盘、操作无法被追溯，"
-                "因此**拒绝执行**。请带上 `session_id` 与登录身份后重试。"
+                "因此**拒绝执行**。"
+                + (f"原因：{why}" if why else "请带上 `session_id` 与登录身份后重试。")
             )
 
         logger.info(f"🔒 HITL 等待审批: 工具=[{tool.name}] 参数={tool_input}")

@@ -14,6 +14,7 @@ Listing 模块 → 主 Agent 工具注册表
 """
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.side_effects import READ_ONLY_METADATA
 
 from .service import ListingGeneratorService
 from .schemas import (
@@ -216,21 +217,25 @@ _fine_grained_tools = [
         coroutine=_optimize_title_tool,
         name="optimize_listing_title",
         description="优化 Listing 标题，返回 SEO 改进版本、字符数与 SEO 评分。当用户想改/润色/优化标题时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_generate_bullet_points_tool,
         name="generate_bullet_points",
         description="为产品生成五点描述（卖点）。当用户想写/生成五点、卖点时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_generate_description_tool,
         name="generate_product_description",
         description="为产品生成详情描述（可含 HTML 富文本）。当用户想写/生成产品描述时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_generate_search_terms_tool,
         name="generate_search_terms",
         description="基于标题生成后台搜索词（Search Terms）。当用户想生成/补充关键词时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
 ]
 
@@ -240,21 +245,25 @@ _coarse_grained_tools = [
         coroutine=_generate_complete_listing_tool,
         name="generate_complete_listing",
         description="从零生成一套完整 Listing（标题+五点+描述+关键词+SEO评分）。当用户要「生成/写一套完整 listing」且没有指定只做标题/五点等单一部件时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_optimize_listing_tool,
         name="optimize_listing",
         description="分析现有 Listing 并给出逐项优化建议。当用户要「优化/改进现有 listing」而非只改标题时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_analyze_seo_tool,
         name="analyze_listing_seo",
         description="对现有 Listing 做 SEO 诊断评分。当用户要「诊断/评分/检查 SEO」时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_ab_test_tool,
         name="generate_ab_test_variants",
         description="生成多个 A/B 测试变体。当用户要「A/B 测试/变体/多个版本」时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
 ]
 

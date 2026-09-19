@@ -48,10 +48,11 @@ def test_listing_tools_registry():
 
 
 def test_aigc_tools_registry():
-    """8 个 AIGC 工具注册正确，参数 schema 来自 Pydantic 模型"""
+    """9 个 AIGC 工具注册正确，参数 schema 来自 Pydantic 模型"""
     names = {t.name for t in aigc_tools}
     assert names == {
         "generate_product_image",
+        "generate_assets",
         "analyze_main_image",
         "generate_a_plus_content",
         "generate_brand_story",
@@ -67,7 +68,16 @@ def test_aigc_tools_registry():
 def test_navigation_tools_marker():
     """导航工具返回结构化 action 标记，供前端 dispatchAppAction 消费"""
     names = {t.name for t in navigation_tools}
-    assert names == {"switch_agent", "open_view", "open_account_menu", "handoff_to_agent", "set_theme"}
+    # ★ 第 145 轮 批 B3 加 `ask_clarification`（提问工具）—— 它虽不产导航标记，
+    #   但与 `handoff_to_agent` 同属「协调」类，且必须排在它**之前**（先问后交）。
+    assert names == {
+        "switch_agent",
+        "open_view",
+        "open_account_menu",
+        "handoff_to_agent",
+        "set_theme",
+        "ask_clarification",
+    }
 
     assert '"switch_agent"' in _switch_agent("product-research")
     assert '"product-research"' in _switch_agent("product-research")
@@ -340,7 +350,7 @@ def test_product_research_tools_registry():
         "analyze_blue_ocean",
         "analyze_profit",
         "analyze_pain_points",
-        "compare_competitors",
+        "compare_competitor_listings",
         "save_candidate",
     }
 
@@ -370,9 +380,17 @@ def test_ad_analysis_tools_registry():
 
 
 def test_secretary_agent_binds_tools():
-    """店秘书 agent 应持有 8 个工具（5 导航 + 1 订阅查询 + 1 选产品 + 1 切店铺），业务细粒度工具全部下沉到子 Agent"""
+    """店秘书 agent 应持有 11 个工具（9 业务/导航 + 2 规划），业务细粒度工具全部下沉到子 Agent"""
     agent = SecretaryAgent(llm=MagicMock())
-    assert len(agent.tools) == 8
+    # 8 → 9：第 145 轮 批 B3 把「提问」从提示词规则升级成真工具（`ask_clarification`）
+    # 9 → 11：第 148 轮 C3 开启规划器，注入 `plan_tasks` / `update_task`（todo 外置落图状态）
+    names = [t.name for t in agent.tools]
+    assert len(names) == 11
+    # 只断言数字会在内容漂移时静默退化成假绿：必须锁住「多出来的恰是这两个」
+    planner_names = ["plan_tasks", "update_task"]
+    assert sorted(set(names) & set(planner_names)) == planner_names
+    assert names.count("plan_tasks") == 1 and names.count("update_task") == 1
+    assert agent.enable_planning is True
     assert agent.system_prompt == SECRETARY_SYSTEM_PROMPT
 
 
@@ -509,7 +527,7 @@ def test_product_research_agent_deep_router_lazy():
             "analyze_blue_ocean",
             "analyze_profit",
             "analyze_pain_points",
-            "compare_competitors",
+            "compare_competitor_listings",
             "save_candidate",
         }
 

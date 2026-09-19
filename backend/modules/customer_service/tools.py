@@ -16,6 +16,7 @@ import json
 from typing import Optional
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.side_effects import READ_ONLY_METADATA, SIDE_EFFECT_METADATA
 
 from .service import CustomerServiceService
 from .schemas import (
@@ -117,6 +118,7 @@ customer_service_tools = [
             "搜索客服知识库（FAQ），返回匹配的问题与标准答案。"
             "当用户想查常见问题/找话术/搜知识库答案时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_create_ticket_tool,
@@ -125,6 +127,7 @@ customer_service_tools = [
             "创建客服工单，返回工单号与预计响应时间。"
             "当用户想创建工单/记录客户问题/建单时使用。"
         ),
+        metadata=SIDE_EFFECT_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_analyze_sentiment_tool,
@@ -133,6 +136,7 @@ customer_service_tools = [
             "分析文本情感倾向（正面/负面/中性），返回情感标签与置信度。"
             "当用户想分析评论情感/看客户情绪/判断是好评还是差评时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_get_conversation_summary_tool,
@@ -141,5 +145,6 @@ customer_service_tools = [
             "获取某段客服对话的摘要。"
             "当用户想总结对话/看会话摘要/复盘客服时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
 ]

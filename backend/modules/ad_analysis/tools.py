@@ -19,6 +19,7 @@ import json
 from typing import Optional
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.side_effects import READ_ONLY_METADATA
 
 from .service import AdAnalysisService
 from .schemas import (
@@ -160,6 +161,7 @@ ad_analysis_tools = [
             "广告账户健康诊断：多维度评估广告表现，生成评级与问题清单。"
             "当用户想诊断广告/体检/看广告健康/广告表现怎么样时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_analyze_search_terms_tool,
@@ -168,6 +170,7 @@ ad_analysis_tools = [
             "搜索词效果分析：识别高效/低效/浪费词，挖掘新机会词。"
             "当用户想看搜索词报告/哪些词表现好/词报告时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_optimize_bids_tool,
@@ -176,6 +179,7 @@ ad_analysis_tools = [
             "出价优化建议：按策略给出关键词/广告组的智能出价建议。"
             "当用户想优化出价/调价/给出价建议/控制 ACOS 时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_analyze_competitors_tool,
@@ -184,6 +188,7 @@ ad_analysis_tools = [
             "竞品广告分析：分析竞争对手广告策略、展示份额、关键词重叠。"
             "当用户想分析竞品广告/对手投放/展示份额时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_optimize_budget_tool,
@@ -192,6 +197,7 @@ ad_analysis_tools = [
             "预算分配优化：多 Campaign 智能分配预算，提升整体 ROI。"
             "当用户想优化预算/分配预算/调拨预算/提升 ROI 时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_detect_anomalies_tool,
@@ -200,5 +206,6 @@ ad_analysis_tools = [
             "广告异常检测：自动检测花费突增、转化骤降等异常。"
             "当用户想查异常/看有没有突然变化/检测波动时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
 ]

@@ -16,11 +16,12 @@ import json
 from typing import Optional
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.side_effects import READ_ONLY_METADATA
 from sqlalchemy import select
 
 from core.database import async_session_factory
 from core.tenant.scoping import scoped
-from modules.products.db_model import SkuRecord, SpuRecord
+from modules.products import SkuRecord, SpuRecord
 
 
 async def _select_product(shop_id: str, nth: int = 1) -> str:
@@ -84,5 +85,6 @@ def build_product_tools(shop_id: Optional[str]) -> list:
                 "当用户说「选第一个产品」「选第 N 个产品」「选产品库里的 XX」"
                 "并配合后续 listing 操作时使用。返回选中产品的 id / 标题 / ASIN。"
             ),
+            metadata=READ_ONLY_METADATA,
         ),
     ]

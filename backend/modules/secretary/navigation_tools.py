@@ -16,6 +16,8 @@ import json
 from typing import Literal
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.clarification import make_clarification_tool
+from ai_infra.tools.side_effects import READ_ONLY_METADATA
 
 
 # 与前端 stores/agent.ts 的 AGENT_LIST 对齐（不含 secretary 自身）
@@ -147,6 +149,7 @@ navigation_tools = [
             "「客服/工单/售后」→ customer-service（智能客服）；"
             "「复盘/周报/月报/经营大盘/业绩/报表/总结」→ review-analyst（运营复盘师）。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         func=_open_view,
@@ -157,6 +160,7 @@ navigation_tools = [
             "「打开竞品监控」→ monitor（仅竞品价格/上新监控，不含经营复盘），"
             "「打开平台规则」→ rules。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         func=_open_account_menu,
@@ -168,6 +172,7 @@ navigation_tools = [
             "「查看订阅/订阅与计费/我的套餐/账单/续费」→ subscription；"
             "「退出登录/登出/注销」→ logout。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         func=_set_theme,
@@ -178,7 +183,14 @@ navigation_tools = [
             "「切换深色/深色模式/暗色/黑色/夜间」→ dark；"
             "「跟随系统」→ system。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
+    # ★ 第 145 轮 批 B3：先「问」再「交接」—— `ask_clarification` 排在这里不是
+    #   装饰：它和 `handoff_to_agent` 的优先关系是「能在**当前会话**里问清楚，
+    #   就不要把对话交接走」（交接会切走前端 Agent，是更重的动作、也会丢当前上下文）。
+    #   工具排列顺序对 LLM 有弱提示作用，但真正的约束写在
+    #   `agent.py::SECRETARY_SYSTEM_PROMPT` 第 6 条 —— 两处一起改才生效。
+    make_clarification_tool(),
     StructuredTool.from_function(
         func=_handoff_to_agent,
         name="handoff_to_agent",
@@ -193,5 +205,6 @@ navigation_tools = [
             "「A+/EBC/详情页内容」→ aigc-media；"
             "「改文案/标题/五点/描述」→ listing-generator。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
 ]

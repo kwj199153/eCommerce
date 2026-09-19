@@ -15,9 +15,10 @@
 """
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.side_effects import READ_ONLY_METADATA
 
 from core.database import get_db
-from modules.billing.models import Subscription, SubscriptionPlan
+from modules.billing import Subscription, SubscriptionPlan
 from sqlalchemy import select
 
 
@@ -97,6 +98,7 @@ get_my_subscription = StructuredTool.from_function(
         "用户问「我订阅了什么套餐 / 我的订阅 / 账单 / 续费日期」时**优先调用此工具**回答，"
         "**不要**用 open_drawer(settings) 应付——设置抽屉里没有订阅信息。"
     ),
+    metadata=READ_ONLY_METADATA,
 )
 
 

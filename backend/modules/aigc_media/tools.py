@@ -13,6 +13,7 @@ AIGC 媒体生成模块 → 主 Agent 工具注册表
 """
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.side_effects import READ_ONLY_METADATA
 
 from .service import (
     generate_product_image_service,
@@ -333,41 +334,63 @@ aigc_tools = [
     StructuredTool.from_function(
         coroutine=_generate_product_image_tool,
         name="generate_product_image",
-        description="生成产品图片（含提示词、SEO 关键词、文案建议）。当用户想做图/生成产品图/主图时使用。",
+        description=(
+            "产出产品图片的提示词包（提示词、SEO 关键词、文案建议、风格指南），"
+            "不生成、不返回图片文件。当用户只要出图方案/提示词/主图文案时使用；"
+            "当用户要真正的图片（白底图/场景图/主图成品）时，必须改用 generate_assets。"
+        ),
+        metadata=READ_ONLY_METADATA,
+    ),
+    StructuredTool.from_function(
+        coroutine=_generate_assets_tool,
+        name="generate_assets",
+        description=(
+            "生成产品静态素材图片（白底图/场景图/主图/信息图/广告图），"
+            "返回真实图片 URL。当用户要图片本身、要出图、要做白底图/主图/场景图时使用。"
+            "（若用户只要提示词或文案方案，用 generate_product_image —— 它不出图。）"
+        ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_analyze_main_image_tool,
         name="analyze_main_image",
         description="分析产品主图质量（评分、CTR 预测、合规、改进建议）。当用户想诊断/优化主图时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_generate_a_plus_content_tool,
         name="generate_a_plus_content",
         description="生成 A+ 内容（EBC 增强品牌内容）各模块。当用户想做 A+ / EBC / 详情页品牌内容时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_generate_brand_story_tool,
         name="generate_brand_story",
         description="生成品牌故事（定位、使命、卖点、标语、叙事角度）。当用户想写品牌故事/品牌文案时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_translate_content_tool,
         name="translate_content",
         description="多语言内容翻译（含 SEO 优化与关键词保留）。当用户想翻译文案到其他语言时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_generate_infographic_tool,
         name="generate_infographic",
         description="生成营销信息图规格（分区、文案、配色、CTA）。当用户想做信息图/营销图时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_check_compliance_tool,
         name="check_image_compliance",
         description="检查图片合规性（状态、评分、问题清单、整改建议）。当用户想检查图片是否合规时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_generate_video_script_tool,
         name="generate_video_script",
         description="生成短视频脚本（分镜、旁白、字幕、钩子、CTA）。当用户想做短视频/视频脚本时使用。",
+        metadata=READ_ONLY_METADATA,
     ),
 ]

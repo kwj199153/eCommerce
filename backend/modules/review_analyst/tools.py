@@ -9,6 +9,7 @@
   利润审计），不包粗粒度 chat 入口。
 - 参数扁平化，工具函数内自构造 Pydantic request。
 - 工具层只做「调用 service + 序列化」，不碰数据源本体。
+
 ★★★ 第 143 轮 A4：`store_id` 从「`int = 1` 默认值」改成**必填、无默认值**。
     修复前 6 个工具都写着 `store_id: int = 1`：忘传就**静默**复盘 1 号店 ——
     错得完全没有声音。改成必填后，忘传直接 `TypeError`（签名即门禁）。
@@ -31,6 +32,7 @@ import json
 from typing import Optional
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.side_effects import READ_ONLY_METADATA
 
 from .service import ReviewAnalystService
 from .schemas import (
@@ -137,6 +139,7 @@ review_analyst_tools = [
             "经营概览周报：汇总销售、广告、库存、退款数据，生成结构化周报。"
             "当老板要看本周经营情况/周报/经营大盘/业绩概览时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_monthly_review_tool,
@@ -145,6 +148,7 @@ review_analyst_tools = [
             "月度复盘：GMV/ACoS/转化率/退货率趋势对比 + SKU 贡献排名。"
             "当老板要看月度数据/月报/月度总结/月度复盘时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_ad_review_tool,
@@ -153,6 +157,7 @@ review_analyst_tools = [
             "广告归因分析：ROAS/ACoS/CPC/CTR 多维度回顾 + campaign 评级。"
             "当老板要看广告效果/广告复盘/广告数据/ACoS 归因时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_product_performance_tool,
@@ -161,6 +166,7 @@ review_analyst_tools = [
             "商品表现分析：SKU 级销量/利润/评分/BSR/周转排名，识别爆款与滞销品。"
             "当老板要看商品表现/SKU 排名/哪个品卖得好/滞销时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_inventory_health_tool,
@@ -169,6 +175,7 @@ review_analyst_tools = [
             "库存健康分析：滞销预警/断货风险/周转天数/补货建议。"
             "当老板要看库存/断货风险/滞销/补货建议时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_profit_audit_tool,
@@ -177,5 +184,6 @@ review_analyst_tools = [
             "利润审计：销售额 - 佣金 - 广告 - 退货全链路核算净利润与净利率。"
             "当老板要看利润/净利润/赚了多少/成本结构时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
 ]

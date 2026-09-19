@@ -140,6 +140,41 @@ class BaseAgent:
     #: 非空 ⇒ `f"{ns}:{session_id}"`，用于隔离不同 Agent 的会话记忆。
     CHECKPOINT_NAMESPACE: str = ""
 
+    #: 「无会话」的**显式原因**——随 `config["metadata"]` 传给图与工具
+    #: （第 145 轮 批 B4）。
+    #:
+    #: ★ 为什么要显式化：此前「缺会话」只表现为 `config == {}` —— 下游
+    #:   （尤其 HITL 审批闸门）只能看到「没有 thread_id」这个**症状**，
+    #:   看不到「为什么没有」。于是拒绝文案只能含糊地说「缺少会话上下文」，
+    #:   用户分不清是「没登录」还是「前端没带 session_id」。
+    #:   更根本的问题是：「无会话 ⇒ 所有需审批操作被拒」这条**语义从未被声明**，
+    #:   它只是三处代码（`graph_for_session` 的分支、`_memoryless_graph()`、
+    #:   `hitl_decorator` 的守卫）互相作用后**涌现**出来的结果 ——
+    #:   改任何一处都可能悄悄改变它。现在它是一个具名常量、随 config 传播，
+    #:   执行层可以原样引用它来解释拒绝原因。
+    MEMORYLESS_REASON: str = (
+        "本次调用没有可持久化的会话上下文（缺少 session_id 或 user_id）——"
+        "按「没有身份 ⇒ 没有数据；没有会话 ⇒ 不留记忆」的原则，本次对话不会"
+        "留下任何记忆，且所有**需要人工审批**的操作都会被执行层拒绝"
+        "（审批状态无处落盘，无法追溯）。"
+    )
+
+    @property
+    def max_iterations(self) -> int:
+        """迭代上限 —— **只读视图**，真源是 `self.budget`。
+
+        ★ 保留这个名字，是因为既有调用点与回归用例
+          （`test_secretary_agent.py::test_max_iterations_strips_orphan_tool_calls`、
+          `_should_continue` 的日志文案）都在读它。但它是**派生值**，
+          不是独立配置 —— 要改迭代上限请改 `self.budget`（构造期用
+          `budget=` 具名档位，或 `max_iterations=` 兼容形参）。
+
+        ★ 为什么不让形参与预算并存：那就是两份真源。
+          「档位说 4、形参说 10」时没人说得清哪个生效，而不生效的那份
+          会在下一次「改了这里怎么没反应」时被重新发现一遍。
+        """
+        return self.budget.max_iterations
+
     def __init__(
         self,
         agent_name: Optional[str] = None,
@@ -230,7 +265,7 @@ class BaseAgent:
         logger.info(
             f"✅ Agent 初始化完成: {self.agent_name} | "
             f"工具数: {len(self.tools)} | "
-            f"HITL工具: {hitl_tools}"
+            f"HITL工具: {sorted(self.hitl_tool_names)}"
         )
 
     # ====== 元数据 ======
@@ -592,10 +627,29 @@ class BaseAgent:
         参考：项目1 (tools.py:32-101) add_human_in_the_loop()
         """
         from ai_infra.tools.hitl_decorator import add_human_in_the_loop
+        from ai_infra.tools.side_effects import derive_hitl_tools
+
+        # ★★★ 第 145 轮 批 B1/B2：审批名单不再由业务侧手写，改为由
+        #   `ai_infra.tools.side_effects` 的**副作用策略**推导（唯一真源）。
+        #   显式传入的 `hitl_tools=` 仍然生效（取并集），但它从此是**补充**
+        #   而非前提 —— 漏写不再造成漏审批：`has_side_effects()` 的默认分支
+        #   是 fail-closed 的 True，未登记为只读的工具**自动**获得审批包装。
+        #   旧形态（`hitl_tools=["save_candidate"]` 手写名单）的病根是「默认
+        #   不审批」——新增写库工具时没人记得改名单，且不报错、测试全绿。
+        derived = set(derive_hitl_tools(tools))
+        if derived - self.hitl_tool_names:
+            logger.info(
+                f"🔒 [{self.agent_name}] 副作用策略推导出待审批工具: "
+                f"{sorted(derived - self.hitl_tool_names)}"
+            )
+        # 就地更新：`router.hitl_tool_names` 是外部可读的契约（测试与前端都看它），
+        # 必须反映**生效**的名单，而不是构造参数里那一份。
+        self.hitl_tool_names = derived | self.hitl_tool_names
+        effective_names = self.hitl_tool_names
 
         wrapped_tools = []
         for tool in tools:
-            if tool.name in self.hitl_tool_names:
+            if tool.name in effective_names:
                 # ★ 形态守卫（第 131 轮加）：工厂必须返回**真的 BaseTool**。
                 #   原 `add_human_in_the_loop` 是 `async def`，此处同步调用 ⇒
                 #   拿到 coroutine 被原样塞进 `self.tools`、`bind_tools` 随后
@@ -961,7 +1015,19 @@ class BaseAgent:
                     "thread_id": self.resolve_thread_id(session_id, user_id)
                 }
             }
-        return self._memoryless_graph(), {}
+        # ★ 第 145 轮 批 B4：不再返回**空** config，而是显式声明「为什么没有会话」。
+        #   空 config 的问题不是"缺信息"，而是它把「无会话」这件事变成了一个
+        #   **不可观测的状态**：下游只能从"没有 thread_id"反推，且无从知道
+        #   原因。现在这条原因随 config 传播，HITL 守卫可以原样引用它。
+        #   （仍然不伪造 thread_id —— 「没有会话 ⇒ 不留记忆」这条原则不变，
+        #     见上面 docstring：默认 thread_id 是全进程共享的，比没有更危险。）
+        return self._memoryless_graph(), {
+            "configurable": {},
+            "metadata": {
+                "session_mode": "memoryless",
+                "session_mode_reason": self.MEMORYLESS_REASON,
+            },
+        }
 
     def _memoryless_graph(self):
         """不带 checkpointer 的图（懒构建 + 缓存）。"""

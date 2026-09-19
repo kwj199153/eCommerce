@@ -20,8 +20,14 @@ HITL 真接入：`save_candidate` 的人工审批闸门（2026-09-17，第 131 �
       customer_service / review_analyst）的生产装配点数都是 **0**（死代码）。
     · `listing_tools` 的 8 个工具全是「生成 / 优化 / 评分」——**零副作用**。
     · `product_research_tools` 里真正写库的只有 `save_candidate`；
-      `create_ticket` 只构造对象返回（`ticket_id` 现编、零持久化），
       `track_batch_asins` 只读内存 mock。
+      ★ 第 143 轮 A4 更正：`customer_service.create_ticket` **不再是**"只构造对象
+        返回（`ticket_id` 现编、零持久化）" —— A4 给它建了 `cs_tickets` 表并真的
+        落库（写路径还接了 strict 归属守卫）。但它**依然不构成本节的候选**，
+        理由换了一条：`customer_service_tools` 的**生产装配点数是 0**（悬空），
+        工具压根没绑给任何 Agent ⇒ 不会有 LLM 能调到它。
+        ⇒ 结论「有外部副作用 + 真被装配的 agent 工具全仓恰好 1 个」不变，
+          但**理由**从「零副作用」变成了「注册表悬空」—— 这两者不能混为一谈。
 
   ⇒ 「有外部副作用 + 真被装配」的 agent 工具，**全仓恰好 1 个**。
 
@@ -265,54 +271,117 @@ async def test_accept_executes_exactly_once(monkeypatch):
     assert "SIDE-EFFECT-DONE" in out
 
 
-# ====== D. 编译期门禁：hitl_tools 必须与 checkpointer 同现 ======
+# ====== D. 审批闸门的前提：被审批的图必须绑到真 checkpointer ======
 
 
-def test_hitl_construction_carries_checkpointer():
+def test_router_carries_checkpointer():
     """
-    编译期 AST 门禁：凡是传了 `hitl_tools=` 的 `BaseAgent(...)` 构造点，
-    **同一个调用里必须同时给 `checkpointer=`**，且不能是字面量 `None`。
+    运行时判据：`product_research` 的 router 子层必须绑着**真** checkpointer。
 
-    ★ 为什么这个门禁必须存在：`interrupt()` 在没有 checkpointer 的图上
-      **直接抛**。这意味着「给工具挂了审批」与「图绑了 checkpointer」
-      是**同一个前提** —— 但两者写在同一个构造调用的不同行上，
-      后来的人很容易删掉其中一行而察觉不到（不报错、直到线上某次
-      审批型操作才炸）。这条门禁把这层耦合固化下来。
+    ★ 为什么这条取代了旧的编译期 AST 判据：旧版找的是 `hitl_tools=` 这个
+      **关键字**，而批 B2（第 145 轮）已把业务侧的手写名单删干净 ——
+      审批名单改由 `ai_infra.tools.side_effects` 的副作用策略自动推导。
+      关键字随之消失，旧判据的首行 `assert hits` 会因「找不到目标」变红。
+      这是「门禁的墓志铭」：需求变了，钉住旧形态的断言从资产变成负资产。
+      新版不问关键字，直接问**这台真机器上它到底绑没绑** —— 更直接、更难绕。
 
-    ★ 为什么先断言 `hits` 非空：`all(...)` 对空列表恒真 —— 如果哪天
-      构造点被挪走或改名，这个门禁会**真空通过**（看着绿、其实什么都没查）。
+    ★ 为什么这层耦合必须钉住：`interrupt()` 在**没有 checkpointer 的图上直接抛**
+      （不是「降级为不审批」）。所以「工具挂了审批」与「图绑了 checkpointer」
+      是同一个前提，却写在同一个构造调用的不同行上 —— 后来的人删掉其中一行
+      不报错，直到线上某次审批型操作才炸。
+
+    ★ 跨全仓的等价 AST 判据在 `tests/test_hitl_policy.py`
+      （`test_agents_compiling_gated_registries_carry_checkpointer`），
+      那条覆盖所有装配点；本条是它在**真实装配结果**上的对照。
     """
-    hits = []
-    for p in sorted(BACKEND_DIR.rglob("*.py")):
-        parts = set(p.parts)
-        if "tests" in parts or "__pycache__" in parts or ".workbuddy" in parts:
-            continue
-        try:
-            tree = ast.parse(p.read_text(encoding="utf-8"), str(p))
-        except SyntaxError:  # pragma: no cover
-            continue
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            kw = {k.arg: k for k in node.keywords if k.arg}
-            if "hitl_tools" in kw:
-                hits.append((p, node, kw))
+    from modules.product_research.agent_product_research import ProductResearchAgent
 
-    assert hits, (
-        "全仓找不到任何 `hitl_tools=` 构造点 —— 本门禁失去目标、会真空通过。"
-        "若确实移除了 HITL 接线，请一并删除本门禁并说明原因。"
+    from core.checkpoint import get_checkpointer
+
+    router = ProductResearchAgent()._build_router()
+    assert router is not None, "router 子层没建起来（ENABLE_LLM 被关了？）"
+    assert router.hitl_tool_names, (
+        "router 推导出的审批名单为空 —— 下面的断言会真空通过"
+        "（先查 `ai_infra/tools/side_effects.py` 的声明是否被改坏）"
     )
 
-    for p, node, kw in hits:
-        rel = p.relative_to(BACKEND_DIR)
-        assert "checkpointer" in kw, (
-            f"{rel}:{node.lineno} 传了 hitl_tools 却没给 checkpointer —— "
-            "interrupt() 会在无 checkpointer 的图上直接抛，审批闸门不可用"
-        )
-        val = kw["checkpointer"].value
-        assert not (isinstance(val, ast.Constant) and val.value is None), (
-            f"{rel}:{node.lineno} checkpointer 被显式写成 None —— 同上，审批闸门不可用"
-        )
+    # ★ 运行期绑定只有**在环境真有 checkpointer 时**才可证：无 DB 的开发/CI 环境里
+    #   `get_checkpointer()` 本身就返回 None，那时断言「router.checkpointer 非 None」
+    #   会红得毫无道理（错在环境，不在代码）。
+    #   所以这里**分档**，而不是把断言弱化成恒真：
+    #     · 有 checkpointer 可用 ⇒ 必须真的绑上（强断言，覆盖「传了但传错」）；
+    #     · 没有 ⇒ 显式 skip（不假装通过），代码**形态**由
+    #       `tests/test_hitl_policy.py::test_agents_compiling_gated_registries_carry_checkpointer`
+    #       的 AST 判据无条件覆盖。
+    if get_checkpointer() is None:
+        pytest.skip("当前环境没有可用 checkpointer（无 DB）—— 运行期绑定不可证，形态由 AST 门禁覆盖")
+    assert router.checkpointer is not None, (
+        "环境有可用的 checkpointer、router 也绑了需审批工具，它却没绑上 ⇒ "
+        "`interrupt()` 会在图里直接抛，审批闸门不是「降级」而是「崩」"
+    )
+
+
+# ====== F. 「无会话」必须是显式状态，而不是一次语焉不详的失败 ======
+
+
+def test_memoryless_session_is_explicit():
+    """缺会话时 `graph_for_session` 必须给出**显式原因**，而不是返回空 config。
+
+    ★ 批 B4 之前，`graph_for_session(None, None)` 返回的 config 是 `{}` ——
+      「无会话」于是成了一个**不可观测的状态**：下游（尤其 HITL 守卫）只能从
+      「没有 thread_id」这个**症状**反推，且无从知道**原因**（没登录？前端没带
+      session_id？）。更根本的是：「无会话 ⇒ 所有需审批操作被拒」这条**语义
+      从未被声明过**，它只是三处代码互相作用后涌现的结果，改任何一处都可能
+      悄悄改变它。
+      现在它是一个具名常量（`BaseAgent.MEMORYLESS_REASON`），随 config 传播。
+
+    ★ 反向面（同样重要）：**不得**为了「让审批能跑」而伪造一个默认 thread_id。
+      默认 thread_id 是全进程共享的 —— 所有匿名请求会挤进同一段记忆、
+      互相看得见对方的消息，且不报任何错。
+    """
+    from ai_infra.base_agent import BaseAgent
+
+    agent = BaseAgent(agent_name="probe-memoryless")
+    _graph, cfg = agent.graph_for_session(None, None)
+
+    md = cfg.get("metadata") or {}
+    assert md.get("session_mode") == "memoryless", (
+        f"缺会话时没有显式标记（config={cfg!r}）—— 「无会话」又变回不可观测状态了"
+    )
+    assert md.get("session_mode_reason") == BaseAgent.MEMORYLESS_REASON
+    assert BaseAgent.MEMORYLESS_REASON.strip(), "原因文案不能为空"
+    assert not (cfg.get("configurable") or {}).get("thread_id"), (
+        "伪造了 thread_id —— 匿名请求会挤进同一段共享记忆"
+    )
+
+
+async def test_memoryless_reason_reaches_hitl_rejection():
+    """HITL 拒绝文案必须带上「为什么无会话」，而不是干说一句缺 thread_id。
+
+    ★ 为什么要把原因带到**用户看得见的那一层**：拒绝文案是用户唯一的线索。
+      「缺少 thread_id」是**实现细节**，对用户毫无意义；「没登录 / 前端没带
+      session_id」才是他能动手的事。两种情况的处置完全不同，文案一样等于
+      把人支去瞎猜。
+    """
+    import ai_infra.tools.hitl_decorator as hd
+    from langchain_core.tools import StructuredTool
+    from ai_infra.base_agent import BaseAgent
+
+    async def _inner(x: int = 1) -> str:  # pragma: no cover
+        return "ran"
+
+    tool = StructuredTool.from_function(coroutine=_inner, name="probe_tool", description="测试")
+    wrapped = hd.add_human_in_the_loop(tool)
+
+    _graph, cfg = BaseAgent(agent_name="probe-memoryless-2").graph_for_session(None, None)
+    with pytest.raises(hd.HITLPrerequisiteError) as ei:
+        await wrapped.ainvoke({"x": 1}, config=cfg)
+
+    msg = str(ei.value)
+    assert "thread_id" in msg, "仍要点明缺失的技术条件（便于排查）"
+    assert BaseAgent.MEMORYLESS_REASON[:24] in msg, (
+        "拒绝文案里没有带上「无会话」的显式原因 —— 用户仍不知道自己该做什么"
+    )
 
 
 # ====== E. 连带修复回归：工具路径必须把 shop_id 传进写库 ======
@@ -336,7 +405,12 @@ async def test_save_candidate_tool_passes_shop_id(monkeypatch):
     """
     import json as _json
 
-    import modules.candidates.service as cserv
+    # ★ 第 140 轮修正：生产代码走**门面**取名字（G-1 门禁强制），
+    #   而 `modules.candidates.service.create_candidate` 与
+    #   `modules.candidates.create_candidate` 是**两份独立绑定** ——
+    #   打在子模块上 ⇒ 桩永不被查到 ⇒ 真函数照跑（曾把全量回归打红，
+    #   且报错伪装成「数据库不可用」）。打桩必须打在门面上。
+    import modules.candidates as cserv
     import modules.product_research.tools as pr_tools
     from modules.product_research.agent_product_research import (
         _current_context_id,
@@ -399,7 +473,12 @@ async def test_save_candidate_tool_still_refuses_without_shop(monkeypatch):
     """
     import json as _json
 
-    import modules.candidates.service as cserv
+    # ★ 第 140 轮修正：生产代码走**门面**取名字（G-1 门禁强制），
+    #   而 `modules.candidates.service.create_candidate` 与
+    #   `modules.candidates.create_candidate` 是**两份独立绑定** ——
+    #   打在子模块上 ⇒ 桩永不被查到 ⇒ 真函数照跑（曾把全量回归打红，
+    #   且报错伪装成「数据库不可用」）。打桩必须打在门面上。
+    import modules.candidates as cserv
     import modules.product_research.tools as pr_tools
     from modules.product_research.agent_product_research import (
         _current_context_id,

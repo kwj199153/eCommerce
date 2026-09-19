@@ -16,6 +16,7 @@ import json
 from typing import List, Optional
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.side_effects import READ_ONLY_METADATA, SIDE_EFFECT_METADATA
 
 from .service import product_research_service
 from .schemas import (
@@ -207,6 +208,7 @@ product_research_tools = [
             "蓝海品类挖掘：按低竞争 + 有需求 + 有利润的标准筛选候选商品，返回蓝海评分排序列表。"
             "当用户想找蓝海机会/选品/挖掘蓝海品类/看有没有竞争小又赚钱的品类时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_analyze_profit_tool,
@@ -215,6 +217,7 @@ product_research_tools = [
             "利润分析：按售价、成本、FBA 费用、广告费计算净利润/ROI/盈亏平衡点。"
             "当用户想算利润/算 ROI/看这个产品赚不赚钱/算成本时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_analyze_pain_points_tool,
@@ -223,14 +226,17 @@ product_research_tools = [
             "痛点分析：分析某产品 ASIN 的用户评论，提炼痛点与改进方向。"
             "当用户想分析用户痛点/看差评/找产品改进点时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_compare_competitors_tool,
-        name="compare_competitors",
+        name="compare_competitor_listings",
         description=(
-            "竞品对比：对比多个竞品 ASIN 的 Listing 质量、价格、优劣势，给出参考建议。"
+            "竞品 Listing 对比（选品视角）：对比多个竞品 ASIN 的 Listing 质量、价格、优劣势，给出参考建议。"
             "当用户想对比竞品/分析竞争对手/看竞品优劣势时使用。"
+            "★ 与竞品情报模块的 compare_competitors 区分：那个是多维指标对比（价格/评分/评论/BSR/性价比），本工具聚焦 Listing 质量与选品参考。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_save_candidate_tool,
@@ -242,5 +248,6 @@ product_research_tools = [
             "工具会返回一句**追问**，把它原样转达给用户即可 —— 不要自己编 ASIN，"
             "也不要改存别的商品充数。"
         ),
+        metadata=SIDE_EFFECT_METADATA,
     ),
 ]

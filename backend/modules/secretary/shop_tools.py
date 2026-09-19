@@ -17,10 +17,11 @@ import logging
 from typing import Optional
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.side_effects import READ_ONLY_METADATA
 from sqlalchemy import select
 
 from core.database import async_session_factory
-from modules.stores.db_model import StoreRecord, SHOP_ORDER_BY
+from core.stores import StoreRecord, SHOP_ORDER_BY
 
 logger = logging.getLogger(__name__)
 
@@ -180,5 +181,6 @@ def build_shop_tools() -> list:
                 "可用店铺与它们的全局/平台内序号见工具返回；切换后，后续所有选品/产品/广告/"
                 "竞品等操作都在该店铺数据源下进行。"
             ),
+            metadata=READ_ONLY_METADATA,
         ),
     ]

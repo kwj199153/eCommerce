@@ -20,12 +20,24 @@
 
   · `session_id` **与** `user_id` 都非空 ⇒ 图**带** checkpointer，
     `thread_id = ":".join(p for p in (ns, user_id, session_id) if p)`；
-  · 缺任一个 ⇒ **不留记忆**：走不带 checkpointer 的图 + **空 config**。
+  · 缺任一个 ⇒ **不留记忆**：走不带 checkpointer 的图 + **不带 thread_id 的 config**
+    （第 145 轮 批 B4 起，这一档的 config 会带上 `metadata.session_mode`
+     与原因文案 —— 见下面「无会话不再是一个不可观测状态」）。
 
   ★ 为什么"没有会话"不能拿默认 `thread_id` 兜底：默认值是**全进程共享**的，
     所有匿名 / 无会话请求会挤进同一段消息历史、互相看得见对方说过什么
     （schema 相同所以不报错）。原则同 `accounts.filter_accessible_stores`：
     **没有身份 ⇒ 没有数据；没有会话 ⇒ 不留记忆。**
+
+  ★★ 第 145 轮（批 B4）：**「无会话」从一个不可观测状态变成显式契约。**
+    改前 `graph_for_session(None, None)` 返回的 config 是 `{}` ⇒ 下游只能从
+    「没有 thread_id」这个**症状**反推，且无从知道**原因**（没登录？前端没带
+    `session_id`？）；更根本的是「无会话 ⇒ 所有需审批操作被拒」这条语义
+    **从未被声明**，只是三处代码互相作用后涌现的结果。现在 config 带
+    `metadata.session_mode = "memoryless"` + `session_mode_reason`，
+    HITL 守卫（`tools/hitl_decorator.py`）会把它原样引用进拒绝文案。
+    ⚠️ 因此本文件的断言**不得**再把「无会话」写成「config 等于空字典」——
+    那是实现细节；真正的安全属性是「不带 thread_id」（见 `_assert_no_thread_id`）。
 
   ★★ 第 131 轮（item 3）：**光有会话还不够，必须有身份。**
     命名空间只隔开「不同 Agent」，隔不开「同一 Agent 的不同用户」——
@@ -43,7 +55,10 @@
   ④ 把 `resolve_thread_id` 的 `user_id` 段去掉 ⇒
      `test_same_session_different_users_are_isolated` 转红；
   ⑤ 把 `graph_for_session` 条件里的 `and user_id` 去掉 ⇒
-     `test_session_and_identity_are_both_required` 转红。
+     `test_session_and_identity_are_both_required` 转红；
+  ⑥ 把 `graph_for_session()` 无会话分支的 `metadata` 去掉（退回裸 `{}`）⇒
+     `test_no_session_leaves_no_memory` 等 3 条转红（B4 的契约没了，且 HITL
+     拒绝文案会退化成「请带上 session_id」，用户看不出「没登录」与「前端没带会话」）。
 """
 
 import json
@@ -135,15 +150,11 @@ async def test_session_and_identity_are_both_required():
     a._graph_memoryless = _stub("memoryless", used)
 
     await a.run_session({"messages": []}, session_id="s-1")
-    assert used == [("memoryless", {})], (
-        f"只有会话、没有身份时不该用带记忆的图: {used}"
-    )
+    _assert_memoryless_invoke(used, where="只有会话、没有身份")
 
     used.clear()
     await a.run_session({"messages": []}, user_id="u-1")
-    assert used == [("memoryless", {})], (
-        f"只有身份、没有会话时不该用带记忆的图: {used}"
-    )
+    _assert_memoryless_invoke(used, where="只有身份、没有会话")
 
     used.clear()
     await a.run_session({"messages": []}, session_id="s-1", user_id="u-1")
@@ -200,13 +211,82 @@ def _stub(tag, used):
     return _StubGraph()
 
 
+def _assert_no_thread_id(cfg, *, where: str) -> None:
+    """
+    ★★★ 真正的安全属性：无会话 / 无身份的那一档 **不得带 `thread_id`**。
+
+    ★ 为什么不写成 `cfg == {}`（本文件第 145 轮前的写法）：那是把**实现细节**
+      也钉住了。批 B4 给这一档加上了显式 `metadata` 标记，形态变了、意图没变
+      （一行 thread_id 都没伪造）⇒ 旧的字面断言成了假红。判据的本意就是本函数
+      的第一句：不许冒出 `thread_id` —— 若实现改成「一张默认 thread_id 的 config
+      + 带记忆的图」，所有无会话请求就会共用一段历史（`secretary` 改前的形态）。
+    """
+    conf = (cfg or {}).get("configurable") or {}
+    assert "thread_id" not in conf, (
+        f"{where}: 无会话却伪造了 thread_id ⇒ 所有匿名 / 无会话请求会挤进同一段"
+        f"消息历史、互相看得见对方说过什么（跨用户串记忆，且不报任何错）。config={cfg}"
+    )
+
+
+def _assert_memoryless_marked(cfg, *, where: str) -> None:
+    """
+    批 B4 新增契约：无会话必须**显式**说明「为什么没有会话」。
+
+    ★ 为什么连原因文案一起断言：`session_mode` 是给机器读的、
+      `session_mode_reason` 是给人读的。HITL 守卫（`tools/hitl_decorator.py`）
+      把后者拼进拒绝文案；只剩一个 `memoryless` 标记而没有原因 ⇒ 用户看到的
+      仍是「请带上 session_id 与登录身份后重试」，分不清「没登录」与「前端没带会话」。
+
+    ★ 与 `test_hitl_wiring.py::test_memoryless_session_is_explicit` 不是重复：
+      那条直接查 `graph_for_session()` 的返回值；本条查的是**入口是否把 config
+      原样传到了图上**（`run_session` / `stream_session` 若吞掉 cfg，标记就到不了）。
+    """
+    md = (cfg or {}).get("metadata") or {}
+    assert md.get("session_mode") == "memoryless", (
+        f"{where}: 无会话的 config 没带显式标记 ⇒ 下游只能从「没有 thread_id」"
+        f"这个症状反推、无从知道原因（批 B4 要修的正是这件事）。config={cfg}"
+    )
+    assert md.get("session_mode_reason"), (
+        f"{where}: 只标了 memoryless 却没带原因文案 ⇒ HITL 拒绝文案会退化成"
+        f"「请带上 session_id 与登录身份后重试」，用户看不出真因。config={cfg}"
+    )
+
+
+def _assert_memoryless_invoke(used, *, where: str) -> None:
+    """
+    断言「无会话 / 无身份」这一路（`ainvoke` 形态，`used == [(tag, cfg)]`）：
+      ① 用的是**不带 checkpointer** 的图；② config 里没有 thread_id；
+      ③ config 带显式 memoryless 标记 + 原因。
+    """
+    assert len(used) == 1, f"{where}: 驱动图的次数不对: {used}"
+    tag, cfg = used[0]
+    assert tag == "memoryless", (
+        f"{where}: 走到了带 checkpointer 的图 ⇒ 会留下 / 读到记忆: {used}"
+    )
+    _assert_no_thread_id(cfg, where=where)
+    _assert_memoryless_marked(cfg, where=where)
+
+
+def _assert_memoryless_stream(used, *, where: str) -> None:
+    """同 `_assert_memoryless_invoke`，用于 `astream_events` 形态 `[(cfg, version)]`。"""
+    assert len(used) == 1, f"{where}: 驱动图的次数不对: {used}"
+    cfg, version = used[0]
+    assert version == "v2", f"{where}: 流式版本不对: {used}"
+    _assert_no_thread_id(cfg, where=where)
+    _assert_memoryless_marked(cfg, where=where)
+
+
 async def test_no_session_leaves_no_memory():
     """
     ★★★ 没有 `session_id` ⇒ **既不**用带 checkpointer 的图，**也不**伪造 thread_id。
 
-    ★ 为什么必须两条都断言：只断言 config 为空不够 —— 若实现改成
-      「一张默认 thread_id 的 config + 带记忆的图」，config 里就会冒出 `thread_id`，
-      于是所有无会话请求共用一段历史（这正是 `secretary` 改前的形态）。
+    ★ 断言口径（第 145 轮 批 B4 起）：**不写死 config 的字面值**，只问两件事 ——
+      ① config 里有没有冒出 `thread_id`（真正的安全属性。若实现改成「一张默认
+         thread_id 的 config + 带记忆的图」，所有无会话请求就会共用一段历史 ——
+         这正是 `secretary` 改前的形态）；
+      ② 有没有带**显式**的 memoryless 标记与原因（B4 新增契约，见
+         `_assert_memoryless_marked`）。
+      「config 等于空字典」属实现细节，钉死它会假红。
 
     反向注入：把 `graph_for_session()` 的 `if session_id:` 改成恒真 ⇒ 本条转红。
     """
@@ -219,10 +299,7 @@ async def test_no_session_leaves_no_memory():
     a._graph_memoryless = _stub("memoryless", used)
 
     await a.run_session({"messages": []})
-    assert used == [("memoryless", {})], (
-        f"无会话时用错了图 / 伪造了 thread_id: {used}。"
-        "守卫应为「没有会话 ⇒ 不留记忆」（无 checkpointer 的图 + 空 config）。"
-    )
+    _assert_memoryless_invoke(used, where="无会话")
 
     used.clear()
     await a.run_session({"messages": []}, session_id="s-9", user_id="u-9")
@@ -260,13 +337,11 @@ async def test_stream_session_shares_the_same_thread_rule():
 
     used.clear()
     _ = [ev async for ev in a.stream_session({"messages": []})]
-    assert used == [({}, "v2")], f"无会话的流式请求不该带 thread_id: {used}"
+    _assert_memoryless_stream(used, where="无会话的流式请求")
 
     used.clear()
     _ = [ev async for ev in a.stream_session({"messages": []}, session_id="s-7")]
-    assert used == [({}, "v2")], (
-        f"只有会话没有身份时也不该带 thread_id（否则两个用户会共享记忆）: {used}"
-    )
+    _assert_memoryless_stream(used, where="只有会话没有身份的流式请求")
 
 
 # ====== 3. 端到端：真 checkpointer + 真图，两轮真的能互相看见 ======

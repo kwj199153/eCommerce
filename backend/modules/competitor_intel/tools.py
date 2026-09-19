@@ -17,6 +17,7 @@ import json
 from typing import Optional
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.side_effects import READ_ONLY_METADATA
 
 from .service import CompetitorIntelService
 from .schemas import (
@@ -190,6 +191,7 @@ competitor_intel_tools = [
             "竞品 Listing 监控：追踪竞品的价格、排名、评论数、库存状态变化。"
             "当用户想监控竞品/看竞品价格排名变化/跟踪某个 ASIN 时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_track_batch_asins_tool,
@@ -198,6 +200,7 @@ competitor_intel_tools = [
             "ASIN 批量追踪：批量对比多个竞品的关键指标（价格/BSR/评论/评分/综合得分）。"
             "当用户想批量对比多个竞品/追踪一批 ASIN 时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_analyze_market_share_tool,
@@ -206,6 +209,7 @@ competitor_intel_tools = [
             "市场份额分析：基于 BSR 排名估算各品牌市场份额和竞争格局（CR4/HHI）。"
             "当用户想看市场份额/市场格局/类目竞争集中度时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_analyze_pricing_strategy_tool,
@@ -214,6 +218,7 @@ competitor_intel_tools = [
             "定价策略分析：分析竞品的定价模式、促销节奏、价格弹性，给出调价建议。"
             "当用户想分析竞品定价/看价格策略/促销节奏时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_analyze_competitor_reviews_tool,
@@ -222,6 +227,7 @@ competitor_intel_tools = [
             "竞品评论深度分析：挖掘竞品评论中的优劣势、用户痛点、差异化机会。"
             "当用户想分析竞品评论/看竞品口碑/找差异化机会时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_detect_intruders_tool,
@@ -230,6 +236,7 @@ competitor_intel_tools = [
             "入侵者检测：发现近期进入市场的新卖家/新产品，评估威胁等级并给出应对策略。"
             "当用户想看新进入的竞争者/入侵者/新卖家威胁时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_analyze_buy_box_tool,
@@ -238,6 +245,7 @@ competitor_intel_tools = [
             "Buy Box 竞争分析：分析 Buy Box 竞争格局、价格竞争力、赢取建议。"
             "当用户想分析 Buy Box/购物车竞争/价格竞争力时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
     StructuredTool.from_function(
         coroutine=_compare_competitors_tool,
@@ -246,5 +254,6 @@ competitor_intel_tools = [
             "多维度竞品对比：从价格、评分、评论、BSR、性价比等维度全面对比多个竞品。"
             "当用户想对比竞品/对比多个 ASIN 优劣势时使用。"
         ),
+        metadata=READ_ONLY_METADATA,
     ),
 ]
