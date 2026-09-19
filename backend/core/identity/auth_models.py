@@ -170,3 +170,23 @@ class UserApiKey(Base):
 
     def __repr__(self) -> str:
         return f"<UserApiKey(user={self.user_id}, name={self.name!r}, active={self.is_active})>"
+
+# ====== 外键目标表的 metadata 注册（★ 必须留在文件末尾）======
+#
+# 本模块声明的外键用的是**字符串**目标（`ForeignKey("users.id")`），SQLAlchemy
+# 解析时要在当前 `MetaData` 里按表名找到 `users`。若从未有人 import 过定义
+# `users` 的模块，则**任何一次 flush** 都会抛：
+#
+#     NoReferencedTableError: Foreign key associated with column
+#     'account_members.user_id' could not find table 'users'
+#
+# 注意它抛在 flush 的**拓扑排序**（`sorted_tables`）里，不在 import 时；
+# 而且报错指向**外键本身**，看起来像"外键写错了"。
+#
+# ★ 第 140 轮实测：单独 `import core.identity.account_models` 时
+#   `Base.metadata.sorted_tables` 直接失败 —— 上面这段原则在本模块从未落实。
+#
+# ⇒ 由**声明方自己**把目标表带进来（自洽），不依赖"某个入口恰好先 import 了它"。
+#   同一模式见 `core/stores/models.py` 末尾。
+#   配套回归：`tests/test_schema_parity.py::test_every_model_module_is_self_sufficient_for_fk_targets`
+import core.identity.models  # noqa: E402,F401  注册 users

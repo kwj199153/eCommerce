@@ -84,7 +84,15 @@ async def secretary_chat(
     - session_id：会话 ID（前端持久化，后续请求带回）
     """
     try:
-        from modules.conversation import service as conv_service
+        # ★ 第 140 轮：原先抓的是**子模块** `conversation.service`（门禁上线后
+        #   属「伸手进包内部」）。改为取门面出口的 4 个动作 —— 契约可见，
+        #   service 内部重构不再影响本文件。
+        from modules.conversation import (
+            append_message,
+            create_conversation,
+            get_owned_conversation,
+            history_of,
+        )
 
         # ★★★ P0-1（2026-09-18）：`session_id` 由**客户端**提供 ⇒ 必须先过归属校验。
         #   修复前这里只问「会话存在吗」（`conversation_exists`），不问「是你的吗」
@@ -100,18 +108,18 @@ async def secretary_chat(
         session_id = request.session_id
         conv = None
         if session_id:
-            conv = await conv_service.get_owned_conversation(current_user, session_id)
+            conv = await get_owned_conversation(current_user, session_id)
 
         history = [h.model_dump() for h in request.history]
         if conv is not None:
             # DB 历史为准（跨会话恢复场景）
-            db_history = await conv_service.history_of(conv, limit=20)
+            db_history = await history_of(conv, limit=20)
             if db_history:
                 history = db_history
         else:
             # 没带 session_id / 会话不存在 / 不属于当前用户（换账号、换环境、伪造）
             # ⇒ 一律新建。owner_id **只能**来自服务端身份，不接受任何自报。
-            session_id = await conv_service.create_conversation(
+            session_id = await create_conversation(
                 agent_id="secretary",
                 owner_id=current_user.id if current_user else None,
             )
@@ -133,10 +141,10 @@ async def secretary_chat(
         #   于是落一条 `conversation_id=None` 的孤儿消息（该列**无外键**，
         #   所以它不会报错、只会静默堆积）。现在 session_id 恒非空。
         try:
-            await conv_service.append_message(
+            await append_message(
                 current_user, session_id, "user", request.message
             )
-            await conv_service.append_message(
+            await append_message(
                 current_user, session_id, "assistant", result.get("reply", "")
             )
         except Exception as e:

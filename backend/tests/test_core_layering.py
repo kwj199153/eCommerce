@@ -1,9 +1,18 @@
 """`core/` 层的**分层门禁**：反向依赖不得发生在 import 期。
 
 本仓的分层方向是 `modules → core`（业务依赖内核）。反方向 `core → modules`
-**不能一刀切禁掉** —— 全仓共 24 处，其中 22 处是「模型注册 / 引导数据 / 粒度
+**不能一刀切禁掉** —— 实测全仓共 24 处，其中 23 处是「模型注册 / 引导数据 / 粒度
 查询」的合理形态，作者已用**函数内导入**在缓解（`register_all_models` 必须列全
 模型，否则 alembic autogenerate 静默漏表；`bootstrap` 必须能种引导数据）。
+
+★ 这个 24 是**可复算的**（别手写成别的数）：
+    `core/**/*.py` 中指向 `modules.*` 的 import 语句 = 24 条；
+    其中位于函数体内（被推迟到调用期）= 23 条，位于 import 期 = 1 条（即 `EXCEPTIONS`）。
+  ★ 第 140 轮「实体归位」把它从 **27** 降到了 24 —— 消掉的正是
+    `tenant/middleware.py`、`auth/accounts_router.py`、`database.py` 各一处。
+    那三处不是「反向依赖」的设计，而是**内核实体（`StoreRecord`）被放在
+    `modules/` 下**的产物：实体归位到 `core/stores/` 后，core → core 是合法方向，
+    三处函数内导入直接提升为顶层（并删掉了「避免循环依赖」那类注释）。
 
 真正危险的是**在模块顶层**反向 import：它在 import 期就把 `core` 与某个业务模块
 绑定，形成模块级循环依赖，且是否报错取决于**导入顺序**（"有时能跑"）。
@@ -183,8 +192,8 @@ def test_layering_gate_is_not_vacuous():
         (1, "modules.billing.models")
     ]
     assert scan_import_time_reverse_imports(
-        "from modules.stores.db_model import StoreRecord\n"
-    ) == [(1, "modules.stores.db_model")]
+        "from modules.products.db_model import SpuRecord\n"
+    ) == [(1, "modules.products.db_model")]
 
     # ② 函数内导入必须**不算**（这是本门禁允许的形态）
     assert scan_import_time_reverse_imports(

@@ -30,7 +30,7 @@ from sqlalchemy import select, func
 from core.database import async_session_factory
 from modules.monitors.db_model import MonitorRecord
 from modules.monitors.snapshot import build_time_series
-from modules.stores.db_model import StoreRecord
+from core.stores import StoreRecord
 
 
 # 演示竞品档案（6 条覆盖 4 种监控动机：对标爆款/低价走量/对标店铺/对标品牌/新品观察）

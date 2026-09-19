@@ -352,7 +352,10 @@ async def test_write_candidates_hard_refuses_without_shop_id(monkeypatch):
     ★ 用「写入口被触达就抛错」的探针证明"零往返"，而不是只看返回值：
       返回值可能是"失败"，但失败发生在数据库拒绝之后（已经晚了一步）。
     """
-    import modules.candidates.service as candidates_service
+    # ★ 第 140 轮修正：必须打桩在**门面**上。打在 `service` 子模块上时
+    #   桩永不生效 —— 本用例会因「生产的硬拒绝恰好也回一句含『店铺』的
+    #   文案」而**通过**，于是「零数据库往返」这条断言其实一次都没被验证。
+    import modules.candidates as candidates_service
     from modules.product_research.agent_product_research import ProductResearchAgent
 
     touched: list = []

@@ -115,8 +115,9 @@ def register_all_models() -> None:
     # EmailToken/LoginAttempt 服务邮箱验证、密码重置与登录审计。
     from core.identity.account_models import Account, AccountMember  # noqa: F401
     from core.identity.auth_models import EmailToken, LoginAttempt, UserApiKey  # noqa: F401
+    # ★ 第 140 轮：StoreRecord 随实体归位搬到 core/stores/，本行由 modules 组挪到 core 组。
+    from core.stores import StoreRecord  # noqa: F401
     from modules.billing.models import SubscriptionPlan, Subscription, Invoice, PaymentMethod  # noqa: F401
-    from modules.stores.db_model import StoreRecord  # noqa: F401
     from modules.products.db_model import (  # noqa: F401
         SpuRecord, SkuRecord, ProductGroupRecord,
     )

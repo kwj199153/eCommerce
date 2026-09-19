@@ -30,7 +30,7 @@ from core.tenant.middleware import get_current_shop_id
 from core.tenant.scoping import scoped
 from modules.candidates.db_model import CandidateRecord, CandidateGroupRecord
 from modules.candidates.service import create_candidate, record_to_dict as _record_to_dict
-from modules.products.db_model import SpuRecord
+from modules.products import SpuRecord
 
 router = APIRouter(prefix="/api/v1", tags=["候选选品库"])
 
@@ -214,8 +214,8 @@ async def approve_candidate(candidate_id: str, payload: dict = None, shop_id: Op
         r.updated_at = now
         await session.commit()
 
-    # SPU → dict 的唯一真源在 products/router.py（公开符号，勿再取私有名）
-    from modules.products.router import spu_to_dict
+    # SPU → dict 的唯一真源已收进 products 包门面（跨模块一律走门面，勿取内部文件）
+    from modules.products import spu_to_dict
     return {
         "message": "评审通过，已复制到自有产品库，候选保留为已通过评估基线",
         "candidate_id": candidate_id,

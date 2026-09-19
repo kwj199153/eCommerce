@@ -142,7 +142,7 @@ async def test_existing_candidates_use_valid_shop_ids():
     唯一允许的例外是空串（无租户头写入的历史遗留，属待清理脏数据）——
     出现 'shop-1' 这类旧占位值即视为回归。
     """
-    from modules.stores.db_model import StoreRecord
+    from core.stores import StoreRecord
     from modules.candidates.db_model import CandidateRecord
 
     async with async_session_factory() as session:

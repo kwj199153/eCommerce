@@ -19,7 +19,7 @@
 from sqlalchemy import select, func
 from core.database import async_session_factory
 from modules.candidates.db_model import CandidateRecord
-from modules.stores.db_model import StoreRecord
+from core.stores import StoreRecord
 
 SEED_CANDIDATES = [
     {

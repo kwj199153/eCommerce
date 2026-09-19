@@ -12,8 +12,23 @@
 其余 10 条里，7 条是「依赖 `stores`/`billing`」—— 那不是插件互耦，而是
 **内核实体被物理放在了 `modules/` 下**（`stores` 是全库唯一带
 `tenant_id + account_id + owner_id` 三件套的表，且被 7 个模块依赖）。
-把内核「搬」到 `core/` 的代价很大（会打穿 1:1 relationship 的 Base.registry、
-牵动 Alembic 历史），所以本轮**用清单 + 门禁把边界表达出来**，物理不动。
+
+★ 第 140 轮更新（本段原先写的是「物理不动」，**已作废**，别照它推理）：
+  `StoreRecord` + `SHOP_ORDER_BY` 已**实际搬迁**到 `core/stores/models.py`，
+  `modules/stores/` 只剩 HTTP 面 `router.py`（`/api/v1/stores` 原地不动）。
+  当时列出的顾虑逐条实测后**都不成立**：`StoreRecord` 零 `relationship()`
+  （不碰 1:1 的 Base.registry 地雷）、表名仍是 `stores_store`
+  （autogenerate 零 diff）、前端契约不变。详见 `core/stores/models.py` docstring。
+  ⇒ 本文件的**清单仍然必要** —— 分层归属是一个**决定**，AST 推不出来。
+    但职责已收窄为「`modules/` 之间还能不能横向依赖」；
+    「跨模块引用能不能伸手进包内部」改由 `test_module_facades.py` 管。
+
+★ 两个轴，别混（读者最常在此处绕晕）：
+  本表的 KERNEL / SHARED / PLUGIN 是**语义分层** —— 「这东西属不属于平台内核」，
+  是决策记录；而「实体该住 `core/` 还是 `modules/`」用的是**入度判据** ——
+  「被 ≥2 个别的模块 import ⇒ 基础域 ⇒ 该住 core/」。
+  同一条入度判据下 `billing` 只有 1 个跨模块消费者 ⇒ 实体留 `modules/`；
+  但它**语义上**仍是平台内核 ⇒ 本表继续标 KERNEL。两者不矛盾。
 
 ## 为什么这里必须有一张「名单」
 
@@ -67,6 +82,7 @@ MODULE_LAYERS: dict[str, str] = {
     "amazon_sp": SHARED,
     "conversation": SHARED,
     "candidates": SHARED,
+    "memory": SHARED,
 
     # ---- PLUGIN：面向用户的功能模块。插件之间**不得**顶层互相 import。
     "ad_analysis": PLUGIN,
@@ -89,8 +105,9 @@ MODULE_REASONS: dict[str, str] = {
     "billing":
         "订阅 / 套餐 / 计价 / 额度 —— 长文自己把「租户管理：配额、订阅套餐、计费、额度」列进平台内核",
     "stores":
-        "店铺（租户容器）。全库唯一带 tenant_id+account_id+owner_id 三件套的表；"
-        "持有 SHOP_ORDER_BY（全项目排序唯一真源）；被 7 个模块在顶层 import",
+        "店铺（租户容器）的 **HTTP 契约面**（`/api/v1/stores`）。内核实体 StoreRecord 与"
+        "排序真源 SHOP_ORDER_BY 已于第 140 轮归位 `core/stores/`，本包只剩 router；"
+        "仍留 KERNEL：它服务的对象是内核实体，不该被插件反向依赖",
     "products":
         "SPU/SKU 商品主数据。被 candidates、secretary 等多个功能引用，是跨功能共享实体",
     "amazon_sp":
@@ -99,6 +116,10 @@ MODULE_REASONS: dict[str, str] = {
         "Agent 会话记忆（跨会话上下文）。被 secretary 消费，是面向 Agent 的基础设施",
     "candidates":
         "候选 / 选品记忆。被 product_research 消费，属跨功能共享的记忆实体",
+    "memory":
+        "跨会话**长期记忆**（用户画像 / 偏好）。被 secretary 消费以注入 system prompt，"
+        "与 conversation 同为面向 Agent 的基础设施；★ 按 owner_id（人）分片、"
+        "不是 thread_id（会话）⇒ 这也是它另立一包的原因",
     "ad_analysis": "广告分析视图；只被前端直接调用，无模块间顶层引用 ⇒ 插件",
     "aigc_media": "AIGC 图片 / 视频生成；产出物经 assets 落库，模块间无顶层共享 ⇒ 插件",
     "assets": "素材库；仅被 secretary 的**函数内**工具引用（非顶层），无共享需求 ⇒ 插件",

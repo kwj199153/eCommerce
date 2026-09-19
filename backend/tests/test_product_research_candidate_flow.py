@@ -213,7 +213,11 @@ def captured_candidates(monkeypatch):
         captured.append({"payload": payload, "shop_id": shop_id})
         return {**payload, "id": f"cand-test-{len(captured)}"}
 
-    monkeypatch.setattr("modules.candidates.service.create_candidate", _fake)
+    # ★ 第 140 轮：消费方（agent_product_research）已改走 `modules.candidates`
+    #   **门面**。门面的 re-export 是一份**独立绑定**（发生在包 import 时），
+    #   所以 patch 原模块 `service` 不再被拦截 —— 必须 patch 门面。
+    #   这不是绕过门禁：门面才是本包对外承诺的契约面，patch 它才是 patch 契约。
+    monkeypatch.setattr("modules.candidates.create_candidate", _fake)
     return captured
 
 
@@ -328,7 +332,7 @@ async def test_save_skips_existing_asin(monkeypatch, captured_candidates):
     async def _always_exists(asin, shop_id=None):
         return True
 
-    monkeypatch.setattr("modules.candidates.service.candidate_exists", _always_exists)
+    monkeypatch.setattr("modules.candidates.candidate_exists", _always_exists)
 
     agent = await _agent_with_last_result()
     result = await agent._save_candidate("这个品帮我进入选品库", shop_id=TEST_SHOP)

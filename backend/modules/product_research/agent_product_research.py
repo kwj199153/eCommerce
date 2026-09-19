@@ -1554,7 +1554,7 @@ class ProductResearchAgent(BaseAgent):
         没有这个状态，「多轮补齐」根本进行不下去 —— 用户回一句
         「就那个加湿器」会被判成 general 直接跑偏（实测）。
         """
-        from modules.candidates.service import describe_missing_fields
+        from modules.candidates import describe_missing_fields
 
         self._session(context_id)["pending_save"] = {
             "draft": draft,
@@ -1585,7 +1585,7 @@ class ProductResearchAgent(BaseAgent):
         `shop_id` 一路带到 `_write_candidates`（槽位补齐的**终点就是一次写库**，
         漏传会让"多轮补齐"在最后一步被拒）。
         """
-        from modules.candidates.service import missing_required_fields
+        from modules.candidates import missing_required_fields
 
         session = self._session(context_id)
         pending = session.get("pending_save") or {}
@@ -1678,7 +1678,7 @@ class ProductResearchAgent(BaseAgent):
           外键 → 500 且把 SQLAlchemy 报错与约束名吐给客户端（见 shop_id 空值
           守卫那段修复），而且归因文案会变成"数据库不可用"，误导排查方向。
         """
-        from modules.candidates.service import candidate_exists, create_candidate
+        from modules.candidates import candidate_exists, create_candidate
 
         shop_id = (shop_id or "").strip() or None
         if shop_id is None:

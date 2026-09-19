@@ -293,7 +293,7 @@ async def _login_token(client, email: str, password: str) -> str:
 async def _make_store(store_id: str, owner_id) -> None:
     """在 stores_store 建一行（owner_id=None 表示"无主店铺"）。"""
     from core.database import async_session_factory
-    from modules.stores.db_model import StoreRecord
+    from core.stores import StoreRecord
 
     async with async_session_factory() as db:
         db.add(StoreRecord(

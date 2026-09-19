@@ -34,7 +34,7 @@
 ==============================================================================
 SQLAlchemy 的 `Enum(SomePyEnum)` 默认按枚举成员的 **.name** 落库（不是 .value），
 项目里已经踩过一次（见 tests/test_auth_and_tenant.py 里对 platform 的注释）。
-本模块与 `modules/stores/db_model.py`（StoreRecord 的 status/sync_status 也是
+本模块与 `core/stores/models.py`（StoreRecord 的 status/sync_status 也是
 String）保持一致：**String 落库 + Python 侧枚举做校验与类型提示**。
 少一层隐式转换，迁移和手写 SQL 都不会踩到 name/value 不一致。
 """
@@ -212,3 +212,23 @@ class AccountMember(Base):
             f"<AccountMember(account={self.account_id}, user={self.user_id}, "
             f"role={self.role}, status={self.status})>"
         )
+
+# ====== 外键目标表的 metadata 注册（★ 必须留在文件末尾）======
+#
+# 本模块声明的外键用的是**字符串**目标（`ForeignKey("users.id")`），SQLAlchemy
+# 解析时要在当前 `MetaData` 里按表名找到 `users`。若从未有人 import 过定义
+# `users` 的模块，则**任何一次 flush** 都会抛：
+#
+#     NoReferencedTableError: Foreign key associated with column
+#     'account_members.user_id' could not find table 'users'
+#
+# 注意它抛在 flush 的**拓扑排序**（`sorted_tables`）里，不在 import 时；
+# 而且报错指向**外键本身**，看起来像"外键写错了"。
+#
+# ★ 第 140 轮实测：单独 `import core.identity.account_models` 时
+#   `Base.metadata.sorted_tables` 直接失败 —— 上面这段原则在本模块从未落实。
+#
+# ⇒ 由**声明方自己**把目标表带进来（自洽），不依赖"某个入口恰好先 import 了它"。
+#   同一模式见 `core/stores/models.py` 末尾。
+#   配套回归：`tests/test_schema_parity.py::test_every_model_module_is_self_sufficient_for_fk_targets`
+import core.identity.models  # noqa: E402,F401  注册 users

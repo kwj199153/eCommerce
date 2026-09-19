@@ -24,7 +24,7 @@ from sqlalchemy import select, func
 from core.database import async_session_factory
 from modules.platform_rules.db_model import PlatformRuleDocRecord, PlatformRuleRecord
 from modules.platform_rules.service import build_doc_record, build_rule_record
-from modules.stores.db_model import StoreRecord
+from core.stores import StoreRecord
 
 
 # 预置规则（6 条；id 沿用前端 MOCK_RULES，多店铺灌入时追加店铺后缀）

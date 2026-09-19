@@ -54,7 +54,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # ForeignKeyViolationError）。delete_store 需要捕获它并翻译成 409。
 from sqlalchemy.exc import IntegrityError
 from core.database import async_session_factory, get_db
-from modules.stores.db_model import StoreRecord, SHOP_ORDER_BY
+from core.stores import StoreRecord, SHOP_ORDER_BY
 
 
 async def load_stores_into_memory() -> int:

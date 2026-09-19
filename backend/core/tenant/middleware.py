@@ -45,6 +45,7 @@ from core.auth.dependencies import require_auth_if_enabled
 from core.database import get_db
 # ★ P0-2（2026-09-16）：account_id（= 本项目的租户语义）的唯一写入点。
 from core.observability.context import set_request_context
+from core.stores import StoreRecord
 
 
 # ====== 常量 ======
@@ -220,7 +221,6 @@ async def _resolve_current_shop_id(
     #   「store.account_id ∈ 当前用户可见账户集合」—— 后者才表达得出团队共享
     #   （同一家店两个人都要能进）。owner_id 只留作过渡期兜底（account_id 为空的
     #   存量/合成店铺），由 `tests/test_account_store_hierarchy.py` 锁定。
-    from modules.stores.db_model import StoreRecord  # 函数内导入，避免循环依赖
     from core.auth.accounts import can_access_store
 
     result = await db.execute(select(StoreRecord).where(StoreRecord.id == shop_id))

@@ -694,7 +694,7 @@ async def _synthetic_test_shops():
     """
     from sqlalchemy import text
     from core.database import async_session_factory
-    from modules.stores.db_model import StoreRecord
+    from core.stores import StoreRecord
 
     async with async_session_factory() as session:
         existing = set((await session.execute(
@@ -759,7 +759,7 @@ async def ensure_shop():
     """
     from sqlalchemy import text
     from core.database import async_session_factory
-    from modules.stores.db_model import StoreRecord
+    from core.stores import StoreRecord
 
     created: list = []
 

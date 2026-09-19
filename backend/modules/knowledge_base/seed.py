@@ -24,7 +24,7 @@ from modules.knowledge_base.db_model import (
     KnowledgeBaseRecord,
     KnowledgeFaqRecord,
 )
-from modules.stores.db_model import StoreRecord
+from core.stores import StoreRecord
 
 # 知识库容器（逻辑 id，灌库时加店铺后缀；is_default 由 seed 强制置真）
 SEED_BASES = [{'id': 'kb-default',

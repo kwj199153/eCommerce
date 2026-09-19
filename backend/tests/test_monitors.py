@@ -491,7 +491,7 @@ async def test_seed_uses_real_shop_ids_not_hardcoded():
     **不包含**任何硬编码字面量。
     """
     from sqlalchemy import select as sa_select
-    from modules.stores.db_model import StoreRecord
+    from core.stores import StoreRecord
 
     async with async_session_factory() as session:
         real_shop_ids = set((await session.execute(sa_select(StoreRecord.id))).scalars().all())

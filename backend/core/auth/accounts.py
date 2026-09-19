@@ -128,7 +128,7 @@ def is_platform_admin(user: Optional[User]) -> bool:
 #
 # 归属判定要同时服务两种"店铺"对象：
 #   - `models/store.py::Store`（pydantic，内存 dict `_store_db` 里那种）
-#   - `modules/stores/db_model.py::StoreRecord`（ORM 行）
+#   - `core/stores/models.py::StoreRecord`（ORM 行）
 # 二者字段名相同，但 pydantic 侧早期没有 `account_id`。
 # 把"取哪个属性"收在这两个函数里，将来加字段只改一处。
 

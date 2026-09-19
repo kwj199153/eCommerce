@@ -529,3 +529,13 @@ class CompetitorSnapshot(Base):
         Index("ix_comp_snap_competes", "store_id", "competes_with_asin"),
         Index("ix_comp_snap_brand", "brand"),
     )
+
+# ====== 外键目标表的 metadata 注册（★ 必须留在文件末尾）======
+#
+# 本模块所有表的字符串外键都指向 `stores_store.id`，SQLAlchemy 解析时要在
+# 当前 `MetaData` 里找到定义它的模块。缺了就会在 flush 的拓扑排序里抛
+# `NoReferencedTableError: ... could not find table 'stores_store'`。
+#
+# ⇒ 声明方自己带上目标表定义模块（自洽），不依赖调用顺序。
+#   `core.stores` 就是那个内核实体包，走**门面**取名字（与 `modules/*/seed.py` 一致）。
+from core.stores import StoreRecord  # noqa: E402,F401  注册 stores_store

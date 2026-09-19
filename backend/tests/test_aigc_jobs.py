@@ -65,7 +65,7 @@ async def job_user(client):
     #      不带头时 shop_id 落成空串 "" ⇒ 写入被数据库直接拒绝
     #   ② 生产模式（auth_on）下 get_current_shop_id 会校验
     #      stores_store.owner_id == 当前用户 ⇒ 店铺必须属于这个测试用户
-    from modules.stores.db_model import StoreRecord
+    from core.stores import StoreRecord
     shop_id = f"store_aigc_{uuid.uuid4().hex[:8]}"
     async with get_async_session() as db:
         db.add(StoreRecord(id=shop_id, name=f"[test] {shop_id}", platform="amazon_us",

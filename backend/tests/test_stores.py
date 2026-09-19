@@ -31,7 +31,7 @@ import uuid
 import pytest_asyncio
 from sqlalchemy import delete
 
-from modules.stores.db_model import StoreRecord
+from core.stores import StoreRecord
 from modules.stores.router import _fee_template_db, _store_db
 
 
@@ -381,7 +381,8 @@ def test_routes_under_business_auth_gate():
 #   2. `list_stores()` 直接用 `list(_store_db.values())` → 继承上面那个未定义顺序
 #   3. `_list_shops()` 用 `ORDER BY created_at, id` → 与上面两者无关
 #
-# 修法：真源 `SHOP_ORDER_BY` 落在 `stores/db_model.py`，三处消费。
+# 修法：真源 `SHOP_ORDER_BY` 落在内核实体文件（第 140 轮搬至
+#       `core/stores/models.py`），三处消费。
 # 本组测试钉住「真源唯一 + 两条链路对齐」，防止有人改回隐式顺序。
 
 
@@ -392,12 +393,21 @@ def test_shop_order_by_is_single_source_of_truth():
     用源码断言（而非行为断言）：行为断言在「三处各写一遍但恰好一致」时会假绿，
     而本 bug 的本质就是**多份口径**，必须钉住「只有一份」。
     """
-    from modules.stores import db_model, router as router_module
+    from core.stores import SHOP_ORDER_BY
+    from core.stores import models as store_models
+    from modules.stores import router as router_module
 
-    assert hasattr(db_model, "SHOP_ORDER_BY"), "排序真源 SHOP_ORDER_BY 不存在"
-    assert db_model.SHOP_ORDER_BY == ("created_at", "id")
+    assert SHOP_ORDER_BY == ("created_at", "id")
+
+    # 真源**定义**只允许出现一次（第 140 轮后落在 core/stores/models.py）。
+    # 断言「定义形态」而非「属性存在」：口径分裂的回归形态是
+    # 「router 里又写了一遍排序键」，而不是「常量没了」。
+    msrc = inspect.getsource(store_models)
+    assert "SHOP_ORDER_BY = (" in msrc, "排序真源未定义在 core/stores/models.py"
 
     rsrc = inspect.getsource(router_module)
+    assert "SHOP_ORDER_BY = (" not in rsrc, \
+        "router 里出现第二份排序真源定义 —— 口径分裂回归"
     # ① 回灌必须排
     assert "order_by(" in rsrc and "SHOP_ORDER_BY" in rsrc, \
         "load_stores_into_memory / list_stores 未使用排序真源"
@@ -457,7 +467,7 @@ async def test_load_stores_into_memory_is_ordered():
     回灌顺序本身也是对的。
     """
     from modules.stores.router import load_stores_into_memory, _store_db
-    from modules.stores.db_model import SHOP_ORDER_BY
+    from core.stores import SHOP_ORDER_BY
 
     await load_stores_into_memory()
     stores = list(_store_db.values())
@@ -473,7 +483,7 @@ def test_tie_breaker_makes_order_deterministic():
     """
     from datetime import datetime
     from types import SimpleNamespace
-    from modules.stores.db_model import SHOP_ORDER_BY
+    from core.stores import SHOP_ORDER_BY
 
     T = datetime(2026, 9, 14, 10, 0, 0)
     shops = [

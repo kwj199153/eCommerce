@@ -63,3 +63,7 @@ class ConversationMessageRecord(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+# 本模块的 `shop_id` 是**字符串**外键，指向 `stores_store.id`。SQLAlchemy 解析时
+# 要在当前 `MetaData` 里按表名找到 `stores_store`；缺了**不在 import 时**报错，
+#     'conversations.shop_id' could not find table 'stores_store'
+from core.stores import StoreRecord  # noqa: E402,F401  注册 stores_store

@@ -72,3 +72,23 @@ class AssetGroupRecord(Base):
     shop_id: Mapped[str] = mapped_column(String(64), default="", index=True, server_default='')
     createdAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
     updatedAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
+
+# ====== 外键目标表的 metadata 注册（★ 必须留在文件末尾）======
+#
+# 本模块的 `shop_id` 是**字符串**外键，指向 `stores_store.id`。SQLAlchemy 解析时
+# 要在当前 `MetaData` 里按表名找到 `stores_store`；缺了**不在 import 时**报错，
+# 而是在某一次 flush 的拓扑排序里抛：
+#
+#     NoReferencedTableError: Foreign key associated with column
+#     'assets.shop_id' could not find table 'stores_store'
+#
+# 报错还指向**外键本身** —— 看起来像「外键写错了」，极难定位。
+#
+# ★ 第 140 轮实测：单独 `import modules.assets.db_model` 时，`Base.metadata.sorted_tables`
+#   直接失败；同类共 8 个 db_model。
+#   （此前没人发现，是因为测试从来都是"全量导入"，目标表当然都在。）
+#
+# ⇒ 由**声明方自己**把目标表带进来（自洽），不依赖「某个入口恰好先 import 了它」。
+#   同一模式见 `core/stores/models.py`、`modules/amazon_sp/db_model.py` 末尾。
+#   配套回归：`tests/test_schema_parity.py::test_every_model_module_is_self_sufficient_for_fk_targets`
+from core.stores import StoreRecord  # noqa: E402,F401  注册 stores_store

@@ -58,7 +58,7 @@ from core.tenant.middleware import (  # noqa: E402
     get_current_shop_id,
     get_current_shop_id_optional,
 )
-from modules.stores.db_model import StoreRecord  # noqa: E402
+from core.stores import StoreRecord  # noqa: E402
 
 
 def make_request(shop_id: str = None, token: str = None, method: str = "GET") -> Request:

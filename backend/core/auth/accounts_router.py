@@ -63,6 +63,7 @@ from core.identity.account_models import (
     MemberStatus,
 )
 from core.identity.models import User
+from core.stores import StoreRecord
 
 
 router = APIRouter(prefix="/accounts", tags=["账户与成员"])
@@ -128,14 +129,12 @@ async def _store_counts(db: AsyncSession, account_ids: List[str]) -> Dict[str, i
     """
     批量统计各账户下的店铺数（一次查询，不做 N+1）。
 
-    ★ 函数内 import：本模块在 `core/`，`StoreRecord` 在 `modules/`。
-      本项目允许的依赖方向是 modules → core，core → modules 属反向依赖，
-      只在"需要一个计数"这种粒度上做**函数内**导入（同 `core/tenant/middleware.py`
-      的做法），避免模块级反向依赖把 import 图搅乱。
+    ★ 第 140 轮：`StoreRecord` 已归位到 `core/stores/`（同为内核层）。
+      本函数原先靠「函数内 import」绕开 core → modules 的反向依赖，
+      归位后那条理由消失，导入已提升到文件顶部 import 区。
     """
     if not account_ids:
         return {}
-    from modules.stores.db_model import StoreRecord  # noqa: PLC0415
 
     rows = await db.execute(
         select(StoreRecord.account_id, func.count())

@@ -151,3 +151,18 @@ class ProductGroupRecord(Base):
     shop_id: Mapped[str] = mapped_column(String(64), default="", index=True, server_default='')
     createdAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
     updatedAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
+
+# ====== 外键目标表的 metadata 注册（★ 必须留在文件末尾）======
+#
+# 本模块所有表的字符串外键都指向 `stores_store.id`，SQLAlchemy 解析时要在
+# 当前 `MetaData` 里找到定义它的模块。缺了就会在 flush 的拓扑排序里抛
+# `NoReferencedTableError: ... could not find table 'stores_store'`。
+#
+# ⇒ 声明方自己带上目标表定义模块（自洽），不依赖调用顺序。
+#   `core.stores` 就是那个内核实体包，走**门面**取名字（与 `modules/*/seed.py` 一致）。
+# ★ 本模块此前是**意外**自洽的：`modules/products/__init__.py` 门面导出了住在
+#   `router.py` 的纯函数 `spu_to_dict` ⇒ 执行 router ⇒ `core.tenant.middleware`
+#   ⇒ `core.stores` ⇒ 顺手注册了 stores_store。一旦门面不再导出 router 里的东西
+#   （`modules/products/__init__.py` 的 docstring 里就建议过一次这样的重构），
+#   这里会立刻崩。显式写死，不再依赖任何巧合。
+from core.stores import StoreRecord  # noqa: E402,F401  注册 stores_store
