@@ -34,6 +34,7 @@ except Exception:
 
 from sqlalchemy import text  # noqa: E402
 from core.database import async_session_factory, register_all_models  # noqa: E402
+from wiring import MODEL_MODULES  # noqa: E402
 from modules.trade.risk_scan import (  # noqa: E402
     CATEGORY_LABELS, DECISION_UNKNOWN, RISK_CATEGORIES,
     fuse, scan_llm, scan_naive, scan_rules,
@@ -183,7 +184,7 @@ def print_summary(ev, show_detail: bool) -> None:
 # ============================================================ 主流程
 
 async def main() -> None:
-    register_all_models()
+    register_all_models(MODEL_MODULES)
     sem = asyncio.Semaphore(4)
 
     p("=" * 84)

@@ -1,6 +1,6 @@
 """交易履约 + 买家反馈域（trade）—— 模块门面
 
-★ 为什么这三个名字要在这里显式导出：`core.database.register_all_models()` 之外，
+★ 为什么这三个名字要在这里显式导出：`wiring.MODEL_MODULES` 之外，
   凡是跨包引用本模块的地方都应走 `__init__`（`core/stores` 的先例）。
   直接 `from modules.trade.db_model import X` 会让「模型搬家」变成全仓搜索。
 

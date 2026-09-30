@@ -138,7 +138,7 @@ async def test_migration_head_is_single_not_forked():
 # -------------------------------------------
 # `stores_store.account_id -> accounts.id` 是**字符串**外键，SQLAlchemy 在
 # 解析时要在当前 `MetaData` 里按表名找到 `accounts`。而 `accounts` 只由
-# `core.database.register_all_models()` 导入 —— 该函数**只被 alembic/env.py
+# `wiring.MODEL_MODULES` 导入 —— 该函数**只被 alembic/env.py
 # 与 init_db() 调用**，init_db() 又只在 FastAPI lifespan 里跑。
 #
 # ⇒ pytest 进程从不跑 lifespan（`httpx.ASGITransport` 不触发 startup）
@@ -168,8 +168,9 @@ def test_every_orm_foreign_key_target_is_registered():
     无关的用例 flush 时才炸（那时报错位置与根因隔了十万八千里）。
     """
     from core.database import Base, register_all_models
+    from wiring import MODEL_MODULES
 
-    register_all_models()
+    register_all_models(MODEL_MODULES)
     # 不抛异常即通过
     tables = Base.metadata.sorted_tables
     assert tables, "metadata 里一张表都没有 —— register_all_models() 可能失效了"
@@ -185,8 +186,9 @@ def test_stores_account_fk_target_is_present():
     且外键指向的表名正确。
     """
     from core.database import Base, register_all_models
+    from wiring import MODEL_MODULES
 
-    register_all_models()
+    register_all_models(MODEL_MODULES)
     assert "accounts" in Base.metadata.tables, "accounts 表未注册到 metadata"
     assert "stores_store" in Base.metadata.tables, "stores_store 表未注册到 metadata"
 

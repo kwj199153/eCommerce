@@ -30,6 +30,7 @@ except Exception:
 
 from sqlalchemy import text  # noqa: E402
 from core.database import async_session_factory, register_all_models  # noqa: E402
+from wiring import MODEL_MODULES  # noqa: E402
 from core.config import config  # noqa: E402
 
 OUT = os.path.join(BACKEND, "out-probe-r299-review-inventory.txt")
@@ -117,7 +118,7 @@ def scan(text_blob: str) -> dict[str, list[str]]:
 
 
 async def main() -> None:
-    register_all_models()
+    register_all_models(MODEL_MODULES)
 
     p("=" * 78)
     p("r299 · P0 盘点：customer_reviews 现有数据（只读）")

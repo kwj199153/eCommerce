@@ -238,8 +238,9 @@ def test_only_one_shop_table_in_orm_metadata():
       （表还没建），metadata 这条会立刻红。
     """
     from core.database import Base, register_all_models
+    from wiring import MODEL_MODULES
 
-    register_all_models()
+    register_all_models(MODEL_MODULES)
     tables = set(Base.metadata.tables)
 
     assert "stores_store" in tables, "业务侧店铺表 stores_store 不见了"

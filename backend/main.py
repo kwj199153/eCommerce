@@ -23,6 +23,8 @@ from fastapi.staticfiles import StaticFiles
 from core.config import config
 from core.database import init_db, close_db, get_db_session
 from core.logger import get_logger
+from core.bootstrap import seed_base_data
+from wiring import MODEL_MODULES, SEED_STEPS
 
 _log = get_logger("main")
 
@@ -39,7 +41,7 @@ async def lifespan(app: FastAPI):
 
     quiet_sqlalchemy_echo_handlers()
 
-    await init_db()
+    await init_db(MODEL_MODULES)
     _log.info("✅ 数据库初始化完成")
 
     # 决策层 C：初始化 LangGraph Checkpoint（psycopg3 连接池 + 建 checkpoint 表）
@@ -66,10 +68,9 @@ async def lifespan(app: FastAPI):
     #   pytest 会大面积 ERROR，根因是 subscription_plans 空表导致
     #   `subscriptions.plan_id` 外键失败。
     # ⇒ 抽成一处，lifespan 与 `scripts/bootstrap_db.py`（CI 用）共用；
-    #   以后新增基础数据**只改 core/bootstrap.py**。
+    #   以后新增基础数据**只改 wiring.SEED_STEPS**。
     # ============================================================
-    from core.bootstrap import seed_base_data
-    seeded_map = await seed_base_data()
+    seeded_map = await seed_base_data(SEED_STEPS)
     _log.info("✅ 基础数据引导完成: {}", seeded_map)
 
     # ★ P0-3（2026-09-30）：依赖探活必须是**周期性**的，

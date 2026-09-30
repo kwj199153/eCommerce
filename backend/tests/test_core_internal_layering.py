@@ -39,15 +39,16 @@
   SCC 没有长度上限，任何规模的环都跑不掉（`test_scc_finder_detects_cycles` 用
   3 节点环钉住这一点）。
 
-★ 为什么判据要**分「import 期 / 函数内」两档**：`core/database.py` 的
-  `from core.identity.models import User` 在 `register_all_models()` 函数体内，
-  import 期不执行 => 它不是横向耦合，而是「注册 / 引导」。把两档混在一起数会
-  得出偏大的数字（实测 36 + 7 条；混算成 43 条）。
+★ 为什么判据要**分「import 期 / 函数内」两档**：`core/bootstrap.py` 的
+  `from core.metering.usage_tracker import init_default_plans` 在
+  `seed_default_plans()` 函数体内，import 期不执行 => 它不是横向耦合，
+  而是「注册 / 引导」。把两档混在一起数会得出偏大的数字
+  （实测 50 + 7 条；混算成 57 条）。
 
-## 实测值（第 140 轮建立 / 第 327 轮复算 / 第 328 轮复算 / 第 331 轮再复算）
+## 实测值（第 140 轮建立 / 第 327·328·331 轮复算 / 第 335 轮再复算）
 
   `core/**/*.py` = **61** 个；unit = 21 个；
-  import 期边 = **50** 条（唯一对）；函数内边 = **10** 条；
+  import 期边 = **50** 条（唯一对）；函数内边 = **7** 条；
   含环的强连通块 = **1** 个：[['auth', 'identity', 'stores']]；
   `STANDALONE_UNITS` = ['<core>', 'profit_engine', 'timefmt']。
   复算方式：底部的 `_scan_core_graph()` 就是判据本体，直接调用即可，
@@ -93,6 +94,9 @@
   · **函数内 3 条**：`{auth, database, identity} -> audit`
       - `identity` / `auth` 在端点体内调 `record_audit()`（登录成功 / 成员变更）
       - `database` 在 `register_all_models()` 里注册 `AuditLog`
+        ★ 第 335 轮 P0-7 起这条 `database -> audit` **已消失**：模型清单外移到
+          组合根 `wiring.MODEL_MODULES`，`core/database.py` 不再 import 任何
+          模型（`AuditLog` 的注册改由 `wiring` 触发）。见下文「第 335 轮」一节。
 
   ★★ 为什么这 3 条刻意留在**函数体**而不上顶层：
     审计的内核（模型 / 服务 / 读口）住在 `audit`，而**读口反过来依赖 `auth`**
@@ -123,7 +127,7 @@
 
   ★ 为什么 `tasks.py` **不**被 `core/audit/__init__.py` re-export：
     那会把 `celery` 变成「任何一次 `import core.audit`」的硬依赖，
-    而该包被 `core/database.py::register_all_models()` 在 **import 期**导入
+    而该包被组合根 `wiring.MODEL_MODULES` 在 **import 期**导入
     ⇒ 连只需要 ORM 实体的注册表也得拉起 celery。见该 `__init__` 的说明。
 
   实测：SCC 仍**恰好 1 个**、孤立单元仍**恰好 3 个**（清理不引入环、不引入孤岛）。
@@ -153,6 +157,27 @@
     此后**两张表都有**它。两表同时出现同一条边不是冗余：它记录的是
     「这条路在 import 期和调用期都被走过」，而"从函数内挪到顶层"正是
     本门禁要拦下的那次耦合升级 —— 现在它是一次**被看见**的升级。
+
+## 第 335 轮 · P0-7：模型注册 / 引导清单外移到组合根（必须记住）
+
+  老板点名的「取消分层方向被打破」：`core/` 反向依赖 `modules/` 曾达 36 处
+  （`core/redis.py -> ai_infra` 另 1 处）。本轮把其中 **28 处**按**依赖倒置**消除：
+
+    · **清单**（全是一串模块名）外移到 `backend/wiring.py`（组合根，既不在
+      `core/` 也不在 `modules/`）：`MODEL_MODULES` / `SEED_STEPS`；
+    · 内核只留**机制**：`core/database.py::register_all_models(model_modules)`、
+      `core/bootstrap.py::seed_base_data(steps)` —— 参数**必填、无默认值**
+      （漏传 ⇒ 当场 `TypeError`，而不是静默注册 0 个模型 / 灌 0 条数据）。
+
+  ⇒ 对**本文件的图**的影响：`core/database.py` 不再在函数体内 import
+    `core.audit.models` / `core.identity.*` / `core.stores`，于是
+    `{database} -> {audit, identity, stores}` 三条**函数内边消失**
+    （函数内边 **10 -> 7**）。`wiring.py` **不在 `core/**` 下**，不进入本图。
+
+  ★ import 期边**不变**（仍 50 条）：`core/database.py` 顶层只剩 `import sqlalchemy`
+    与 `from core.config import config`；`core/bootstrap.py` 新增的
+    `import importlib` 与 `from typing import ...` 是标准库，不构成 unit->unit 边。
+    实测：unit 仍 21、SCC 仍**恰好 1 个**、孤立单元仍**恰好 3 个**。
 """
 
 from __future__ import annotations
@@ -238,9 +263,6 @@ FUNCTION_LEVEL_EDGES: set[tuple[str, str]] = {
     ("auth", "audit"),
     ("bootstrap", "database"),
     ("bootstrap", "metering"),
-    ("database", "audit"),
-    ("database", "identity"),
-    ("database", "stores"),
     ("identity", "audit"),
     ("identity", "logger"),
     ("logger", "observability"),

@@ -17,7 +17,7 @@
 ★ 刻意**不导出** `router`：
   读口（`core/audit/router.py`）依赖 FastAPI 依赖注入链（`core.auth.dependencies`）。
   若在这里 re-export 它，任何一次 `import core.audit` —— 包括
-  `register_all_models()` 里那一行模型注册 —— 都会顺带把鉴权链拉进 import 期。
+  组合根 `wiring.MODEL_MODULES` 里那一行模型注册 —— 都会顺带把鉴权链拉进 import 期。
   注册表只想要 ORM 实体，不该为此付出「拉起整个鉴权栈」的代价。
   ⇒ 读口由 `main.py` 直接 import（既有范式，见 main.py 里各 router 的挂载）。
 

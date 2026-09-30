@@ -1,18 +1,29 @@
 """`core/` 层的**分层门禁**：反向依赖不得发生在 import 期。
 
 本仓的分层方向是 `modules → core`（业务依赖内核）。反方向 `core → modules`
-**不能一刀切禁掉** —— 实测全仓共 24 处，其中 23 处是「模型注册 / 引导数据 / 粒度
-查询」的合理形态，作者已用**函数内导入**在缓解（`register_all_models` 必须列全
-模型，否则 alembic autogenerate 静默漏表；`bootstrap` 必须能种引导数据）。
+**不能一刀切禁掉** —— 实测全仓共 **7 处**，其中 6 处在函数体内（被推迟到
+调用期），只有 1 处在 import 期（即 `EXCEPTIONS`）。
 
-★ 这个 24 是**可复算的**（别手写成别的数）：
-    `core/**/*.py` 中指向 `modules.*` 的 import 语句 = 24 条；
-    其中位于函数体内（被推迟到调用期）= 23 条，位于 import 期 = 1 条（即 `EXCEPTIONS`）。
-  ★ 第 140 轮「实体归位」把它从 **27** 降到了 24 —— 消掉的正是
-    `tenant/middleware.py`、`auth/accounts_router.py`、`database.py` 各一处。
-    那三处不是「反向依赖」的设计，而是**内核实体（`StoreRecord`）被放在
-    `modules/` 下**的产物：实体归位到 `core/stores/` 后，core → core 是合法方向，
-    三处函数内导入直接提升为顶层（并删掉了「避免循环依赖」那类注释）。
+★ 这个 7 是**可复算的**（别手写成别的数）：
+    `core/**/*.py` 中指向 `modules.*` 的 import 语句 = 7 条；
+    其中位于函数体内 = 6 条，位于 import 期 = 1 条（即 `EXCEPTIONS`）。
+    复算：`.workbuddy/probes/r335-p0-7/scan_core_reverse_deps.py`。
+
+★ 第 335 轮 P0-7 把它从 **36** 降到了 **7**（老板点名的「取消分层方向被打破」）：
+    · **A 档**：消掉 `core/redis.py -> ai_infra`（1 处）—— `DISTILL` 触发时刻
+      上移 `core/config.py` 的 `MEMORY_DISTILL_*`；
+    · **B 档**：把「全部 ORM 模型清单」与「引导数据步骤」按**依赖倒置**
+      外移到组合根 `wiring.py`（28 处：`register_all_models` 17 + `seed_base_data` 11）
+      —— core 只留机制、清单住组合根；
+    · 余下 **7 处全部指向 `modules.billing.models`**（`Subscription` /
+      `SubscriptionPlan`）：`core/metering/usage_tracker.py` 5 处做额度查询、
+      `core/identity/router.py` 1 处注册默认订阅、`core/identity/models.py` 1 处
+      在 import 期登记 1:1 relationship（见 `EXCEPTIONS`）。
+      ★ 这 7 处不是「顺手拿一下」：`Subscription` 的入边 ≥ 2
+      （identity / metering / billing 都引用它）—— 按本仓「实体归位」判据
+      （第 140 轮，`StoreRecord` 先例）它**本应住在 core**。归位到 `core/billing/`
+      是一次**独立的架构动作**（牵动大量既有 import 路径），单独评估与执行，
+      见 `docs/round-335-architecture-review-2.md`。
 
 真正危险的是**在模块顶层**反向 import：它在 import 期就把 `core` 与某个业务模块
 绑定，形成模块级循环依赖，且是否报错取决于**导入顺序**（"有时能跑"）。
@@ -23,14 +34,14 @@
    例外只有一处（见 `EXCEPTIONS`），且必须在源码里显式声明（`# noqa: E402`）。
 
 ★ 为什么规则不是「core 不得 import modules」
-  那会误伤 `register_all_models()`（`Base.metadata` 必须列全模型）与
-  `bootstrap` 的 seed —— 它们是**注册 / 引导**，不是业务耦合。本门禁只钉
-  「import 期耦合」这一个可执行、无争议的形态，而不是靠一张"哪个模块算业务"
-  的人工名单（名单必然漂移）。
+  那会误伤两类**合理的**形态：① 第 335 轮 P0-7 已用依赖倒置化解的
+  「清单型」反向依赖；② 剩下 7 处**实体引用** —— 拦它得先做实体归位
+  （一次独立的架构动作）。本门禁只钉「import 期耦合」这一个可执行、无争议的
+  形态，而不是靠一张"哪个模块算业务"的人工名单（名单必然漂移）。
 
 ★ 判据要点（为什么这么写）
   ① 走 AST 判「该 import 是否有函数祖先」。**不能用行首缩进判** ——
-     多行 import（`from x import (\\n a,\\n)`）的后续行缩进非 0，
+     多行 import（`from x import (\n a,\n)`）的后续行缩进非 0，
      缩进判据会把整条语句误判成"在函数里"（漏报）。
   ② 例外表用**集合相等**断言：多一处、少一处都红 —— 既防"偷偷顶层 import"，
      也防"改了源码但忘了删例外"。

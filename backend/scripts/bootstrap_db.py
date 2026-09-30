@@ -54,9 +54,10 @@ def _run_alembic_upgrade_head() -> int:
 async def _seed() -> dict:
     from core.bootstrap import seed_base_data
     from core.database import close_db
+    from wiring import SEED_STEPS
 
     try:
-        return await seed_base_data()
+        return await seed_base_data(SEED_STEPS)
     finally:
         # 释放连接池，避免脚本退出时残留连接（CI 上会让容器停不干净）
         try:

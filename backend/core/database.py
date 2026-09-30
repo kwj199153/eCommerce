@@ -4,9 +4,10 @@
 基于 SQLAlchemy 2.0 + aiosqlite (MVP) / asyncpg (生产) 的异步数据库连接池管理。
 """
 
+import importlib
 import logging
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Iterable
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -96,99 +97,39 @@ get_db_session = get_db
 
 
 # ====== 生命周期管理 ======
-# ====== ORM 模型注册（唯一真源） ======
-def register_all_models() -> None:
-    """导入全部 ORM 模型，确保它们被注册到 `Base.metadata`。
+# ====== ORM 模型注册（机制住 core，清单住 wiring） ======
+def register_all_models(model_modules: Iterable[str]) -> None:
+    """按**调用方提供的**模块名清单导入全部 ORM 模型模块，完成 `Base.metadata` 注册。
 
-    ★★ 为什么必须是唯一真源：
-      本清单有**两个消费者** —— `init_db()`（开发期 create_all 兜底）与
-      `alembic/env.py`（autogenerate 比对 `target_metadata`）。
-      历史上两处各写一份，`env.py` 那份漏了 monitors / platform_rules /
-      knowledge_base / voice_clone / aigc_media 共 5 个模块 ⇒ `target_metadata`
-      里少 9 张表 ⇒ autogenerate 生成的迁移**静默漏表**（不报错、不告警，
-      只在全新库上表现为「表不存在」）。
+    ★ 为什么参数必填、不给默认值（这是门禁，不是风格偏好）：
+      `core` 不认识任何业务模块名 —— 清单住在组合根 `wiring.MODEL_MODULES`
+      （见该文件头「为什么要有这一层」）。签名必填 ⇒ 漏传直接 `TypeError`，
+      而不是静默注册 0 个模型、让 `create_all` 建出一张空库
+      （那是一个**没有任何报错的**故障，只在线上表现为「表不存在」）。
 
-    ⇒ 新增业务模块时**只改这里**，两处自动同步。
+    ★ 机制 vs 清单：
+      本函数只做**机制** —— 把一串模块名导进来（import 副作用 = ORM 类注册到
+      `Base.registry`），**不关心**它们是谁。清单写死在 `core` 里就会形成
+      `core → modules` 反向依赖（第 335 轮 P0-7 已消除该类 28 处）。
+
+    ★ 唯一真源：清单有**两个消费者** —— `init_db()`（开发期 create_all 兜底）
+      与 `alembic/env.py`（autogenerate 比对 `target_metadata`）。历史上两处
+      各写一份，`env.py` 那份漏了 monitors / platform_rules / knowledge_base /
+      voice_clone / aigc_media 共 5 个模块 ⇒ `target_metadata` 里少 9 张表
+      ⇒ autogenerate 生成的迁移**静默漏表**。现在两者都读
+      `wiring.MODEL_MODULES`，新增业务模块**只改那一处**。
     """
-    from core.identity.models import User  # noqa: F401
-    # 账户域（★ P1-b/P1-c 2026-09-16）：Account/AccountMember 取代 shops 的架构位置；
-    # EmailToken/LoginAttempt 服务邮箱验证、密码重置与登录审计。
-    from core.identity.account_models import Account, AccountMember  # noqa: F401
-    from core.identity.auth_models import EmailToken, LoginAttempt, UserApiKey  # noqa: F401
-    # ★ 第 140 轮：StoreRecord 随实体归位搬到 core/stores/，本行由 modules 组挪到 core 组。
-    from core.stores import StoreRecord  # noqa: F401
-    # 通用审计日志（audit_logs）—— 第 327 轮 P0-5：把「谁在什么时候对**哪个
-    # 对象**做了什么」从各处散落的 logger.info 提升为可查询、可追责的记录。
-    # ★ core 层实体（入边 ≥ 2 的基础域，与 stores 同组）；**零外键** ——
-    #   审计必须比被记录的主体活得久，理由见 core/audit/models.py 文件头。
-    from core.audit.models import AuditLog  # noqa: F401
-    from modules.billing.models import SubscriptionPlan, Subscription, Invoice, PaymentMethod  # noqa: F401
-    from modules.products.db_model import (  # noqa: F401
-        SpuRecord, SkuRecord, ProductGroupRecord,
-    )
-    from modules.assets.db_model import (  # noqa: F401
-        AssetRecord, AssetGroupRecord,
-    )
-    from modules.candidates.db_model import (  # noqa: F401
-        CandidateRecord, CandidateGroupRecord,
-    )
-    from modules.amazon_sp.db_model import (  # noqa: F401
-        AmazonCredential, AmazonAuthLog, DailySales, AdMetric,
-        ListingSnapshot, ReportTask, InventoryHealth, CompetitorSnapshot,
-    )
-    from modules.conversation.db_model import (  # noqa: F401
-        AgentSessionStateRecord, ConversationRecord, ConversationMessageRecord,
-    )
-    from modules.monitors.db_model import MonitorRecord, MonitorGroupRecord  # noqa: F401
-    from modules.platform_rules.db_model import (  # noqa: F401
-        PlatformRuleRecord, PlatformRuleDocRecord,
-    )
-    from modules.knowledge_base.db_model import (  # noqa: F401
-        KnowledgeBaseRecord, KnowledgeFaqRecord, KnowledgeDocRecord,
-    )
-    # 附加模块：语音克隆（独立表 shop_voice，不 ALTER 任何既有表）
-    # 无条件导入以完成 metadata 注册；是否真正启用由 config.voice_clone_enabled 决定
-    from modules.voice_clone.db_model import ShopVoice  # noqa: F401
-    # AIGC 异步任务表（aigc_jobs）—— 长任务的状态权威源
-    from modules.aigc_media.db_model import AIGCJobRecord  # noqa: F401
-    # 客服工单表（cs_tickets）—— 第 143 轮 A4：工单从「只在内存里造一个就返回」
-    # 变成真的落库（此前 success=True 的工单号指向不了任何记录）。
-    from modules.customer_service.db_model import TicketRecord  # noqa: F401
-    # 长期记忆三张表（memory_profiles / memory_entries / memory_logs）
-    # —— 第 149 轮 C2：让「记忆与进化」页从硬编码假页面变成有真存储。
-    # ★ 键是 owner_id（人）而不是 thread_id（会话）⇒ 跨会话有效，
-    #   这也是它不能复用 conversation 那三张表的原因。
-    from modules.memory.db_model import (  # noqa: F401
-        MemoryEntryRecord, MemoryLogRecord, MemoryProfileRecord,
-    )
-    # 技能仓库三张表（skills / skill_revisions / skill_favorites）：
-    # 第 181 轮 · 批 B 建前两张（「能力全量常驻 system prompt」→
-    # 「按需加载的技能机制」）；第 194 轮补第三张（技能收藏）。
-    from modules.skills.db_model import (  # noqa: F401
-        SkillFavoriteRecord, SkillRecord, SkillRevisionRecord,
-    )
-    # 复盘库表（review_reports）：「资料库 → 复盘库」——
-    # 复盘结果**人工确认后**才留档。此前 6 项能力算完即弃：
-    # 老板看一眼就没了，既无从回看，也无从「拿上期做对比」。
-    from modules.review_analyst.db_model import ReviewReportRecord  # noqa: F401
-    # 交易履约 + 买家反馈域（orders / order_items / shipments / customer_reviews /
-    # review_attributions / review_dispositions / compensation_rules / sku_health_scores）
-    # —— 第 283 轮新增。注意：这里的 `customer_reviews` 与上面 review_analyst 的
-    #    `review_reports` 是**两回事**（买家差评 vs 运营复盘归档）—— 别只看名字。
-
-    from modules.trade.db_model import (  # noqa: F401
-        CompensationRuleRecord, CustomerReviewRecord, OrderItemRecord, OrderRecord,
-        ReviewAttributionRecord, ReviewDispositionRecord, ShipmentRecord,
-        SkuHealthScoreRecord,
-    )
-    # 选品市场洞察快照（market_snapshots）—— 第 305 轮「蓝海挖掘大盘云图」。
-    # 「选品前市场洞察」六维度的数据落点，演示 mock 只灌演示账号（is_demo 标记）。
-    from modules.product_research.db_model import MarketSnapshotRecord  # noqa: F401
+    for name in model_modules:
+        importlib.import_module(name)
 
 
-async def init_db():
-    """初始化数据库（创建表结构）"""
-    register_all_models()
+async def init_db(model_modules: Iterable[str]) -> None:
+    """初始化数据库（创建表结构）。
+
+    ★ `model_modules` 必填：理由见 `register_all_models` 的 docstring ——
+      漏传必须炸 `TypeError`，而不是静默建空库。
+    """
+    register_all_models(model_modules)
 
     async with engine.begin() as conn:
         # 2026-09-09: 已迁移到 Alembic（backend/alembic）

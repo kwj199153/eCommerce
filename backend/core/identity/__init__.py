@@ -1,7 +1,7 @@
 # `core/identity` 的包说明（★ 第 331 轮补；此前是 0 字节空壳）。
 #
 # ★ 为什么这里**刻意不 re-export** `tasks`（`purge_expired_identity_rows`）：
-#   本包被 `core/database.py::register_all_models()` 在 **import 期**导入
+#   本包被 `wiring.MODEL_MODULES` 在 **import 期**导入
 #   （它要 `User` / `EmailToken` / `LoginAttempt` 这些 ORM 实体）。
 #   在这里 re-export `core.identity.tasks` 会把 `celery` 变成
 #   「任何一次 `import core.identity`」的硬依赖 ——

@@ -209,7 +209,8 @@ class StoreRecord(Base):
 #
 #   实测影响面：P1-b/P1-c 加上这一列后，**整个 pytest 套件在 setup 阶段全 ERROR**
 #   （100% 失败），因为测试进程不走 `main.py` 的 lifespan ⇒ `init_db()` 没跑
-#   ⇒ `register_all_models()` 没被调用 ⇒ 没有任何地方 import 过 account_models。
+#   ⇒ `register_all_models(MODEL_MODULES)` 没被调用 ⇒ 没有任何地方 import 过
+#     account_models（清单现住组合根 `wiring.MODEL_MODULES`）。
 #   生产同样有隐患：Celery worker / 运维脚本若直接用 ORM 而不走 lifespan，
 #   一旦 flush 到 StoreRecord 就会崩。
 #

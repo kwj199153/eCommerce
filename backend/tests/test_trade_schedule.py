@@ -30,7 +30,8 @@
     ⇒ `test_tasks_are_registered_by_autodiscover` 转红；
  3. 把 `_sync_one_shop` 里的 `sync_trade(...)` 换成别的（比如直接建 ORM 行）
     ⇒ `test_sync_task_uses_the_single_write_path` 转红；
- 4. 删掉 `core/bootstrap.py` 里挂 trade seed 的那一段
+ 4. 删掉组合根 `wiring.SEED_STEPS` 里那条 `modules.trade.seed:...`
+    （或让 `core/bootstrap.py::seed_base_data` 不再调用 `_resolve(...)`）
     ⇒ `test_bootstrap_wires_trade_seed` 转红；
  5. 删掉调度条目的 `options.queue`
     ⇒ `test_every_trade_entry_declares_a_queue` 转红。
@@ -205,30 +206,52 @@ def test_sync_task_uses_the_single_write_path():
 # ============================================================================
 
 def test_bootstrap_wires_trade_seed():
-    """`core/bootstrap.py` 必须真的调用 `seed_trade_if_empty`。
+    """trade 的 seed 必须真的挂在引导链上，且引导链真的会执行它。
 
     ★ 为什么这条必须存在：本轮接线前，trade 的 seed **写了、也幂等，
       但零调用**（bootstrap 里没有它）。后果是空库起来后 8 张表全空，
       而这件事**没有任何报错** —— 演示时「收到一条差评」从第一步就走不下去。
+
+    ★ 第 335 轮 P0-7（B 档）：步骤**清单**从 `core/bootstrap.py` 外移到组合根
+      `wiring.SEED_STEPS` 的**字符串目标**（`"包.模块:属性"`），因为 `core`
+      不得反向 import `modules`。于是本判据的实现随之改成**行为判据**：
+
+        ① **登记**：`wiring.SEED_STEPS` 里确实有 trade 的这一条；
+        ② **执行**：`core/bootstrap.py::seed_base_data` 真的会调 `_resolve(...)`
+           去解析并执行每一步。
+
+      ⇒ 两半**缺一不可**，与改动前的「import + 调用」两半一一对应：
+        「只登记不执行」= 旧的「只 import 不调用」，同样是**不报错的失效**。
     """
+    import wiring  # noqa: PLC0415
+
+    targets = [s.target for s in wiring.SEED_STEPS]
+    want = "modules.trade.seed:seed_trade_if_empty"
+    assert want in targets, (
+        f"组合根 `wiring.SEED_STEPS` 里没有 {want!r}（零实现）—— "
+        f"空库起来后 trade 8 张表全空，且不报错。当前登记：{targets}"
+    )
+
     path = BACKEND_DIR / "core" / "bootstrap.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
-
-    # ★ import 与调用是**两个不同的 AST 节点**，得分开判：
-    #   `from x import seed_trade_if_empty` 里的名字是 `ast.alias`（不是 Name），
-    #   只数 Name 的话「只 import 不调用」也会被算成通过。
-    imported = any(
-        isinstance(n, ast.alias) and n.name == "seed_trade_if_empty"
-        for n in ast.walk(tree)
+    fn = next(
+        (
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and n.name == "seed_base_data"
+        ),
+        None,
     )
-    used = any(
-        isinstance(n, ast.Name) and n.id == "seed_trade_if_empty"
-        for n in ast.walk(tree)
+    assert fn is not None, "`core/bootstrap.py` 里找不到 `seed_base_data` —— 引导链断了"
+    # ★ 只看 `seed_base_data` **函数体内**：全文件正则会被别处同形调用旁路满足。
+    calls_resolve = any(
+        isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "_resolve"
+        for n in ast.walk(fn)
     )
-    assert imported, (
-        "`core/bootstrap.py` 没有 import `seed_trade_if_empty`（零实现）。"
-    )
-    assert used, (
-        "`core/bootstrap.py` import 了 `seed_trade_if_empty` 却**没有调用**它 —— "
-        "只 import 不调用 = 空库起来后 trade 8 张表全空，且不报错。"
+    assert calls_resolve, (
+        "`seed_base_data` 登记了步骤却**没有调用** `_resolve(...)` 去执行它们 —— "
+        "只登记不执行 = 空库起来后 trade 8 张表全空，且不报错。"
     )

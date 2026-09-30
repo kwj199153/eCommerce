@@ -26,7 +26,7 @@ Celery worker 是**同步**进程，任务体要跑协程。而 `asyncio.run()` 
   `modules/trade/tasks.py::sync_shop`。
 
 ★ 为什么**不**把 `purge_expired` re-export 到 `core/audit/__init__.py`：
-  那个包被 `core/database.py::register_all_models()` 在 import 期导入。
+  那个包被 `wiring.MODEL_MODULES` 在 import 期导入。
   在这里 re-export 会把 `celery` 变成「任何一次 `import core.audit`」的硬依赖
   —— 连只想要 ORM 实体的注册表也要付出这个代价。
   同款理由见 `core/audit/__init__.py` 里「刻意不导出 router」那一段。
