@@ -936,8 +936,6 @@ import {
   setReviewAttribution,
   DISPOSITION_STATUS_LABELS,
   DISPOSITION_STATUS_COLORS,
-  CAUSE_LABELS,
-  ATTRIBUTABLE_CAUSES,
   type ProductReview,
   type Disposition,
   type DispositionReview,
@@ -945,7 +943,6 @@ import {
   type DispositionDraft,
   type SkuHealth,
   type SystemicCheck,
-  type SystemicVerdict,
   type ReviewRiskBlock,
   type ReviewRiskScanResult,
   type CompensationRule,
@@ -955,13 +952,13 @@ import {
   type RuleCondition,
   type RuleAction,
 } from '@/api/trade'
-
-const REVIEW_STATUS_LABELS: Record<string, string> = {
-  new: '待处理',
-  triaged: '已归因',
-  replied: '已回复',
-  closed: '已结案',
-}
+import {
+  REVIEW_STATUS_LABELS, COMPENSATION_TYPE_LABELS, DISPOSITION_STATUS_OPTIONS,
+  VIEWS, type ViewKey, SYSTEMIC_COLORS, CONFIRM_TITLES, CONFIRM_TEXTS,
+  CAUSE_OPTIONS, ACTION_TYPE_OPTIONS, CURRENCY_OPTIONS,
+  ruleCondText, ruleActionText, compensationText, rowActionLabel, rowHint, shortTime,
+} from './reviewDesk/reviewDeskVocabulary'
+import { useReviewDeskViews } from './reviewDesk/useReviewDeskViews'
 
 /**
  * 处置通道的**含义与可逆性** —— 唯一真源（与后端 `service.DISPOSITION_CHANNELS`
@@ -998,52 +995,16 @@ const CHANNEL_LABELS: Record<string, string> = Object.fromEntries(
 /** 全部通道，顺序与后端 `DISPOSITION_CHANNELS` 一致 */
 const ALL_CHANNELS = Object.keys(CHANNEL_META)
 
-/** 补偿类型中文名 —— 额度为 0 时也要能把「升级处理」这类无额度的通道说清楚 */
-const COMPENSATION_TYPE_LABELS: Record<string, string> = {
-  coupon: '优惠券',
-  refund: '退款',
-  reship: '重发',
-  escalate: '升级处理',
-}
-
-/** 台账状态筛选项 —— 与 `DISPOSITION_STATUS_LABELS` 同源，不手写第二份 */
-const DISPOSITION_STATUS_OPTIONS = (
-  Object.keys(DISPOSITION_STATUS_LABELS) as DispositionStatus[]
-).map((s) => ({ label: DISPOSITION_STATUS_LABELS[s], value: s }))
-
-const VIEWS = [
-  { key: 'recent', label: '近期差评', icon: '📉', hint: '本店时间窗内的中差评' },
-  { key: 'orphan', label: '未关联产品', icon: '🧩', hint: 'ASIN / SKU 码对不上本店任何产品的差评' },
-  { key: 'ledger', label: '处置台账', icon: '📋',
-    hint: '已发起的处置：草稿在这里由人批准 / 核准（平台执行需人工完成后登记回执）' },
-  { key: 'rules', label: '补偿规则', icon: '⚙️',
-    hint: '给每个归因配补偿方案：金额由这里唯一算出，处置草稿按它现算' },
-] as const
-
-type ViewKey = (typeof VIEWS)[number]['key']
-
-const view = ref<ViewKey>('recent')
-const days = ref(30)
-const maxRating = ref(3)
-const loading = ref(false)
-const error = ref('')
-const items = ref<ProductReview[]>([])
-const total = ref(0)
-const counts = ref<Record<ViewKey, number | null>>({ recent: null, orphan: null, ledger: null, rules: null })
-
-/** 处置台账的行 —— 以**处置**为主语，与上面以差评为主语的 `items` 不是一回事 */
-const dispositions = ref<Disposition[]>([])
-const dispTotal = ref(0)
-const dispStatusFilter = ref<DispositionStatus | undefined>(undefined)
-const backfilling = ref(false)
-
-/** 加载中的「正在读取…」要跟当前视图同名，不能写死成「近期差评」 */
-const viewLabel = computed(
-  () => VIEWS.find((v) => v.key === view.value)?.label || '',
-)
-
-/** 每条差评有没有处置 / 什么状态 —— 列表上要能一眼看出「哪些还没管」 */
-const dispositionStatus = ref<Record<string, DispositionStatus>>({})
+// ★ 视图状态与派生已外移到 `reviewDesk/useReviewDeskViews.ts`（第 341 轮）：
+//   它们全是纯 ref / computed，**取数仍留在下面 `reload()` 里** ——
+//   门禁 `check-review-risk-view.cjs` R14 要求 `reload` 的函数体（含末尾那个
+//   「指纹变了才清风险标记」的条件）留在本文件。
+const {
+  view, days, maxRating, loading, error, items, total, counts,
+  dispositions, dispTotal, dispStatusFilter, backfilling,
+  dispositionStatus, rules, rulesError,
+  viewLabel, hasRows, emptyTitle, emptyDesc, emptyIcon, isFilteredEmpty,
+} = useReviewDeskViews()
 
 const detailOpen = ref(false)
 const detailLoading = ref(false)
@@ -1313,10 +1274,8 @@ const backfillNote = ref('')
 //   就是那个缺失的入口：列表 / 新建 / 启停 / 删除，金额由这里唯一算出。
 // ==================================================================
 
-/** 本店全部补偿规则（含停用） */
-const rules = ref<CompensationRule[]>([])
-const rulesLoading = ref(false)
-const rulesError = ref('')
+// ★ `rules` / `rulesError` 已随视图状态外移到 `useReviewDeskViews()`；
+//   原 `const rulesLoading` 是**死代码**（全文件零消费点），一并删除。
 /** 新建 / 编辑规则用的抽屉 */
 const ruleEditorOpen = ref(false)
 const ruleEditorLoading = ref(false)
@@ -1359,43 +1318,6 @@ const attrLoading = ref(false)
 const attrTarget = ref<ProductReview | null>(null)
 const attrCause = ref<AttributionCause>('logistics_delay')
 const attrNotes = ref('')
-
-/** 归因下拉选项（补归因与规则编辑器共用；**不含 unknown**） */
-const CAUSE_OPTIONS = ATTRIBUTABLE_CAUSES.map((c) => ({
-  value: c,
-  label: CAUSE_LABELS[c],
-}))
-
-/** 补偿方式下拉选项（与后端 `ACTION_TYPES` 对齐） */
-const ACTION_TYPE_OPTIONS = [
-  { value: 'coupon', label: '优惠券' },
-  { value: 'refund', label: '退款' },
-  { value: 'none', label: '不补偿' },
-]
-
-/** 币种下拉（本仓电商语境默认 USD，可扩展） */
-const CURRENCY_OPTIONS = [
-  { value: 'USD', label: 'USD' },
-  { value: 'CNY', label: 'CNY' },
-]
-
-/** 规则命中条件的展示文案（列表行用） */
-function ruleCondText(r: CompensationRule): string {
-  const c = r.conditions || {}
-  const parts: string[] = []
-  if (typeof c.max_rating === 'number') parts.push(`≤${c.max_rating}星`)
-  if (typeof c.min_delay_days === 'number') parts.push(`延迟≥${c.min_delay_days}天`)
-  if (c.verified_purchase) parts.push('仅已购')
-  return parts.length ? parts.join(' · ') : '无条件'
-}
-
-/** 规则补偿方案的展示文案（列表行用） */
-function ruleActionText(r: CompensationRule): string {
-  const a = r.action || {}
-  if (a.type === 'none' || !a.type) return '不补偿'
-  const amt = typeof a.amount === 'number' ? `${a.amount} ${a.currency || 'USD'}` : ''
-  return a.type === 'coupon' ? `券 ${amt}` : a.type === 'refund' ? `退 ${amt}` : amt || '—'
-}
 
 /** 打开新建规则 —— 重置表单到默认值 */
 function openRuleCreate() {
@@ -1548,67 +1470,8 @@ async function submitAttribution() {
   }
 }
 
-/** ★ 必须显式声明成 `Record<string, string>`：字面量对象的键会被推成
- *   `'approve' | 'reject' | 'issue'`，而 `pendingAct` 的合法默认值是 `''`
- *   ⇒ 拿 `''` 去索引会直接 TS2339（不是 lint 洁癖，是真编译不过）。 */
-const CONFIRM_TITLES: Record<string, string> = {
-  approve: '批准这条处置？',
-  reject: '驳回这条处置？',
-  issue: '核准这条处置？（不可逆）',
-  receipt: '登记平台执行回执？',
-}
-const CONFIRM_TEXTS: Record<string, string> = {
-  approve: '批准后进入待核准状态；核准仍需你再点一次。',
-  reject: '驳回后这条处置会标记为 rejected，可以重新生成草稿。',
-  issue: '核准后生成券码并写进回复，不可撤销。'
-    + '★ 本步只在本地登记 —— 不会调用任何平台接口，不会真的退款 / 发券；'
-    + '平台侧动作需人工去后台执行，做完回来登记回执。',
-  receipt: '只有在平台上真的做完（发券 / 退款 / 补发）之后才登记。'
-    + '登记后进入终态，不可再改。',
-}
-
 const confirmTitle = computed(() => CONFIRM_TITLES[pendingAct.value] || '确认操作')
 const confirmText = computed(() => CONFIRM_TEXTS[pendingAct.value] || '')
-
-/** 当前视图有没有行 —— 台账 / 差评列表 / 规则是**三套不同的行**，不能合成一个数组算 */
-const hasRows = computed(() => {
-  if (view.value === 'ledger') return dispositions.value.length > 0
-  if (view.value === 'rules') return rules.value.length > 0
-  return items.value.length > 0
-})
-
-/**
- * ★ 台账的「空」有两种语义，必须分开播报：
- *   · 筛选后为空 ⇒ 「换个状态看看」；
- *   · 压根没有处置 ⇒ 「点生成待处置」；
- *   统一写成「暂无差评处置」＝把「我筛错了」转译成「你还没处置过」。
- */
-const emptyTitle = computed(() => {
-  if (view.value === 'ledger') {
-    return dispStatusFilter.value ? '这个状态下没有处置记录' : '还没有任何差评处置'
-  }
-  if (view.value === 'rules') return '还没有配置补偿规则'
-  return view.value === 'orphan' ? '没有未关联产品的差评' : '本时间窗内没有符合条件的评价'
-})
-const emptyDesc = computed(() => {
-  if (view.value === 'ledger') {
-    return dispStatusFilter.value
-      ? '换一个状态，或清空筛选看全部。'
-      : '点「生成待处置」：按已落库的归因与补偿规则，为还没处理的中差评生成待批准草稿。'
-  }
-  if (view.value === 'rules') {
-    return '给每个归因（物流延迟 / 包装破损 / 商品缺陷…）配一条补偿规则，'
-      + '处置草稿的补偿金额由这里唯一算出。'
-  }
-  return view.value === 'orphan'
-    ? '所有差评都能对上本店产品的 ASIN / SKU 码 —— 这是好消息，说明关联没缺口。'
-    : '可以放宽时间窗或改成全部星级再看。'
-})
-const emptyIcon = computed(() =>
-  view.value === 'ledger' ? '📋' : view.value === 'orphan' ? '🧩' : view.value === 'rules' ? '⚙️' : '✅',
-)
-/** ★ 筛选造成的空必须有逃生口 —— 否则用户只能靠回忆自己刚筛了什么 */
-const isFilteredEmpty = computed(() => view.value === 'ledger' && !!dispStatusFilter.value)
 
 async function reload() {
   loading.value = true
@@ -1720,14 +1583,6 @@ const systemicError = ref('')
 const skuHealth = ref<SkuHealth | null>(null)
 /** 补偿依据（归因 + 命中规则）—— 来自**只读**的 `/draft`（明确不落库） */
 const draftInfo = ref<DispositionDraft | null>(null)
-
-/** 判定结论的语义色（与 `DISPOSITION_STATUS_COLORS` 同一套取值口径） */
-const SYSTEMIC_COLORS: Record<SystemicVerdict, string> = {
-  isolated: 'green',
-  repeat: 'orange',
-  systemic: 'red',
-  unknown: 'default',
-}
 
 async function loadSystemic(reviewId: string) {
   systemicLoading.value = true
@@ -1956,17 +1811,6 @@ async function runAct() {
   }
 }
 
-/** 补偿金额文案 —— ★ 退款可以按**百分比**给（`refund_percent`），要先赛过金额 */
-function compensationText(comp: Record<string, any> | null | undefined): string {
-  if (!comp) return '—'
-  const type = String(comp.type || '')
-  const amount = Number(comp.amount || 0)
-  const currency = comp.currency || 'USD'
-  if (type === 'refund' && comp.refund_percent) return `退款 ${comp.refund_percent}%`
-  const label = COMPENSATION_TYPE_LABELS[type] || type
-  return amount > 0 ? `${label} ${amount} ${currency}` : label || '—'
-}
-
 /** 通道中文名（与后端值域对齐；认不出的取值原样吐出来，不静默吞掉） */
 function channelLabel(c: string): string {
   return CHANNEL_LABELS[c] || c
@@ -1975,18 +1819,6 @@ function channelLabel(c: string): string {
 /** 通道作用说明 —— 台账列表悬停用；认不出的取值如实说「尚无说明」 */
 function channelEffect(c: string): string {
   return CHANNEL_META[c]?.effect || `${c}（后端新加的通道，界面还没有说明）`
-}
-
-/** 台账行右侧的动作名 —— 用户靠它判断「点进去能不能改」 */
-function rowActionLabel(d: Disposition): string {
-  return d.status === 'proposed' || d.status === 'rejected' ? '编辑' : '查看'
-}
-
-/** 台账行的用途提示 */
-function rowHint(d: Disposition): string {
-  return rowActionLabel(d) === '编辑'
-    ? '点击打开处置：可改通道与回复措辞（金额由规则算，不可改）'
-    : '点击打开处置：已进入' + DISPOSITION_STATUS_LABELS[d.status] + '，内容只读'
 }
 
 // ==================================================================
@@ -2121,10 +1953,6 @@ async function restoreSystemDraft() {
   } finally {
     acting.value = false
   }
-}
-
-function shortTime(v: string): string {
-  return (v || '').replace('T', ' ').slice(0, 16)
 }
 
 void reload()
