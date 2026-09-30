@@ -52,6 +52,10 @@ from modules.product_research.agent_product_research import (
 
 _AGENT_FILE = (pathlib.Path(__file__).resolve().parents[1]
                / "modules" / "product_research" / "agent_product_research.py")
+# ★ 第 338 轮（P0-6 第四刀）：意图判定的**判定体**外移到本文件，
+#   主文件只剩薄壳 ⇒ 「顺序」这类判据必须读这里。
+_ROUTING_FILE = (pathlib.Path(__file__).resolve().parents[1]
+                 / "modules" / "product_research" / "agent_routing.py")
 
 #: 路由表的运行时真值（`{组名: (词, ...)}`）
 _ROUTES = {r.label: tuple(r.keywords) for r in ProductResearchAgent._INTENT_ROUTES}
@@ -372,13 +376,18 @@ def test_market_insight_signal_runs_before_the_keyword_router():
     ★ 只看**顶层语句序**（`fn.body`）：行号会被「求值顺序」这类无害重排误伤，
       而真正要防的是「判定被排在关键词裁决**之后**」。
     """
-    fn = _fn_node("_classify_intent")
+    # ★ 第 338 轮（P0-6 第四刀）：判定体外移到 `agent_routing.py`。
+    #   读集跟着**不变量**走 —— 不变量是「顺序」，不是「住哪个文件」。
+    fn = _fn_node("classify_intent", _ROUTING_FILE.read_text(encoding="utf-8"))
     gate_idx = None
     router_idx = None
     for idx, stmt in enumerate(fn.body):
         names = {n.id for n in ast.walk(stmt) if isinstance(n, ast.Name)}
         attrs = {n.attr for n in ast.walk(stmt) if isinstance(n, ast.Attribute)}
-        hit = "_is_market_insight_query" in attrs or "_is_market_insight_query" in names
+        # ★ 第 338 轮（P0-6 第四刀）：判定体外移后，新模块里的函数名去掉了
+        #   下划线前缀（`is_market_insight_query`）⇒ 两种写法都要认（两端同查）。
+        hit = any(n in attrs or n in names for n in
+                  ("_is_market_insight_query", "is_market_insight_query"))
         if hit and gate_idx is None:
             gate_idx = idx
         if "first_match" in names and router_idx is None:
@@ -443,7 +452,14 @@ def test_classifier_does_not_read_the_database_itself():
 
     ★ 走 AST 不用源码字符串：docstring 里写一句「此处不查库」就能骗过字符串判据。
     """
-    called = {c.lower() for c in _called_names(_fn_node("_is_candidate_query"))}
+    # ★ 第 338 轮（P0-6 第四刀）：判定体外移到 `agent_routing.py`。
+    #   在**薄壳**上跑本判据会把委托本身当成取数调用（`is_candidate_query`
+    #   里含 `candidate`）⇒ 读集必须跟着判定体走。
+    #   ★ 薄壳端由 `test_product_research_routing_layer.py` 单独钉
+    #     「只许委托、不许出现领域原语」。
+    called = {c.lower() for c in
+              _called_names(_fn_node("is_candidate_query",
+                                     _ROUTING_FILE.read_text(encoding="utf-8")))}
     bad = sorted(c for c in called if any(w in c for w in _DB_WORDS))
     assert not bad, (
         f"`_is_candidate_query` 里出现了疑似取数调用 {bad} —— "
@@ -594,7 +610,8 @@ def test_inventory_signal_runs_before_the_keyword_router():
     ★ 排到后面 = 「选品库里现在有多少条」里含「选品库」⇒ 先被 save_candidate
       吞掉。改前实测这条问句判的正是 save_candidate。
     """
-    fn = _fn_node("_classify_intent")
+    # ★ 第 338 轮（P0-6 第四刀）：判定体外移，同 `test_market_insight_*` 的理由。
+    fn = _fn_node("classify_intent", _ROUTING_FILE.read_text(encoding="utf-8"))
     gate_idx = None
     router_idx = None
     # ★ 只看**顶层语句序**（`fn.body` 的次序），不按 `ast.walk` 的源码行号：
@@ -604,7 +621,10 @@ def test_inventory_signal_runs_before_the_keyword_router():
     for idx, stmt in enumerate(fn.body):
         names = {n.id for n in ast.walk(stmt) if isinstance(n, ast.Name)}
         attrs = {n.attr for n in ast.walk(stmt) if isinstance(n, ast.Attribute)}
-        if ("_is_candidate_query" in attrs or "_is_candidate_query" in names) and gate_idx is None:
+        # ★ 同上：新模块里的名字是 `is_candidate_query`。
+        hit_gate = any(n in attrs or n in names for n in
+                       ("_is_candidate_query", "is_candidate_query"))
+        if hit_gate and gate_idx is None:
             gate_idx = idx
         if "first_match" in names and router_idx is None:
             router_idx = idx

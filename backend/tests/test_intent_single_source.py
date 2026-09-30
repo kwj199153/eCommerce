@@ -37,20 +37,32 @@ ALLOWED = {"ai_infra/intent.py"}
 #: 一个函数里有几条这样的分支才算「又写了一份分类器」
 MIN_BRANCHES = 3
 
-#: 业务 Agent：模块路径 -> 其分类器方法名（第 166 轮起 7 家）
+#: 业务 Agent：模块路径 -> (分类器方法名, 判定体位置 或 None)（第 166 轮起 7 家）
 #: （`aigc_media` 的方法是**公开名** —— `modules/aigc_media/service.py` 直接
 #:   `agent.classify_intent(...)` 调用它，不允许改名）
+#:
+#: 判定体位置 = (相对路径, 该文件里的函数名)；None 表示判定体就在本文件里。
+#:
+#: ★ 第 338 轮（P0-6 第四刀）：`product_research` 的判定体外移到
+#:   `agent_routing.py`，主文件只剩薄壳（`return await _routing.classify_intent(...)`）。
+#:   若判据仍只看主文件，那条断言就变成**对薄壳的断言** —— 它必然红，
+#:   而真正的不变量（「判定走唯一真源」）其实住在另一个文件里。
+#:   ⇒ 判据跟着不变量走：**两端同查**（主文件查「不许有内联分支」，
+#:     判定体文件查「必须调 first_match」）。
 BUSINESS_AGENTS = {
-    "modules/ad_analysis/agent_ad.py": "_classify_intent",
-    "modules/aigc_media/agent_aigc.py": "classify_intent",
-    "modules/competitor_intel/agent_competitor.py": "_classify_intent",
-    "modules/customer_service/agent_cs.py": "_classify_intent",
-    "modules/listing_generator/agent_listing.py": "_classify_intent",
-    "modules/product_research/agent_product_research.py": "_classify_intent",
+    "modules/ad_analysis/agent_ad.py": ("_classify_intent", None),
+    "modules/aigc_media/agent_aigc.py": ("classify_intent", None),
+    "modules/competitor_intel/agent_competitor.py": ("_classify_intent", None),
+    "modules/customer_service/agent_cs.py": ("_classify_intent", None),
+    "modules/listing_generator/agent_listing.py": ("_classify_intent", None),
+    "modules/product_research/agent_product_research.py": (
+        "_classify_intent",
+        ("modules/product_research/agent_routing.py", "classify_intent"),
+    ),
     # ★ 第 166 轮 `#726` 第 2 条新增：`review_analyst` 从此也有分类器。
     #   它进了名单才**真的**被本门禁盖住 —— 只补 agent 不进名单，
     #   等于新开一处门禁真空区（本文件的存在理由就是这个）。
-    "modules/review_analyst/agent.py": "_classify_intent",
+    "modules/review_analyst/agent.py": ("_classify_intent", None),
 }
 
 
@@ -175,33 +187,56 @@ def test_keyword_route_form_only_in_intent_module():
 
 # --------------------------------------------------- ② 6 家真的在用唯一真源
 
-def test_business_modules_call_the_single_source():
-    """★ 只删旧实现不够：6 家必须**真的**通过唯一真源做判定。
+def _find_fn(src: str, name: str):
+    """按名字取函数节点（找不到返回 None）。"""
+    for node in ast.walk(ast.parse(src)):
+        if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == name):
+            return node
+    return None
 
-    逐家断言三件事：① 导入了 `ai_infra.intent`；② 分类器里调用了 `first_match`；
-    ③ 分类器里**不再有**内联的关键词路由分支。
+
+def test_business_modules_call_the_single_source():
+    """★ 只删旧实现不够：这些家必须**真的**通过唯一真源做判定。
+
+    逐家断言：① **判定体文件**导入了 `ai_infra.intent`；
+              ② 判定体函数调用了 `first_match`；
+              ③ **本文件**的分类器里不再有内联的关键词路由分支。
+
+    ★ ①② 落在「判定体文件」而不是「本文件」，是第 338 轮（P0-6 第四刀）的修正：
+      `product_research` 的判定体外移后，主文件只剩薄壳 —— 在薄壳上查
+      `first_match` 必然红，而那个红**证明不了任何事**（它只说明「薄壳是薄壳」）。
+      反过来，③ 仍留在主文件侧：它要防的正是「判定又被抄回 Agent 类里」。
     """
     bad = []
-    for rel, meth in BUSINESS_AGENTS.items():
-        path = BACKEND / rel
-        src = path.read_text(encoding="utf-8", errors="replace")
-        if "from ai_infra.intent import" not in src:
-            bad.append(f"{rel}: 未 import 唯一真源")
-        fn = None
-        for node in ast.walk(ast.parse(src)):
-            if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and node.name == meth):
-                fn = node
-        if fn is None:
+    for rel, (meth, body) in BUSINESS_AGENTS.items():
+        src = (BACKEND / rel).read_text(encoding="utf-8", errors="replace")
+        shell = _find_fn(src, meth)
+        if shell is None:
             bad.append(f"{rel}: 找不到分类器 {meth}")
             continue
-        called = {n.func.id for n in ast.walk(fn)
-                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
-        if "first_match" not in called:
-            bad.append(f"{rel}: {meth} 没有调用 first_match")
-        n_inline = route_branches(fn)
+
+        # ③ 主文件侧：不许出现内联的关键词路由分支
+        n_inline = route_branches(shell)
         if n_inline:
             bad.append(f"{rel}: {meth} 里仍有 {n_inline} 条内联关键词路由")
+
+        # ①② 判定体侧：必须 import 唯一真源且真的调用它
+        body_rel, body_name = body if body else (rel, meth)
+        body_src = (BACKEND / body_rel).read_text(encoding="utf-8", errors="replace")
+        if "from ai_infra.intent import" not in body_src:
+            bad.append(f"{body_rel}: 未 import 唯一真源")
+        body_fn = _find_fn(body_src, body_name)
+        if body_fn is None:
+            bad.append(f"{body_rel}: 找不到判定体 {body_name}")
+            continue
+        called = {n.func.id for n in ast.walk(body_fn)
+                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+        if "first_match" not in called:
+            bad.append(f"{body_rel}: {body_name} 没有调用 first_match")
+        n_body_inline = route_branches(body_fn)
+        if n_body_inline:
+            bad.append(f"{body_rel}: {body_name} 里仍有 {n_body_inline} 条内联关键词路由")
     assert not bad, "未真正使用唯一真源：\n  " + "\n  ".join(bad)
 
 

@@ -32,8 +32,8 @@
     · 写入**相同值**不该置脏（同上）。
 
 反向注入对照（每条都能打穿本文件的某一条）：
-    · `_state_scope` 改成接 `user_id` 形参          → C 组形态门禁转红
-    · `_state_scope` 里自己拼 `f"x:{user_id}:{cid}"`  → C 组「唯一调用点」转红
+    · `state_scope` 改成接 `user_id` 形参            → C 组形态门禁转红
+    · `state_scope` 里自己拼 `f"x:{user_id}:{cid}"`  → C 组「唯一调用点」转红
     · `load_states` 去掉 `owner_id ==` 条件          → E 组归属隔离转红
     · `save_states` 的 delete 去掉 `owner_id` 条件    → E 组「越权删不掉」转红
     · `persist_state` 把 `mark_persisted` 改成无条件清空 → B 组「只清写过的键」转红
@@ -72,6 +72,9 @@ AGENT_PY = MODULES / "product_research" / "agent_product_research.py"
 STATE_PY = AI_INFRA / "session_state.py"
 HITL_PY = MODULES / "product_research" / "agent_hitl.py"
 STORE_PY = MODULES / "conversation" / "state_store.py"
+# ★ C 刀（r338）：会话/状态块搬到了 `agent_session.py` —— 本文件那 7 条**形态**
+#   判据因此改读它。行为判据不动：薄壳在，`agent._x()` 照旧可调。
+SESSION_PY = MODULES / "product_research" / "agent_session.py"
 
 _TABLE = "agent_session_state"
 
@@ -144,6 +147,22 @@ def _attr_uses(node: ast.AST, attr: str) -> list[ast.Attribute]:
     return [
         n for n in ast.walk(node) if isinstance(n, ast.Attribute) and n.attr == attr
     ]
+
+
+def _names_in(node: ast.AST) -> set[str]:
+    """子树里出现的**标识符与属性名**全集（`Name.id` ∪ `Attribute.attr`）。
+
+    ★ 与「只看 `ast.Name`」的区别是必须的：C 刀后三个 ContextVar 经模块别名读写，
+      写作 `_pr._current_user_id` ⇒ `Name.id` 里只有 `_pr`，身份名落在
+      `Attribute.attr` 上。只查 `Name.id` 会让判据恒假 —— **假红**。
+    """
+    out: set[str] = set()
+    for n in ast.walk(node):
+        if isinstance(n, ast.Name):
+            out.add(n.id)
+        elif isinstance(n, ast.Attribute):
+            out.add(n.attr)
+    return out
 
 
 def _enclosing_calls(tree: ast.AST) -> list[tuple[str, ast.Call]]:
@@ -679,62 +698,77 @@ def test_resolve_thread_id_has_exactly_one_call_site_in_business_code():
 
     ★ 用 AST：`base_agent.py` 里对它的**注释**、`test_agent_session_memory.py`
     里对它的调用都不在 `modules/` 下，不会误伤。
+
+    ★ C 刀（r338）：调用点搬到 `agent_session.py`、形态从 `self.resolve_thread_id(...)`
+      变为**裸名**（回调参数）⇒ 判据同时认 `Attribute.attr` 与 `Name.id`；
+      唯一调用点所在函数名相应从 `_state_scope` 改为 `state_scope`。
     """
     hits: list[tuple[str, str, int]] = []
     for f in _module_files(MODULES):
         tree = _tree(f)
         for fn_name, call in _enclosing_calls(tree):
-            if isinstance(call.func, ast.Attribute) and call.func.attr == "resolve_thread_id":
+            fn = call.func
+            if (isinstance(fn, ast.Attribute) and fn.attr == "resolve_thread_id") or (
+                isinstance(fn, ast.Name) and fn.id == "resolve_thread_id"
+            ):
                 hits.append((f.relative_to(BACKEND).as_posix(), fn_name, call.lineno))
 
     assert len(hits) == 1, (
         f"业务侧 `resolve_thread_id` 调用点应恰有 1 处，实际 {len(hits)} 处：{hits}"
     )
-    assert hits[0][1] == "_state_scope", (
-        f"唯一调用点不在 `_state_scope` 里，而在 `{hits[0][1]}` —— 作用域有两份口径"
+    assert hits[0][1] == "state_scope", (
+        f"唯一调用点不在 `state_scope` 里，而在 `{hits[0][1]}` —— 作用域有两份口径"
     )
 
 
 def test_state_key_derives_from_state_scope_only():
-    """★★★ 「算作用域」只允许发生在 `_state_scope`。
+    """★★★ 「算作用域」只允许发生在 `state_scope`。
 
-    `_state_key`（落盘键）与 `_session`（取容器）都必须经 `_state_scope`；
-    `_hydrate_state` / `_flush_state` 必须经 `_state_key`。
+    `state_key`（落盘键）与 `session`（取容器）都必须经 `state_scope`；
+    `hydrate_state` / `flush_state` 必须经 `state_key`。
     ⇒ 四处**不可能**分叉。
-    """
-    tree = _tree(AGENT_PY)
 
-    for name in ("_session", "_state_key"):
+    ★ C 刀（r338）：本块实现搬到 `agent_session.py`，调用形态由 `self._x(...)`
+      变为**模块内裸名** ⇒ 判据改用 `_name_calls`（与 HITL 层同因：裸名用
+      `_attr_calls` 去找恒空 ⇒ 形态断言**假绿**）。
+    """
+    tree = _tree(SESSION_PY)
+
+    for name in ("session", "state_key"):
         fn = _funcdefs(tree, name)[0]
-        assert _attr_calls(fn, "_state_scope"), (
-            f"{name} 没有经 `_state_scope()` 取作用域 —— 自己拼了一份键"
+        assert _name_calls(fn, "state_scope"), (
+            f"{name} 没有经 `state_scope()` 取作用域 —— 自己拼了一份键"
         )
 
-    for name in ("_hydrate_state", "_flush_state"):
+    for name in ("hydrate_state", "flush_state"):
         fn = _funcdefs(tree, name)[0]
-        assert _attr_calls(fn, "_state_key"), f"{name} 没有经 `_state_key()` 取键"
-        assert not _attr_calls(fn, "_state_scope"), (
-            f"{name} 绕过 `_state_key` 直接取作用域 ⇒ 落盘键与内存作用域可能不同源"
+        assert _name_calls(fn, "state_key"), f"{name} 没有经 `state_key()` 取键"
+        assert not _name_calls(fn, "state_scope"), (
+            f"{name} 绕过 `state_key` 直接取作用域 ⇒ 落盘键与内存作用域可能不同源"
         )
 
 
 def test_state_scope_takes_no_user_id_argument():
-    """★★★ `_state_scope` **只读 ContextVar**，不接受 `user_id` 入参。
+    """★★★ `state_scope` **只读 ContextVar**，不接受 `user_id` 入参。
 
-    入参（本方法的）与 ContextVar 是**两个真源**：测试把 `_bind_context` 换掉、
+    入参（本函数的）与 ContextVar 是**两个真源**：测试把 `bind_context` 换掉、
     或某条路径漏调时，两者就会分叉（hydrate 读 A、业务写 B）——
     而那种错**不报错、只丢状态**。
+
+    ★ C 刀后判据读 `agent_session.py`；身份 ContextVar 写作 `_pr._current_user_id`
+      ⇒ 身份名落在 `Attribute.attr` 上，判据必须用 `_names_in`（只查 `Name.id`
+      会恒假 —— 假红）。
     """
-    tree = _tree(AGENT_PY)
-    for name in ("_state_scope", "_state_key", "_session"):
+    tree = _tree(SESSION_PY)
+    for name in ("state_scope", "state_key", "session"):
         fn = _funcdefs(tree, name)[0]
         args = [a.arg for a in list(fn.args.args) + list(fn.args.kwonlyargs)]
         assert "user_id" not in args, (
             f"{name} 接了 `user_id` 形参 ⇒ 作用域有两个真源（入参 / ContextVar）"
         )
 
-    names = {n.id for n in ast.walk(_funcdefs(tree, "_state_scope")[0]) if isinstance(n, ast.Name)}
-    assert "_current_user_id" in names, "`_state_scope` 没读那个唯一的身份 ContextVar"
+    used = _names_in(_funcdefs(tree, "state_scope")[0])
+    assert "_current_user_id" in used, "`state_scope` 没读那个唯一的身份 ContextVar"
 
 
 def test_invoke_is_bind_hydrate_try_finally_flush():
@@ -799,16 +833,14 @@ def test_hydrate_flushes_before_reading():
 
     hydrate 对脏容器不覆盖 ⇒ 若不先补写，这次请求就一直拿着内存那份，
     库里那份（更早的）永远回不来，而那笔改动也永远不出门。
+
+    ★ C 刀后判据读 `agent_session.py`：本模块内 `flush_state(...)` 是**裸名**调用；
+      存储门面经模块别名（`_pr._hydrate_session_state`）⇒ 读取用 `_attr_calls`。
     """
-    tree = _tree(AGENT_PY)
-    fn = _funcdefs(tree, "_hydrate_state")[0]
-    flush_calls = _attr_calls(fn, "_flush_state")
-    read_calls = [
-        n
-        for n in ast.walk(fn)
-        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-        and n.func.id == "_hydrate_session_state"
-    ]
+    tree = _tree(SESSION_PY)
+    fn = _funcdefs(tree, "hydrate_state")[0]
+    flush_calls = _name_calls(fn, "flush_state")
+    read_calls = _attr_calls(fn, "_hydrate_session_state")
     assert flush_calls and read_calls, "入口缺少补写或读取"
     assert flush_calls[0].lineno < read_calls[0].lineno, (
         "入口先读后补写 ⇒ 内存里的改动被库里的旧值盖掉（hydrate 不覆盖脏容器，"
@@ -821,18 +853,21 @@ def test_hydrate_flushes_before_reading():
 
 
 def test_bind_context_writes_all_three_contextvars():
-    """`_bind_context` 必须写满三个 ContextVar（含身份）。
+    """`bind_context` 必须写满三个 ContextVar（含身份）。
 
     漏传 `user_id` 的后果不是「少记一点」，而是状态落到**另一个作用域**下。
+
+    ★ C 刀后判据读 `agent_session.py`；三个 ContextVar 经模块别名写 ⇒ 判据用
+      `_names_in`。形参顺序与 `@staticmethod` 仍是契约（调用点按位置传参）。
     """
-    tree = _tree(AGENT_PY)
-    fn = _funcdefs(tree, "_bind_context")[0]
-    used = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
+    tree = _tree(SESSION_PY)
+    fn = _funcdefs(tree, "bind_context")[0]
+    used = _names_in(fn)
     for var in ("_current_context_id", "_current_shop_id", "_current_user_id"):
-        assert var in used, f"`_bind_context` 没有写 {var}"
+        assert var in used, f"`bind_context` 没有写 {var}"
     args = [a.arg for a in fn.args.args]
     assert args == ["context_id", "shop_id", "user_id"], (
-        f"`_bind_context` 形参变了：{args} —— 调用点按位置传参，顺序即契约"
+        f"`bind_context` 形参变了：{args} —— 调用点按位置传参，顺序即契约"
     )
 
 

@@ -496,6 +496,34 @@ def test_lookup_helpers_are_total():
 # ============================================================================
 
 
+#: 本仓 Agent 装配的**调用名**。
+#:
+#: ★ 第 338 轮（P0-6 第四刀）：追加 `build_router` —— `product_research` 的
+#:   装配点从 `BaseAgent(...)` 移到了 `agent_routing.build_router(...)`
+#:   （主文件薄壳委托）。只认 `BaseAgent` 会让「选品分析师绑了哪张注册表」
+#:   从**判据 E 的扫描面里静默消失** —— 反向注入 INJ-L 实测过：
+#:   把那一行改坏而判据 E 不红。
+#:
+#: ★ 这份名单只允许**一处**：自检用例原先把它内联复制了一份，于是补名字时
+#:   只改了扫描器 ⇒ 自检仍「漏认新形态」（第 338 轮实测踩过）。
+ASSEMBLY_CALL_NAMES = frozenset({"BaseAgent", "__init__", "build_router"})
+
+
+def _is_assembly_tools_kwarg(kw) -> bool:
+    """`tools=` 实参是否构成一个**真实装配点**。
+
+    ★ 排除「同名转发」（`tools=tools`）：那只是把调用方传进来的容器再往下一层
+      传，真正的容器名在**调用方**。不排除的话，`agent_routing.build_router`
+      这类「显式传参装配器」（P0-6 第四刀新建）会被当成一个伪装配点 ——
+      判据 E 于是出现一条**永远红**的条目。
+      ★ 反向注入实测：真实装配点写的是 `tools=xxx_tools`（名字不同）或
+        `tools=a + b`（BinOp），都不会被这条排除规则误伤。
+    """
+    if kw.arg != "tools":
+        return False
+    return not (isinstance(kw.value, ast.Name) and kw.value.id == "tools")
+
+
 def _tools_kwarg_expressions() -> list:
     """AST 扫全仓，取**Agent 装配调用**的 `tools=` 实参表达式文本。
 
@@ -504,7 +532,7 @@ def _tools_kwarg_expressions() -> list:
       `SkillRecord(tools=…)`（技能表写入）**不是** Agent 装配，必须排除，
       否则它的实参 `list(spec.get('tools') or [])` 会被当成一个"未知装配点"。
     """
-    agent_call_names = {"BaseAgent", "__init__"}
+    agent_call_names = ASSEMBLY_CALL_NAMES
     out: list = []
     for p in sorted((BACKEND / "modules").rglob("*.py")):
         if "__pycache__" in p.parts:
@@ -522,7 +550,7 @@ def _tools_kwarg_expressions() -> list:
             if name not in agent_call_names:
                 continue
             for kw in n.keywords:
-                if kw.arg == "tools":
+                if _is_assembly_tools_kwarg(kw):
                     out.append((rel, n.lineno, ast.unparse(kw.value)))
     return out
 
@@ -581,6 +609,12 @@ def test_tools_scanner_is_not_vacuous():
         "\n"
         "def f():\n"
         "    return SkillRecord(tools=list(spec.get('tools') or []))\n"
+        "\n"
+        "def build_router(*, tools):\n"
+        "    return BaseAgent(agent_name='r', tools=tools)\n"
+        "\n"
+        "def g():\n"
+        "    return _routing.build_router(tools=assembled_tools)\n"
     )
     tree = ast.parse(src)
     got = []
@@ -589,18 +623,26 @@ def test_tools_scanner_is_not_vacuous():
             continue
         fn = n.func
         name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
-        if name not in {"BaseAgent", "__init__"}:
+        if name not in ASSEMBLY_CALL_NAMES:
             continue
         for kw in n.keywords:
-            if kw.arg == "tools":
+            if _is_assembly_tools_kwarg(kw):
                 got.append(ast.unparse(kw.value))
 
-    assert len(got) == 2, f"扫描器应只认 Agent 装配的 2 处，实得 {got}"
+    assert len(got) == 3, f"扫描器应只认 Agent 装配的 3 处，实得 {got}"
+    assert any("assembled_tools" in e for e in got), (
+        f"漏了 `_routing.build_router(tools=…)` 形态 —— "
+        f"那正是 P0-6 第四刀后的 product_research 装配点：{got}"
+    )
     assert any("navigation_tools" in e for e in got), f"漏了 super().__init__ 形态：{got}"
     assert any("other_tools" in e for e in got), f"漏了 BaseAgent 形态：{got}"
     assert not any("spec.get" in e for e in got), (
         "扫描器把 `SkillRecord(tools=…)` 当成 Agent 装配了 —— "
         "那会让判据 E 出现一条永远红的伪装配点"
+    )
+    assert not any(e == "tools" for e in got), (
+        "扫描器把「同名转发」（`tools=tools`）当成装配点了 —— "
+        "那只是显式传参装配器，真正的容器名在**调用方**"
     )
 
 # ============================================================================

@@ -39,6 +39,10 @@ BACKEND = Path(__file__).resolve().parents[1]
 BASE_AGENT = BACKEND / "ai_infra" / "base_agent.py"
 LISTING = BACKEND / "modules" / "listing_generator" / "agent_listing.py"
 PR = BACKEND / "modules" / "product_research" / "agent_product_research.py"
+# ★ 第 338 轮（P0-6 第四刀）：`_route_via_tools` 的**判定体**外移到本文件；
+#   主文件只剩薄壳 ⇒ 「有没有读摘要 / 有没有安全回退」必须读这里，
+#   读薄壳等于**空跑**。
+ROUTING = BACKEND / "modules" / "product_research" / "agent_routing.py"
 
 _summary = BaseAgent.tool_activity_in_turn
 
@@ -217,7 +221,9 @@ def test_both_consumers_read_the_summary():
     ★ 判据走 AST 取**该函数内**的取键（含 `.get` 与下标）：直接 `'activity' in src`
       会被注释与别的函数骗过（本仓已踩三次）。
     """
-    for path, fn_name in ((LISTING, "_route_via_tools"), (PR, "_route_via_tools")):
+    # ★ PR 那一条指向 `agent_routing.py`：判定体（含读摘要与回退）第 338 轮外移，
+    #   主文件的 `_route_via_tools` 现在只是薄壳。
+    for path, fn_name in ((LISTING, "_route_via_tools"), (ROUTING, "route_via_tools")):
         fn = _fn_node(path, fn_name)
         assert fn is not None, "%s 里找不到 %s" % (path.name, fn_name)
         keys = _string_keys(fn)
@@ -234,8 +240,9 @@ def test_consumers_keep_a_safe_fallback():
       实测过：宽版（在 `ast.dump(If)` 里找 `"'messages'"`）在 RI-4 下**没红**，
       这条判据等于**不存在**。⇒ 收紧成「`orelse` 子树里真的读 `state.messages`」。
     """
-    for path in (LISTING, PR):
-        fn = _fn_node(path, "_route_via_tools")
+    # ★ 同 `test_both_consumers_read_the_summary`：PR 的判定体已外移。
+    for path, fn_name in ((LISTING, "_route_via_tools"), (ROUTING, "route_via_tools")):
+        fn = _fn_node(path, fn_name)
         found = False
         for node in ast.walk(fn):
             if isinstance(node, ast.If) and node.orelse:
