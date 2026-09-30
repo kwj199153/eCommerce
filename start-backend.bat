@@ -1,5 +1,17 @@
 @echo off
 chcp 65001 >nul
+rem ============================================================
+rem  This file must stay PURE ASCII. Two measured reasons:
+rem   1) chcp 65001 + non-ASCII bytes in a .bat make cmd.exe lose
+rem      sync while reading the file, so rem comment lines get
+rem      executed as commands. Probe-verified: ASCII-only fixes it.
+rem   2) click >= 8.0 expands globs in sys.argv on Windows by default
+rem      (windows_expand_args=True), so --reload-exclude "logs/*"
+rem      blows up into many real paths and uvicorn refuses to start.
+rem      All uvicorn args now live in backend\run_dev.py instead.
+rem  Chinese console output comes from run_dev.py and
+rem  ensure-docker-deps.ps1, never from this file.
+rem ============================================================
 echo ========================================
 echo   CrossBorder AI SaaS Backend Server
 echo ========================================
@@ -7,19 +19,20 @@ echo.
 
 cd /d "%~dp0backend"
 
-rem --- 项目固定 Python 环境：conda reactAgents ---
+rem --- Project python: conda env reactAgents ---
 set "PY=D:\work\anaconda\anaconda3\envs\reactAgents\python.exe"
 
 if not exist "%PY%" (
-    echo ERROR: 找不到项目 Python 环境: %PY%
-    echo   请确认 conda 环境 reactAgents 已创建
+    echo ERROR: project python not found: %PY%
+    echo        Fix: create the conda env "reactAgents" first.
     pause
     exit /b 1
 )
 
-rem --- 前置：确保 Docker 依赖就绪（PostgreSQL + Redis）---
-rem     必须用 docker start，不能用 docker compose up：这两个容器是 docker run
-rem     手工建的（无 compose 标签），compose 会因 container_name 冲突报 already in use。
+rem --- Prereq: PostgreSQL + Redis ---
+rem     Must use docker start, NOT docker compose up: both containers
+rem     were created by hand with docker run (no compose labels), so
+rem     compose would fail with a container_name conflict.
 echo [1/3] Ensuring Docker deps: PostgreSQL + Redis...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0ensure-docker-deps.ps1"
 if errorlevel 1 (
@@ -31,21 +44,11 @@ if errorlevel 1 (
 )
 
 echo [2/3] Using: %PY%
-%PY% --version
+"%PY%" --version
 
 echo [3/3] Starting server on http://localhost:8000...
 echo.
-echo   API Docs: http://localhost:8000/docs
-echo   Health:   http://localhost:8000/health
-echo.
-echo   Press Ctrl+C to stop
-echo ----------------------------------------
 
-rem --- 排除监听：logs/ 与 .venv/（P0-2 日志治理，2026-09-30）---
-rem     uvicorn --reload 原本监听整个 backend 目录，**包括 backend/logs 自己**，
-rem     于是形成「写日志 -> watchfiles 报告文件变更 -> 再写一条日志 -> ...」的自反馈，
-rem     实测单日白刷约 2000 条 watchfiles 日志（日志原文里能看到 logs\2026-09-30.log 自己）。
-rem     backend/.venv 也在监听范围内，一并排除。
-%PY% -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload --log-level info --reload-exclude "logs/*" --reload-exclude "*.log" --reload-exclude "*.log.gz" --reload-exclude ".venv/*" --reload-exclude "__pycache__/*"
+"%PY%" "%~dp0backend\run_dev.py"
 
 pause
