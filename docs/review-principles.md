@@ -132,6 +132,8 @@
 
 ## 5. 本仓 L1 现状快照（2026-10-01 实测）
 
+> **更新 · 第 346 轮**：批次 1 已落地（L3-1 前端 ESLint 棘轮 `4835dea`；L3-2 后端 mypy 棘轮 `5b2df09`）。下表与附录 A 已同步。
+
 > 目的：下次审查直接从 L2 开始，不必重走 L1 盘点。**有变化时更新本节。**
 
 ### CI（`.github/workflows/ci.yml` 430 行 / `cd.yml` 261 行）
@@ -250,7 +252,7 @@
 
 | # | 缺口 | 实测证据 | 建议 | 成本 |
 |---|---|---|---|---|
-| L3-1 | 前端 ESLint **从未能跑** | `package.json` 有 `lint: eslint . --ext …`，但 `devDependencies` **无 eslint**、无 `eslint.config.*` / `.eslintrc*` | 批次 1 | 半天 |
+| ~~L3-1~~ | ~~前端 ESLint **从未能跑**~~ | ✔ **已闭合（第 346 轮 · F-1）**：新建 `frontend/eslint.config.mjs`（flat config；**只显式 `off` 掉 21 条欠账**并导出 `LEGACY_DEBT_OFF` 供门禁 import，其余一条不动）+ 新增 `frontend/scripts/check-eslint-ratchet.cjs`（判据**问库本身**：`calculateConfigForFile`，冻结三张表 + 四条断言）+ `lint` 去掉破坏性 `--fix` 与 ESLint 9 已移除的 `--ext` + CI frontend job 接 `npm run lint:ci`（`--max-warnings=0`）+ devDeps **+6**（含 `@eslint/js` / `globals` / `vue-eslint-parser` —— 最后一个是 peerDependency，不显式装则 `npm ci` 失败）。稳态 **0 problem**；反向注入 **13/13 PASS**。★ 方案原写「逐条列零违规规则为 error」方向**是错的**：档位**按文件类解析**，全局提级会新开闸。详见 `docs/plan-l3-batches.md` §1.6 | 批次 1 | ✔ |
 | ~~L3-2~~ | ~~后端 mypy **已装已配未接 CI**~~ | ✔ **已闭合（第 346 轮）**：CI backend job 已加 `run: mypy core ai_infra`（棘轮：只查已收敛到零的目录，基线 **74 条 → 0**）。★ 接入时还修掉两条 blocking：`python_version` 写 3.11 而 venv 是 3.12（mypy **一条业务结果都出不来**）、无参数 `mypy` 撞同名 `conftest`（退出码 2 但**一条都没检查**） | 批次 1 | ✔ |
 | L3-3 | **请求级 trace 已有，缺三段** | `request_id` 已贯通后端全链路（见附录 A 上方「复核修正」）：缺 ① 前端零参与 ② Celery 跨进程断链 ③ 无分段耗时 | 批次 2 | 2–3 天 |
 | L3-4 | **prompt 指纹算出来了但没人读** | `PromptSpec`（`version` + `fingerprint` + 变量契约）齐备、**11 个业务模块真在注册**；缺的是：`.fingerprint` 在 `modules/` + `ai_infra/` **0 命中**、`get_prompt_template() -> str` **类型擦除**、B 档 DB 覆写层无表 | 批次 2 | 半天 |
@@ -263,7 +265,7 @@
 
 ### 分批建议与理由
 
-- **批次 1 ——「补齐写了但从未生效的工程配置」**（L3-1 + L3-2）
+- **批次 1 ——「补齐写了但从未生效的工程配置」**（L3-1 + L3-2）—— ✔ **第 346 轮两条全部闭合**
   两条**同源**：都是「配置 / 脚本写了，但依赖或 CI 步骤缺失 ⇒ 从未真正执行」。
   成本最低，且直接加固当前正在进行的重构（后端有 `vue-tsc` 的对位物，前端补 lint）。
   ★ 必须按**原则四**走棘轮：`eslint` 与 `mypy` 都不要直连全量（103 个 `.vue` + 后端存量无标注
