@@ -64,6 +64,15 @@ from modules.product_research import prompts as _prompts  # noqa: F401
 from modules.conversation import hydrate_state as _hydrate_session_state
 from modules.conversation import persist_state as _persist_session_state
 
+# P0-6 第二刀：**分析编排层**外移 —— 下方 `_analyze_*` 薄壳调用的 4 个 `analyze_*` 函数。
+# 依赖（adapter / session / LLM 回调）由薄壳**显式传参**；逻辑体逐字搬走，改写处见
+# `.workbuddy/probes/r336-p0-6b/ast_parity.py` 的 `ApplyPlan`（4 处，全部列明）。
+from modules.product_research.agent_analyzers import (
+    analyze_blue_ocean,
+    analyze_competitors,
+    analyze_pain_points,
+    analyze_profit,
+)
 # P0-6 第一刀：领域纯逻辑层（类目映射 / 机会评分 / ASIN 解析 / 文案）外移。
 # 主类继承 `ResearchHelpersMixin` 拿到这些方法 ⇒ `self._x` / `cls._x` 调用点零改动；
 # 两个常量在此 re-export —— `tests/test_product_research_blue_ocean.py` 与
@@ -73,6 +82,16 @@ from modules.product_research.agent_helpers import (  # noqa: F401
     ResearchHelpersMixin,
     _ASIN_RE,
     _TRENDING_KEYWORDS,
+)
+# P0-6 第二刀：**数据结构层**外移。这 5 个名字在本模块继续可用（re-export）——
+# 消费方是测试（`tests/test_hitl_approval_flow.py` 按本模块路径导入 `AgentResponse`）
+# 与 `ResearchReport` 的字段标注；是**同一对象**，不是第二份定义。
+from modules.product_research.agent_models import (  # noqa: F401
+    AgentResponse,
+    BlueOceanOpportunity,
+    PainPointAnalysis,
+    ProfitAnalysis,
+    ResearchReport,
 )
 
 
@@ -86,61 +105,12 @@ from langgraph.types import Command
 
 
 # ====== 数据模型 ======
-
-class AgentResponse(BaseModel):
-    """Agent 响应包装"""
-    content: str  # 文本回复
-    data: Optional[Dict[str, Any]] = None  # 结构化数据
-    display_type: str = "text"  # 展示类型：table/chart/text/report
-
-
-class BlueOceanOpportunity(BaseModel):
-    """蓝海机会"""
-    category: str = Field(..., description="品类名称")
-    search_volume: int = Field(..., description="月搜索量")
-    competition: float = Field(..., description="竞争指数（0-1）")
-    trend: str = Field(default="", description="趋势方向")
-    opportunity_score: float = Field(..., description="机会评分（0-100）")
-    reason: str = Field(default="", description="推荐理由")
-    suggested_price_range: str = Field(default="", description="建议售价区间")
-    estimated_margin: str = Field(default="", description="预估利润率")
-
-
-class ProfitAnalysis(BaseModel):
-    """利润分析结果"""
-    product_name: str
-    cost_price: float  # 采购成本
-    selling_price: float  # 售价
-    fees: FeeStructure
-    total_cost: float
-    net_profit: float
-    roi_percentage: float
-    break_even_quantity: int  # 盈亏平衡销量
-
-
-class PainPointAnalysis(BaseModel):
-    """痛点分析结果"""
-    product_asin: str
-    total_reviews_analyzed: int
-    negative_review_count: int
-    pain_points: List[Dict[str, Any]]  # [{pain_point, count, percentage}]
-    improvement_suggestions: List[str]
-    market_gap_score: float  # 市场空白度评分
-
-
-class ResearchReport(BaseModel):
-    """选品研究报告"""
-    report_id: str
-    created_at: str
-    query: str
-    platform: str
-    summary: str
-    opportunities: List[BlueOceanOpportunity] = []
-    profit_analysis: Optional[ProfitAnalysis] = None
-    pain_point_analysis: Optional[PainPointAnalysis] = None
-    competitor_analysis: List[CompetitorAnalysis] = []
-    recommendations: List[str] = []
-    confidence_level: str  # high / medium / low
+#
+# 5 个模型（AgentResponse / BlueOceanOpportunity / ProfitAnalysis /
+# PainPointAnalysis / ResearchReport）已外移到 `modules/product_research/agent_models.py`（P0-6 第二刀）。
+# 它们是**跨层契约**，不该钉在 2375 行的 God Class 上；外移后 `agent_analyzers.py`
+# 构造结果模型时不必反向 import 本文件（那会是个环）。
+# 本模块仍能从这里取到全部 5 个名字 —— 见文件顶部的 re-export。
 
 
 # ====== System Prompt ======
@@ -1350,333 +1320,42 @@ class ProductResearchAgent(ResearchHelpersMixin, BaseAgent):
         rank_hit = any(w in q for w in self._MARKET_INSIGHT_RANK)
         return metric_hit and rank_hit
 
-    # ====== 核心分析方法 ======
+    # ====== 核心分析方法（P0-6 第二刀：逻辑已外移到 `agent_analyzers.py`）======
+    #
+    # ★ 这里只留**薄壳**：把依赖显式传进去，然后委托。
+    #   为什么不删掉方法、直接在调用点改成模块级调用 ——
+    #   `tests/test_product_research_blue_ocean.py` / `..._candidate_flow.py` /
+    #   `..._intent_routing.py` 共 13 处按 `agent._analyze_*(...)` 调用，
+    #   那是本仓既有的测试契约（改测试的调用形态等于替第三方改契约）。
+    # ★ 为什么不重施第一刀的 mixin：这 4 个方法**必须**用 adapter 与会话状态，
+    #   藏进基类只会让耦合从「可以数的参数」变成「看不见的继承链」。
+    #   依赖清单就写在 `agent_analyzers.py` 的函数签名里。
 
     async def _analyze_blue_ocean(self, query: str, context_id: Optional[str] = None) -> dict:
-        """
-        蓝海品类挖掘（支持 LLM 增强）
-
-        类目识别为 None 时**不再兜底成 "general" 泛词表**（那批词在关键词库中
-        命中不到，会走「未匹配 → 随机估算」路径，分数随机、结论不可信），
-        改用跨类目精选的全类目高潜关键词（`_TRENDING_KEYWORDS`）。
-
-        `context_id` 用于把本轮结果**按会话**缓存（`_last_products`），
-        供「把第 1 个加进选品库」这类指代解析；不传则落在默认会话。
-        """
-        # 1. 提取目标类目（None = 未识别出具体类目 → 全类目扫描）
-        category = self._extract_category(query)
-
-        # 2. 获取相关关键词数据
-        keywords_to_check = self._generate_search_keywords(category)
-        keyword_data_list = []
-        for kw in keywords_to_check[:8]:  # 检查前8个关键词
-            data = await self.adapter.get_keyword_data(kw)
-            keyword_data_list.append(data)
-
-        # 3. 计算机会评分并排序
-        opportunities = []
-        for kd in keyword_data_list:
-            score = self._calculate_opportunity_score(kd)
-            if score >= 50:  # 只保留高分机会
-                opp = BlueOceanOpportunity(
-                    category=kd.keyword,
-                    search_volume=kd.search_volume,
-                    competition=kd.competition,
-                    trend=kd.trend_direction,
-                    opportunity_score=score,
-                    reason=self._generate_reason(kd),
-                    suggested_price_range=self._estimate_price_range(category),
-                    estimated_margin=self._estimate_margin(kd.competition),
-                )
-                opportunities.append(opp)
-
-        # 按分数降序排列
-        opportunities.sort(key=lambda x: x.opportunity_score, reverse=True)
-
-        top_opportunities = opportunities[:5]  # Top 5
-        total = len(opportunities)
-
-        # ===== 词 → 商品：把「方向」落到「具体的货」 =====
-        #
-        # 为什么必须做这一步：词级机会**没有 ASIN**，而候选选品库以 `asin` 为核心
-        # 标识。只给词，老板既存不进库、也没法横向对比；「把这个品加进选品库」
-        # 这类指令也就无从解析。这里把每条机会回查商品池，并把**该词的市场层指标**
-        # 随商品带下去（市场层 + 商品层两个维度都要留，不是二选一）。
-        opp_dicts: List[dict] = []
-        products: List[dict] = []
-        seen_asins: set = set()
-
-        for opp in top_opportunities:
-            try:
-                matched = await self.adapter.match_products(opp.category, limit=2)
-            except Exception as e:
-                logger.warning(f"[product_research] match_products failed for {opp.category}: {e}")
-                matched = []
-
-            opp_dict = opp.dict()
-            opp_dict["matched_count"] = len(matched)
-            opp_dicts.append(opp_dict)
-
-            for m in matched:
-                asin = m.get("asin")
-                if not asin or asin in seen_asins:
-                    continue
-                seen_asins.add(asin)
-                products.append({
-                    **m,
-                    "source_keyword": opp.category,
-                    "keyword_search_volume": opp.search_volume,
-                    "keyword_competition": opp.competition,
-                    "keyword_trend": opp.trend,
-                    "keyword_opportunity_score": opp.opportunity_score,
-                })
-
-        # 面向老板的文案：绝不回显内部标识（如 general）；未指定类目时说人话
-        where = f"在「{category}」领域" if category else "全类目高潜方向"
-        prefix = where if category else "未识别出具体类目，已按全类目高潜方向扫描，"
-        if total == 0:
-            summary = f"{where}暂未发现评分达标的蓝海机会，建议换个类目或放宽筛选条件"
-        elif products:
-            summary = f"{prefix}发现 {total} 个蓝海方向，对应 {len(products)} 个候选商品"
-        else:
-            summary = f"{prefix}发现 {total} 个蓝海方向，但商品池里暂无匹配的具体商品"
-
-        result = {
-            "type": "blue_ocean_analysis",
-            "query": query,
-            "category": category or "all",
-            # 主列表（商品层）：可直接对比 / 入库
-            "products": products,
-            # 市场层：词与其搜索量/竞争度/趋势（词不再是独立卡片，降级为商品的来源标注）
-            "opportunities": opp_dicts,
-            "summary": summary,
-        }
-
-        # 缓存本轮结果，供「把第 N 个 / 这个品加进选品库」这类指代解析。
-        # 按会话存 —— 否则 A 会话挖的蓝海会被 B 会话的「第 1 个」取走。
-        self._session(context_id)["last_blue_ocean"] = result
-
-        # ====== LLM 增强：智能总结与建议 ======
-        if self.ENABLE_LLM:
-            try:
-                llm_result = await self.llm_structured(
-                    user_message=f"""
-基于以下蓝海分析数据，请提供：
-1. **市场机会总结**（2-3句话概括）
-2. **Top 3 推荐进入的细分品类**（附理由）
-3. **风险提示**（可能的市场壁垒或竞争威胁）
-4. **行动建议**（具体的下一步行动）
-
-数据：
-{json.dumps([{'keyword': o['category'], 'score': o['opportunity_score'], 'volume': o['search_volume']} for o in result['opportunities']], ensure_ascii=False)}
-""",
-                    system_prompt=self.get_prompt_template("product_research", market="全球"),
-                    output_format="json",
-                )
-
-                if llm_result.success and isinstance(llm_result.content, dict):
-                    result["llm_insights"] = llm_result.content
-                    result["enhanced"] = True
-                    result["llm_fallback"] = llm_result.fallback
-
-            except Exception as e:
-                logger.warning(f"Blue ocean LLM enhancement failed: {e}")
-
-        return result
+        """蓝海品类挖掘（薄壳；领域逻辑见 `agent_analyzers.analyze_blue_ocean`）。"""
+        return await analyze_blue_ocean(
+            self.adapter,
+            query,
+            context_id,
+            session=self._session(context_id),
+            structured_llm=self.llm_structured if self.ENABLE_LLM else None,
+            system_prompt=(
+                self.get_prompt_template("product_research", market="全球")
+                if self.ENABLE_LLM else ""
+            ),
+        )
 
     async def _analyze_profit(self, query: str) -> dict:
-        """SKU 利润分析"""
-        # 1. 尝试从查询中提取产品信息
-        product_info = self._extract_product_info(query)
-
-        # 2. 如果有 ASIN，获取产品详情
-        product = None
-        if product_info.get("asin"):
-            product = await self.adapter.get_product_detail(product_info["asin"])
-            if product is None and not product_info.get("price"):
-                # 查不到详情又没给售价 → 没法算，别抛 AttributeError（会变成 500）
-                return {
-                    "type": "profit_analysis",
-                    "query": query,
-                    "error": "查不到该 ASIN 的售价",
-                    "summary": (
-                        f"没查到 {product_info['asin']} 的售价，先算不了利润。"
-                        f"你可以把售价一起告诉我，比如「分析 {product_info['asin']} 的利润，售价 $29.99」。"
-                    ),
-                }
-
-        if product is None:
-            # 使用用户提供的参数估算
-            product = ProductData(
-                product_id=product_info.get("asin") or "estimated",
-                title=(
-                    product_info.get("name")
-                    or (f"ASIN {product_info['asin']}" if product_info.get("asin") else "待定产品")
-                ),
-                price=product_info.get("price", 29.99),
-                platform=self.adapter.platform_type,
-            )
-
-        # 3. 计算费用
-        fees = self.adapter.calculate_fees(
-            price=product.price,
-            category=product.category or "",
-            weight_lbs=product_info.get("weight", 1.5),
-        )
-
-        # 4. 计算利润（假设采购成本为售价的 30%）
-        cost_price = product.price * 0.30
-        ad_cost = product.price * 0.15  # 广告 ACOS 15%
-        total_cost = cost_price + fees.total_fees + ad_cost
-        net_profit = product.price - total_cost
-        roi = (net_profit / total_cost) * 100 if total_cost > 0 else 0
-        break_even = int(total_cost / net_profit) if net_profit > 0 else 9999
-
-        analysis = ProfitAnalysis(
-            product_name=product.title,
-            cost_price=round(cost_price, 2),
-            selling_price=product.price,
-            fees=fees,
-            total_cost=round(total_cost, 2),
-            net_profit=round(net_profit, 2),
-            roi_percentage=round(roi, 1),
-            break_even_quantity=break_even,
-        )
-
-        return {
-            "type": "profit_analysis",
-            "query": query,
-            "product": product.title if product else "未知产品",
-            "analysis": analysis.dict(),
-            "fees_breakdown": {
-                "采购成本": round(cost_price, 2),
-                "平台佣金": round(fees.referral_fee_pct * product.price / 100, 2),
-                "FBA配送费": fees.fba_fulfillment_fee,
-                "仓储费": fees.storage_fee_monthly,
-                "广告费": round(ad_cost, 2),
-            },
-            "summary": (
-                f"{product.title}：售价 ${product.price:.2f}，"
-                f"总成本 ${analysis.total_cost:.2f}"
-                f"（采购 ${analysis.cost_price:.2f} + 平台费 ${fees.total_fees:.2f} + 广告 ${ad_cost:.2f}），"
-                f"净利润 ${analysis.net_profit:.2f}，ROI {analysis.roi_percentage:.1f}%，"
-                f"约 {break_even} 件回本。"
-            ),
-        }
+        """SKU 利润分析（薄壳；领域逻辑见 `agent_analyzers.analyze_profit`）。"""
+        return await analyze_profit(self.adapter, query)
 
     async def _analyze_pain_points(self, query: str) -> dict:
-        """痛点机会识别"""
-        # 1. 提取 ASIN 或产品名称
-        asin = self._extract_asin(query)
-        if not asin:
-            return {
-                "type": "pain_point_analysis",
-                "query": query,
-                "error": "需要产品 ASIN",
-                "summary": (
-                    "痛点分析得先知道是哪个产品——把产品 ASIN（形如 B0C1234567）发我，"
-                    "我就去看它的中差评、提炼可改进点。"
-                ),
-            }
-
-        # 2. 获取评论（重点看差评）
-        reviews_1_2_star = await self.adapter.get_reviews(asin, rating_filter=2)
-        reviews_3_star = await self.adapter.get_reviews(asin, rating_filter=3)
-        all_negative = reviews_1_2_star + reviews_3_star
-
-        # 3. 统计痛点频率
-        pain_point_counts = {}
-        for review in all_negative:
-            for pp in review.pain_points:
-                pain_point_counts[pp] = pain_point_counts.get(pp, 0) + 1
-
-        total_reviews = len(all_negative)
-        pain_points_sorted = sorted(
-            pain_point_counts.items(),
-            key=lambda x: x[1],
-            reverse=True,
-        )[:10]
-
-        pain_points_formatted = [
-            {
-                "pain_point": pp,
-                "count": count,
-                "percentage": round(count / total_reviews * 100, 1) if total_reviews > 0 else 0,
-            }
-            for pp, count in pain_points_sorted
-        ]
-
-        # 4. 生成改进建议
-        suggestions = self._generate_improvement_suggestions(pain_points_formatted)
-
-        # 5. 计算市场空白度评分
-        gap_score = min(100, sum([pp["percentage"] for pp in pain_points_formatted[:3]]))
-
-        analysis = PainPointAnalysis(
-            product_asin=asin,
-            total_reviews_analyzed=len(all_negative),
-            negative_review_count=len(reviews_1_2_star),
-            pain_points=pain_points_formatted,
-            improvement_suggestions=suggestions,
-            market_gap_score=gap_score,
-        )
-
-        return {
-            "type": "pain_point_analysis",
-            "query": query,
-            "asin": asin,
-            "analysis": analysis.dict(),
-            "top_pain_points": pain_points_formatted[:5],
-            "summary": (
-                f"{asin} 共分析 {len(all_negative)} 条中差评，"
-                + (
-                    # 只报「最集中的 1 个」等于没说全——老板问「有哪些痛点」要的是清单
-                    "主要痛点：" + "、".join(
-                        f"「{pp['pain_point']}」({pp['percentage']}%)"
-                        for pp in pain_points_formatted[:3]
-                    )
-                    if pain_points_formatted else "暂未提炼出明显痛点"
-                )
-                + f"，市场空白度评分 {gap_score}。"
-            ),
-        }
+        """痛点机会识别（薄壳；领域逻辑见 `agent_analyzers.analyze_pain_points`）。"""
+        return await analyze_pain_points(self.adapter, query)
 
     async def _analyze_competitors(self, query: str) -> dict:
-        """竞品对比分析"""
-        # 1. 提取多个 ASIN
-        asins = self._extract_multiple_asins(query)
-        if len(asins) < 2:
-            return {
-                "type": "competitor_analysis",
-                "query": query,
-                "competitors": [],
-                "error": "需要至少 2 个产品 ASIN",
-                "summary": (
-                    "竞品对比需要至少 2 个产品 ASIN（形如 B0C1234567）。"
-                    "把两个竞品的 ASIN 发我即可；也可以在右侧「竞品圈选」里挑好，再让我对比。"
-                ),
-            }
-
-        # 2. 批量分析竞品
-        competitor_results = await self.adapter.analyze_competitors(asins)
-        if not competitor_results:
-            return {
-                "type": "competitor_analysis",
-                "query": query,
-                "competitors": [],
-                "error": "未取到竞品数据",
-                "summary": (
-                    f"拿到了 ASIN（{', '.join(asins)}），但平台没返回可对比的竞品数据。"
-                    "换个 ASIN 或稍后重试。"
-                ),
-            }
-
-        return {
-            "type": "competitor_analysis",
-            "query": query,
-            "competitors": [c.dict() for c in competitor_results],
-            "summary": f"已对比 {len(competitor_results)} 个竞品：{', '.join(asins)}。",
-        }
+        """竞品对比分析（薄壳；领域逻辑见 `agent_analyzers.analyze_competitors`）。"""
+        return await analyze_competitors(self.adapter, query)
 
     def _session_context_block(self, context_id: Optional[str] = None) -> str:
         """

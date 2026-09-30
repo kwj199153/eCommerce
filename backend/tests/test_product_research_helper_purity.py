@@ -80,18 +80,47 @@ def _funcs(node: ast.AST):
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
 
 
-def _imported_modules(tree: ast.Module) -> set:
+def _import_targets(tree: ast.Module) -> set:
+    """本模块 import 的**目标全名**集合。
+
+    · `import a.b`          → `{"a.b"}`
+    · `from a.b import c`   → `{"a.b", "a.b.c"}`
+    · `from .x import y`    → `{"<relative:1:x>"}`
+
+    ★ 为什么必须展开 `from a.b import c` 的第二项：
+      `from modules.product_research import agent_analyzers` 的 `ImportFrom.module`
+      只有 `modules.product_research` —— 只看 module 名，就看不到「反向依赖了
+      哪个子模块」。本判据的旧版（只收 `module`）正是这么漏的。
+    """
     out = set()
     for n in ast.walk(tree):
         if isinstance(n, ast.Import):
-            out.update(a.name for a in n.names)
+            for a in n.names:
+                out.add(a.name)
         elif isinstance(n, ast.ImportFrom):
-            if n.module:
-                out.add(n.module)
-            # from . import x 形式：module 为 None，从 level 推断；本层不应出现
-            elif n.level:
-                out.add(f"<relative level={n.level}>")
+            if n.level:
+                out.add(f"<relative:{n.level}:{n.module or ''}>")
+                continue
+            base = n.module or ""
+            if base:
+                out.add(base)
+            for a in n.names:
+                out.add(f"{base}.{a.name}" if base else a.name)
     return out
+
+
+def _is_std_or_allowed(target: str) -> bool:
+    if target.startswith("<relative"):
+        return True
+    if target.split(".")[0] in sys.stdlib_module_names:
+        return True
+    return any(target.startswith(p) for p in ALLOWED_IMPORT_PREFIXES)
+
+
+def _relative_imports_of(tree: ast.Module, module_name: str) -> list:
+    """本文件里 `from .<module_name> import ...` 的语句（相对 import 无包前缀）。"""
+    return [n for n in ast.walk(tree)
+            if isinstance(n, ast.ImportFrom) and n.level and n.module == module_name]
 
 
 @pytest.fixture(scope="module")
@@ -141,17 +170,15 @@ def test_helper_layer_imports_stay_leaf(helper_tree):
     不手写标准库名单 —— 手写必漏，而漏掉会把 `re` / `math` 这类正当依赖
     误报成违规，逼出「往白名单里堆词」的坏习惯。
     """
-    mods = _imported_modules(helper_tree)
-    bad = [m for m in mods
-           if any(m.startswith(p) for p in FORBIDDEN_IMPORT_PREFIXES)]
+    targets = _import_targets(helper_tree)
+    bad = [t for t in targets if any(t.startswith(p) for p in FORBIDDEN_IMPORT_PREFIXES)]
+    # ★ 相对形式单独判：`from .agent_product_research import X` 的 `ImportFrom.module`
+    #   只有 `"agent_product_research"`（丢了包前缀），前缀匹配抓不到它。
+    bad += [f"<relative to {n.module}>" for n in
+            _relative_imports_of(helper_tree, "agent_product_research")]
     assert not bad, f"纯逻辑层出现了禁止的依赖: {bad}"
 
-    unexpected = [
-        m for m in mods
-        if not m.startswith("<relative")
-        and m.split(".")[0] not in sys.stdlib_module_names
-        and not any(m.startswith(p) for p in ALLOWED_IMPORT_PREFIXES)
-    ]
+    unexpected = [t for t in targets if not _is_std_or_allowed(t)]
     assert not unexpected, (
         f"纯逻辑层新增了未登记的非标准库依赖: {unexpected}；"
         f"若确实需要，请同时更新 ALLOWED_IMPORT_PREFIXES 并说明理由"
