@@ -16,6 +16,11 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from modules.secretary import agent as sec
 
+# ★ 第 242 轮起 `route()` 会把本轮店铺上下文下传给 `get_secretary_agent(shop_context=…)`，
+#   本文件的 stub 必须跟上 —— 否则三个用例全部 `TypeError`（实测：**漏了会全红**，
+#   而且是"stub 签名过时"这种一看就知道不是产品 bug 的红）。
+#   本仓铁律：「改字段名 / 加字段 → 生产者 + 消费者**双向**对账」。
+
 
 def _state(status, reply="答完了", reason=None):
     sr = {"status": status, "message": reply, "agent_name": "secretary"}
@@ -50,7 +55,8 @@ class _StubAgent:
 async def test_route_surfaces_budget_truncation(monkeypatch):
     """被预算截断时：`truncated=True` + `reply` 带提示前缀 + 透出原因。"""
     monkeypatch.setattr(sec, "get_secretary_agent",
-                        lambda shop_id=None: _StubAgent(_state("budget_truncated", reason="token 预算耗尽")))
+                        lambda shop_id=None, shop_context=None: _StubAgent(
+                            _state("budget_truncated", reason="token 预算耗尽")))
     out = await sec.route("随便问一句", shop_id=None, history=[], session_id=None, user_id=None)
 
     assert out.get("truncated") is True, "route() 没把 structured_response 的截断结论透出来"
@@ -63,7 +69,7 @@ async def test_route_surfaces_budget_truncation(monkeypatch):
 async def test_route_normal_completion_is_untouched(monkeypatch):
     """正常完成时：不加提示、不带 truncated —— 消费者必须**能区分**两种情况。"""
     monkeypatch.setattr(sec, "get_secretary_agent",
-                        lambda shop_id=None: _StubAgent(_state("completed")))
+                        lambda shop_id=None, shop_context=None: _StubAgent(_state("completed")))
     out = await sec.route("随便问一句", shop_id=None, history=[], session_id=None, user_id=None)
 
     assert "truncated" not in out, "正常完成不该带 truncated 键"
@@ -79,7 +85,7 @@ async def test_route_without_structured_response_still_works(monkeypatch):
     而不是把缺字段变成一次 500。
     """
     monkeypatch.setattr(sec, "get_secretary_agent",
-                        lambda shop_id=None: _StubAgent(
+                        lambda shop_id=None, shop_context=None: _StubAgent(
                             {"messages": [HumanMessage(content="q"), AIMessage(content="答完了")]}))
     out = await sec.route("随便问一句", shop_id=None, history=[], session_id=None, user_id=None)
     assert out["reply"] == "答完了"

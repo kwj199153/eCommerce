@@ -4,8 +4,21 @@
 用途：枚举 FastAPI 应用的全部路由，逐个检查是否挂载了认证/授权依赖，
       输出按模块聚合的覆盖报告，用作多租户改造的验收基线。
 
-原理：递归遍历 route.dependant.dependencies，收集依赖函数名，
-      与已知的认证依赖名集合比对（不依赖运行时请求，静态可判定）。
+原理：用 `scripts.route_inventory`（路由盘点**唯一真源**）递归穿透
+      `include_router()` 的惰性容器，拿到全部端点；再递归遍历
+      route.dependant.dependencies 收集依赖函数名，与已知的认证依赖名集合
+      比对（不依赖运行时请求，静态可判定）。
+
+★ 第 247 轮修正（这份报告此前会**静默失真**，是最危险的那一类）：
+    FastAPI 0.141 起 `include_router()` 只往 `app.routes` 里追加惰性容器
+    `_IncludedRouter`。原先这里写的是
+        for route in app.routes:
+            if not isinstance(route, APIRoute):
+                continue
+    ⇒ 全应用 198 条业务端点**一条都数不到**，报告打「总端点数: 0」；
+      而出口判据 `protected < total`（0 < 0）为假 ⇒ **退出码 0**。
+      也就是说「鉴权覆盖体检」会在**什么都没扫到**的情况下报「通过」。
+    现在盘点走唯一真源：盘点为 0 或遇到认不出的容器时**直接抛错**。
 
 用法（在 backend 目录下执行）：
     python scripts/auth_coverage_report.py
@@ -24,7 +37,8 @@ if BACKEND_ROOT not in sys.path:
     sys.path.insert(0, BACKEND_ROOT)
 
 from main import app  # noqa: E402
-from fastapi.routing import APIRoute  # noqa: E402
+
+from scripts.route_inventory import iter_api_routes  # noqa: E402
 
 # 认定为「认证/授权」的依赖函数名
 #
@@ -86,7 +100,7 @@ def collect_form_anomalies(dependant, acc=None):
       而 FastAPI 判"要不要 await"用的是前者（返回 **False**）。
       两个判定分歧的地方，就是本函数要找的地方。
     """
-    from fastapi.dependencies.utils import is_coroutine_callable
+    from scripts.route_inventory import fastapi_awaitable
 
     if acc is None:
         acc = []
@@ -95,7 +109,7 @@ def collect_form_anomalies(dependant, acc=None):
         if (
             call is not None
             and asyncio.iscoroutinefunction(call)
-            and not is_coroutine_callable(call)
+            and not fastapi_awaitable(call)
         ):
             acc.append(call)
         collect_form_anomalies(dep, acc)
@@ -125,9 +139,7 @@ def main() -> int:
     unauth_routes = []
     form_anomalies = []  # (methods, path, call)
 
-    for route in app.routes:
-        if not isinstance(route, APIRoute):
-            continue
+    for route in iter_api_routes(app):
         methods = sorted(m for m in route.methods if m in HTTP_METHODS)
         if not methods:
             continue

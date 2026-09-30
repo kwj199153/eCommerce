@@ -1110,6 +1110,12 @@ async def test_lockout_threshold_defaults_stay_protective():
         ({"login_max_failures": 1}, "LOGIN_MAX_FAILURES"),
         ({"login_max_failures": 0}, "LOGIN_MAX_FAILURES"),
         ({"login_lockout_minutes": 1}, "LOGIN_LOCKOUT_MINUTES"),
+        # ★ P0-4（2026-09-30）：数据库弱口令。
+        #   两处默认值都是「漏配即弱口令」：compose 的 POSTGRES_PASSWORD 默认 123456、
+        #   Settings.database_url 的字段默认值 postgres:postgres。故两边都要钉。
+        ({"database_url": "postgresql+asyncpg://kevin:123456@db:5432/x"}, "弱口令"),
+        ({"database_url": "postgresql+asyncpg://kevin:postgres@db:5432/x"}, "弱口令"),
+        ({"database_url": "postgresql+asyncpg://sa:admin@db:5432/x"}, "弱口令"),
     ],
 )
 def test_production_guard_rejects_p1b_violations(prod_settings_kwargs, over, keyword):
@@ -1147,6 +1153,25 @@ def test_production_guard_allows_enabling_email_verification(prod_settings_kwarg
 
     s = Settings(**prod_settings_kwargs(email_verification_required=True))
     assert s.email_verification_required is True
+
+
+def test_production_guard_rejects_default_database_url(prod_settings_kwargs):
+    """
+    反向：`Settings.database_url` 的**字段默认值**在生产必须被拒（P0-4）。
+
+    ★ 为什么钉「字段默认值」而不是硬编码某个弱口令：
+      漏配 database_url 时唯一生效的就是这个默认值 —— 它是**每个人都会遇到**
+      的那条弱口令路径（compose 的 POSTGRES_PASSWORD 默认值同理）。
+      拿它当输入，既钉住了「默认值不安全」这个根因，也避免在测试源码里
+      再存一份口令字面量（一份事实一处定义）。
+    """
+    from core.config import Settings
+
+    kwargs = prod_settings_kwargs()
+    kwargs["database_url"] = Settings.model_fields["database_url"].default
+    with pytest.raises(ValueError) as ei:
+        Settings(**kwargs)
+    assert "弱口令" in str(ei.value), str(ei.value)
 
 
 # ==============================================================================

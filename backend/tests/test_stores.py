@@ -18,10 +18,17 @@ FastAPI 按注册顺序匹配路由，于是这两个**单段静态路径**被�
 `test_static_routes_registered_before_store_id` 用源码断言把顺序钉死，
 防止后续新增端点时再踩同一个坑。
 
-不测什么
---------
-`connect` 端点只做「标记已连接」的状态变更（源码留 TODO：「实际验证凭证有效性」），
-不发起任何外部请求，因此无需 mock SP-API。
+关于 `connect` 端点（★ 第 318 轮更新）
+------------------------------------
+它**不再**是一个「只翻标志位」的端点：现在会拿凭据**真去平台验一次**，
+通过后才落库并置「已连接」（实现见 `modules/stores/connect/`）。
+
+因此本文件只覆盖**不需要联网**的那条路径（无凭据 ⇒ 400，且状态不动）。
+成功 / 失败 / 未支持三态的覆盖在 `tests/test_store_connect.py`，
+那里用**注入的桩连接器**替代真实平台调用。
+判据：**每条成功路径都必须能在离线条件下被断言** —— 否则这种用例
+既慢又不可复现（网络一抖就红，而红的原因和被测逻辑无关），
+最后的结局一定是被注释掉。
 """
 
 import inspect
@@ -33,6 +40,9 @@ from sqlalchemy import delete
 
 from core.stores import StoreRecord
 from modules.stores.router import _fee_template_db, _store_db
+import pytest
+pytestmark = pytest.mark.tenant_identity
+
 
 
 # ====== 夹具 ======
@@ -86,9 +96,16 @@ def test_static_routes_registered_before_store_id():
     from modules.stores import router as router_module
 
     src = inspect.getsource(router_module)
-    param_pos = src.index('@router.get("/{store_id}"')
+    # ★ 锚点**必须带上那个逗号**：`@router.get("/{store_id}"` 是**前缀**形态，
+    #   而第 318 轮新增的 `@router.get("/{store_id}/connect/schema"` 也包含它
+    #   ⇒ 不带逗号的话 `index()` 会命中的是**新端点**（位置更靠前），
+    #   断言虽然仍为真，却已经不再指向 `get_store` 了。锚点要钉的是这一条路由本身。
+    param_pos = src.index('@router.get("/{store_id}",')
     assert src.index('@router.get("/fee-templates"') < param_pos
     assert src.index('@router.get("/discount-templates"') < param_pos
+    # 第 318 轮：`/connect/schema` 是单段静态路径，同样必须排在 `/{store_id}` 之前
+    # （否则前端一进页面取表单规格就会拿到「店铺不存在: connect」）。
+    assert src.index('@router.get("/connect/schema"') < param_pos
 
 
 async def test_fee_templates_reachable(client, auth_off):
@@ -281,24 +298,40 @@ async def test_delete_unknown_store_404(client, auth_off):
     assert (await client.delete("/api/v1/stores/store_ffffffff")).status_code == 404
 
 
-# ====== 四、平台连接状态机 ======
+# ====== 四、平台连接：**不落库的路径** ======
+#
+# ★★★ 第 318 轮改造（2026-09-29）：本文件原来断言
+#   「不带凭据调 `/connect` ⇒ 200 + connected」。那条断言描述的正是**被修掉的
+#   缺陷形态** —— 端点收下 `credentials` 后直接丢弃、无条件置「已连接」，
+#   凭据一个字节都没落库。界面上是绿灯、库里是空的，直到真去拉数据才以
+#   「连接正常但调不通」爆出来。
+#
+#   ⇒ 现在把这条用例**反过来**写：没有凭据就不得置「已连接」。
+#     完整的连接状态机（含成功路径、失败不置位、掩码回显）见
+#     `tests/test_store_connect.py`。
 
-async def test_connect_then_disconnect(client, auth_off, created_ids):
+async def test_connect_without_credentials_rejected(client, auth_off, created_ids):
+    """不带任何凭据调 `/connect` ⇒ 400，且**状态一动不动**。
+
+    ★ 这条用例同时钉住两件事，缺一不可：
+      ① **拒绝**（400 而不是 200）；
+      ② 拒绝得**干净** —— `connection_status` 与 `has_credentials` 都没被改动。
+         只断言①的话，「返回 400 但顺手把标志置成 True」照样是绿的。
+
+    ★ 为什么这条不需要密钥、也不需要桩：400 出在 `require()`（必填复核）阶段，
+      它**早于**密钥检查与联网 —— 这正是端点顺序的断言点之一。
+    """
     store = await _create_store(client, created_ids)
     sid = store["id"]
+    before = (await client.get(f"/api/v1/stores/{sid}")).json()
 
     r = await client.post(f"/api/v1/stores/{sid}/connect")
-    assert r.status_code == 200, r.text
-    assert r.json()["connection_status"] == "connected"
-    detail = (await client.get(f"/api/v1/stores/{sid}")).json()
-    assert detail["connection_status"] == "connected"
-    assert detail["has_credentials"] is True
+    assert r.status_code == 400, r.text
+    assert "缺少必填字段" in r.text
 
-    r = await client.post(f"/api/v1/stores/{sid}/disconnect")
-    assert r.status_code == 200
-    detail = (await client.get(f"/api/v1/stores/{sid}")).json()
-    assert detail["connection_status"] == "disconnected"
-    assert detail["has_credentials"] is False
+    after = (await client.get(f"/api/v1/stores/{sid}")).json()
+    assert after["connection_status"] == "disconnected" == before["connection_status"]
+    assert after["has_credentials"] is False
 
 
 async def test_connect_unknown_store_404(client, auth_off):
@@ -447,14 +480,31 @@ async def test_stores_order_matches_shop_tools_order(
         f"期望恰好 3 家店，实得 {api_ids} —— 空/少则下面的顺序断言真空通过"
     )
 
-    tool_shops = await _list_shops()
+    # ★★★ 第 239 轮：工具侧**必须带同一身份**才有可比性。
+    #   修前这里直接调 `_list_shops()`（无请求上下文 ⇒ 只见演示店铺），
+    #   两边天然是两个不同集合，于是测试用「子序列」把这个差异绕过去 ——
+    #   而 `api ⊆ tool` 在「工具读全表」时**恒真**，等于给缺陷盖了张合法印章。
+    #   现在两者共用 `core/auth/accounts.filter_accessible_stores` 一份真源，
+    #   同一身份下必须给出**同一个集合**（不是子集）。
+    from core.observability.context import (
+        clear_request_context,
+        set_request_context,
+    )
+
+    set_request_context(user_id=me["user_id"])
+    try:
+        tool_shops = await _list_shops()
+    finally:
+        # ★ 必须清：ContextVar 会跨请求/跨用例残留（keep-alive 污染）
+        clear_request_context()
     tool_ids = [s["id"] for s in tool_shops]
 
-    # 两边可能因 owner 过滤差异而子集不同（api 会按当前用户过滤），
-    # 所以断言「api_ids 是 tool_ids 的子序列」且**相对顺序一致**。
-    assert set(api_ids) <= set(tool_ids), "api 返回了 tool 不认识的店铺"
-    positions = [tool_ids.index(i) for i in api_ids]
-    assert positions == sorted(positions), (
+    assert set(api_ids) == set(tool_ids), (
+        "同一身份下工具与端点给出了**不同的店铺集合** —— 归属口径又分叉了\n"
+        "  api  多出 = %s\n  tool 多出 = %s"
+        % (sorted(set(api_ids) - set(tool_ids)), sorted(set(tool_ids) - set(api_ids)))
+    )
+    assert api_ids == tool_ids, (
         "两边顺序不一致！\n  api  = %s\n  tool = %s" % (api_ids, tool_ids)
     )
 

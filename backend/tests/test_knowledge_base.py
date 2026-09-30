@@ -39,6 +39,8 @@ from modules.knowledge_base.service import (
     kb_to_dict,
     missing_required_fields,
 )
+pytestmark = pytest.mark.tenant_identity
+
 
 
 # 前端类型的字段集（改动前端类型时必须同步这里，否则前端读不到值）

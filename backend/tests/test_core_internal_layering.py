@@ -44,14 +44,19 @@
   import 期不执行 => 它不是横向耦合，而是「注册 / 引导」。把两档混在一起数会
   得出偏大的数字（实测 36 + 7 条；混算成 43 条）。
 
-## 实测值（第 140 轮，可复算）
+## 实测值（第 140 轮建立 / 第 327 轮复算 / 第 328 轮复算 / 第 331 轮再复算）
 
-  `core/**/*.py` = 47 个；unit = 18 个；
-  import 期边 = **36** 条（唯一对）；函数内边 = **7** 条；
+  `core/**/*.py` = **61** 个；unit = 21 个；
+  import 期边 = **50** 条（唯一对）；函数内边 = **10** 条；
   含环的强连通块 = **1** 个：[['auth', 'identity', 'stores']]；
-  `STANDALONE_UNITS` = ['<core>', 'profit_engine']。
+  `STANDALONE_UNITS` = ['<core>', 'profit_engine', 'timefmt']。
   复算方式：底部的 `_scan_core_graph()` 就是判据本体，直接调用即可，
   不需要任何手工计数。
+  ★ 复算 SCC 时**只喂 import 期边**（`_strongly_connected_blocks(units, top)`）——
+    与 `test_strongly_connected_blocks_match_registry` 同口径。
+    把函数内边并进去会造出**跨层假环**（实测：`top|fn` 会报出
+    `['audit','auth','database','identity','stores']` 与 `['logger','observability']`
+    两个**不存在**的块）—— 那只会让人去拆一个本来没有的环。
 
 ## 本轮搬迁引入的变化（必须记住）
 
@@ -61,6 +66,93 @@
       共享 auth / identity => 合并成**同一个强连通块** `{auth, identity, stores}`；
     · 这不是缺陷，是「内核实体归位」的正常代价 —— 实体进了内核，内核自然要引用它。
   登记在此的目的不是消灭它，而是**不让它继续恶化**。
+
+## 第 218 轮新增的两条边（必须记住）
+
+  新建 `core/library_query/`（资料库查询执行内核）后，新增两条 import 期边：
+    · `library_query -> database`（`async_session_factory` 开会话）
+    · `library_query -> tenant`（`core.tenant.scoping.scoped` 挂 shop 作用域）
+
+  为什么不降级进函数体：这两条是内核的**定义性依赖**
+  （内核 = 拿会话 + 按作用域过滤 + 执行查询），同族先例已有 5 条
+  （auth / identity / metering / stores / tenant -> database）。
+  把结构性依赖藏进函数体只会让本门禁「看不见耦合」，是自欺。
+  实测：未新增环（SCC 仍为 1 个）、未新增孤立单元。
+
+## 第 327 轮新增的 9 条边（必须记住）
+
+  新建 `core/audit/`（通用审计日志内核，P0-5）后，新增两类边：
+
+  · **import 期 6 条**：`audit -> {auth, database, identity, middleware, observability, timefmt}`
+      - `audit -> database`      开独立会话写审计（定义性依赖，同 5 条同族先例）
+      - `audit -> observability` 指标出口 + 请求上下文（IP 兜底）
+      - `audit -> middleware`    来源 IP 的唯一实现 `client_ip()`
+      - `audit -> timefmt`       时间序列化的唯一口径 `utc_iso()`
+      - `audit -> auth/identity` 读口复用 `get_admin_user` + `User` 类型
+
+  · **函数内 3 条**：`{auth, database, identity} -> audit`
+      - `identity` / `auth` 在端点体内调 `record_audit()`（登录成功 / 成员变更）
+      - `database` 在 `register_all_models()` 里注册 `AuditLog`
+
+  ★★ 为什么这 3 条刻意留在**函数体**而不上顶层：
+    审计的内核（模型 / 服务 / 读口）住在 `audit`，而**读口反过来依赖 `auth`**
+    （`get_admin_user`）。若消费方在顶层 import `core.audit`，就立刻形成
+    `auth ⇄ audit` 与 `identity ⇄ audit` 两个 **2 节点环**，把 audit 卷进
+    `{auth, identity, stores}` 那个大块 —— 那是**一次真实的架构变化**，
+    而收益只是少写一句函数内 import。
+    ⇒ 延迟导入是「旁路能力」的恰当形态：审计是横切关注点，
+      不该把内核的初始化顺序变成隐式约束。
+    实测：SCC 仍**恰好 1 个**（`{auth, identity, stores}`）、孤立单元仍**恰好 3 个**。
+
+## 第 328 轮新增的 3 条边（必须记住）
+
+  给审计加**保留期清理**（`core/audit/retention.py` + `core/audit/tasks.py`）后，
+  `audit` 这个 unit 新增 3 条 import 期出边：
+
+    · `audit -> config`  读 `config.audit_retention_days`（保留期是配置，不是常量）
+    · `audit -> logger`  清理的结局必须落日志（定时任务的失效默认是静默的）
+    · `audit -> redis`   `@celery_app.task` 装饰器需要 `celery_app`
+
+  ★ 为什么这 3 条**可以**在 import 期存在，而不是降级进函数体：
+    它们与 `audit -> database` 同族 —— 是「清理」这个能力的**定义性依赖**
+    （读配置 + 记日志 + 注册任务），不是"顺手拿一下"。
+    把结构性依赖藏进函数体只会让本门禁**看不见耦合**（自欺）。
+    清理核**不需要**任何延迟导入，因为它没有被任何人反向依赖 ——
+    与上一节形成对照：审计的**消费方**（auth/identity/database）必须延迟导入，
+    因为读口反过来依赖 auth。
+
+  ★ 为什么 `tasks.py` **不**被 `core/audit/__init__.py` re-export：
+    那会把 `celery` 变成「任何一次 `import core.audit`」的硬依赖，
+    而该包被 `core/database.py::register_all_models()` 在 **import 期**导入
+    ⇒ 连只需要 ORM 实体的注册表也得拉起 celery。见该 `__init__` 的说明。
+
+  实测：SCC 仍**恰好 1 个**、孤立单元仍**恰好 3 个**（清理不引入环、不引入孤岛）。
+
+## 第 331 轮新增的 3 条边（必须记住）
+
+  给身份域两张表接上**保留期清理**（新增 `core/identity/retention.py` +
+  `core/identity/tasks.py`）后，`identity` 这个 unit 新增 3 条 import 期出边：
+
+    · `identity -> logger`        清理的结局必须落日志（定时任务的失效默认是静默的）
+    · `identity -> observability` 指标出口（`IDENTITY_PURGE_RUNS` / `_DELETED`）
+    · `identity -> redis`         `@celery_app.task` 装饰器需要 `celery_app`
+
+  ★ 为什么这 3 条**可以**在 import 期存在，而不是降级进函数体：
+    与上一节（审计清理）**逐字同款** —— 它们是「清理」这个能力的**定义性依赖**
+    （记日志 + 记指标 + 注册任务），不是"顺手拿一下"。
+    把结构性依赖藏进函数体只会让本门禁**看不见耦合**（自欺）。
+
+  ★ `identity -> redis` **不会**形成 `redis ⇄ identity` 的 2 节点环：
+    `core/redis.py` 只 import `config`，**不** import `core.identity`
+    ⇒ 这条边是单向的。（若哪天 `redis` 反过来要 import identity，
+      `test_strongly_connected_blocks_match_registry` 会立刻报出新块。）
+    实测：SCC 仍**恰好 1 个**（`{auth, identity, stores}`）、
+    孤立单元仍**恰好 3 个**（`identity` 早已能到达 config）。
+
+  ★ `identity -> logger` 此前**只**登记在函数内表里（某处函数内 import logger），
+    此后**两张表都有**它。两表同时出现同一条边不是冗余：它记录的是
+    「这条路在 import 期和调用期都被走过」，而"从函数内挪到顶层"正是
+    本门禁要拦下的那次耦合升级 —— 现在它是一次**被看见**的升级。
 """
 
 from __future__ import annotations
@@ -75,6 +167,19 @@ CORE = BACKEND / "core"
 #: 模块**顶层**就会执行的 unit -> unit 边。集合相等断言 => 新增边必须登记，
 #: 删除边必须删登记。
 IMPORT_TIME_EDGES: set[tuple[str, str]] = {
+    # ★ 第 327 轮（P0-5 通用审计）：audit 内核的 6 条出边。
+    #   理由见文件头「第 327 轮新增的 9 条边」。
+    ("audit", "auth"),
+    # ★ 第 328 轮（保留期清理）新增 3 条：config（读保留期）/ logger（日志出口）
+    #   / redis（Celery 任务装饰器）。理由见文件头「第 328 轮新增的 3 条边」。
+    ("audit", "config"),
+    ("audit", "database"),
+    ("audit", "identity"),
+    ("audit", "logger"),
+    ("audit", "middleware"),
+    ("audit", "observability"),
+    ("audit", "redis"),
+    ("audit", "timefmt"),
     ("auth", "config"),
     ("auth", "database"),
     ("auth", "identity"),
@@ -88,9 +193,19 @@ IMPORT_TIME_EDGES: set[tuple[str, str]] = {
     ("identity", "auth"),
     ("identity", "config"),
     ("identity", "database"),
+    # ★ 第 331 轮（身份域保留期清理）新增 3 条：logger（日志出口）/
+    #   observability（指标出口）/ redis（`@celery_app.task` 装饰器）。
+    #   理由见文件头「第 331 轮新增的 3 条边」。
+    #   ★ 其中 `identity -> logger` 此前**只**在函数内表里，此后两表都有
+    #     （清理的结局必须在 import 期就拿到 logger 工厂）。
+    ("identity", "logger"),
     ("identity", "middleware"),
+    ("identity", "observability"),
+    ("identity", "redis"),
     ("identity", "security"),
     ("identity", "storage"),
+    ("library_query", "database"),
+    ("library_query", "tenant"),
     ("logger", "config"),
     ("metering", "auth"),
     ("metering", "config"),
@@ -118,10 +233,15 @@ IMPORT_TIME_EDGES: set[tuple[str, str]] = {
 #: 延迟导入，所以允许存在；但仍然登记 —— 「从函数内挪到顶层」是一次真实的
 #: 耦合升级，必须被看见。
 FUNCTION_LEVEL_EDGES: set[tuple[str, str]] = {
+    # ★ 第 327 轮：审计是**旁路**能力，消费方一律延迟导入 —— 上顶层会立刻
+    #   形成 auth ⇄ audit / identity ⇄ audit 两个环。理由见文件头。
+    ("auth", "audit"),
     ("bootstrap", "database"),
     ("bootstrap", "metering"),
+    ("database", "audit"),
     ("database", "identity"),
     ("database", "stores"),
+    ("identity", "audit"),
     ("identity", "logger"),
     ("logger", "observability"),
     ("tenant", "auth"),
@@ -146,6 +266,11 @@ KNOWN_SCCS: set[frozenset[str]] = {
 STANDALONE_UNITS: set[str] = {
     "<core>",
     "profit_engine",
+    # ★ 第 283 轮登记：时间 → JSON 的序列化口径（`utc_iso`）。
+    #   刻意零耦合 —— `tests/test_timefmt.py` 明确断言它「只能依赖标准库」，
+    #   因为它被 `modules/billing/*` 在最内层调用，反向 import 业务包即成环。
+    #   ⇒ 它到不了 config 是**设计**，不是孤岛，故登记在此。
+    "timefmt",
 }
 
 #: 依赖图的根：配置真源。出度必须为 0。

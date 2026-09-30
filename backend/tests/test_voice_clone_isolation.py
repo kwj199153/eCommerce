@@ -170,7 +170,9 @@ async def test_routes_absent_when_disabled(monkeypatch):
 
     importlib.reload(main_module)
     try:
-        paths = {getattr(r, "path", "") for r in main_module.app.routes}
+        from scripts.route_inventory import route_paths
+
+        paths = route_paths(main_module.app)
         assert not [p for p in paths if "voice-clone" in p]
     finally:
         importlib.reload(main_module)
@@ -188,9 +190,11 @@ async def test_routes_present_when_enabled(monkeypatch):
 
     importlib.reload(main_module)
     try:
+        from scripts.route_inventory import iter_api_routes
+
         paths = {
             (getattr(r, "path", ""), tuple(sorted(getattr(r, "methods", []) or [])))
-            for r in main_module.app.routes
+            for r in iter_api_routes(main_module.app)
             if "voice-clone" in getattr(r, "path", "")
         }
         assert len(paths) == 8
@@ -351,7 +355,9 @@ async def test_force_delete_skips_remote(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_enroll_rejects_when_voice_already_ready(monkeypatch):
+async def test_enroll_rejects_when_voice_already_ready(
+    monkeypatch, tenant_headers
+):
     """★ 端口级回归：已有 ready 音色时，第二次 enroll 必须被拒（不覆盖）。"""
     import httpx
     from httpx import ASGITransport
@@ -378,7 +384,11 @@ async def test_enroll_rejects_when_voice_already_ready(monkeypatch):
             ) as c:
                 r = await c.post(
                     "/api/v1/voice-clone/enroll",
-                    headers={"X-Shop-ID": shop_id},
+                    # ★ 第 177 轮：本用例自建 client，拿不到 `client` 夹具的默认注入，
+                    #   必须显式带身份 —— 否则请求是匿名的，而
+                    #   `store_unittest_enrollguard` 归属夹具租户、不是演示店铺
+                    #   ⇒ 先撞 403，测不到本节真正要测的「已有音色」。
+                    headers={"X-Shop-ID": shop_id, **tenant_headers},
                     json={
                         "sample_url": "/static/voice/whatever.wav",
                         "filename": "a.wav",
@@ -443,12 +453,17 @@ def test_public_base_url_joins_cleanly():
     )
 
 
-def test_config_exposes_require_public_url_flag():
+def test_config_exposes_require_public_url_flag(mirror_unconfigured):
     """★ 后端必须把「是否已配公网地址」告诉前端。
 
     前端据此在面板上给出前置提示（而不是让老板点到最后一步才报错）。
     这个信号与 sample_public_url 的抛错行为是**同一判据的两处体现**，
     任何一处单独改动都会造成「前端说能点、后端一点就报错」的错配。
+
+    ★ 必须挂 ``mirror_unconfigured``：``voice_config()`` 内部会调
+    ``mirror.check_connectivity()``，而开发机 ``.env`` **真的**配了镜像主机
+    ⇒ 不隔离就会真起 ``ssh`` 连生产服务器（本用例调两次 ⇒ 最多 2×15s）。
+    这正是第 243 轮「全量回归卡在收尾」的定位结论 —— 别再摘掉这个参数。
     """
     import asyncio
 
@@ -481,12 +496,18 @@ def test_static_mount_is_not_behind_business_auth():
     importlib.reload(main_module)
 
     # 收集挂载点（StaticFiles）与路由端点，确认 /static 走的是 mount 而非带鉴权的路由
-    mounted_paths = {getattr(r, "path", "") for r in main_module.app.routes}
+    # ★ 第 247 轮：这条要的是**挂载点**，必须用 `iter_all_routables`
+    #   （端点 + 挂载点 + 内置固定路由）。只用端点版 `iter_api_routes` 会把
+    #   `/static`（Mount，没有 dependant）整段漏掉 ⇒ 断言恒红。
+    from scripts.route_inventory import iter_all_routables
+
+    routables = iter_all_routables(main_module.app)
+    mounted_paths = {getattr(r, "path", "") for r in routables}
     assert "/static" in mounted_paths, f"/static 未挂载，现有: {sorted(mounted_paths)}"
 
     # mount 出来的子应用不带 dependencies（router 才是）→ 确认它在 mount 列表里
     static_route = next(
-        (r for r in main_module.app.routes if getattr(r, "path", "") == "/static"), None
+        (r for r in routables if getattr(r, "path", "") == "/static"), None
     )
     assert static_route is not None
     assert hasattr(static_route, "app"), "  /static 应通过 app.mount 挂载（StaticFiles）"

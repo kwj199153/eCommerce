@@ -37,7 +37,7 @@ ALLOWED = {"ai_infra/intent.py"}
 #: 一个函数里有几条这样的分支才算「又写了一份分类器」
 MIN_BRANCHES = 3
 
-#: 6 个业务 Agent：模块路径 -> 其分类器方法名
+#: 业务 Agent：模块路径 -> 其分类器方法名（第 166 轮起 7 家）
 #: （`aigc_media` 的方法是**公开名** —— `modules/aigc_media/service.py` 直接
 #:   `agent.classify_intent(...)` 调用它，不允许改名）
 BUSINESS_AGENTS = {
@@ -47,6 +47,10 @@ BUSINESS_AGENTS = {
     "modules/customer_service/agent_cs.py": "_classify_intent",
     "modules/listing_generator/agent_listing.py": "_classify_intent",
     "modules/product_research/agent_product_research.py": "_classify_intent",
+    # ★ 第 166 轮 `#726` 第 2 条新增：`review_analyst` 从此也有分类器。
+    #   它进了名单才**真的**被本门禁盖住 —— 只补 agent 不进名单，
+    #   等于新开一处门禁真空区（本文件的存在理由就是这个）。
+    "modules/review_analyst/agent.py": "_classify_intent",
 }
 
 

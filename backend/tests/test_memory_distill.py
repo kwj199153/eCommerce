@@ -81,11 +81,17 @@ def _as_set(v) -> set:
 
 
 def _route_of(app, path: str, method: str):
-    """真实路由对象（路径 + 方法都要对上）。"""
-    for r in app.routes:
-        if getattr(r, "path", "") == path and method in (getattr(r, "methods", ()) or ()):
-            return r
-    return None
+    """真实路由对象（路径 + 方法都要对上）。
+
+    ★ 第 247 轮：改走 `scripts.route_inventory`（唯一真源）。FastAPI 0.141 起
+      `include_router()` 不再把子路由摊平进 `app.routes` ⇒ 原先的
+      `for r in app.routes` **恒返回 None** ⇒ 本文件会以「**没有声明 fail-closed
+      身份门**」的形态报红 —— 失败信息把归因指向**依赖缺失**，
+      而真因是**盘点失明**。这类「归因错方向」比直接报错更难查。
+    """
+    from scripts.route_inventory import find_route
+
+    return find_route(app, path, method)
 
 
 def _walk_deps(dependant):
@@ -139,10 +145,17 @@ def _fastapi_awaitable(call) -> bool:
     注意它**不是** `asyncio.iscoroutinefunction`：后者是直觉会信的那个，
     但 FastAPI 从没问过它（它问的是 `fastapi/dependencies/utils.py`
     里那个三分支版本）。两者分歧处就是事故。
-    """
-    from fastapi.dependencies.utils import is_coroutine_callable
 
-    return bool(is_coroutine_callable(call))
+    ★ 第 247 轮：实现收口到 `scripts.route_inventory.fastapi_awaitable`。
+      原先三处（本文件 / `test_route_dependency_form.py` /
+      `scripts/auth_coverage_report.py`）各写一遍
+      `from fastapi.dependencies.utils import is_coroutine_callable`，
+      而 0.141 把它改名成 `_is_coroutine_callable`（多个下划线）⇒ 三处**同时**
+      ImportError。本仓判据：同一判定两份实现 ⇒ 至少一份永远测不到。
+    """
+    from scripts.route_inventory import fastapi_awaitable
+
+    return fastapi_awaitable(call)
 
 
 def _assert_identity_gate(calls, label: str) -> None:
@@ -223,26 +236,125 @@ def test_beat_task_name_is_registered():
       症状与上面一模一样。所以两条都要断言。
 
     反向注入已验：core 的字面量改成 "memory.distill_all" ⇒ 第一段变红；
-    autodiscover 列表去掉 "modules.memory" ⇒ 第二段变红。
+    autodiscover 列表去掉 "modules.memory" ⇒ 第二段变红
+    （第 151 轮建立，第 300 轮在改写后**逐条复验**）。
+
+    ★★★ 2026-09-25 修正（第 151 轮）：这段断言此前是**假绿**，两个原因**各自都足以**
+      让它永远看不出 autodiscover 漏配：
+
+        ① 用例顶部 `from modules.memory import tasks as T` 会执行
+           `@celery_app.task` 装饰器 ⇒ 任务**已经被测试自己注册了**，
+           于是 `entry["task"] in celery_app.tasks` 恒为 True；
+        ② `celery_app.finalize()` **不触发** autodiscover（实测）。
+           `autodiscover_tasks()` 只在 `import_modules` 信号上挂接收器，
+           发这个信号的是 loader —— 即 `celery -A core.redis worker` 启动那一步。
+           实测：`finalize()` 前后 `celery_app.tasks` 都是 9 个；
+           换成 `celery_app.loader.import_default_modules()` 后立刻变 15 个。
+
+      ⇒ 修法：**先**触发 autodiscover 并断言注册（此刻 `modules.memory.tasks`
+        只能是被 autodiscover 加载的），**再** import 那个常量去做名字比对。
+
+    ★★★ 2026-09-28 修正（第 300 轮）：上一个修法把这段检查留在**父进程**里，
+      再靠一条前置哨兵（`"modules.memory.tasks" not in sys.modules`）保证
+      「本用例没有自己 import 过」。结果**全量跑必红、单跑必绿**：
+
+        根因在**生产代码**，不在测试 —— `modules/memory/router.py:60` 是
+        `from . import service, tasks`。于是**任何更早的用例只要
+        `from main import app`（本仓 10+ 处），整个 memory 域连同 tasks 就被
+        装入同一个 pytest 进程的 `sys.modules`**（探针实测首个污染点：
+        `tests/test_account_store_hierarchy.py::test_legacy_shops_entity_is_gone`）。
+
+      ⇒ 这是**顺序依赖假红**，不是真缺陷。★ 修法**不是放宽哨兵**（哨兵本身
+        是对的：它防的正是「注册断言被测试自己满足」），而是把这段检查搬进
+        **新开的解释器**：
+
+          · 全新进程天然满足「autodiscover 之前该模块未被 import」⇒ 判据
+            仍然是真的，不是假绿；
+          · 与用例顺序**彻底解耦**（父进程的 `sys.modules` 再也影响不到它）；
+          · 子进程跑的那一步（`celery_app.loader.import_default_modules()`）
+            与 `celery -A core.redis worker` 启动时走的是**同一个调用**，
+            比父进程里更贴近真实启动路径。
+
+        ★ 不使用 `celery_app.tasks.pop(...)` + 重新 autodiscover 那种「原地重置」
+          写法：模块已在 `sys.modules` 时 `import_default_modules()` 直接返回
+          缓存模块、**不重跑装饰器** ⇒ 会造出一条新的**假红**。
     """
-    from core.redis import celery_app
+    import json
+    import os
+    import subprocess
+    import sys
+    import textwrap
+
     from modules.memory import tasks as T
 
-    celery_app.finalize()
-    entry = (celery_app.conf.beat_schedule or {}).get("memory-nightly-distill")
-    assert entry is not None, (
+    backend_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    snippet = textwrap.dedent(
+        """
+        import json, sys
+        from core.redis import celery_app
+
+        baseline_imported = "modules.memory.tasks" in sys.modules
+        celery_app.loader.import_default_modules()   # ← autodiscover 真正发生的一步
+        entry = (celery_app.conf.beat_schedule or {}).get("memory-nightly-distill") or {}
+        print("PROBE_JSON:" + json.dumps({
+            "baseline_imported": baseline_imported,
+            "entry_task": entry.get("task"),
+            "registered": sorted(celery_app.tasks),
+            "imported_after": "modules.memory.tasks" in sys.modules,
+        }))
+        """
+    )
+
+    proc = subprocess.run(
+        [sys.executable, "-c", snippet],
+        cwd=backend_root,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert proc.returncode == 0, (
+        "子进程（等价于 `celery -A core.redis worker` 的启动那一步）失败：\n"
+        f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+    )
+
+    probe_lines = [ln for ln in proc.stdout.splitlines() if ln.startswith("PROBE_JSON:")]
+    assert len(probe_lines) == 1, (
+        f"子进程没有吐出唯一一行探针 JSON（拿到 {len(probe_lines)} 行）——"
+        f"可能是启动即崩，或日志把 stdout 占了：\n{proc.stdout}"
+    )
+    probe = json.loads(probe_lines[0][len("PROBE_JSON:"):])
+
+    # ---- 前提哨兵：在新解释器里，「autodiscover 之前该模块未被 import」天然成立 ----
+    assert probe["baseline_imported"] is False, (
+        "★ 子进程的基线就不干净：`modules.memory.tasks` 在 autodiscover 之前"
+        "已被 import —— 那说明 `core.redis` 自己 import 了 modules（core 不得依赖"
+        " modules，见 test_core_layering.py），下面的注册断言会跟着失去意义。"
+    )
+
+    # ---- ① 两处任务名必须是同一个（core 的字面量 vs tasks 常量）----
+    assert probe["entry_task"], (
         "beat_schedule 里没有 memory-nightly-distill —— 「每晚自动整理」退回零实现，"
         "正是 r141 判 MemoryEvolution.vue 是假页面的那条依据"
     )
-    assert entry.get("task") == T.TASK_DISTILL_ALL, (
+    assert probe["entry_task"] == T.TASK_DISTILL_ALL, (
         "两处任务名不一致：调度投递 %r，而 tasks.py 注册的是 %r —— "
-        "现象是「整晚没跑」，不报错" % (entry.get("task"), T.TASK_DISTILL_ALL)
+        "现象是「整晚没跑」，不报错"
+        % (probe["entry_task"], T.TASK_DISTILL_ALL)
     )
-    assert entry["task"] in celery_app.tasks, (
-        "%r 没有被 autodiscover 注册 —— 检查 core/redis.py 的 "
-        "autodiscover_tasks 是否漏了 modules.memory" % entry["task"]
+
+    # ---- ② autodiscover 必须真的加载这个模块**并**把任务注册进 worker ----
+    assert probe["imported_after"] is True, (
+        "跑完 autodiscover 后 `modules.memory.tasks` 仍不在 sys.modules —— "
+        "`core/redis.py` 的 autodiscover_tasks 列表漏了 `modules.memory`。"
+        "现象：任务定义在、beat 在投、worker 没注册 ⇒ 队列消息无人消费，全链路零报错。"
     )
-    assert T.TASK_DISTILL_OWNER in celery_app.tasks, (
+    assert T.TASK_DISTILL_ALL in probe["registered"], (
+        "%r 没有被 autodiscover 注册 —— 检查 core/redis.py 的 autodiscover_tasks。"
+        "本次已注册的 memory 任务：%r"
+        % (T.TASK_DISTILL_ALL, [n for n in probe["registered"] if "memory" in n])
+    )
+    assert T.TASK_DISTILL_OWNER in probe["registered"], (
         "fan-out 的落点任务没被注册 ⇒ 每晚投递出去的任务全都无人消费"
     )
 
@@ -857,8 +969,16 @@ def test_identity_gate_is_a_real_async_wrapper_not_a_partial():
       而「源码字符串包含 require_authenticated_user」这种写法**不算判据**
       —— docstring 里写一遍就会骗过它（本仓铁律：形态判据一律走 AST）。
 
-    反向注入已验：把它改回 `functools.partial(...)` ⇒ 本条 + 依赖树断言
-    + `test_route_dependency_form.py` 三处同时变红。
+    反向注入已验：把它改回 `functools.partial(...)` ⇒ **本条 + 依赖树断言**
+    两处同时变红。
+      ★ 第 247 轮更正：原先这里还写了「+ `test_route_dependency_form.py`」，
+        那句自 FastAPI 0.141 起**不再成立** —— `fastapi.dependencies.models`
+        的 `_impartial()` 会 unwrap `partial`，于是「asyncio 说真 / FastAPI 说假」
+        的分歧消失，该文件的形态 A 不再触发（实测见
+        `.workbuddy/probes/tools/r247_await_predicate_archaeology.py`）。
+        ★ 本条的形态要求（必须真 `async def`）**不变**：它守的是「挂上去的东西
+        是不是真的」，与上游是否 unwrap 无关；而且本条是**形态判据（AST）**，
+        不依赖任何库的运行期行为。
     """
     tree = _tree(MEMORY_ROUTER_PY)
 

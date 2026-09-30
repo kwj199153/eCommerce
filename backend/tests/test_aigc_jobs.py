@@ -244,17 +244,45 @@ async def test_unknown_kind_rejected(client, job_user, no_broker, auth_on):
 @pytest.mark.asyncio
 async def test_invalid_params_rejected(client, job_user, no_broker, auth_on):
     """异步端点不是「把 dict 直接丢进队列」—— 入参校验强度与同步端点一致。"""
-    r = await _submit(client, job_user["headers"], params={"count_per_type": 999})
-    assert r.status_code == 422, r.text
-
     from core.database import get_async_session
     from sqlalchemy import func, select
 
-    async with get_async_session() as db:
-        count = (
-            await db.execute(select(func.count()).select_from(AIGCJobRecord))
-        ).scalar_one()
-    assert count == 0, "校验失败不应留下任务记录"
+    # ★ 第 247 轮修正：本用例原先断言 **全表** `count == 0`，而 `tests/` 直连
+    #   **共享生产库**（#866 未落地）⇒ 任何**别的**来源留下的 aigc_jobs 残留都会
+    #   把它顶红，而**被测行为其实完全正确**。实测（非破坏性取证）：
+    #     表里 2 行属于演示账号 `tenant-test-a@example.com`（均 pending），
+    #     来自 `job_service.submit_job` 的两次真实提交，不是任何用例写的；
+    #     而本用例自己那个临时用户名下 = 0 行，连跑三次全表恒为 2 行（id 不变）
+    #     ⇒ 校验失败的请求**一条都没留下**。
+    #   判据改为「**基线现算 + 断言 delta**」+ 再钉一层**按本用户归属**：
+    #   端点若真写进了行，两条断言都会红 —— 严格度不降，只是不再依赖别人的清理。
+    async def _job_counts() -> tuple[int, int]:
+        async with get_async_session() as db:
+            total = (
+                await db.execute(select(func.count()).select_from(AIGCJobRecord))
+            ).scalar_one()
+            mine = (
+                await db.execute(
+                    select(func.count())
+                    .select_from(AIGCJobRecord)
+                    .where(AIGCJobRecord.user_id == job_user["user_id"])
+                )
+            ).scalar_one()
+        return total, mine
+
+    before_total, before_mine = await _job_counts()
+
+    r = await _submit(client, job_user["headers"], params={"count_per_type": 999})
+    assert r.status_code == 422, r.text
+
+    after_total, after_mine = await _job_counts()
+    assert after_mine == 0, (
+        f"校验失败的请求在本用户名下留下了 {after_mine} 条任务记录（应为 0）"
+    )
+    assert after_total == before_total, (
+        f"校验失败的请求让 aigc_jobs 全表从 {before_total} 增到 {after_total} —— "
+        "校验路径不该写库。（若 before_total 本就不为 0，那是共享库残留，见 #866）"
+    )
 
 
 @pytest.mark.asyncio

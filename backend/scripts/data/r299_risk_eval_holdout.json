@@ -1,0 +1,198 @@
+{
+  "version": "r302-review-register-holdout",
+  "note": "★ holdout 集（第 302 轮随开发集一并重写语域）：在 risk_scan.py 的规则**冻结之后**新写，措辞刻意换主题（耳机/沙发/狗粮/登山鞋/灯具）、换表达（更口语、更模糊，贴近真实买家评价）。用途：测规则通道对「换措辞」的鲁棒性 —— 开发集上的满分是调参结果，这里的数字才说明规则通道的真实水平。★ 诚实声明：作者写本集时已知规则形态，故它只测「措辞迁移」，不等于完全独立。★ 语域：全部写成**已公开发布的商品评价**（不是私信 / 会话），每条带 `register`。",
+  "items": [
+    {
+      "id": "H01",
+      "label": "r1",
+      "level": "high",
+      "register": "review",
+      "text": "I never leave reviews but this one may change that. Sort it today - otherwise this becomes another bad review on top of the three already here.",
+      "note": "r1（换主题·耳机）：以「破例写评论」为筹码"
+    },
+    {
+      "id": "H02",
+      "label": "r1",
+      "level": "high",
+      "register": "review",
+      "text": "They have my address and my order number, that part is obvious - and your team has not answered one of the three messages I sent. What is not obvious is why nobody answers. Fix it tomorrow or I'll share my experience with forty thousand people who follow my setups.",
+      "note": "r1（换主题·耳机）：粉丝量曝光筹码"
+    },
+    {
+      "id": "H03",
+      "label": "r1",
+      "level": "high",
+      "register": "review",
+      "text": "Fix it and it stays between us. Ignore it another week and I'll post the whole thing on Reddit, in every group where people ask about this brand, with photos of the collapsed frame.",
+      "note": "r1（换主题·沙发）：论坛曝光（★ your/they 混用，人称不再是线索）"
+    },
+    {
+      "id": "H04",
+      "label": "r2",
+      "level": "medium",
+      "register": "review",
+      "text": "The fabric tore on day two. I want the 120 back on my card by Friday and a voucher is not going to do it.",
+      "note": "r2（换主题·沙发）：明确期限的索取"
+    },
+    {
+      "id": "H05",
+      "label": "r2",
+      "level": "medium",
+      "register": "review",
+      "text": "Three of the four in the set were chipped when the box turned up. I want a full refund and store credit does not begin to cover it.",
+      "note": "r2（换主题·厨具套装）：拒绝替代方案"
+    },
+    {
+      "id": "H06",
+      "label": "r2",
+      "level": "medium",
+      "register": "review",
+      "text": "The handle came off and scalded my wrist badly enough to need a dressing. I'm asking for the purchase price back, plus the medical bill that came with it.",
+      "note": "r2（换主题·灯具）：连带损失"
+    },
+    {
+      "id": "H07",
+      "label": "r3",
+      "level": "high",
+      "register": "review",
+      "text": "Tracking says delivered five days ago to a street that is not mine. Nobody on your side answers the phone anymore, so the claim goes in tomorrow through buyer protection.",
+      "note": "r3（换主题·狗粮）：绕开卖家走平台担保"
+    },
+    {
+      "id": "H08",
+      "label": "r3",
+      "level": "high",
+      "register": "review",
+      "text": "Since nobody answers anything I write, this goes through the platform guarantee and the payment will be reclaimed that way.",
+      "note": "r3（换主题·狗粮）：平台担保 + 被动式将来时"
+    },
+    {
+      "id": "H09",
+      "label": "r3",
+      "level": "high",
+      "register": "review",
+      "text": "This is the last you will hear from me about it. My next step is the buyer protection scheme and the paperwork is ready.",
+      "note": "r3（换主题·登山鞋）：担保计划（★ 含 you 的正类）"
+    },
+    {
+      "id": "H10",
+      "label": "r4",
+      "level": "high",
+      "register": "review",
+      "text": "Every screenshot will be going to the seller violations team - one folder, everything in it.",
+      "note": "r4（换主题·灯具）：举报给违规团队"
+    },
+    {
+      "id": "H11",
+      "label": "r4",
+      "level": "high",
+      "register": "review",
+      "text": "Expect to see a note from their support team land tomorrow, and one from my credit card company.",
+      "note": "r4（换主题·登山鞋）：信任安全部门 + 银行"
+    },
+    {
+      "id": "H12",
+      "label": "r4",
+      "level": "high",
+      "register": "review",
+      "text": "Take this as notice: everything is going to the trading standards people in my country, with screenshots.",
+      "note": "r4（换主题·灯具）：监管方"
+    },
+    {
+      "id": "N25",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "The cable is the weak point, your charger is fine - swapped it out and no problems since.",
+      "note": "陷阱：吐槽但无诉求无筹码（★ 含第二人称）"
+    },
+    {
+      "id": "N26",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Sent it back for a bigger size. Whole thing took four days, no complaints.",
+      "note": "陷阱：退货叙述"
+    },
+    {
+      "id": "N27",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "They put a partial credit on my account without being asked. That is service.",
+      "note": "陷阱：credit 是卖家主动给的"
+    },
+    {
+      "id": "N28",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Genuine question for anyone reading: does this lid fit the 2024 model too?",
+      "note": "陷阱：向买家提问，不是向卖家要东西"
+    },
+    {
+      "id": "N29",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Just so you know in case the listing changes, the colour is more beige than grey.",
+      "note": "陷阱：in case（★ 含第二人称）"
+    },
+    {
+      "id": "N30",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "The guarantee card was in the box but I never needed it.",
+      "note": "陷阱：guarantee 是卡片"
+    },
+    {
+      "id": "N31",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "I used to work in a shop so I know how painful returns are - the people here made it easy.",
+      "note": "陷阱：returns 是正面语境"
+    },
+    {
+      "id": "N32",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Reading the star breakdown before buying was the smartest thing I did.",
+      "note": "陷阱：star 是评分分布"
+    },
+    {
+      "id": "N33",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "There is a scratch on the base but it is purely cosmetic and it is staying.",
+      "note": "陷阱：明确表示保留、无诉求"
+    },
+    {
+      "id": "N34",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Their complaints department never picked up, but the app chat had it sorted in five minutes.",
+      "note": "陷阱：complaints 是部门名"
+    },
+    {
+      "id": "N35",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "You can report a listing straight from the product page if you spot a mistake. Handy to know.",
+      "note": "陷阱：report 是平台功能（★ 含第二人称）"
+    },
+    {
+      "id": "N36",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Five stars. The compensation for the late delivery arrived before I even asked, which was a nice surprise.",
+      "note": "陷阱：compensation 语气正面、流程已完成"
+    }
+  ]
+}

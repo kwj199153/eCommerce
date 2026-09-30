@@ -162,7 +162,7 @@ async def test_graph_path_records_llm_usage(monkeypatch):
     from ai_infra.base_agent import BaseAgent
 
     agent = BaseAgent(agent_name="meter-probe")
-    monkeypatch.setattr(agent, "_llm_with_tools", lambda: _MeterStubLLM())
+    monkeypatch.setattr(agent, "_llm_with_tools", lambda *a, **kw: _MeterStubLLM())
 
     reset_meter()
     await agent._llm_call_node({"messages": [HumanMessage(content="hi")]})
@@ -184,7 +184,7 @@ async def test_graph_path_metering_is_idempotent_per_call(monkeypatch):
     from ai_infra.base_agent import BaseAgent
 
     agent = BaseAgent(agent_name="meter-probe-2")
-    monkeypatch.setattr(agent, "_llm_with_tools", lambda: _MeterStubLLM())
+    monkeypatch.setattr(agent, "_llm_with_tools", lambda *a, **kw: _MeterStubLLM())
 
     reset_meter()
     await agent._llm_call_node({"messages": [HumanMessage(content="a")]})
@@ -214,7 +214,15 @@ def test_bare_super_call_is_supported():
 
     s = _Sub()
     assert s.agent_name == "sub_agent"
-    assert s.tools == []
+    # ★ 第 181 轮 · 批 B：期望值由 `== []` 改为 `[load_skill]` —— 这是**契约变更**，
+    #   不是回归。`BaseAgent.__init__` 现在统一装配技能按需加载工具
+    #   （`ai_infra/skills.build_skill_tools()`），因为：
+    #     · 技能目录每轮注入 system prompt（第一级披露，见 `prompt_sections`），
+    #       若不同时装上 `load_skill`，模型只看得见目录、永远读不到正文；
+    #     · 装配点是**基类**而不是各业务 Agent 的 `tools=` —— 后者漏装一处的症状是
+    #       「AI 显得没用上技能」，**不报错、门禁全绿**。
+    #   ★ 名字级断言（而非 `len`）才能钉住"装的是哪个工具"。
+    assert [t.name for t in s.tools] == ["load_skill"]
     # ★ 第 159 轮（批 D3）：`default_metadata` 断言已删 —— 该 property 连同
     #   `AgentState.metadata` 一起被删（只写不读的死重量）。此处不再断言它的存在，
     #   反向门禁见 `test_infra_layering.py::test_agent_state_has_no_dead_metadata_field`。
@@ -281,6 +289,45 @@ def test_agent_cs_does_not_read_nonexistent_attributes():
 
 
 @pytest.mark.asyncio
+async def test_empty_faq_says_so_instead_of_faking_rag():
+    """★ 第 287 轮新增：话术库为空时**明说**，不许伪装成 RAG/关键词答案。
+
+    背景：话术真源切成 `knowledge_faqs` 表之后，「表里 0 行」成了一种**真实**
+    状态（新店铺）。此时若仍走 RAG/关键词，得到的会是「看起来有答案、
+    其实来自别处」的回复 ⇒ 把「没配话术」伪装成「答不上来」。
+
+    ★ 与上面那条用例互补，两条一起才完整：
+      有料 ⇒ 走 RAG（source=rag_hybrid）；空库 ⇒ 走 faq_empty（**不**带 source）。
+    """
+    from modules.customer_service.agent_cs import (
+        ConversationContext, CustomerServiceAgent,
+    )
+
+    agent = CustomerServiceAgent()
+    # 连桩 RAG 都给上：空库时必须**不**去问它 —— 否则就是「没数据还硬答」
+    agent._rag_engine = object()
+    agent._rag_initialized = True
+    agent.faq_database = []          # ★ 空库（表里 0 行）
+    agent._faq_error = None
+
+    resp = await agent._handle_faq_query(
+        "订单多久发货？", None,
+        ConversationContext(conversation_id="empty-faq-test"),
+        agent._analyze_sentiment("订单多久发货？"),
+    )
+
+    assert resp.data.get("type") == "faq_empty", (
+        f"空话术库应明确回「还没配置话术」，实际 type={resp.data.get('type')!r}"
+    )
+    # ★ 关键：不许带 `source` —— 带了就意味着它冒充了某条检索路径的产出
+    assert resp.data.get("source") is None, (
+        f"空库回复不该带来源标记（带了就是在冒充检索结果）：{resp.data.get('source')!r}"
+    )
+    assert "还没有配置话术" in resp.content, "提示必须可行动（告诉用户去哪配）"
+    assert "业务话术库" in resp.content, "必须指到具体入口，而不是含糊地说『没数据』"
+
+
+@pytest.mark.asyncio
 async def test_customer_service_rag_path_does_not_silently_degrade():
     """消费者侧（行为）：真跑 `_handle_faq_query`，必须走 RAG 而非静默降级。
 
@@ -325,6 +372,17 @@ async def test_customer_service_rag_path_does_not_silently_degrade():
     agent._rag_engine = _StubRAG()
     agent._llm_client = object()
     agent._rag_initialized = True
+    # ★ 第 287 轮补：话术真源已从**内存常量**改为 `knowledge_faqs` 表
+    #   （`ensure_faq` 每次现读）。本用例不打数据库，因此必须**手工**给一条话术：
+    #   空库会命中「这个店铺还没有配置话术」这条**显式**分支（见下方
+    #   `test_empty_faq_says_so_instead_of_faking_rag`），那条是本轮新增的正确行为，
+    #   不该由本用例来判 —— 本用例守的是「**有料**时走 RAG、不静默降级到关键词」。
+    from modules.customer_service.agent_cs import FAQItem
+    agent.faq_database = [
+        FAQItem(id="f1", question="订单多久发货？",
+                answer="支付成功后 24-48 小时内发货。",
+                category="物流", keywords=["发货", "订单"], priority=10),
+    ]
 
     resp = await agent._handle_faq_query(
         "订单多久发货？",

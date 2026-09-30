@@ -43,6 +43,8 @@ from sqlalchemy import delete, select, text
 from modules.monitors.db_model import MonitorGroupRecord
 from core.stores import StoreRecord
 from modules.stores.router import _store_db
+pytestmark = pytest.mark.tenant_identity
+
 
 
 # ====== 前置探测 ======

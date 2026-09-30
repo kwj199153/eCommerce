@@ -24,6 +24,7 @@ from sqlalchemy import delete
 
 from core.database import async_session_factory
 from modules.platform_rules.ai_split import MAX_RULES, normalize_llm_rules
+from ai_infra.llm.dashscope_client import is_llm_parse_failed
 from modules.platform_rules.db_model import PlatformRuleDocRecord, PlatformRuleRecord
 from modules.platform_rules.service import (
     build_doc_record,
@@ -33,6 +34,8 @@ from modules.platform_rules.service import (
     missing_required_fields,
     rule_to_dict,
 )
+pytestmark = pytest.mark.tenant_identity
+
 
 
 # 前端 PlatformRule 的字段集（改动前端类型时必须同步这里，否则前端读不到值）
@@ -82,9 +85,27 @@ def _fake_doc(doc_id="doc-fake", platform="shopee"):
 
 # ====== 1. LLM 结果清洗 ======
 
-def test_normalize_returns_empty_on_raw_text():
-    """structured_chat 解析失败会给 {"raw_text": ...} —— 必须视为无结果，不许猜"""
-    assert normalize_llm_rules({"raw_text": "[不是 JSON]"}, _fake_doc()) == []
+def test_normalize_returns_empty_on_parse_failed():
+    """结构化输出解析失败（带 `__llm_parse_failed__` 标记）→ 视为无结果，不许猜"""
+    # ★ 载荷里**故意**放一份合法 rules：失败标记必须优先于内容解析 ——
+    #   若判定入口失效，这里会吐出 1 条规则（而不是空）⇒ 反向注入立刻转红。
+    failed = {"__llm_parse_failed__": True, "raw_text": "[不是 JSON]",
+              "reason": "json_decode_error", "truncated": False,
+              "rules": [{"title": "标题", "content": "正文"}]}
+    assert normalize_llm_rules(failed, _fake_doc()) == []
+
+
+def test_normalize_does_not_treat_legal_raw_text_as_failure():
+    """★ 防假阴：LLM 合法返回含 `raw_text` 字段的 JSON，不得被当成解析失败。
+
+    旧判据 `"raw_text" in data` 会把这条也判成失败 —— 业务完全可能让 LLM
+    输出 `{"raw_text": ..., "translation": ...}` 这种结构。
+    """
+    assert is_llm_parse_failed({"raw_text": "原文", "rules": [
+        {"title": "标题", "content": "正文"}]}) is False
+    out = normalize_llm_rules({"raw_text": "原文", "rules": [
+        {"title": "标题", "content": "正文"}]}, _fake_doc())
+    assert len(out) == 1
 
 
 def test_normalize_accepts_plain_list():

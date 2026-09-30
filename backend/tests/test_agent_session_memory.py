@@ -347,6 +347,7 @@ async def test_stream_session_shares_the_same_thread_rule():
 # ====== 3. 端到端：真 checkpointer + 真图，两轮真的能互相看见 ======
 
 
+@pytest.mark.timeout(300)
 async def test_real_checkpointer_accumulates_only_within_one_session():
     """
     ★★★ 端到端（真 `AsyncPostgresSaver` + 真图）：

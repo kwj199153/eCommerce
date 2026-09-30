@@ -285,7 +285,7 @@ async def test_concurrent_duplicate_submission_creates_single_invoice(
     """
     from fastapi import Depends, Request
 
-    from core.auth.dependencies import get_current_user, oauth2_scheme
+    from core.auth.dependencies import require_acting_user
     from core.database import get_db
     from main import app
 
@@ -294,18 +294,24 @@ async def test_concurrent_duplicate_submission_creates_single_invoice(
 
     async def _synced_auth(
         request: Request,
-        token: str = Depends(oauth2_scheme),
         db=Depends(get_db),
     ):
         """照常鉴权（订阅行连同旧值进 identity map），再对齐到临界区入口。"""
-        # ★ P0-2：`request` 是 get_current_user 的**必填首参**，且必须是裸
-        #   `Request` 注解（`Optional[Request]` 会被 FastAPI 当 Pydantic 字段，
-        #   路由注册期就抛 FastAPIError —— 见该函数 docstring）。
-        u = await get_current_user(request=request, token=token, db=db)
+        # ★★ 覆盖目标由 `get_current_user` 改为 `require_acting_user`
+        #   （2026-09-25，计费端点改鉴权档的同一次改动）：
+        #   改档之后覆盖 `get_current_user` **一行都不会生效** ——
+        #   `require_acting_user` 走的是 `get_acting_user`，而后者是**直接调用**
+        #   （不经 `Depends`）⇒ FastAPI 的 dependency_overrides 被完全旁路。
+        #   若忘记跟着改，本用例会静默退化成"没有 barrier 的裸并发"并**照样绿**，
+        #   而它 docstring 里记着的那次假绿正是同一形态的另一半。
+        #   ⇒ 以后换鉴权依赖时，**必须**连同这一行一起换。
+        # ★ 这里 delegate 的是**原函数对象**：`dependency_overrides` 只改
+        #   FastAPI 的解析表，不改模块属性 ⇒ 真实鉴权链一路照常跑。
+        u = await require_acting_user(request=request, db=db)
         await gate.wait()
         return u
 
-    app.dependency_overrides[get_current_user] = _synced_auth
+    app.dependency_overrides[require_acting_user] = _synced_auth
     try:
         rs = await asyncio.wait_for(
             asyncio.gather(
@@ -315,7 +321,7 @@ async def test_concurrent_duplicate_submission_creates_single_invoice(
             timeout=60,
         )
     finally:
-        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(require_acting_user, None)
 
     codes = [r.status_code if not isinstance(r, Exception) else repr(r) for r in rs]
     assert all(c == 200 for c in codes), (
@@ -469,7 +475,12 @@ def test_production_guard_accepts_compliant_config(prod_settings_kwargs):
         ({"debug": True}, "DEBUG"),
         ({"payment_gateway": "mock"}, "PAYMENT_GATEWAY"),
         ({"payment_gateway": "stripe"}, "尚未接入实现"),
-        ({"payment_gateway": "alipay"}, "尚未接入实现"),
+        # ★ 2026-09-25：alipay 已**摘除**出 KNOWN_UNIMPLEMENTED_GATEWAYS，
+        #   改由 IMPLEMENTED_GATEWAY_REQUIRED_CONFIG 管 —— 因此它现在的
+        #   拒绝理由不再是"还没写"，而是"凭证没配齐"。
+        #   ★ 两条判据方向相反（"没实现" vs "实现了但没配"），
+        #     共用同一个关键词会让它们互为替身、各自都测不到。
+        ({"payment_gateway": "alipay"}, "接入配置不完整"),
         ({"payment_gateway": "wechat"}, "尚未接入实现"),
         # ★ P1-d（2026-09-16）：/metrics 漏配令牌。
         #   修复前这里只有 main.py 一句 WARNING（"门禁存在 ≠ 在执行"），
@@ -486,7 +497,7 @@ def test_production_guard_rejects(prod_settings_kwargs, over, keyword):
     """
     from core.config import Settings
 
-    with pytest.raises(Exception) as ei:
+    with pytest.raises(ValueError) as ei:
         Settings(**prod_settings_kwargs(**over))
     assert keyword in str(ei.value), f"错误信息里应出现 {keyword!r}：{ei.value}"
 

@@ -39,7 +39,6 @@ shop_id 空值守卫回归测试（多租户隔离闭环的最后一环）。
 from __future__ import annotations
 
 import ast
-import uuid
 from pathlib import Path
 
 import pytest
@@ -58,7 +57,7 @@ OPTIONAL = "get_current_shop_id_optional"
 #     ① 它会落业务数据吗？
 #     ② 若会 —— 它的**写路径**在缺店铺上下文时是否硬拒绝？
 #        会落 且 写路径不拒绝 → 不许加（那才是真的开后门）。
-#   现有五条（含第 131 轮 resume_approval、第 155 轮 secretary_plan）的成立理由（每条都有测试背书，不是自述）：
+#   现有六条（含第 131 轮 resume_approval、第 155 轮 secretary_plan、第 204 轮 customer_service chat_stream）的成立理由（每条都有测试背书，不是自述）：
 #     · secretary/router.py::secretary_chat  —— ① 不会（纯对话/导航；工具层拿不到
 #       shop_id 时只回「产品库为空」）。
 #     · product_research/router.py::chat / chat_stream —— ① 会（候选入库），
@@ -70,6 +69,17 @@ OPTIONAL = "get_current_shop_id_optional"
 #       ⇒ 门禁放在"写"这一层，而不是"入口"这一层。
 ALLOWED_OPTIONAL = {
     ("modules/secretary/router.py", "secretary_chat"),
+    # ★ 第 212 轮新增（店秘书 SSE 对话）：与 `secretary_chat` **完全同构** ——
+    #   两者共用同一份归属解析（`router.py::_resolve_session`）、同一张图、
+    #   同一个正文取口（`agent.py::_digest_graph_state`），差别只在
+    #   「过程能不能边跑边看」。
+    #   ① 会落业务数据吗？—— **不会**（同 `secretary_chat`：纯对话/导航；
+    #      工具层拿不到 shop_id 时只回「产品库为空」）。
+    #   ② 不适用（没有写路径）。
+    #   为何不用严格版：它是店秘书的**主对话入口**，而店秘书是 `AGENT_LIST[0]`
+    #      （打开应用默认选中）—— 严格版会让「一家店铺都还没有」的新用户
+    #      一开口就被 400 挡住，而那时他恰恰只能靠店秘书去创建第一家店铺。
+    ("modules/secretary/router.py", "secretary_chat_stream"),
     ("modules/product_research/router.py", "chat"),
     ("modules/product_research/router.py", "chat_stream"),
     # ★ 第 131 轮新增。与 chat / chat_stream **完全同构**：
@@ -80,6 +90,18 @@ ALLOWED_OPTIONAL = {
     #      （thread_id 由 (命名空间, 用户, 会话) 重算，不含 shop_id）。
     #      用严格版会让「想拒绝但没选店铺」的用户连拒绝都点不动（400）。
     ("modules/product_research/router.py", "resume_approval"),
+    # ★ 第 325 轮补登（选品大盘 treemap：端点第 305 轮就加了，当时漏登记）。
+    #   ① 会落业务数据吗？—— **不会**。纯读：`service.get_market_insight_treemap`
+    #      → `core.library_query.query_library(MARKET_SNAPSHOT_SPEC, shop_id)`，
+    #      内核在 `not shop_id` 时**直接 return []**（零 DB 往返），
+    #      下游只做字段投影 + 拼文案，一行都不写。
+    #   ② 不适用（没有写路径）。
+    #   为何不用严格版：面板的契约是「没选店铺 ⇒ 200 + 空列表 + 空态文案」
+    #      （`MarketInsightConfig.vue` 据此显示空态）。严格版给 400，
+    #      会把「还没有店铺的新用户」在大盘页上读成「加载失败」。
+    #   ★ 归属不靠这个依赖：内核 `base_select()` 无条件挂 `scoped()`
+    #      （`shop_id=None` ⇒ `col IS NULL` ⇒ 查不到任何行），fail-closed。
+    ("modules/product_research/router.py", "get_market_insight_treemap"),
     # ★ 第 155 轮新增（两条问答）：
     #   ① 会落业务数据吗？—— **不会**。
     #      `modules/secretary/agent.py::current_plan()` 只 `aget_state`，
@@ -93,6 +115,54 @@ ALLOWED_OPTIONAL = {
     #     `user_id` 只从服务端身份取 ⇒ 别人拿你的 session_id
     #     算出的是**他自己**的键，物理上读不到。
     ("modules/secretary/router.py", "secretary_plan"),
+    # ★ 第 204 轮新增（客服 SSE 对话）：
+    #   ① 会落业务数据吗？—— **会**（LLM 可能在这个环路里调 `create_ticket`）。
+    #   ② 写路径在缺店铺上下文时硬拒绝吗？—— **是**：
+    #      `modules/customer_service/tools.py::_shop_id()` 取不到 ⇒ 传 None 给
+    #      `service.create_ticket` ⇒ `require_shop_context(None)` 抛
+    #      `MissingShopContext` ⇒ 零数据库往返（`cs_tickets.shop_id` 有外键，
+    #      不会出现「先写空行再报错」的形态）。
+    #   为何不用严格版：与 product_research 的两个入口**完全同构** —— 它同时
+    #      服务只读意图（FAQ 搜索 / 情感分析 / 对话摘要），且是客服的**主对话
+    #      入口**。严格版会让「还没选店铺」的用户连「你们的退换货
+    #      政策是什么」都问不了（400）—— 属零收益的体验损伤。
+    #      ⇒ 门禁放在「写」那一层，而不是「入口」那一层。
+    ("modules/customer_service/router.py", "chat_stream"),
+    # ★ 第 285 轮新增（客服订单追踪）：
+    #   ① 会落业务数据吗？—— **不会**。纯读路径：查自有订单库
+    #      （`modules/trade.service.get_order_context`）或平台适配层，**不写库**
+    #      （平台数据落库的正确落点是 `trade.sync.sync_orders_from_source`，
+    #      不在查询路径里 —— 读路径写库会让「读」产生副作用）。
+    #   ② 不适用（没有写路径）。
+    #
+    #   为何不用严格版（这条与前面六条**性质不同**，值得单独记一笔）：
+    #     这里是本仓第一条「**optional 用来决定取哪个源**」的用例 ——
+    #       · 拿到 shop_id ⇒ 查**租户隔离**的自有订单库（真源，信息更全）
+    #       · 拿不到     ⇒ **只**能走平台适配层（本来就是店铺无关的上游接口）
+    #     也就是说，缺店铺**不会**退化为「读到全店数据」：自有库那一步
+    #     根本不会执行（`_fetch_order_info` 里 `if shop_id:` 是硬门槛）。
+    #     用严格版反而有害：它会让「还没选店铺」的用户连一次纯查询都点不动，
+    #     而那次查询即便退化也是安全的。
+    ("modules/customer_service/router.py", "track_order_endpoint"),
+    # ★ 第 286 轮新增四个（客服读话术的四条入口）：
+    #   ① 会落业务数据吗？—— **不会**。四条全是**纯读**：
+    #      · `chat_endpoint` / `quick_reply_endpoint`：读话术 + 生成回复，
+    #        写路径只有 `create_ticket`，它另有 **strict** 守卫
+    #        （缺店铺 ⇒ `require_shop_context` 抛错 ⇒ 零 DB 往返）；
+    #      · `search_faq_endpoint` / `get_faq_categories`：查 `knowledge_faqs`。
+    #   ② 不适用（这四条自身没有写路径）。
+    #
+    #   为何不用严格版（与 `track_order_endpoint` **同型**）：
+    #     optional 在这里的作用是「**决定能不能读到本店话术**」，不是「放宽租户过滤」——
+    #       · 拿到 shop_id ⇒ 查 `knowledge_faqs`（`scope_condition` 按店铺收窄）
+    #       · 拿不到       ⇒ `load_faq_items` **直接抛 PermissionError**（fail-closed），
+    #         回复里写明「没有店铺上下文，读不了话术」
+    #     缺店铺**不会**退化成「读到全店话术」：那一步根本不执行。
+    #     用严格版只会让「还没选店铺」的用户连「你们的退换货政策是什么」都问不了。
+    ("modules/customer_service/router.py", "chat_endpoint"),
+    ("modules/customer_service/router.py", "quick_reply_endpoint"),
+    ("modules/customer_service/router.py", "search_faq_endpoint"),
+    ("modules/customer_service/router.py", "get_faq_categories"),
 }
 
 # 严格依赖的使用方（12 个业务模块）。少一个都意味着某个模块的租户过滤被摘掉了。
@@ -132,6 +202,14 @@ EXPECTED_STRICT_MODULES = {
     #   为什么用 strict 而不是豁免：工单是**写业务数据**，缺店铺就该硬拒绝；
     #   而本模块的读端点（chat / faq / order track）并不带这个依赖 ⇒ 不受影响。
     "modules/customer_service/router.py",
+    # ★ 第 287 轮新增。此前 trade **根本没有 router.py**（只有 db_model /
+    #   service / tools），本轮补端点（`review_dispositions` 的出口）才第一次
+    #   出现 HTTP 面 ⇒ 守卫是跟着端点一起长出来的，不是后来补的。
+    #   为什么用 strict 而不是豁免：这张表的 shop_id 是外键（RESTRICT），
+    #   空店铺写不进去（表现为 500 + 约束名）；而**读**端点若豁免，
+    #   缺店铺时只能「什么都不返回」——把「没选店铺」伪装成「没有处置记录」。
+    #   strict 让缺店铺在**入口**就 400，是可行动的提示。
+    "modules/trade/router.py",
 }
 
 
@@ -242,11 +320,30 @@ async def test_all_write_methods_are_guarded(client, method, path):
     )
 
 
-async def test_write_with_real_shop_still_succeeds(client, ensure_shop):
-    """守卫不能误伤正常调用：带真实店铺头的写入必须照旧 201 且落对 shop_id。"""
-    sid = await ensure_shop(f"store_guard_{uuid.uuid4().hex[:8]}")
+async def test_write_with_real_shop_still_succeeds(client, make_user):
+    """守卫不能误伤正常调用：**车主带真实店铺头**的写入必须照旧 201 且落对 shop_id。
+
+    ★★ 第 177 轮改前置（原前置已不成立）：
+      原来这里是「`ensure_shop()` 造一家**无主**店铺 + **匿名**写入」。那条路
+      能通**仅仅**因为 `core/tenant/middleware.py::_resolve_current_shop_id` 里
+      写着 `if current_user is None: return shop_id` —— 归属校验整段被跳过
+      （"列表紧、单店松"，体检报告 P1-5）。第 177 轮收掉该档后：
+        · 匿名写真实店铺 ⇒ 403（正确行为，见 `test_demo_store.py` 第 6 节）；
+        · 无主店铺对**任何**身份都不可访问 —— `_matches` 的过渡期兜底分支
+          在 `owner_id` 为空时返回 False。
+      ⇒ 前置改为「真用户 + 他自己的店」。用例要验证的东西**没变**：
+        空白值守卫（缺头 400）不误伤正常写入。
+    """
+    a = await make_user("guard-ok")
+    r0 = await client.post(
+        "/api/v1/stores", headers=a["headers"],
+        json={"name": "守卫不误伤店", "platform": "amazon"},
+    )
+    assert r0.status_code in (200, 201), r0.text
+    sid = r0.json()["id"]
+
     r = await client.post("/api/v1/spus", json={"title": "guard-ok"},
-                          headers={"X-Shop-ID": sid})
+                          headers={**a["headers"], "X-Shop-ID": sid})
     assert r.status_code == 201, r.text
 
     async with async_session_factory() as db:
@@ -256,11 +353,23 @@ async def test_write_with_real_shop_still_succeeds(client, ensure_shop):
     assert got == sid, f"落库 shop_id 应为 {sid}，实际 {got!r}"
 
 
-async def test_shop_id_is_stripped_before_use(client, ensure_shop):
-    """`X-Shop-ID: '  store_x  '` 应被规整后正常放行（头解析不管空白）。"""
-    sid = await ensure_shop(f"store_guard_{uuid.uuid4().hex[:8]}")
+async def test_shop_id_is_stripped_before_use(client, make_user):
+    """`X-Shop-ID: '  store_x  '` 应被规整后正常放行（头解析不管空白）。
+
+    ★★ 第 177 轮前置同 `test_write_with_real_shop_still_succeeds` 重基
+      （无主店铺 + 匿名的组合已不可写）—— 本用例验证的是**空白规整**，
+      不是匿名放行。
+    """
+    a = await make_user("guard-space")
+    r0 = await client.post(
+        "/api/v1/stores", headers=a["headers"],
+        json={"name": "守卫空白规整店", "platform": "amazon"},
+    )
+    assert r0.status_code in (200, 201), r0.text
+    sid = r0.json()["id"]
+
     r = await client.post("/api/v1/spus", json={"title": "guard-space"},
-                          headers={"X-Shop-ID": f"  {sid}  "})
+                          headers={**a["headers"], "X-Shop-ID": f"  {sid}  "})
     assert r.status_code == 201, r.text
 
     async with async_session_factory() as db:
@@ -287,6 +396,164 @@ async def test_read_endpoint_still_200_with_blank_header(client):
     r = await client.get("/api/v1/monitors", headers={"X-Shop-ID": "   "})
     assert r.status_code == 200, r.text
     assert r.json()["items"] == []
+
+
+# ====== 2.5 详情读端点：缺头/跨店不得越权（第 271 轮 P0-1） ======
+
+async def test_detail_read_never_leaks_across_shop(client, make_user):
+    """
+    详情读端点（GET /spus/{id} 等）缺 X-Shop-ID 或带**别家**店铺头时，
+    必须 404 —— 不得返回别的租户的数据。
+
+    背景（P0-1，2026-09-25）：四处详情端点原写 `if shop_id: q = scoped(...)`，
+    缺头时 `shop_id=None` ⇒ 过滤被整个跳过 ⇒ 拿到**全库任意**记录（ID 形如
+    `spu-<毫秒>` 可枚举）。而 400 空值守卫只对写方法生效（middleware.py），
+    GET 缺头返回 None。修复：去掉 `if shop_id:`，无条件 `scoped()` ——
+    `shop_id=None` 时 SQL 为 `col IS NULL` ⇒ 0 行 ⇒ 404。
+
+    ★ 反向注入验证：把 `scoped(q, ...)` 改回 `if shop_id: q = scoped(...)`
+      会命中下面「越权读到 A 的数据」的断言，用例转红。
+    """
+    a = await make_user("leak-a")
+    b = await make_user("leak-b")
+
+    # A 建店 + 建 SPU
+    r0 = await client.post(
+        "/api/v1/stores", headers=a["headers"],
+        json={"name": "越权 A 店", "platform": "amazon"},
+    )
+    assert r0.status_code in (200, 201), r0.text
+    sid_a = r0.json()["id"]
+
+    r1 = await client.post("/api/v1/spus", json={"title": "A 店的 SPU"},
+                           headers={**a["headers"], "X-Shop-ID": sid_a})
+    assert r1.status_code == 201, r1.text
+    spu_id = r1.json()["id"]
+
+    # B 建自己的店
+    r2 = await client.post(
+        "/api/v1/stores", headers=b["headers"],
+        json={"name": "越权 B 店", "platform": "amazon"},
+    )
+    assert r2.status_code in (200, 201), r2.text
+    sid_b = r2.json()["id"]
+
+    # ① B 用户带 B 店头读 A 的 SPU 详情 ⇒ 404（跨店越权防护）
+    rb = await client.get(f"/api/v1/spus/{spu_id}",
+                          headers={**b["headers"], "X-Shop-ID": sid_b})
+    assert rb.status_code == 404, (
+        f"带 B 店头读 A 店 SPU 应 404，实际 {rb.status_code} {rb.text[:200]}"
+    )
+
+    # ② B 用户**不带** X-Shop-ID 读 A 的 SPU 详情 ⇒ 404（缺头不越权）
+    rn = await client.get(f"/api/v1/spus/{spu_id}", headers=b["headers"])
+    assert rn.status_code == 404, (
+        f"缺头读 A 店 SPU 应 404（安全失败方向），实际 {rn.status_code} {rn.text[:200]}"
+    )
+
+    # ③ A 用户带 A 店头读自己的 SPU ⇒ 200（不误伤正常读取）
+    ra = await client.get(f"/api/v1/spus/{spu_id}",
+                          headers={**a["headers"], "X-Shop-ID": sid_a})
+    assert ra.status_code == 200, ra.text
+    assert ra.json()["id"] == spu_id
+
+
+# ★ 第 283 轮：此处原有一条手写**端点字典**的 AST 护栏（四处详情端点）。
+#   它守住了 assets / products / monitors 三个 router，但 platform_rules /
+#   knowledge_base / candidates 三个 service **从未进过名单** —— 第 283 轮
+#   人工审查才发现那 5 处同形态越权。手写名单必然漂移，形态扫描不会。
+#   ⇒ 该断言已升级为「全仓扫描」并迁至
+#     `tests/test_tenant_scoping.py::test_no_conditional_scope_mounting`
+#     （含扫描器自检），本文件不再留第二份实现。
+#     下面保留的是它的**行为层**对应物：真的发请求，看会不会漏。
+
+
+async def test_library_detail_reads_never_leak_across_shop(client, make_user):
+    """
+    三处资料库**详情读端点**缺 X-Shop-ID 时不得跨租户（第 283 轮 P0 修复）。
+
+    ★ 与上一节 `test_detail_read_never_leaks_across_shop` 的区别：
+      那一节的四处端点住在 `router.py`；这一批漏洞住在 **`service.py`**
+      （`knowledge_base` 的 9 处 `scoped_if`、`candidates._load_scoped`、
+      `platform_rules.get_rule_by_id` / `get_doc_by_id`）—— 所以旧的
+      端点字典门禁一处都没扫到它们。
+
+    共同形态：GET 缺 `X-Shop-ID` 时 `get_current_shop_id` 返回 **None**
+    （400 空值守卫只拦写方法，GET 不在 `WRITE_METHODS` 里），而 service 写成
+    `if shop_id: q = scoped(...)` ⇒ 条件整个不发 ⇒ **凭 id 可读任意租户**的
+    规则源文件正文 / 业务话术源码 / 候选选品详情。
+
+    ★ 反向注入：把 service 里的 `scoped(...)` 改回 `if shop_id: scoped(...)`
+      （或把 `scoped_if` 加回来），下面「缺头 ⇒ 404」与「跨店 ⇒ 404」两组
+      断言会立刻得到 200 + 正文，用例转红。
+    """
+    a = await make_user("lib-a")
+    b = await make_user("lib-b")
+
+    def _owned(user, sid=None):
+        h = dict(user["headers"])
+        if sid:
+            h["X-Shop-ID"] = sid
+        return h
+
+    async def _store(user, name):
+        r = await client.post(
+            "/api/v1/stores", headers=_owned(user),
+            json={"name": name, "platform": "amazon"},
+        )
+        assert r.status_code in (200, 201), r.text
+        return r.json()["id"]
+
+    sid_a = await _store(a, "资料库 A 店")
+    sid_b = await _store(b, "资料库 B 店")
+
+    # A 在自家店里放三样东西：规则源文档 / 业务话术文档 / 候选选品
+    rule_doc = (await client.post(
+        "/api/v1/platform-rule-docs",
+        json={"filename": "A-secret-rule.pdf", "platform": "amazon", "content": "A 的内部规则正文"},
+        headers=_owned(a, sid_a),
+    )).json()
+
+    kb_id = (await client.post(
+        "/api/v1/knowledge-base", json={"name": "A 的私有库"}, headers=_owned(a, sid_a),
+    )).json()["id"]
+    kb_doc = (await client.post(
+        "/api/v1/knowledge-base/docs",
+        json={"kb_id": kb_id, "filename": "A-secret.md", "content": "A 的售后政策底稿"},
+        headers=_owned(a, sid_a),
+    )).json()
+
+    cand = (await client.post(
+        "/api/v1/candidates",
+        json={"asin": "B0AAAAAAAAA", "title": "A 的秘密候选品"},
+        headers=_owned(a, sid_a),
+    )).json()
+
+    targets = [
+        ("平台规则源文档", f"/api/v1/platform-rule-docs/{rule_doc['id']}"),
+        ("业务话术文档", f"/api/v1/knowledge-base/docs/{kb_doc['id']}"),
+        ("候选选品详情", f"/api/v1/candidates/{cand['id']}"),
+    ]
+
+    for label, url in targets:
+        # ① B **不带头**读 A 的资源 ⇒ 404（不是全库可读）
+        rn = await client.get(url, headers=_owned(b))
+        assert rn.status_code == 404, (
+            f"{label}：B 缺 X-Shop-ID 应 404（安全失败方向），"
+            f"实际 {rn.status_code} {rn.text[:200]}"
+        )
+
+        # ② B 带**自己店**的头读 A 的资源 ⇒ 404
+        rb = await client.get(url, headers=_owned(b, sid_b))
+        assert rb.status_code == 404, (
+            f"{label}：B 带自己店铺头应 404，实际 {rb.status_code} {rb.text[:200]}"
+        )
+
+        # ③ A 带自己店的头读自己的资源 ⇒ 200（不误伤正常读取）
+        ra = await client.get(url, headers=_owned(a, sid_a))
+        assert ra.status_code == 200, (
+            f"{label}：A 读自己的资源应 200，实际 {ra.status_code} {ra.text[:200]}"
+        )
 
 
 # ====== 3. 对话入口豁免 ======
@@ -404,7 +671,6 @@ async def test_write_candidates_hard_refuses_without_shop_id(monkeypatch):
         touched.append(args)
         raise AssertionError("缺 shop_id 时不该触达 candidates/service")
 
-    monkeypatch.setattr(candidates_service, "candidate_exists", _boom)
     monkeypatch.setattr(candidates_service, "create_candidate", _boom)
 
     result = await ProductResearchAgent()._write_candidates(

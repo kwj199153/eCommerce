@@ -43,8 +43,10 @@ PLAN_PATH = "/api/v1/orchestrator/plan"
 
 def _route(path: str):
     from main import app
+    from scripts.route_inventory import find_routes
 
-    hits = [r for r in app.routes if getattr(r, "path", "") == path]
+    # ★ 第 247 轮：`app.routes` 在 FastAPI 0.141 下只剩惰性容器 ⇒ 这里恒 0 条。
+    hits = find_routes(app, path)
     assert len(hits) == 1, f"{path} 在运行时路由表里有 {len(hits)} 条（期望恰好 1 条）"
     return hits[0]
 

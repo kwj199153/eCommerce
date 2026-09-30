@@ -40,6 +40,18 @@
 
 ★ **反向不成立**：`<name>` 不在门面 `__all__` 里时**放行** ——
   那说明它不是跨模块契约面（包内自用），打在子模块上是正常的。
+
+━━━ 第 299 轮修正：把判据收窄到它**自己的前提** ━━━
+
+原判据把「在 `__all__` 里」当成「是跨模块契约面」的代理，但代理不精确：
+`modules.trade` 有 82 个门面出口，其中**真的被包外消费**的只有 7 个。
+对没有包外消费方的名字，包内兄弟调用走的是**模块全局**，打在子模块上的桩
+**是生效的**；照原判据的「修法」改（打到门面上）反而会让桩不生效 ——
+恰好制造本门禁想防的那种静默失效（实测：门面桩被调用 0 次，真函数照跑，
+直接 `AttributeError: 'NoneType' object has no attribute 'execute'`）。
+⇒ 判据改为 `facade_exports ∩ external_consumers`（见 `contract_names`）。
+  收窄后契约面仍有 51 个名字，`modules.candidates.create_candidate`
+  （本门禁当初为它而建）仍在其中 ⇒ 没有被收窄成空门禁（有用例钉住）。
   实测全仓 102 处 `setattr`，本判据只命中 6 处，无误报。
 """
 from __future__ import annotations
@@ -163,8 +175,72 @@ def scan_source(
     return bad
 
 
+def external_consumers(
+    backend: Path, exports: dict[str, frozenset[str]]
+) -> dict[str, set[str]]:
+    """`modules.<pkg>` -> 在**包外**被真正引用的名字集合。
+
+    ★ 为什么需要它：门禁的前提是「生产代码从门面取名字」，而这只在
+      **包外**消费时才成立 —— 包内兄弟模块之间的调用走**模块全局**，
+      打在子模块上的桩**是生效的**（第 299 轮实测：把桩改打在门面上，
+      真函数照跑、直接炸在 `session=None`）。
+      对这类名字套用原判据，会给出一个**恰好会制造静默失效**的「修法」。
+
+    ★ 窗口只收窄到「包外」，不是无限放水：
+      · `<pkg>` 自己目录下的引用不算包外；
+      · `tests/` 也不算（门禁管的是生产代码的取名字路径）；
+      · 只认 AST（`from modules.<pkg> import <name>` 与 `modules.<pkg>.<name>`），
+        不认字符串 —— 补丁生成脚本里那些「文本形态的引用」不算消费方。
+    """
+    owner_of_interest = set(exports)
+    hit: dict[str, set[str]] = {pkg: set() for pkg in exports}
+    for p in sorted(backend.rglob("*.py")):
+        rel = p.relative_to(backend)
+        if any(part in _CP_SKIP for part in rel.parts):
+            continue
+        parts = rel.parts
+        owner = f"modules.{parts[1]}" if len(parts) >= 2 and parts[0] == "modules" else None
+        try:
+            tree = ast.parse(p.read_bytes().decode("utf-8", errors="replace"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                # ★ 只跳过「**被引用的那个包**自己的文件」。
+                #   （写「文件在 modules/ 下任何门面包里就跳过」会把 modules/ 全跳掉，
+                #     external 恒为 0 —— 判据窗口过宽的经典形态，本文件自己踩过。）
+                if node.module in owner_of_interest and node.module != owner:
+                    for a in node.names:
+                        if a.name in exports[node.module]:
+                            hit[node.module].add(a.name)
+            elif isinstance(node, ast.Attribute):
+                chain: list[str] = []
+                cur: ast.AST | None = node
+                while isinstance(cur, ast.Attribute):
+                    chain.append(cur.attr)
+                    cur = cur.value
+                if isinstance(cur, ast.Name):
+                    chain.append(cur.id)
+                dotted = ".".join(reversed(chain))
+                for pkg, names in exports.items():
+                    if pkg == owner or not dotted.startswith(pkg + "."):
+                        continue
+                    tail = dotted[len(pkg) + 1:].split(".")[0]
+                    if tail in names:
+                        hit[pkg].add(tail)
+    return hit
+
+
+def contract_names(backend: Path) -> dict[str, frozenset[str]]:
+    """真正的「跨模块契约面」= 门面 `__all__` ∩ **有包外消费方**。"""
+    exports = facade_exports(backend / "modules")
+    ext = external_consumers(backend, exports)
+    out = {pkg: frozenset(names & ext.get(pkg, set())) for pkg, names in exports.items()}
+    return {pkg: names for pkg, names in out.items() if names}
+
+
 def _all_violations() -> list[str]:
-    exports = facade_exports(_BACKEND / "modules")
+    exports = contract_names(_BACKEND)
     out: list[str] = []
     for p in sorted(_TESTS.rglob("test_*.py")):
         if any(part in _CP_SKIP for part in p.parts):
@@ -188,6 +264,40 @@ def test_no_monkeypatch_targets_a_facade_submodule():
         + "\r\n\r\n修法：把 import 的模块从 `modules.<pkg>.<sub>` 改成 `modules.<pkg>`，"
           "别名可保持不变。"
     )
+
+
+def test_contract_names_require_an_external_consumer():
+    """★ 收窄后的判据：契约面 = 门面 `__all__` **∩ 有包外消费方**。
+
+    三件事必须一起断言（少一件这个收窄就可能变成放水）：
+      ① 「在 `__all__` 里、但没人从包外引」的名字**不算**契约面
+         —— 实测证据：把桩打在门面上，真函数照跑、直接
+         `AttributeError: 'NoneType' object has no attribute 'execute'`。
+         这条钉住第 299 轮修掉的那批误报。
+      ② 「真的有包外消费方」的名字**算**契约面
+         —— `modules.candidates.create_candidate` 正是本门禁当初为它而建的形态。
+      ③ 非空：契约面总数有下限，否则收窄等于把门禁变成空门禁（断言恒真）。
+    """
+    exports = facade_exports(_BACKEND / "modules")
+    contract = contract_names(_BACKEND)
+    trade_ext = external_consumers(_BACKEND, exports).get("modules.trade", set())
+
+    # ① 被修掉的误报：名字在门面里，但没有包外消费方
+    assert "list_recent_negative_reviews" in exports.get("modules.trade", frozenset())
+    assert "list_recent_negative_reviews" not in trade_ext, (
+        "它竟然有包外消费方 ⇒ 本用例的前提变了（有人改成走门面了），请重新核实"
+    )
+    assert "list_recent_negative_reviews" not in contract.get("modules.trade", frozenset())
+
+    # ② 真正的契约面仍在（原缺陷形态没被放过）
+    assert "create_candidate" in contract.get("modules.candidates", frozenset()), (
+        "create_candidate 掉出契约面 ⇒ 收窄过头："
+        f"{sorted(contract.get('modules.candidates', ()))}"
+    )
+
+    # ③ 非空自检
+    total = sum(len(v) for v in contract.values())
+    assert total >= 30, f"契约面只剩 {total} 个名字 ⇒ 收窄过头，等于空门禁"
 
 
 def test_facade_exports_are_discovered():

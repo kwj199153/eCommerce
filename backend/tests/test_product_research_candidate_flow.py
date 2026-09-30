@@ -42,8 +42,9 @@ TARGET_ASIN = "B0KLMN3456"
 # 入库是**写业务数据**的动作，必须带一个"已校验归属"的店铺 ID。
 # 本文件测的是"目标解析"（要入哪个商品），不是租户归属，所以固定用一个合成店铺即可：
 #   - 常量 `store_test` 已登记在 conftest.SYNTHETIC_TEST_SHOP_IDS（外键前提）；
-#   - `create_candidate` / `candidate_exists` 在本文件里都被 monkeypatch 拦掉，
-#     不会真的落库，也不受真实店铺是否存在影响。
+#   - `create_candidate` 在本文件里被 monkeypatch 拦掉，不会真的落库，
+#     也不受真实店铺是否存在影响（判重用的 `candidate_exists` 已于第 216 轮
+#     收口进写入口并从门面删除，本文件不再需要拦它）。
 # ★ 为什么必须显式传而不能省略：P0 修复后 `_write_candidates` 缺 shop_id 时
 #   **硬拒绝写入**（修复前它直读全局上下文，而那个值来自未校验的请求头）。
 #   用例若不声明店铺，就等于在测一条已经不存在的旧契约。
@@ -209,9 +210,15 @@ def captured_candidates(monkeypatch):
     """拦截 create_candidate，捕获 payload（不落库，避免污染真实数据库）"""
     captured: list[dict] = []
 
-    async def _fake(payload, shop_id=None):
-        captured.append({"payload": payload, "shop_id": shop_id})
-        return {**payload, "id": f"cand-test-{len(captured)}"}
+    async def _fake(payload, shop_id=None, **kw):
+        captured.append({
+            "payload": payload,
+            "shop_id": shop_id,
+            # ★ 第 216 轮：判重已收口进写入口 ⇒ 本层必须把 on_duplicate 传下去。
+            #   记录它，用例就能钉住「谁在判重」没漂回本层。
+            "on_duplicate": kw.get("on_duplicate"),
+        })
+        return {**payload, "id": f"cand-test-{len(captured)}", "deduped": False}
 
     # ★ 第 140 轮：消费方（agent_product_research）已改走 `modules.candidates`
     #   **门面**。门面的 re-export 是一份**独立绑定**（发生在包 import 时），
@@ -240,6 +247,9 @@ async def test_save_resolves_pronoun_to_top1(captured_candidates):
     payload = captured_candidates[0]["payload"]
     assert payload["asin"] == TARGET_ASIN
     assert payload["source"] == "blue_ocean"
+    assert captured_candidates[0]["on_duplicate"] == "skip", (
+        "判重模式必须**显式选边**并交给写入口（on_duplicate='skip'）"
+    )
 
 
 async def test_save_carries_market_layer_into_notes_and_keywords(captured_candidates):
@@ -328,15 +338,27 @@ async def test_save_rejects_out_of_range_ordinal(captured_candidates):
 
 
 async def test_save_skips_existing_asin(monkeypatch, captured_candidates):
-    """同店铺同 ASIN 已在库 → 不重复写入，回「已在选品库中」"""
-    async def _always_exists(asin, shop_id=None):
-        return True
+    """写入口判重命中（`deduped=True`）→ 归到 skipped，回「已在选品库中」
 
-    monkeypatch.setattr("modules.candidates.candidate_exists", _always_exists)
+    ★ 第 216 轮改写：判重已收口进**写入口** `create_candidate`
+      （`on_duplicate="skip"`），本层不再自己查 `candidate_exists`
+      （那个符号已随收口从门面删除）。所以这条用例改为**模拟写入口判重命中**，
+      并同时钉住「请求的确实是 skip 模式」——
+      否则「谁在判重」会悄悄漂回本层，而本层对 REST 那条路没有约束力。
+    """
+    seen: list = []
+
+    async def _deduped(payload, shop_id=None, **kw):
+        seen.append({"asin": payload.get("asin"), "on_duplicate": kw.get("on_duplicate")})
+        return {"id": "cand-existing", "asin": payload.get("asin"), "deduped": True}
+
+    monkeypatch.setattr("modules.candidates.create_candidate", _deduped)
 
     agent = await _agent_with_last_result()
     result = await agent._save_candidate("这个品帮我进入选品库", shop_id=TEST_SHOP)
 
+    assert seen, "写入口没被调用 ⇒ 副作用压根没发生"
+    assert seen[0]["on_duplicate"] == "skip", "判重必须交给写入口"
     assert result["type"] == "candidate_saved"
     assert result["skipped"], "应走判重分支"
     assert "未重复写入" in result["summary"]

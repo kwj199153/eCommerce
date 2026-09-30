@@ -9,6 +9,9 @@
 1. **真接线的工具 = 21 个**：`listing_tools`(8) / `product_research_tools`(5) /
    `navigation_tools`(5) / `subscription_tools`(1) / `build_product_tools`(1) /
    `build_shop_tools`(1) —— 它们被某个 Agent 作为 `BaseAgent(tools=...)` 真的绑上了。
+   （★ 上面的数字是**第 143 轮 A3 当时**的口径，已过时：`build_shop_tools` 第 243 轮
+     扩到 2 个（+只读 `list_shops`）、`navigation_tools` 第 145 轮扩到 6 个。
+     当下口径见 `modules/skills/tools_catalog.py` 与 `tests/test_tool_catalog.py`。）
 2. **悬空（注册了但全仓无消费点）= 32 个**，精确等于老板说的数字：
    `aigc_tools`(8) + `ad_analysis_tools`(6) + `customer_service_tools`(4) +
    `competitor_intel_tools`(8) + `review_analyst_tools`(6)。
@@ -55,6 +58,18 @@ REGISTRY_FILES = [
     "modules/review_analyst/tools.py",
     "modules/listing_generator/tools.py",
     "modules/product_research/tools.py",
+    # ★★ 第 207 轮补登：`modules/library/tools.py` 是第 205 轮新建的
+    #   **跨 Agent 共用**注册表（工厂式 `build_library_tools()`，产出
+    #   `list_candidates` / `list_products`），它此前**不在本名单里** ⇒
+    #   与第 145 轮批 B1 那两个文件一模一样的「真空区」形态：本文件的三条判据
+    #   （工具名唯一 / desc 交叉引用 / 悬空棘轮）对它**全部静默放行**。
+    #   实测代价：`product_research/tools.py` 的 `get_candidate` desc 里写着
+    #   「先用 list_candidates 拿到候选」，而 `test_desc_cross_references_resolve`
+    #   只从本名单取全集 ⇒ 它不认识 `list_candidates`，把**正确的**交叉引用
+    #   判成悬空 ⇒ **第 205 轮起这条判据一直是红的**，却因为「没人想到要跑
+    #   这个文件」而无人看见（第 207 轮补跑时才发现）。
+    #   ⇒ 教训：新建注册表时，**登记进本名单与写注册表本身同等重要**。
+    "modules/library/tools.py",
     "modules/secretary/navigation_tools.py",
     "modules/secretary/subscription_tools.py",
     # ★ 第 145 轮 批 B1 补登：这两个注册表此前**不在本名单里**（A3 对账时漏了），
@@ -71,16 +86,19 @@ REGISTRY_FILES = [
 ]
 
 # ---- 已知悬空注册表（注册了但全仓无消费点）。棘轮：只许减少，不许增加。----
-KNOWN_ORPHAN_REGISTRIES = {
-    "modules/aigc_media/tools.py::aigc_tools",
-    "modules/ad_analysis/tools.py::ad_analysis_tools",
-    "modules/customer_service/tools.py::customer_service_tools",
-    "modules/competitor_intel/tools.py::competitor_intel_tools",
-    "modules/review_analyst/tools.py::review_analyst_tools",
-}
-ORPHAN_TOOL_BUDGET = 33
-# ↑ 32 = A3 对账出的存量（aigc 8 + ad 6 + cs 4 + competitor 8 + review 6）；
-#   33 = 存量 + A3 新增的 `generate_assets`。
+#: ★★ 第 204 轮收紧到**空集 / 0**：三个悬空注册表全部接到各自的 `_build_router()`。
+#:   路径：32（A3 对账）→ 33（+generate_assets）→ 25（第 198 轮接 competitor_intel）
+#:        → **0**（本轮接完 ad_analysis / aigc_media / customer_service）。
+#:   同时删除陈旧登记项 `review_analyst_tools`：它**早已装配**
+#:   （`review_analyst/agent.py:229`），却仍留在本名单里 ⇒ 把棘轮额度虚高 6，
+#:   使「只许减少」被架空。现在由 `test_orphan_registry_entries_are_real` 钉住
+#:   「登记项必须真的还悬空」。
+KNOWN_ORPHAN_REGISTRIES: set[str] = set()
+ORPHAN_TOOL_BUDGET = 0
+# ★ 第 198 轮收紧：接线上限从 33 降到 25 ——
+#   `competitor_intel_tools`(8) 已装到 `CompetitorIntelligenceAgent._build_router()`，
+#   不再是悬空注册表。棘轮语义不变：**只许往下走**。
+#   （原值 32 = aigc 8 + ad 6 + cs 4 + competitor 8 + review 6；33 = +A3 的 `generate_assets`。）
 #   注意这个 +1 本身是个信号：A3 把「真能力」注册进了 `aigc_tools`，而这个注册表
 #   正是悬空的 —— 新增的工具随它一起悬空。所以本批次只把"数据源/描述"做真，
 #   悬空（绑上 or 删掉）必须由后续批次处置，否则 A3 的效果只停在纸面。
@@ -95,7 +113,15 @@ ORPHAN_TOOL_BUDGET = 33
 #   不该被当成「引用了不存在的工具名」：
 #     · `shop_name`     —— `switch_shop` 的首选入参（店铺全名或片段）；
 #     · `platform_nth`  —— `switch_shop` 的平台内序号入参。
-DESC_NON_TOOL_TOKENS = {"open_drawer", "shop_name", "platform_nth"}
+# ★ 第 207 轮新增两项 —— 它们是 `list_products` 的**出参字段名**
+#   （desc：「返回每条 SKU 的 sku_id / spu_id / 标题 / …」），不是工具名，
+#   与上面 `shop_name` / `platform_nth`（入参名）同类，同样**不该**被当成
+#   「引用了不存在的工具名」。
+#   ★ 为什么直到本轮才出现：`modules/library/tools.py` 第 205 轮建好后**一直没
+#     登记进 `REGISTRY_FILES`** ⇒ 本判据连它的 desc 都扫不到（真空区）。
+#     第 207 轮补登后第一次扫到 —— 这正是「登记进扫描面」的价值。
+DESC_NON_TOOL_TOKENS = {"open_drawer", "shop_name", "platform_nth",
+                        "spu_id", "sku_id"}
 
 # 图片 URL 语义的键名（判「实现到底出不出图」用）
 IMAGE_URL_KEYS = {"url", "image_url", "imageUrl", "images", "image", "assets"}
@@ -237,17 +263,12 @@ def test_desc_cross_references_resolve():
 # 3. 悬空注册表棘轮
 # ============================================================
 
-def test_orphan_registry_ratchet():
-    """不许再新增「注册了却没人绑」的工具注册表。
+def _current_orphans() -> dict[str, list[str]]:
+    """实测悬空集合：注册了但全仓无消费点的模块级 `*_tools` 容器。
 
-    现状：32 个工具悬空（A3 对账），本批次只做"接数据源/注册真能力/改误导 desc"，
-    悬空本身的处置（绑上 or 删掉）留待后续批次。
-    棘轮语义：**只许减少** ——
-      · 把某个悬空注册表绑到 Agent 上 → 它不再悬空 → 集合变小 → 仍绿；
-      · 把某个悬空注册表删掉 → 集合变小 → 仍绿；
-      · 新写一个没人绑的注册表 → 集合变大 → 红。
+    全仓 AST 里对该名字的 Load 引用，排除 tests/ 与 __pycache__。
+    同文件内的引用（如 `listing_tools = _fine_grained_tools + ...`）也算消费。
     """
-    # 引用统计：全仓 AST 里对该名字的 Load 引用，排除 tests/ 与 __pycache__
     refs: dict[str, int] = {}
     for p in _all_py():
         try:
@@ -258,7 +279,7 @@ def test_orphan_registry_ratchet():
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
                 refs[node.id] = refs.get(node.id, 0) + 1
 
-    orphans = {}
+    orphans: dict[str, list[str]] = {}
     for rel in REGISTRY_FILES:
         p = BACKEND / rel
         if not p.exists():
@@ -269,6 +290,37 @@ def test_orphan_registry_ratchet():
             if refs.get(var, 0) > 0:
                 continue
             orphans[f"{rel}::{var}"] = names
+    return orphans
+
+
+def test_orphan_registry_entries_are_real():
+    """登记项必须**真的**还悬空 —— 否则棘轮额度被虚高，形同虚设。
+
+    ★ 起因（第 202 轮实测）：`review_analyst_tools` 早已装配到
+      `review_analyst/agent.py:229` 的 `BaseAgent(tools=...)`，却仍登记在
+      `KNOWN_ORPHAN_REGISTRIES` 里 ⇒ `ORPHAN_TOOL_BUDGET` 被虚高 6，
+      还能悄悄新增 6 个悬空工具而不转红。**只判「新增」、不判「登记项是否过期」，
+      棘轮就等于单向橡皮图章。**
+    """
+    orphans = _current_orphans()
+    stale = KNOWN_ORPHAN_REGISTRIES - set(orphans)
+    assert not stale, (
+        f"这些登记项实测**并不悬空**（已被装配或已删除）：{sorted(stale)}；"
+        "请从 KNOWN_ORPHAN_REGISTRIES 移除并同步下调 ORPHAN_TOOL_BUDGET。"
+    )
+
+
+def test_orphan_registry_ratchet():
+    """不许再新增「注册了却没人绑」的工具注册表。
+
+    现状：32 个工具悬空（A3 对账），本批次只做"接数据源/注册真能力/改误导 desc"，
+    悬空本身的处置（绑上 or 删掉）留待后续批次。
+    棘轮语义：**只许减少** ——
+      · 把某个悬空注册表绑到 Agent 上 → 它不再悬空 → 集合变小 → 仍绿；
+      · 把某个悬空注册表删掉 → 集合变小 → 仍绿；
+      · 新写一个没人绑的注册表 → 集合变大 → 红。
+    """
+    orphans = _current_orphans()
 
     new_orphans = set(orphans) - KNOWN_ORPHAN_REGISTRIES
     assert not new_orphans, (

@@ -6,11 +6,13 @@
 
 本 file 把「店铺作用域只能有一个实现」钉住：
 
-  S1 真源存在且 API 齐全（`core/tenant/scoping.py`：`scoped` / `scoped_if` / `scope_condition`）
+  S1 真源存在且 API 齐全（`core/tenant/scoping.py`：`scoped` / `scope_condition`）
+     —— **并且**「为空即不过滤」的 `scoped_if` 变体不得复活（反向断言）
   S2 业务层不得再出现**手写**的 `<Model>.shop_id == ...` 比较
   S3 真源真的被接入（防「阀建了没人用」）
   S4 扫描器自检（确认它抓得到违规，不是恒绿）
   S5 真源里「作用域列叫 shop_id」这个假设有模型层的证据支撑
+  S6 **`scoped()` 必须无条件挂载**：全仓扫描，不得被 `if shop_id:` 包住
 
 ★ 判据走 AST 而不是字符串匹配：`scoping.py` 自己的 docstring 里就**写着**
   `Model.shop_id == shop_id`（用来解释规则），字符串判据会在那里假报。
@@ -92,8 +94,15 @@ def test_true_source_exists_with_the_documented_api():
     tree = _parse(SCOPING)
     assert tree is not None, "真源无法解析"
     funcs = {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}
-    for want in ("scoped", "scoped_if", "scope_condition"):
+    for want in ("scoped", "scope_condition"):
         assert want in funcs, f"真源缺少 {want}()"
+    # ★ 第 283 轮反向断言：`scoped_if()`（「shop_id 为空 ⇒ 不加过滤」）已删除。
+    #   它的语义在 GET 缺 X-Shop-ID 时等于「查全库」—— 危险语义不该有名字，
+    #   有名字就会被下一次顺手用上。这条防的是有人把它加回来。
+    assert "scoped_if" not in funcs, (
+        "scoped_if() 已被删除，不要加回来：它的语义是「shop_id 为空 ⇒ 不过滤」，"
+        "而 GET 缺 X-Shop-ID 时正是空 ⇒ 等同于跨租户全库可读"
+    )
     # 作用域列名必须是唯一真源里的一个常量（不是散在各调用点的字面量）
     consts = {}
     for n in tree.body:
@@ -118,7 +127,7 @@ def test_no_handwritten_shop_scope_comparisons():
             offenders.append(f"  {rel}:{lineno}  {expr}")
     assert offenders == [], (
         f"发现 {len(offenders)} 处手写的店铺作用域比较；"
-        "改用 core.tenant.scoping 的 scoped() / scoped_if() / scope_condition()：\n"
+        "改用 core.tenant.scoping 的 scoped() / scope_condition()：\n"
         + "\n".join(offenders)
     )
 
@@ -223,10 +232,101 @@ def test_scoping_gate_is_not_vacuous():
 
     # 合法：真源调用
     assert scan_handwritten_shop_scope("q = scoped(q, M, shop_id)\n") == []
-    assert scan_handwritten_shop_scope("q = scoped_if(q, M, shop_id)\n") == []
     assert scan_handwritten_shop_scope("conds.append(scope_condition(M, shop_id))\n") == []
 
     # 合法：别的列叫 shop_id 也无所谓？——不，这里要说明：其它模型上的 shop_id
     # 列同样属于作用域，所以**任何** `X.shop_id ==` 都算违规。这正是判据的一部分。
     got = scan_handwritten_shop_scope("q = q.where(Other.shop_id == X)\n")
     assert len(got) == 1, got
+
+
+# ================================================================ S6
+
+
+def scan_conditional_scope_mounting_in_source(source: str) -> list[tuple[int, str]]:
+    """扫出被 `if shop_id:` 包住的作用域调用，返回 [(行号, 函数名)]。
+
+    被包住意味着：`shop_id` 为空（GET 缺 `X-Shop-ID` 时的实际取值）时
+    这条作用域过滤**整个不发** ⇒ 查询回到「全库」。
+    """
+    tree = _parse_src(source)
+    if tree is None:
+        return []
+    out: list[tuple[int, str]] = []
+    fns = [n for n in ast.walk(tree)
+           if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    for fn in fns:
+        ifs = [n for n in ast.walk(fn) if isinstance(n, ast.If)]
+        if not ifs:
+            continue
+        calls = [n for n in ast.walk(fn)
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                 and n.func.id in ("scoped", "scope_condition")]
+        for call in calls:
+            for i in ifs:
+                if isinstance(i.test, ast.Name) and i.test.id == "shop_id" \
+                        and call in [x for x in ast.walk(i)]:
+                    out.append((call.lineno, fn.name))
+                    break
+    return out
+
+
+def scan_conditional_scope_mounting() -> list[str]:
+    """遍历 `modules/**`，返回可读的违规描述列表。"""
+    offenders: list[str] = []
+    for p, rel in _business_files():
+        if not rel.startswith("modules/"):
+            continue
+        src = p.read_bytes().decode("utf-8", errors="replace").replace("\r\n", "\n")
+        for lineno, fn_name in scan_conditional_scope_mounting_in_source(src):
+            offenders.append(
+                f"  {rel}:{lineno}  {fn_name}() 里的作用域调用被 `if shop_id:` 包住"
+            )
+    return offenders
+
+
+def test_no_conditional_scope_mounting():
+    """★ `scoped()` 必须**无条件**挂载 —— 守的是读路径那一半。
+
+    为什么必须是全仓扫描：这条门禁的前身是一张「四处详情端点」的**手写字典**
+    （旧 `tests/test_shop_id_guard.py::test_detail_read_endpoints_all_scoped_
+    unconditionally`）。而 platform_rules / knowledge_base / candidates 三个
+    service 从未进过那份名单 ⇒ 同形态的 5 处越权一处都没被守住，第 283 轮
+    是靠人工审查才发现的。手写名单必然漂移（本仓判据：「恰好 N 处」是钉住
+    旧形态的负资产）。
+
+    ★ 被这条拦下的形态曾经长这样：
+
+        q = select(Doc).where(Doc.id == doc_id)
+        if shop_id:                       # GET 缺头 ⇒ None ⇒ 条件不发
+            q = scoped(q, Doc, shop_id)   # ⇒ 凭 id 读任意租户的文档正文
+    """
+    offenders = scan_conditional_scope_mounting()
+    assert offenders == [], (
+        f"发现 {len(offenders)} 处条件式作用域挂载：\n"
+        + "\n".join(offenders)
+        + "\n⇒ 一律改成无条件 scoped(...)：缺店铺时 0 行（404），不是全库可读。"
+    )
+
+
+def test_scanner_catches_conditional_mounting():
+    """扫描器自检（防恒绿）：造一段条件式挂载，S6 必须抓到、且能定位到函数。"""
+    src = (
+        "async def get_secret(secret_id, shop_id=None):\n"
+        "    q = select(M).where(M.id == secret_id)\n"
+        "    if shop_id:\n"
+        "        q = scoped(q, M, shop_id)\n"
+        "    return q\n"
+    )
+    hit = scan_conditional_scope_mounting_in_source(src)
+    assert len(hit) == 1, f"应抓到 1 处，实际 {hit}"
+    assert hit[0][1] == "get_secret", hit
+
+    # 无条件挂载是合法形态，不能被误伤
+    clean = (
+        "async def get_secret(secret_id, shop_id=None):\n"
+        "    q = select(M).where(M.id == secret_id)\n"
+        "    q = scoped(q, M, shop_id)\n"
+        "    return q\n"
+    )
+    assert scan_conditional_scope_mounting_in_source(clean) == []

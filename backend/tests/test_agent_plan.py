@@ -559,7 +559,15 @@ def test_tools_are_assembled_only_when_enabled():
 def test_business_tools_and_planner_tools_coexist():
     biz = _fake_tool("search_faq", READ_ONLY_METADATA)
     agent = BaseAgent(agent_name="both", tools=[biz], enable_planning=True)
-    assert {t.name for t in agent.tools} == {"search_faq", "plan_tasks", "update_task"}
+    # 第 181 轮批 B：每个 Agent 恒带 1 个技能按需加载工具（`ai_infra/skills.py`）。
+    # ★ 判据保持**精确相等**（不是 ⊇）：多出任何一个工具都要在这里显式登记，
+    #   否则「模型到底能调哪些工具」就没人答得上。
+    assert {t.name for t in agent.tools} == {
+        "search_faq",
+        "plan_tasks",
+        "update_task",
+        "load_skill",
+    }
 
 
 def _graph_with(script: list[tuple[str, dict]], tools: list):
@@ -713,18 +721,75 @@ def test_secretary_enables_planning_as_class_attribute():
     assert found is True, f"SecretaryAgent.ENABLE_PLANNING 应为 True，实际 {found!r}"
 
 
-def test_secretary_route_reads_plan_from_graph_state():
-    """`route()` 从**图状态**读计划（P1：计划不在 messages 里，只能从 state 取）。"""
-    src = (MODULES / "secretary" / "agent.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
-    fn = next(
-        f for f in ast.walk(tree)
-        if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef)) and f.name == "route"
+def _mentions_const(fn, const: str) -> bool:
+    """函数体里是否**真的引用了**某个标识符（走 AST 节点，不靠 `unparse` 字符串）。
+
+    ★ 必须走节点：`ast.unparse` 会把 docstring 正文一起吐出来，于是
+      「解释这个常量」的文字本身会触发判据 —— 本仓踩过这种**假 BAD**。
+    """
+    return any(
+        (isinstance(n, ast.Name) and n.id == const)
+        or (isinstance(n, ast.Attribute) and n.attr == const)
+        for n in ast.walk(fn)
     )
-    body = ast.unparse(fn)
-    assert "TODOS_STATE_KEY" in body, "route() 没从 state 读计划"
-    assert "state.get(" in body
-    assert "plan_summary" in body
+
+
+def _calls_state_get(fn) -> bool:
+    """函数体里是否有 `state.get(...)` 这种形态的调用。"""
+    return any(
+        isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and n.func.attr == "get"
+        and isinstance(n.func.value, ast.Name)
+        and n.func.value.id == "state"
+        for n in ast.walk(fn)
+    )
+
+
+def test_secretary_route_reads_plan_from_graph_state():
+    """计划必须从**图状态**读，且两条对话链路**共用同一个取口**。
+
+    ★ 第 213 轮改口径：读状态那段被抽成唯一实现 `_digest_graph_state`
+      （流式版 `route_stream` 与它同源，否则同一个 Agent 就有了两条答复取法）。
+      于是判据从「`route()` 的函数体字面里有没有 `TODOS_STATE_KEY`」改成
+      「**读取点唯一 + 两条链路都走它**」—— 前者在重构后变成钉住实现形态的
+      **负资产**（它红了，而产品行为是对的），后者才是这条用例本来要守的东西，
+      而且更强：谁再抄第二份也会被抓到。
+    """
+    tree = ast.parse((MODULES / "secretary" / "agent.py").read_text(encoding="utf-8"))
+    funcs = {
+        f.name: f
+        for f in ast.walk(tree)
+        if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    for name in ("route", "route_stream", "_digest_graph_state"):
+        assert name in funcs, f"缺函数 {name}"
+
+    # ① 两条对话链路都必须走唯一取口（各自读一遍 = 同一判定两份实现）
+    for name in ("route", "route_stream"):
+        called = {ast.unparse(c.func) for c in ast.walk(funcs[name]) if isinstance(c, ast.Call)}
+        assert "_digest_graph_state" in called, f"{name}() 没走唯一取口 _digest_graph_state"
+
+    # ② 计划确实从 state 读（它不在 messages 里，只能从 state 取）
+    digest = funcs["_digest_graph_state"]
+    assert _mentions_const(digest, "TODOS_STATE_KEY"), "_digest_graph_state 没从 state 读计划"
+    assert _calls_state_get(digest), "_digest_graph_state 没从 state 取值"
+    assert _mentions_const(digest, "plan_summary"), "计划没经 plan_summary 归一"
+
+    # ③ 唯一性：全模块碰 TODOS_STATE_KEY 的**恰好**这两个读口 ——
+    #    `_digest_graph_state`（对话副产品，读图输出）与
+    #    `current_plan`（只读端点，读 checkpoint 快照 `snapshot.values`）。
+    #    这两个读的是**两个不同对象**，不是同一判定的两份实现；
+    #    多出第三个就是又抄了一份。
+    readers = sorted(
+        f.name
+        for f in ast.walk(tree)
+        if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and _mentions_const(f, "TODOS_STATE_KEY")
+    )
+    assert readers == ["_digest_graph_state", "current_plan"], (
+        f"碰 TODOS_STATE_KEY 的函数有 {readers} —— 计划读取点必须恰好是这两个"
+    )
 
 
 def test_orchestrator_response_exposes_plan_and_is_wired():

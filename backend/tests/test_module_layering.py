@@ -83,6 +83,14 @@ MODULE_LAYERS: dict[str, str] = {
     "conversation": SHARED,
     "candidates": SHARED,
     "memory": SHARED,
+    # ★ 第 205 轮：跨 Agent 共用的**资料库只读工具**（产品库 / 选品库）。
+    #   判 SHARED 的关键：它顶层只依赖 products / candidates（两者都是 SHARED），
+    #   而三个宿主（product_research / listing_generator / secretary）**都是 PLUGIN**
+    #   —— 若把它塞进任何一家宿主，其余两家顶层 import 它就变成
+    #   「PLUGIN → PLUGIN」，本文件的红线。
+    "library": SHARED,
+    # ★ 第 283 轮新增：交易履约 + 买家反馈域。判 SHARED 不是随手选的，见 MODULE_REASONS。
+    "trade": SHARED,
 
     # ---- PLUGIN：面向用户的功能模块。插件之间**不得**顶层互相 import。
     "ad_analysis": PLUGIN,
@@ -97,6 +105,7 @@ MODULE_LAYERS: dict[str, str] = {
     "product_research": PLUGIN,
     "review_analyst": PLUGIN,
     "secretary": PLUGIN,
+    "skills": PLUGIN,
     "voice_clone": PLUGIN,
 }
 
@@ -120,6 +129,23 @@ MODULE_REASONS: dict[str, str] = {
         "跨会话**长期记忆**（用户画像 / 偏好）。被 secretary 消费以注入 system prompt，"
         "与 conversation 同为面向 Agent 的基础设施；★ 按 owner_id（人）分片、"
         "不是 thread_id（会话）⇒ 这也是它另立一包的原因",
+    "library":
+        "资料库（第 218 轮起覆盖全部 6 个库）的**只读工具**，由多家 Agent 共用"
+        "同一实现（第 205 轮收敛「同端点多名」）。判 SHARED 的理由：宿主全在 PLUGIN 层，"
+        "谁也不能 import 谁 ⇒ 共用件只能落在它们**共同的上层**；"
+        "它自身只顶层依赖 products / candidates（均 SHARED），方向合法 ——"
+        "第 218 轮新增的 4 个库（assets / monitors / knowledge_base / platform_rules）"
+        "都是 PLUGIN，一律**函数内延迟 import**，没有产生新的顶层边",
+    "trade":
+        "交易履约 + 买家反馈域的**主数据**（订单 / 明细 / 物流 / 差评 / 归因 / 补偿规则 / "
+        "SKU 健康分）。判 SHARED 而非 PLUGIN 有两个硬理由：\n"
+        "  ① 它是多家 Agent 共用的实体 —— 客服（差评处理）、复盘师（健康分）、\n"
+        "     选品（补偿成本）读的都是同一份；而宿主（customer_service 等）\n"
+        "     **全在 PLUGIN 层**，若 trade 判 PLUGIN，它们顶层 import 它就踩\n"
+        "     「PLUGIN → PLUGIN」红线；\n"
+        "  ② `amazon_sp`（SHARED）的订单 / 评论拉取钩子以本模块的载荷契约为真源，\n"
+        "     若 trade 判 PLUGIN，则「SHARED → PLUGIN」同样违规。\n"
+        "自身顶层只依赖 core.*（KERNEL）与 products（SHARED），方向合法。",
     "ad_analysis": "广告分析视图；只被前端直接调用，无模块间顶层引用 ⇒ 插件",
     "aigc_media": "AIGC 图片 / 视频生成；产出物经 assets 落库，模块间无顶层共享 ⇒ 插件",
     "assets": "素材库；仅被 secretary 的**函数内**工具引用（非顶层），无共享需求 ⇒ 插件",
@@ -133,6 +159,12 @@ MODULE_REASONS: dict[str, str] = {
     "review_analyst": "运营复盘；经数据源工厂消费 amazon_sp（SHARED），自身不被引用 ⇒ 插件",
     "secretary": "店秘书（主对话 Agent）；顶层依赖 products / stores / billing / conversation，"
                  "全部落在 SHARED / KERNEL ⇒ 插件",
+    "skills": "技能仓库（第 181 轮 · 批 B）：全局技能的新增 / 编辑 / 版本 / 权限 / 工具定义，"
+              "以及「技能启用给哪些 Agent」的勾选关系。★ 判成 PLUGIN 而不是 SHARED 的关键："
+              "**机制不在本包** —— 渐进披露的两级（目录注入 `prompt_sections`、正文按需加载 "
+              "`load_skill` 工具装配）都住在 `ai_infra/`，本包只剩「内容 + HTTP 契约面 + "
+              "后台 seed」；且**没有任何模块在顶层引用它**（消费是运行期经注册表，不是 import）。"
+              "它顶层依赖 stores（KERNEL，只为取演示账号口径）⇒ 方向合法",
     "voice_clone": "声音复刻；自足功能，无其它模块顶层引用 ⇒ 插件",
 }
 

@@ -11,29 +11,45 @@ HITL 真接入：`save_candidate` 的人工审批闸门（2026-09-17，第 131 �
     「降级为不审批」。而本仓 `graph_for_session()` 在缺会话 / 缺身份时，
     返回的正是**不带 checkpointer 的图 + 空 config**。
 
-挂载目标为什么只有一个：
+挂载目标为什么**一开始只有一个**（第 204 轮起是两个，见下文 ★★）：
   全仓 8 个工具注册表 / 41 个工具（AST 全盘扫描，见
-  `.workbuddy/probes/out-r131-a2-toolmatrix.txt`）：
+  `.workbuddy/probes/out-r131-a2-toolmatrix.txt`，**第 131 轮的读数**）：
 
     · 只有 `product_research_tools` 与 `listing_tools` 被**生产代码装配**；
       其余 6 张注册表（ad_analysis / aigc_media / competitor_intel /
       customer_service / review_analyst）的生产装配点数都是 **0**（死代码）。
+      ★★ 第 204 轮复算：**这 6 张现在全部有装配点**（competitor_intel 第 198 轮、
+        review_analyst 更早、ad_analysis / aigc_media / customer_service 第 204 轮）
+        ⇒ 上面这行是**当时**的读数，留作沿革，不再是现状。
     · `listing_tools` 的 8 个工具全是「生成 / 优化 / 评分」——**零副作用**。
-    · `product_research_tools` 里真正写库的只有 `save_candidate`；
-      `track_batch_asins` 只读内存 mock。
+    · `product_research_tools` 里真正写库的有 3 个：`save_candidate`
+      （第 131 轮接线）与第 205 轮接入的 `review_candidate` /
+      `approve_candidate`；其余工具全是只读。
+      ★ 第 207 轮更正：本行原文举例写的是 `track_batch_asins` —— 它属于
+        `competitor_intel_tools`（**不在** `product_research_tools` 里），
+        且已于第 207 轮退役，故改为不举例。
       ★ 第 143 轮 A4 更正：`customer_service.create_ticket` **不再是**"只构造对象
         返回（`ticket_id` 现编、零持久化）" —— A4 给它建了 `cs_tickets` 表并真的
-        落库（写路径还接了 strict 归属守卫）。但它**依然不构成本节的候选**，
-        理由换了一条：`customer_service_tools` 的**生产装配点数是 0**（悬空），
-        工具压根没绑给任何 Agent ⇒ 不会有 LLM 能调到它。
-        ⇒ 结论「有外部副作用 + 真被装配的 agent 工具全仓恰好 1 个」不变，
-          但**理由**从「零副作用」变成了「注册表悬空」—— 这两者不能混为一谈。
+        落库（写路径还接了 strict 归属守卫）。
+      ★★ 第 204 轮再更正：`customer_service_tools` 的**生产装配点数已不是 0** ——
+        它随 `CustomerServiceAgent._build_router()` 真正装配，`create_ticket`
+        因此**进入了模型可调范围**。它的副作用档是 `side_effects: True`
+        ⇒ `BaseAgent._wrap_hitl_tools()` 会自动给它包审批，且 `_build_router()`
+        已同现 `checkpointer=get_checkpointer()`（下文判据 ④ 覆盖）。
+        ⇒ 本节的结论随之改写。
 
-  ⇒ 「有外部副作用 + 真被装配」的 agent 工具，**全仓恰好 1 个**。
+  ⇒ 「有外部副作用 + 真被装配」的 agent 工具，**全仓 4 个**：
+     `save_candidate`（第 131 轮接线）、`create_ticket`（第 204 轮接线），
+     以及第 205 轮随候选生命周期下沉而接入的 `review_candidate` /
+     `approve_candidate`（这两条在 REST 侧本来就写库，只是 Agent 此前够不着）。
 
 ★ 反向注入（改坏了必须转红，否则这些用例是在空跑）：
-  ① 把 `_build_router()` 里的 `hitl_tools=["save_candidate"]` 删掉 ⇒
-     `test_router_wraps_save_candidate_only` 转红（`hitl_tool_names` 为空）。
+  ① 把某个写库工具的 `metadata` 从 `SIDE_EFFECT_METADATA` 改回
+     `READ_ONLY_METADATA`（或把 `metadata=` 整条删掉）⇒
+     `test_router_wraps_exactly_the_gated_tools` 转红（名单少一个 / 为空）。
+     ★ 注：批 B2（第 145 轮）起审批名单由 `has_side_effects()` **自动推导**，
+       业务侧已无手写 `hitl_tools=` 名单可删 —— 原注记的改法已失效，
+       据此改写（同上文 `test_router_carries_checkpointer` 那条的缘起）。
   ② 把 `call_tool_with_hitl` 里的 `thread_id` 守卫删掉 ⇒
      `test_hitl_refuses_without_thread_id` 转红（不再是明确拒绝，
      而是 `interrupt()` 的底层错穿透）。
@@ -56,30 +72,38 @@ BACKEND_DIR = pathlib.Path(__file__).resolve().parents[1]
 # ====== A. 挂载形态（零 IO）======
 
 
-def test_router_wraps_save_candidate_only():
+def test_router_wraps_exactly_the_gated_tools():
     """
-    `product_research` 的 router 子层里：**只有** `save_candidate` 被审批包装。
+    `product_research` 的 router 子层里：**只有**声明了副作用的工具被审批包装。
 
-    ★ 为什么「只有」也要断言：包装是**按工具名**命中的（`tool.name in
+    ★ 为什么「只有这些」也要断言：包装是**按工具名**命中的（`tool.name in
       hitl_tool_names`）。一旦名单写错（比如写成了 `save_candidates`），
       包装会**静默落空**——`hitl_tool_names` 看着非空、日志也不报错，
       但没有任何工具受保护。反向断言「其余工具没被误包」则挡住写反成
       「全都包」的另一头（那会让只读工具也要审批，功能直接不可用）。
+
+    ★ 名单为什么是这三个（第 205 轮从 1 个扩到 3 个）：新增的
+      `review_candidate` / `approve_candidate` 都声明了 `SIDE_EFFECT_METADATA`
+      （会写库），而审批名单是 `BaseAgent._wrap_hitl_tools()` 按
+      `has_side_effects()` **自动推导**的 —— 业务侧没有手写名单可漏。
+      ⇒ 以后再加写库工具，本条会**先红**，逼人确认界面文案与提示是否也要改。
     """
     from modules.product_research.agent_product_research import ProductResearchAgent
 
     router = ProductResearchAgent()._build_router()
     assert router is not None, "router 子层没建起来（ENABLE_LLM 被关了？）"
 
-    assert router.hitl_tool_names == {"save_candidate"}
+    gated = {"save_candidate", "review_candidate", "approve_candidate"}
+    assert router.hitl_tool_names == gated
 
     by_name = {t.name: t for t in router.tools}
-    assert "save_candidate" in by_name, "工具名漂移 ⇒ 名单永远命中不到"
+    for n in sorted(gated):
+        assert n in by_name, f"{n} 不在工具表里 —— 名字漂移 ⇒ 名单永远命中不到"
+        assert by_name[n].description.startswith("[需人工审批]"), (
+            f"{n} 没有审批前缀 ⇒ 未被包装"
+        )
 
-    tgt = by_name["save_candidate"]
-    assert tgt.description.startswith("[需人工审批]"), "没有审批前缀 ⇒ 未被包装"
-
-    others = {n: t for n, t in by_name.items() if n != "save_candidate"}
+    others = {n: t for n, t in by_name.items() if n not in gated}
     for n, t in others.items():
         assert not t.description.startswith("[需人工审批]"), (
             f"{n} 也被包了审批 —— 只读工具不该要审批（会让功能不可用）"
@@ -104,15 +128,31 @@ def test_wrapped_tool_keeps_name_and_schema():
     unwrapped = {
         t.name for t in router.tools if not t.description.startswith("[需人工审批]")
     }
-    wrapped = [t for t in router.tools if t.description.startswith("[需人工审批]")]
-    assert len(wrapped) == 1
+    by_wrapped = {
+        t.name: t for t in router.tools if t.description.startswith("[需人工审批]")
+    }
+    assert set(by_wrapped) == {
+        "save_candidate",
+        "review_candidate",
+        "approve_candidate",
+    }, f"被包装的集合漂了：{sorted(by_wrapped)}"
 
-    tgt = wrapped[0]
-    assert tgt.name == "save_candidate", "包装后工具名被改了"
-    props = set((tgt.args_schema.model_json_schema().get("properties") or {}).keys())
-    assert props == {"asin", "title", "source_keyword"}, (
-        f"入参 schema 漂移：{sorted(props)}（`config` 绝不能出现在这里）"
-    )
+    # ★ 三个工具**逐个**核 schema：新增的两个也要满足同一条硬要求
+    #   （名字不能变、`config` 不能暴露给模型）。只核 wrapped[0] 会让
+    #   后加进来的那两个**完全不被这条门禁覆盖** —— 正是本仓最警惕的
+    #   「集合扩大了、判据还只盯着第一个」。
+    for name, expect in (
+        ("save_candidate", {"asin", "title", "source_keyword"}),
+        ("review_candidate", {"candidate_id", "review_status", "review_notes"}),
+        ("approve_candidate", {"candidate_id"}),
+    ):
+        got = set(
+            (by_wrapped[name].args_schema.model_json_schema().get("properties") or {}).keys()
+        )
+        assert got == expect, (
+            f"{name} 入参 schema 漂移：{sorted(got)}（期望 {sorted(expect)}；"
+            f"`config` 绝不能出现在这里）"
+        )
     assert "save_candidate" not in unwrapped
 
 
@@ -398,10 +438,14 @@ async def test_save_candidate_tool_passes_shop_id(monkeypatch):
       （把人支去查一个不存在的问题）。实测：`shop_id` 已绑定时工具路径
       仍 100% 拒写、`create_candidate` 零调用。
 
-    ★ 为什么这条测试用「零真实写库」的方式写：把 `create_candidate` /
-      `candidate_exists` 换成记录器，只断言**归属被传下去了**。
+    ★ 为什么这条测试用「零真实写库」的方式写：把 `create_candidate`
+      换成记录器，只断言**归属被传下去了**（以及判重参数被传下去了）。
       真去连库会让这条用例依赖环境（PG 起没起、店铺存不存在），
       而它要钉的是一个**纯参数传递**问题。
+
+    ★ 第 216 轮：判重已从**本层**收口进**写入口**（`on_duplicate="skip"`），
+      所以记录器从两个改成一个，并**顺带钉住那个参数** —— 否则「谁在判重」
+      会悄悄漂回本层，而本层对「前端手动录入」那条路没有约束力。
     """
     import json as _json
 
@@ -417,18 +461,22 @@ async def test_save_candidate_tool_passes_shop_id(monkeypatch):
         _current_shop_id,
     )
 
-    seen = {"create": [], "exists": []}
+    seen = {"create": []}
 
-    async def _fake_create(payload, shop_id=None):
-        seen["create"].append({"asin": payload.get("asin"), "shop_id": shop_id})
-        return {"id": "probe", "asin": payload.get("asin"), "shop_id": shop_id}
-
-    async def _fake_exists(asin, shop_id=None):
-        seen["exists"].append({"asin": asin, "shop_id": shop_id})
-        return False
+    async def _fake_create(payload, shop_id=None, **kw):
+        seen["create"].append({
+            "asin": payload.get("asin"),
+            "shop_id": shop_id,
+            "on_duplicate": kw.get("on_duplicate"),
+        })
+        # ★ 桩必须带上 `deduped`：`_write_candidates` 按它分流 saved / skipped
+        #   （第 216 轮）。漏了它虽然走 saved 分支，但形状就不像真写入口了。
+        return {
+            "id": "probe", "asin": payload.get("asin"),
+            "shop_id": shop_id, "deduped": False,
+        }
 
     monkeypatch.setattr(cserv, "create_candidate", _fake_create)
-    monkeypatch.setattr(cserv, "candidate_exists", _fake_exists)
 
     singleton = pr_tools._service.agent
     original_last_products = singleton._last_products
@@ -456,6 +504,10 @@ async def test_save_candidate_tool_passes_shop_id(monkeypatch):
         assert seen["create"][0]["shop_id"] == "probe-shop-A", (
             "写库归属不是已校验的 shop_id —— 漏传会让 _write_candidates 硬拒绝 "
             "（症状：提示『请先选一个店铺』，而用户明明选过）"
+        )
+        assert seen["create"][0]["on_duplicate"] == "skip", (
+            "判重必须交给**写入口**（on_duplicate='skip'）—— 本层再自己查一遍 "
+            "就是同一判定两份实现挂在错地方，而 REST 那条路仍然不判重"
         )
     finally:
         singleton._last_products = original_last_products
@@ -489,7 +541,6 @@ async def test_save_candidate_tool_still_refuses_without_shop(monkeypatch):
         raise AssertionError("无归属时不该走到写库")
 
     monkeypatch.setattr(cserv, "create_candidate", _boom)
-    monkeypatch.setattr(cserv, "candidate_exists", _boom)
 
     singleton = pr_tools._service.agent
     original_last_products = singleton._last_products

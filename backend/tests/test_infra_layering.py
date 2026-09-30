@@ -278,15 +278,21 @@ def test_business_prompts_are_owned_by_business_modules():
     """6 份业务提示词必须由各业务模块各自持有并注册。"""
     import importlib
 
-    from ai_infra.llm import get_prompt_template
+    from ai_infra.llm import get_prompt_spec, get_prompt_template
 
     keys = ["product_research", "listing_generator", "ad_analysis",
             "customer_service", "competitor_intel", "aigc_media"]
+    # ★ 第 283 轮 A 档：变量契约成为规格的一部分，带变量的模板**必须**传参 ——
+    #   这里若漏写，缺变量会抛 `PromptVariableMissing`（而不是把 `{market}` 发给模型）。
+    vars_by_key = {"product_research": {"market": "全球"}}
     for k in keys:
         importlib.import_module(f"modules.{k}.prompts")
-        got = get_prompt_template(k)
+        got = get_prompt_template(k, **vars_by_key.get(k, {}))
         assert got and len(got) > 50, f"{k}: 提示词为空或过短"
         assert (BACKEND / "modules" / k / "prompts.py").exists()
+        # 渲染结果携带版本与指纹（可观测性：线上跑的是哪一版可被指认）
+        spec = get_prompt_spec(k)
+        assert got.version == spec.version and got.fingerprint == spec.fingerprint
 
 
 def test_get_prompt_template_raises_on_unregistered():

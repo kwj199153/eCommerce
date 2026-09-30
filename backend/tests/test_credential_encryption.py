@@ -40,22 +40,37 @@ from core.security.credentials import (
     generate_key,
     is_encrypted,
 )
+# 第 318 轮：端点现在会真去平台验一次 ⇒ 这些用例必须声明「验证结果是什么」。
+from modules.stores.connect import VerifyStatus
+
+# 第 318 轮：三个共用辅助上移到 `tests/connect_testkit.py`（两个文件共用，
+# 避免同一能力两份实现 —— 见该模块 docstring）。
+from connect_testkit import drop_store, make_store, read_raw_credentials
 
 
-# 用一个特征鲜明的值，便于断言「它没出现在密文里」
+# 一组特征鲜明的**假**凭据，便于断言「它们没出现在密文里」。
+#
+# ★★★ 第 318 轮（2026-09-29）：键名必须与 `AmazonConnector.fields()` **对齐**。
+#   连接端点现在会先用**真实 schema** 做白名单收敛（`normalize`：未声明的键直接丢）
+#   与必填复核（`require`：缺必填 ⇒ 400，且发生在联网之前）。
+#   改造前这份 payload 是 `seller_id / client_secret / refresh_token` ——
+#   `seller_id` 根本不在 schema 里（LWA 用的是 `client_id`），且缺 3 个必填，
+#   于是整组端点用例会以「缺少必填字段」红，而**红的原因看着像端点坏了**。
+#
+#   `test_secret_payload_matches_amazon_schema` 把这条对齐关系本身钉成判据：
+#   字段改名时它会直接指名道姓，而不是留下一堆误导性的失败。
 SECRET = {
-    "seller_id": "A1B2C3D4E5F6G7",
+    "client_id": "amzn1.application-oa2-client.FAKE-0000",
     "client_secret": "AKIA-SUPER-SECRET-12345",
     "refresh_token": "Atzr|IwEBIF-not-a-real-token",
+    "aws_access_key": "AKIA-FAKE-ACCESS-KEY",
+    "aws_secret_key": "FAKE-AWS-SECRET-VALUE",
 }
 
 
-@pytest.fixture
-def with_key(monkeypatch):
-    """装一个合法 Fernet 密钥（function 级，不污染其他用例）"""
-    key = generate_key()
-    monkeypatch.setattr(config, "credentials_encryption_key", key, raising=False)
-    return key
+# ★ `with_key` 已上移到 `tests/conftest.py`（本文件与 `test_store_connect.py`
+#   共用）。留两份就是「同一能力两份实现」：改一处漏一处时，
+#   其中一个文件会**静默地**不再覆盖「配了密钥」的情形。
 
 
 @pytest.fixture
@@ -63,6 +78,35 @@ def without_key(monkeypatch):
     """显式清空密钥 —— 环境里就算配了也不影响本用例"""
     monkeypatch.setattr(config, "credentials_encryption_key", "", raising=False)
     return ""
+
+
+# ====== 0. 测试载荷与真实 schema 的对齐（★ 第 318 轮新增） ======
+
+def test_secret_payload_matches_amazon_schema():
+    """本文件的 `SECRET` 必须与亚马逊连接器声明的字段**完全对齐**。
+
+    ★ 为什么这条要单独成例：连接端点会先用**真 schema** 做白名单收敛
+      （未声明的键直接丢）与必填复核（缺必填 ⇒ 400）。
+      一旦 `AmazonConnector.fields()` 改了字段名而这里没跟上，
+      下游用例会以「缺少必填字段」红 —— 而那个报错**看起来像端点坏了**，
+      排查方向完全错。把这条对齐关系本身钉成判据，红的时候就会直接指名道姓。
+    """
+    from modules.stores.connect.registry import get_connector
+
+    connector = get_connector("amazon_us")
+    declared = {f.key for f in connector.fields()}
+    required = {f.key for f in connector.required_fields()}
+
+    unknown = set(SECRET) - declared
+    assert not unknown, (
+        f"SECRET 里有连接器未声明的字段：{sorted(unknown)} —— "
+        "它们会被 normalize() 白名单丢弃，下游用例会静默测不到这些值"
+    )
+    missing = required - set(SECRET)
+    assert not missing, (
+        f"SECRET 缺必填字段：{sorted(missing)} —— 端点会在 require() 处 400，"
+        "下游用例全部变红且原因看着像端点坏了"
+    )
 
 
 # ====== 1. 加解密本身 ======
@@ -180,45 +224,9 @@ def test_decrypt_with_rotated_key_fails_loudly(monkeypatch):
 #   ★ 建店走**真实接口**：`_get_store()` 读的是内存缓存 `_store_db`，
 #     只往 PG 插行是打不到端点的（会 404 而不是走到凭证逻辑）。
 
-async def _make_store(client, headers) -> str:
-    """经真实接口建店（同时进内存缓存与 PG，与生产路径一致）。"""
-    r = await client.post(
-        "/api/v1/stores",
-        json={"name": f"[p1a] credential probe {uuid.uuid4().hex[:8]}",
-              "platform": "amazon_us"},
-        headers=headers,
-    )
-    assert r.status_code == 201, f"建店失败 {r.status_code} {r.text[:300]}"
-    return r.json()["id"]
-
-
-async def _drop_store(client, headers, store_id: str) -> None:
-    """经真实接口删店（同时清内存缓存与 PG）；失败则回退裸 SQL + 清内存。"""
-    r = await client.delete(f"/api/v1/stores/{store_id}", headers=headers)
-    if r.status_code not in (200, 204, 404):
-        from sqlalchemy import text
-        from core.database import async_session_factory
-
-        async with async_session_factory() as db:
-            await db.execute(text("DELETE FROM stores_store WHERE id = :i"), {"i": store_id})
-            await db.commit()
-    from modules.stores.router import _store_db
-    _store_db.pop(store_id, None)
-
-
-async def _read_api_credentials(store_id: str):
-    """直查数据库原文（不经过 ORM，避免任何隐式解密）"""
-    from sqlalchemy import text
-    from core.database import async_session_factory
-
-    async with async_session_factory() as db:
-        return (await db.execute(
-            text("SELECT api_credentials FROM stores_store WHERE id = :i"), {"i": store_id}
-        )).scalar()
-
 
 async def test_connect_without_key_returns_503_and_writes_nothing(
-    client, user, auth_headers, without_key
+    client, user, auth_headers, without_key, stub_connector
 ):
     """
     未配置密钥时连接平台 ⇒ **503 + 可读原因**，且数据库里一个字节都没写。
@@ -227,8 +235,17 @@ async def test_connect_without_key_returns_503_and_writes_nothing(
       ① 失败原因指向真因（出现「SHOP_CREDENTIALS_ENCRYPTION_KEY」）；
       ② `api_credentials` 仍为 NULL —— 证明「拒绝」真的生效了，
          而不是「返回了 503 但顺手把明文写进去了」。
+
+    ★★★ 第 318 轮补的第三半（**顺序**判据）：密钥检查必须在**联网之前**。
+      这里把桩装成「验证会通过」，于是能证明：即使凭据本身没问题，
+      缺密钥仍然以 503 收场，**且桩的 `verify()` 一次都没被调用**
+      （末行 `stub.seen is None`）。
+      若密钥检查被挪到落库那一刻（即验证之后），本用例就会变成
+      「先拿真凭据去打平台、再报 503」—— 而那次真打出去的调用一旦回
+      「凭据无效」，真因（服务端漏配密钥）就被完全掩盖了。
     """
-    store_id = await _make_store(client, auth_headers)
+    stub = stub_connector("amazon_us", VerifyStatus.OK)
+    store_id = await make_store(client, auth_headers)
     try:
         r = await client.post(
             f"/api/v1/stores/{store_id}/connect",
@@ -239,20 +256,32 @@ async def test_connect_without_key_returns_503_and_writes_nothing(
         assert "SHOP_CREDENTIALS_ENCRYPTION_KEY" in r.text, r.text[:300]
 
         # ② 零写入证据
-        assert await _read_api_credentials(store_id) is None
+        assert await read_raw_credentials(store_id) is None
+        # ③ 顺序证据：密钥检查拦在联网之前 ⇒ 桩的 verify 根本没被调用
+        assert stub.seen is None, (
+            "密钥检查没有拦在联网之前：凭据已被送去平台验证 —— "
+            "这会在凭据恰好不对时把「服务端漏配密钥」这个真因掩盖掉"
+        )
     finally:
-        await _drop_store(client, auth_headers, store_id)
+        await drop_store(client, auth_headers, store_id)
 
 
 async def test_connect_with_key_stores_ciphertext_and_is_decryptable(
-    client, user, auth_headers, with_key
+    client, user, auth_headers, with_key, stub_connector
 ):
     """
     配好密钥后：接口 200，库里是 `enc:v1:` 密文、不含明文，且能解回原值。
 
     ★ 反向保护：防止「为了让 503 用例变绿，干脆把写入整段删掉」。
+
+    ★★★ 第 318 轮：这里必须装配桩把验证装成「通过」。
+      改造前不需要桩（端点压根不验证）；现在「200」这个结果
+      **以验证通过为前提** —— 不装桩的话，本用例会真的拿一组假凭据去打
+      Amazon，最终以 400（凭据被拒绝 ⇒ 不落库）收场。
+      桩在这里同时是「本用例可离线跑」的保证。
     """
-    store_id = await _make_store(client, auth_headers)
+    stub_connector("amazon_us", VerifyStatus.OK)
+    store_id = await make_store(client, auth_headers)
     try:
         r = await client.post(
             f"/api/v1/stores/{store_id}/connect",
@@ -261,17 +290,19 @@ async def test_connect_with_key_stores_ciphertext_and_is_decryptable(
         )
         assert r.status_code == 200, f"{r.status_code} {r.text[:300]}"
 
-        stored = await _read_api_credentials(store_id)
+        stored = await read_raw_credentials(store_id)
         assert stored, "凭证必须真的落库了"
         assert stored.startswith(ENC_PREFIX), stored[:40]
         for v in SECRET.values():
             assert v not in stored, f"库里出现了明文 {v!r}"
         assert decrypt_credentials(stored) == SECRET
     finally:
-        await _drop_store(client, auth_headers, store_id)
+        await drop_store(client, auth_headers, store_id)
 
 
-async def test_plain_update_does_not_wipe_credentials(client, user, auth_headers, with_key):
+async def test_plain_update_does_not_wipe_credentials(
+    client, user, auth_headers, with_key, stub_connector
+):
     """
     普通「改个店铺名」**不得**把凭证密文清掉。
 
@@ -280,13 +311,16 @@ async def test_plain_update_does_not_wipe_credentials(client, user, auth_headers
       让前者同步 `api_credentials`，那么每次改名/改状态/连接都会把密文
       写成 NULL（pydantic `Store` 里**没有**该字段，所以同步过去的永远是 None）
       ⇒ 现象是「改个店铺名，平台连接悄悄掉线」，日志毫无提示。
+
+    ★ 第 318 轮：前置的「先连上」现在以**验证通过**为前提，故装配桩。
     """
-    store_id = await _make_store(client, auth_headers)
+    stub_connector("amazon_us", VerifyStatus.OK)
+    store_id = await make_store(client, auth_headers)
     try:
         r = await client.post(f"/api/v1/stores/{store_id}/connect",
                               json=SECRET, headers=auth_headers)
         assert r.status_code == 200, r.text[:300]
-        before = await _read_api_credentials(store_id)
+        before = await read_raw_credentials(store_id)
         assert before and before.startswith(ENC_PREFIX)
 
         u = await client.put(f"/api/v1/stores/{store_id}",
@@ -294,39 +328,44 @@ async def test_plain_update_does_not_wipe_credentials(client, user, auth_headers
                              headers=auth_headers)
         assert u.status_code == 200, u.text[:300]
 
-        after = await _read_api_credentials(store_id)
+        after = await read_raw_credentials(store_id)
         assert after == before, (
             "普通更新把凭证密文改了/清了 —— `_upsert_store_db()` 不得同步 "
             "`api_credentials`（pydantic Store 里没有该字段，同步过去只会是 NULL）"
         )
     finally:
-        await _drop_store(client, auth_headers, store_id)
+        await drop_store(client, auth_headers, store_id)
 
 
-async def test_disconnect_actually_clears_ciphertext(client, user, auth_headers, with_key):
+async def test_disconnect_actually_clears_ciphertext(
+    client, user, auth_headers, with_key, stub_connector
+):
     """
     断开连接必须**真的把密文清掉**，而不只是翻一个标志位。
 
     ★ 只翻标志而留着密文 = 「用户以为撤销了授权，密文还在库里」。
       授权撤销要落在数据上，否则它只是一个 UI 上的安慰剂。
+
+    ★ 第 318 轮：前置的「先连上」现在以**验证通过**为前提，故装配桩。
     """
-    store_id = await _make_store(client, auth_headers)
+    stub_connector("amazon_us", VerifyStatus.OK)
+    store_id = await make_store(client, auth_headers)
     try:
         r = await client.post(f"/api/v1/stores/{store_id}/connect",
                               json=SECRET, headers=auth_headers)
         assert r.status_code == 200, r.text[:300]
-        assert await _read_api_credentials(store_id) is not None
+        assert await read_raw_credentials(store_id) is not None
 
         d = await client.post(f"/api/v1/stores/{store_id}/disconnect", headers=auth_headers)
         assert d.status_code == 200, d.text[:300]
 
-        assert await _read_api_credentials(store_id) is None, (
+        assert await read_raw_credentials(store_id) is None, (
             "断开连接后密文仍在库里 —— 用户以为撤销了授权，实际没有"
         )
         # 响应体不得回带任何凭证字段
         assert "AKIA-SUPER-SECRET-12345" not in d.text
     finally:
-        await _drop_store(client, auth_headers, store_id)
+        await drop_store(client, auth_headers, store_id)
 
 
 # ====== 5. ★ 「配置项名」本身必须真的生效（第 119 轮补） ======

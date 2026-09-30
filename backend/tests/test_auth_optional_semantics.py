@@ -11,9 +11,12 @@
      它不是「optional auth（有凭据就解析身份）」，而是「**auth 整体关闭**」。
      后果：真实登录用户拿到 `None` ⇒ 下游所有 `user is None → 放行` 分支被触发：
        · `accounts.filter_accessible_stores(db, None, stores)` → 返回**全库**店铺
-         （★ 2026-09-17 已收紧为「无身份 ⇒ 空列表」，见本文件末的守卫用例）
+         （★ 2026-09-17 已收紧为「无身份 ⇒ 空列表」；第 175～177 轮进一步改为
+            「无身份 ⇒ **只给演示店铺**」，见本文件末的守卫用例）
        · `accounts.can_access_store` / `_matches` → 恒真 ⇒ 伪造 `X-Shop-ID`
          即可读写任意店铺业务数据（2026-09-15 修的 BOLA 在演示模式下原样回归）
+         （★ 第 177 轮：该分支已收紧为「只放行演示店铺」—— 单店路径与列表路径
+            现共用同一内核；此处描述的是**当时**的形态）
   ② `main.py::BUSINESS_AUTH`
         = [Depends(require_auth_if_enabled)] if config.auth_required else []
     把**运行期**判断（这次请求带没带凭据）提成了**启动期常量** ⇒
@@ -33,27 +36,11 @@ import pytest
 
 
 # ====== 夹具：演示哨兵开关 ======
-
-
-@pytest.fixture
-def demo_on():
-    """显式打开演示哨兵（不依赖 .env，避免测试结论随外部配置漂移）"""
-    from core.config import config
-
-    prev = config.demo_mode
-    config.demo_mode = True
-    yield
-    config.demo_mode = prev
-
-
-@pytest.fixture
-def demo_off():
-    from core.config import config
-
-    prev = config.demo_mode
-    config.demo_mode = False
-    yield
-    config.demo_mode = prev
+#
+# ★ 第 182 轮：`demo_on` / `demo_off` 已**提升到 `tests/conftest.py`**。
+#   本文件原先各自一份，而本轮起 `test_skill_gate.py` / `test_demo_identity.py`
+#   也要用 —— 三份实现必然有先漂移的那一份（本仓铁律）。
+#   `conftest.py` 里的同名夹具会自动被本文件取到，无需 import。
 
 
 async def _create_store(client, user, name):
@@ -120,8 +107,8 @@ async def test_anonymous_is_still_allowed_when_auth_not_required(auth_off, clien
     这是本地联调（curl / 文档站）的既有体验，修复不该把它一起收掉。
 
     ★ 2026-09-17 订正："放行"指的是**状态码**，不是"能拿到数据"：
-      本函数只收口数据可见性 ⇒ 匿名仍得 200，但 `total == 0`
-      （见下方 `test_anonymous_store_list_is_empty_not_full_library`）。
+      本函数只收口数据可见性 ⇒ 匿名仍得 200，但拿不到任何**真实**店铺
+      （见下方 `test_anonymous_store_list_has_no_real_stores`）。
     """
     r = await client.get("/api/v1/stores")
     assert r.status_code == 200, f"匿名联调被误伤: {r.status_code} {r.text[:200]}"
@@ -197,21 +184,27 @@ async def test_cross_store_business_data_access_forbidden(auth_off, client, make
 # ====== 守卫：没有身份 ⇒ 没有数据（2026-09-17 收紧）======
 
 
-async def test_anonymous_store_list_is_empty_not_full_library(auth_off, client, make_user):
+async def test_anonymous_store_list_has_no_real_stores(auth_off, client, make_user):
     """
-    ★★★ 演示档下匿名打 `/api/v1/stores`：**状态仍是 200，条数必须是 0**。
+    ★★★ 演示档下匿名打 `/api/v1/stores`：**状态仍是 200，但一家真实店铺都不能有**。
 
-    改前是"不过滤 ⇒ 返回全库"：本地 / 演示档一旦连了真实数据，匿名就能拿走
+    改前是「不过滤 ⇒ 返回全库」：本地 / 演示档一旦连了真实数据，匿名就能拿走
     全部店铺。生产档靠 `BUSINESS_AUTH` 401 先拦（所以不是线上漏洞），
     但"生产不可达"不等于"本地安全"。
 
     为什么状态码仍是 200 而不是 401：上游 `require_auth_if_enabled` 在
     `auth_required=False` 时**有意放行**匿名（本地联调 / curl / 文档站的既有体验）。
-    本函数只收口**数据可见性**，不反向改写上游的鉴权结论 ——
-    "访问被允许，但你看不到任何店铺"。
+    本函数只收口**数据可见性**，不反向改写上游的鉴权结论。
 
-    反向注入：把 `filter_accessible_stores` 的 `return []` 改回
-    `return list(stores)`，本条必须转红（`total` 会变成 >= 1）。
+    ★★ 第 177 轮改口径（消除**顺序依赖的假绿**）：
+      旧断言是 `total == 0`，它只在「内存缓存 `_store_db` 恰好为空」时才成立 ——
+      本文件单跑绿、与 `tests/test_demo_store.py`（会调 `load_stores_into_memory()`）
+      同跑才会暴露。而第 175 轮起匿名**本来就可以**看到演示店铺，绝对条数不再是 0，
+      旧断言从"太松"变成了"看运气"。
+      ⇒ 改成断言**不变量本身**：匿名拿不到任何 `is_demo=False` 的店。
+
+    反向注入：把 `filter_accessible_stores` 的演示分支改成 `return list(stores)`，
+    本条必须转红。
     """
     a = await make_user("anon-should-not-see")
     await _create_store(client, a, "匿名不该看到的店")
@@ -221,28 +214,36 @@ async def test_anonymous_store_list_is_empty_not_full_library(auth_off, client, 
     assert ra.status_code == 200, ra.text
     assert "匿名不该看到的店" in _names(ra), "车主自己都看不到了 —— 修过头了"
 
-    # 匿名：放行，但没有任何店铺
+    # 匿名：放行，但没有任何**真实**店铺
     r = await client.get("/api/v1/stores")
     assert r.status_code == 200, f"匿名联调被误伤: {r.status_code} {r.text[:200]}"
     body = r.json()
-    assert body["total"] == 0, (
-        f"★★★ 匿名拿到了 {body['total']} 家店铺 —— 演示档 fail-open 回归。"
-        "守卫应为「没有身份 ⇒ 没有数据」（返回空列表，而不是不过滤）。"
+    names = {s["name"] for s in body["stores"]}
+    assert "匿名不该看到的店" not in names, (
+        f"★★★ 匿名拿到了别人的店 {sorted(names)} —— 演示档 fail-open 回归。"
+        "守卫应为「没有身份 ⇒ 只能看到演示店铺」。"
     )
-    assert body["stores"] == [], f"stores 非空: {body['stores']}"
+    leaked = [s["id"] for s in body["stores"] if not s.get("is_demo")]
+    assert leaked == [], (
+        f"匿名拿到了非演示店铺 {leaked} —— "
+        f"守卫应为「无身份 ⇒ 只给演示店铺」（安全修复 4612abb 的成果不得回退）。"
+    )
 
 
-async def test_demo_sentinel_also_sees_no_stores(auth_off, demo_on, client, make_user):
+async def test_demo_sentinel_also_sees_no_real_stores(auth_off, demo_on, client, make_user):
     """
-    ★ `demo-token` 是**匿名演示身份**，不是真身份 ⇒ 同样走「没有身份 ⇒ 没有数据」。
+    ★ `demo-token` 是**匿名演示身份**，不是真身份 ⇒ 同样只能看到演示店铺。
 
     这条最容易漏：哨兵能拿到 200（上游按匿名放行），于是很顺手就会以为
     "演示模式本来就该看到数据"。但 `demo-token` 明文写在前端源码里
     （frontend/src/config/demoMode.ts），任何读过代码的人都能带上它 ⇒
-    若它能读到数据，等于把业务数据对全网敞开。
+    若它能读到**真实**店铺，等于把业务数据对全网敞开。
 
     ★ 与 `test_demo_sentinel_allowed_only_when_demo_mode_on` 的分工：
-      那条只断言"放行（不报 401）"，本条断言"放行也拿不到数据"。
+      那条只断言"放行（不报 401）"，本条断言"放行也只拿得到演示数据集"。
+
+    ★ 第 177 轮同 `test_anonymous_store_list_has_no_real_stores` 改口径
+      （绝对条数 ⇒ 「不含真实店铺」），理由见那条。
     """
     a = await make_user("sentinel-should-not-see")
     await _create_store(client, a, "哨兵不该看到的店")
@@ -251,12 +252,19 @@ async def test_demo_sentinel_also_sees_no_stores(auth_off, demo_on, client, make
         "/api/v1/stores", headers={"Authorization": "Bearer demo-token"}
     )
     assert r.status_code == 200, f"{r.status_code} {r.text[:200]}"
-    assert r.json()["total"] == 0, (
+    body = r.json()
+    names = {s["name"] for s in body["stores"]}
+    assert "哨兵不该看到的店" not in names, (
         "演示哨兵读到了真实店铺 —— 这个字符串是公开的，等于对任何人敞开。"
+    )
+    leaked = [s["id"] for s in body["stores"] if not s.get("is_demo")]
+    assert leaked == [], (
+        f"演示哨兵拿到了非演示店铺 {leaked} —— 哨兵不是身份，只能拿演示数据集。"
     )
 
 
 # ====== 形态门禁 ======
+
 
 
 def test_business_auth_is_not_conditionally_mounted():

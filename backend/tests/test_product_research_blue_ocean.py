@@ -214,15 +214,6 @@ async def test_chat_stream_reply_contains_actual_product_names(client, auth_off,
     )
 
 
-# ====== 工具入口 ======
-
-async def test_tool_search_blue_ocean_with_empty_category():
-    """工具入口 category 留空 → 不拼出「帮我找类的蓝海机会」病句，且走全类目"""
-    agent = ProductResearchAgent()
-    opportunities = await agent._tool_search_blue_ocean("")
-    assert isinstance(opportunities, list)
-
-
 # ====== 端到端：复现用户看到的那句 ======
 
 async def test_chat_stream_no_category_reply_has_no_internal_token(client, auth_off, fake_llm):

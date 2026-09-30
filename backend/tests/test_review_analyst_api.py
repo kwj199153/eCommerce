@@ -31,16 +31,26 @@ A4 开工前，`modules/review_analyst/` 只有 `__init__.py` / `schemas.py` / `
    不带头 ⇒ 仍然 400。若某天有人把守卫改成 optional，这条会红。
 4. **服务端注入的值被原样回显**（`test_injected_store_id_is_echoed`）：两个不同店铺
    各拿各的 `data["store_id"]` —— 证明归属真的由服务端决定。
-5. **信封与 payload 同一声音**（`test_envelope_message_matches_payload_summary`）：
-   `message` 必须等于 `data["summary"]`。A3 的教训：固定文案在「另一种形态」和
-   「失败」下都会撒谎（`competitor_intel` 曾出现 message 写「成功获取 0 个竞品」
-   而 data 里明明有完整数据）。
+5. ★★ **信封 `message` 是短回执、不是结论**（`test_envelope_message_is_receipt_not_conclusion`
+   —— 第 268 轮 B 档改判据方向）：`message` 只能是「<能力>已生成」式短句，
+   结论一律留在 `data.summary`。
+   · 旧判据（`test_envelope_message_matches_payload_summary`）钉的是
+     `message == data["summary"]` —— 它把「结论被当成回执用」写成了契约，
+     于是任何按 `message` 弹提示的实现都会把一屏结论飘到顶部
+     （第 266 轮老板报障的链1：点一下运营复盘师就弹字）。
+   · 反向也有坑：**只**断言「message 不等于 summary」的话，「谁把 summary 删了」
+     照样绿 ⇒ 本条一并发断言 `data.summary` 仍在且非空（改判据方向必须成对）。
 6. **签名层门禁（静态，不连库）**：
    · `service` 的 6 个能力必须显式接收 `store_id: str` 且**无默认值**
      （`test_service_requires_store_id_param`）—— 忘传就该 `TypeError`；
    · `tools.py` 的 6 个工具同理，`store_id` 必须**无默认值**
      （`test_tools_store_id_has_no_default`）—— 修复前是 `store_id: int = 1`，
      忘传静默复盘 1 号店，错得完全没有声音。
+7. **信封 `message` 的形态（静态 AST，不连库）**
+   （`test_envelope_message_has_no_payload_ref`）：`ReviewResponse` /
+   `ReviewChatResponse` 的 `message=` 实参**不得**引用 `summary` / `reply`
+   —— 回执不是结论。第 5 条运行时用例只打了一个端点，本形态用例管住**所有**
+   信封构造点（含以后新增的），且锚点失效（构造点少到 0）时**先 FAIL**。
 
 ⚠️ 已知的**诚实边界**（刻意不写成"通过"，避免假绿）
 --------------------------------------------------
@@ -56,6 +66,8 @@ import ast
 from pathlib import Path
 
 import pytest
+pytestmark = pytest.mark.tenant_identity
+
 
 BACKEND = Path(__file__).resolve().parents[1]
 
@@ -185,20 +197,50 @@ async def test_injected_store_id_is_echoed(client, shop_id):
     assert r.json()["data"]["store_id"] == shop_id
 
 
-async def test_envelope_message_matches_payload_summary(client):
-    """信封 `message` 与 `data.summary` 必须是同一句话 —— 两处各写一份就必然分叉。
+#: 回执**规格表**：每个端点的 `message` 期望值。
+#: ★ 改文案要同步改这里（它就是回执的规格）；这**不是**重复实现 ——
+#:   它是判据侧的期望值，生产侧的真源是 `router._report` 的 `label` 实参。
+RECEIPTS = {
+    "/api/v1/review/weekly-report": "周报已生成",
+    "/api/v1/review/monthly-review": "月度复盘已生成",
+    "/api/v1/review/ad-review": "广告归因已生成",
+    "/api/v1/review/product-performance": "商品表现已生成",
+    "/api/v1/review/inventory-health": "库存健康已生成",
+    "/api/v1/review/profit-audit": "利润审计已生成",
+}
 
-    起因（A3 / `competitor_intel` 的实测教训）：service 里 9 个方法各写
-    `result.get("message") or <写死成功文案>`，固定文案在「另一种形态」和「失败」
-    下都会撒谎（`data` 里明明是完整数据，`message` 却写「成功获取 0 个竞品」）。
+
+@pytest.mark.parametrize("path,body,name", ENDPOINTS, ids=IDS)
+async def test_envelope_message_is_receipt_not_conclusion(client, path, body, name):
+    """信封 `message` 必须是**短回执**，结论一律在 `data.summary`（第 268 轮 B 档）。
+
+    这条判据的前身是 `test_envelope_message_matches_payload_summary`（它钉的是
+    `message == data["summary"]`）—— 那不是契约，那是把**病**写成了契约：
+    前端按 `message` 弹成功提示时，点一下「运营复盘师」就会有一整段报告结论
+    飘在屏幕顶部（第 266 轮老板报障的链1）。
+
+    改判据方向必须**成对**做，否则会把「删掉结论」放过去：
+      ① 结论**还在**（`data.summary` 非空）；
+      ② `message` 是回执规格里那一句；
+      ③ `message` **不等于**结论（三条里这条最直白地钉住病根）。
     """
-    r = await client.post(
-        "/api/v1/review/weekly-report", json={"days": 7}, headers=_shop()
-    )
-    assert r.status_code == 200, r.text[:200]
+    r = await client.post(path, json=body, headers=_shop())
+    assert r.status_code == 200, f"{name} {r.status_code} {r.text[:300]}"
     payload = r.json()
-    assert payload["message"] == payload["data"]["summary"]
-    assert payload["message"]
+    data = payload["data"]
+
+    # ① 结论没有丢：它只是搬到了 data 里（这一半防「谁把 summary 删了也绿」）
+    assert data.get("summary"), f"{name} 的 data.summary 丢了或为空 —— 结论没地方去了"
+    # ② message 是规格表里那句短回执
+    assert payload["message"] == RECEIPTS[path], (
+        f"{name} 的 message 是 {payload['message']!r}，"
+        f"期望短回执 {RECEIPTS[path]!r}（改文案请同步本文件的 RECEIPTS）"
+    )
+    # ③ 回执不是结论 —— 这条直指第 266 轮报障：整段结论被当提示弹上屏
+    assert payload["message"] != data["summary"], (
+        f"{name} 又把结论塞回 message 了（{payload['message']!r}）—— "
+        "前端会把整段结论当成功提示弹到屏幕顶部"
+    )
 
 
 @pytest.mark.parametrize("days", [0, 91, -1], ids=["zero", "over90", "negative"])
@@ -242,7 +284,7 @@ SERVICE_CAPS = [
     "product_performance", "inventory_health", "profit_audit",
 ]
 TOOL_FUNCS = [
-    "_weekly_report_tool", "_monthly_review_tool", "_ad_review_tool",
+    "_weekly_report_tool", "_monthly_review_tool",
     "_product_performance_tool", "_inventory_health_tool", "_profit_audit_tool",
 ]
 
@@ -270,23 +312,65 @@ def test_service_requires_store_id_param(fname):
 
 
 @pytest.mark.parametrize("fname", TOOL_FUNCS)
-def test_tools_store_id_has_no_default(fname):
-    """工具函数的 `store_id` 同样必须无默认值（修复前的形态是 `int = 1`）。
+def test_tools_do_not_expose_store_id_to_the_llm(fname):
+    """★ 工具函数的入参里**不得出现** `store_id` / `shop_id`。
 
-    ★ 本注册表当前全仓零消费点（悬空，由
-      `test_tool_registry_guard.py::test_orphan_registry_ratchet` 钉着），
-      所以本条**不是**在说"线上安全"，而是把「接线时不许再退化成静默默认店」
-      这条要求提前固化 —— 否则接线那一刻谁都想不起来。
+    ★ 本条是「门禁的墓志铭」的现场 —— 需求变了，旧断言从资产变成负资产：
+      它原来钉的是「`store_id` 必须有形参、且**不得有默认值**」，防的是
+      「忘传 ⇒ 静默复盘 1 号店」。
+      接线时（第 166 轮 · `#726` 第 2 条）才看清：问题**不在默认值**，
+      而在**这个参数根本不该给 LLM 看见** —— 工具入参是模型自己填的，
+      它会照着自己编一个 `store_id`，而编出来的值可能正好**是别人的店铺**
+      （BOLA 的 LLM 版本，比「忘传落到 1 号店」更难发现：它看起来一切正常）。
+
+      ⇒ 要求从「无默认值」升级为「**不存在**」：
+        · 归属只能经 ContextVar 由服务端入口（`agent.invoke()`）注入，
+          范式同 `modules/product_research/agent_product_research.py::_current_shop_id`；
+        · 缺归属时必须**硬拒绝**（见下一条运行期用例）。
+
+      旧断言在新形态下必然红，而**这条说明就是它红的价值**：逼改动者来读，
+      而不是把形参悄悄留着当第二份真源。
     """
     args = _func_args("modules/review_analyst/tools.py")[fname]
-    try:
-        default = _param_default(args, "store_id")
-    except AssertionError as e:
-        raise AssertionError(f"{fname} 缺 store_id 形参：{e}")
-    assert default is None, (
-        f"{fname} 的 store_id 又有默认值了（{ast.unparse(default)!r}）—— "
-        "忘传会静默复盘那家店，而不是 TypeError"
+    names = [a.arg for a in args.args] + [a.arg for a in args.kwonlyargs]
+    assert "store_id" not in names, (
+        f"{fname} 的入参里又出现了 store_id —— 工具入参**是给 LLM 看的**，"
+        "模型会自己编一个值（可能正好是别人的店铺）。"
+        "归属必须经 ContextVar 由服务端入口注入。"
     )
+    assert "shop_id" not in names, f"{fname} 的入参里出现了 shop_id（同上）"
+
+
+async def test_tools_refuse_without_server_side_shop_context():
+    """运行期印证：没有服务端注入的店铺归属时，工具**显式拒绝**，不兜默认店。
+
+    ★ 为什么必须是「拒绝」而不是「用个默认店铺」：
+      数据源（尤其 Mock 档）对**任意** store_id 都返回同一批数据 ⇒ 兜一个默认值
+      等于给出一份「看起来正常、其实不知属于谁」的报表。那是**归因错误**，
+      比一句可行动的「请先选店铺」糟得多。
+    """
+    import json as _json
+
+    from modules.review_analyst import tools as ra_tools
+    from modules.review_analyst.agent import _current_shop_id
+
+    # 确保没有残留（ContextVar 是模块级全局，别的用例可能写过）
+    assert _current_shop_id.get() is None, "上一条用例没还原 ContextVar，先修夹具"
+
+    for fn in (
+        ra_tools._weekly_report_tool,
+        ra_tools._monthly_review_tool,
+        ra_tools._product_performance_tool,
+        ra_tools._inventory_health_tool,
+        ra_tools._profit_audit_tool,
+    ):
+        raw = await fn()
+        data = _json.loads(raw)
+        assert data.get("found") is False, (
+            f"{fn.__name__} 在没有店铺归属时没有显式拒绝：{data}"
+        )
+        assert data.get("reason") == "missing_shop_context"
+        assert "店铺" in (data.get("error") or ""), "拒绝文案要可行动（说清怎么办）"
 
 
 def test_request_model_has_no_store_id_field():
@@ -383,3 +467,112 @@ def test_missing_shop_context_is_a_value_error():
     from modules.review_analyst import service
 
     assert issubclass(service.MissingShopContext, ValueError)
+
+
+# ============================================================
+# 5. 信封语义层门禁（静态 AST，不连库、不 import 数据源）
+# ============================================================
+
+#: 响应信封模型 —— 它们的 `message=` 只承载短回执。
+ENVELOPE_MODELS = {"ReviewResponse", "ReviewChatResponse"}
+
+#: 出现在 `message=` 表达式里就说明「结论/正文又被当成回执用了」的符号名。
+MESSAGE_FORBIDDEN = {"summary", "reply"}
+
+
+def _symbolic_names(expr: ast.expr) -> set[str]:
+    """收集表达式引用到的**符号名**：属性名 + 变量名 + 字符串字面量的值。
+
+    例：`data.get("summary") or f"{label}已生成"` ⇒ `{"data", "get", "summary", "label"}`；
+        `"复盘完成"` ⇒ `{"复盘完成"}`。
+    """
+    out: set[str] = set()
+    for node in ast.walk(expr):
+        if isinstance(node, ast.Attribute):
+            out.add(node.attr)
+        elif isinstance(node, ast.Name):
+            out.add(node.id)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            out.add(node.value)
+    return out
+
+
+def _envelope_message_exprs_in(src: str) -> list[tuple[str, ast.expr]]:
+    """从**源码文本**里取出每个响应信封的 `message=` 实参表达式。
+
+    ★ 为什么走 AST 而不是 `unparse` 之后做子串匹配（本仓铁律）：字符串判据会被
+      **注释 / docstring** 骗过 —— 而注释恰好是最爱写「以前这里塞过 summary」的
+      地方，于是判据变成恒真（假绿）。
+    """
+    tree = ast.parse(src)
+    out: list[tuple[str, ast.expr]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        if isinstance(fn, ast.Name):
+            name = fn.id
+        elif isinstance(fn, ast.Attribute):
+            name = fn.attr
+        else:
+            continue
+        if name not in ENVELOPE_MODELS:
+            continue
+        kw = next((k for k in node.keywords if k.arg == "message"), None)
+        if kw is not None:
+            out.append((name, kw.value))
+    return out
+
+
+def _envelope_message_exprs(rel: str) -> list[tuple[str, ast.expr]]:
+    return _envelope_message_exprs_in(
+        (BACKEND / rel).read_text(encoding="utf-8", errors="replace")
+    )
+
+
+def test_envelope_message_has_no_payload_ref():
+    """★ 信封的 `message=` **不得**由 `summary` / `reply` 派生（第 268 轮 B 档）。
+
+    起因（两处都实测过）：
+      · `_report`：`message=data.get("summary") or f"{label}已生成"`；
+      · `/review/chat`：`message=result.reply`。
+    前端把非 GET 响应的 `message` 当「操作回执」弹提示 ⇒ 点一下运营复盘师，
+    整段报告结论被弹到屏幕顶部（第 266 轮老板报障的链1）。
+
+    ★ 判据是**形态**判据：逐个信封构造点取 `message=` 的实参表达式，看它引用了
+      哪些符号 —— 而不是在源码里搜字符串（docstring 会把它喂饱）。
+
+    ★ 反向注入（`.workbuddy/probes/r268_envelope_message_reverse_inject.py`，4/4）：
+      把两条 message 分别改回 `data.get("summary") or …` / `result.reply` ⇒ 各自转红；
+      把 `ReviewResponse` 改名 ⇒ 构造点少到 0 ⇒ 也转红（锚点失效不许静默放行）。
+    """
+    exprs = _envelope_message_exprs("modules/review_analyst/router.py")
+    assert len(exprs) >= 2, (
+        f"只找到 {len(exprs)} 个信封构造点 —— 构造点被改名/移走时，下面的循环会"
+        "退化成**空集恒真**，所以这里必须先 FAIL（「拿不到清单 ≠ 清单为空」）"
+    )
+    for model, expr in exprs:
+        bad = _symbolic_names(expr) & MESSAGE_FORBIDDEN
+        assert not bad, (
+            f"{model} 的 message= 引用了 {sorted(bad)} —— 回执字段只放短回执"
+            f"（实测表达式：{ast.unparse(expr)}）。"
+            "结论/正文必须留在 data 子字段里（data.summary / data.reply），"
+            "否则前端会把整段结论当成功提示弹上屏。"
+        )
+
+
+@pytest.mark.parametrize("snippet,should_catch", [
+    ('ReviewResponse(success=True, message=data.get("summary") or "周报已生成")', True),
+    ("ReviewChatResponse(success=True, message=result.reply)", True),
+    ('ReviewResponse(success=True, message=f"{label}已生成")', False),
+    ('ReviewChatResponse(success=True, message="复盘未取到数据" if degraded else "复盘完成")', False),
+], ids=["old-report-summary", "old-chat-reply", "new-report-receipt", "new-chat-receipt"])
+def test_envelope_message_judge_selfcheck(snippet, should_catch):
+    """判据自检：历史形态必须被抓到，现形态**不得**被误伤（否则绿/红都不可信）。"""
+    exprs = _envelope_message_exprs_in(snippet)
+    assert len(exprs) == 1, f"自检样本没被解析成恰好一个信封构造点：{snippet!r}"
+    caught = bool(_symbolic_names(exprs[0][1]) & MESSAGE_FORBIDDEN)
+    if should_catch:
+        assert caught, f"判据瞎了：{snippet!r} 是历史病根形态，却没抓到"
+    else:
+        assert not caught, f"判据误伤：{snippet!r} 是合规形态（短回执），却被判红"

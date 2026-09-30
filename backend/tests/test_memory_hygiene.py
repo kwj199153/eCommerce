@@ -83,7 +83,7 @@ def test_index_and_shards_match_both_ways():
 
 
 def test_inject_alarm_script_matches_hot_line():
-    """★ 反回归：`check_inject_alarm.py` 的计数锚点必须仍能匹配热区那一行。
+    r"""★ 反回归：`check_inject_alarm.py` 的计数锚点必须仍能匹配热区那一行。
 
     第 134 轮实测的坑：热区措辞从「（已 N 次）」改成「（已 N 次；零动作，…）」后，
     脚本里的 `COUNT_RE = （已 (\d+) 次）` **静默失配** —— `--record` 会直接报

@@ -28,6 +28,8 @@ from modules.monitors.service import (
     record_to_dict,
 )
 from modules.monitors.snapshot import build_time_series, derive_baseline
+pytestmark = pytest.mark.tenant_identity
+
 
 
 # ====== 夹具 ======
@@ -414,8 +416,22 @@ async def test_groups_are_shop_scoped(client, auth_off, two_shop_headers):
     assert (await client.get("/api/v1/monitor-groups", headers=hb)).json()["groups"] == []
 
 
-async def test_demo_mode_allows_anonymous_access(client, auth_off, shop_headers):
-    """演示模式（默认）下业务端点放行 —— 与其余业务模块行为一致"""
+async def test_tenant_identity_reaches_its_own_shop(client, auth_off, shop_headers):
+    """
+    带**身份**的请求读自己名下的店铺 ⇒ 200。
+
+    ★★★ 第 177 轮改名（原名 `test_demo_mode_allows_anonymous_access`）。
+      原名钉的是「演示档下匿名也能读任意 shop_id」—— 那正是本轮收掉的东西：
+      单店路径与列表路径统一为「演示身份只放行演示店铺」，于是
+      「匿名 + 合成店铺」不再是可达组合。本用例改钉**正确的那一半**：
+      有身份 + 自己的店 ⇒ 可达（其余用例都靠这条前置）。
+
+      ★ 为什么改名而不是删掉：它同时是下面 12 条用例的前置（店铺可读）。
+        删掉会让「合成店铺还能不能用」失去唯一守护者，而失败会以
+        「业务逻辑坏了」的面目出现 —— 归因错方向。
+      ★ 「匿名 + 别人的店 / 演示店」的两个方向由 `test_demo_store.py`
+        第 6 节与 `test_shop_id_guard.py` 钉住，不在本文件重复。
+    """
     r = await client.get("/api/v1/monitors", headers=shop_headers)
     assert r.status_code == 200
 
@@ -439,7 +455,9 @@ def test_monitors_routes_under_business_auth_gate():
     import inspect
     import main
 
-    paths = {r.path for r in main.app.routes if "monitor" in getattr(r, "path", "")}
+    from scripts.route_inventory import route_paths
+
+    paths = {p for p in route_paths(main.app) if "monitor" in p}
     assert "/api/v1/monitors" in paths
     assert "/api/v1/monitors/{monitor_id}" in paths
     assert "/api/v1/monitor-groups" in paths

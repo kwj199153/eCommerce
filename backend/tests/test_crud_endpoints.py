@@ -46,6 +46,9 @@ from sqlalchemy import select
 from modules.assets.db_model import AssetRecord
 from modules.candidates.db_model import CandidateGroupRecord
 from modules.products.db_model import ProductGroupRecord, SkuRecord, SpuRecord
+import pytest
+pytestmark = pytest.mark.tenant_identity
+
 
 
 # ====== 造数助手 ======

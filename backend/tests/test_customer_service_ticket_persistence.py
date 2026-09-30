@@ -29,9 +29,12 @@
 5. **工单号冲突换后缀重试，而不是 500、更不是谎报成功**
    （`test_id_conflict_retries_with_suffix`）。Agent 生成的号是同一天内随机 5 位，
    **并非唯一**；直接 insert 撞主键若没人处理就是一个 500。
-6. **签名层门禁**（静态 AST）：`service.create_ticket` 与
-   `tools._create_ticket_tool` 的 `store_id` 都**无默认值** —— 修复前工具连
-   这个参数都没有，服务端注入的值没有入口。
+6. **签名层门禁**（静态 AST）★ 第 204 轮改口径：
+   · `service.create_ticket` 的 `store_id` **必填无默认值**（忘传 ⇒ `TypeError`，
+     不静默落到某家店）；
+   · `tools._create_ticket_tool` 的 `store_id` **不在形参里** —— 它从请求级
+     ContextVar 取（`_shop_id()`）。原判据要求「形参里有必填 store_id」，
+     第 204 轮它变成负资产：那等于让 LLM 自报租户（详见该用例 docstring）。
 """
 
 import ast
@@ -41,6 +44,8 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
+pytestmark = pytest.mark.tenant_identity
+
 
 BACKEND = Path(__file__).resolve().parents[1]
 URL = "/api/v1/customer-service/ticket/create"
@@ -262,13 +267,58 @@ def test_service_create_ticket_requires_store_id():
     )
 
 
-def test_tool_create_ticket_store_id_has_no_default():
-    """`tools._create_ticket_tool` 同样必须必填（修复前它**连这个参数都没有**）。"""
-    args = _func_args("modules/customer_service/tools.py", "_create_ticket_tool")
-    assert "store_id" in [a.arg for a in args.args], (
-        "工具层没有 store_id 入口 ⇒ 服务端注入的值无从传下去，工单必然落不了库"
+def test_tool_create_ticket_injects_store_id_from_context():
+    """★★★ 第 204 轮改口径：`store_id` 必须**不在工具形参里**，只能从上下文注入。
+
+    原断言（A4 建立）是「工具形参里必须有必填的 `store_id`」—— 在第 143 轮
+    它是**资产**（修复前工具连这个参数都没有，router 注入的值无路可走）。
+    但第 204 轮它变成了**负资产**：它把「租户边界由 LLM 自报」这一形态钉住了。
+    真实缺陷是 `_create_ticket_tool` 的 docstring 写着
+
+        「store_id: 由系统注入，LLM 不得自行指定」
+
+    而实现里它是一个**普通形参**，值由模型生成 —— 注释承诺、实现没做
+    （「注释承诺型假门禁」）。形参在签名里 = 模型可以填任意租户。
+
+    ⇒ 判据反转为两件**缺一不可**的事：
+      ① 形参里**没有** `store_id`（模型无从指定租户）；
+         这一半在 `tests/test_agent_tool_wiring.py::
+         test_create_ticket_has_no_store_id_param` 里也钉了一次
+         （接线门禁），两边都是 AST 字面检查，不存在口径漂移。
+      ② 实现真的把它传下去了（`_service.create_ticket(req, _shop_id())`）——
+         只判 ① 会漏掉「删了参数、也忘了传」⇒ 工单又落不了库，
+         这正是本判据原文担心的事。
+    """
+    tree = ast.parse((BACKEND / "modules/customer_service/tools.py")
+                     .read_text(encoding="utf-8", errors="replace"))
+    fn = next((n for n in ast.walk(tree)
+               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and n.name == "_create_ticket_tool"), None)
+    assert fn is not None, "modules/customer_service/tools.py 里找不到 _create_ticket_tool"
+
+    params = ([a.arg for a in fn.args.posonlyargs]
+              + [a.arg for a in fn.args.args]
+              + [a.arg for a in fn.args.kwonlyargs])
+    assert "store_id" not in params, (
+        f"工具形参里又出现了 store_id：{params}\n"
+        f"⇒ 租户边界交回给 LLM 自报（归属只能服务端注入）。"
+        f"正确做法是从请求级 ContextVar 取（`_shop_id()`）。"
     )
-    assert _default_of(args, "store_id") is None
+
+    calls = [n for n in ast.walk(fn)
+             if isinstance(n, ast.Call)
+             and isinstance(n.func, ast.Attribute)
+             and n.func.attr == "create_ticket"
+             and len(n.args) >= 2]
+    assert calls, (
+        "工具体内没有 `create_ticket(req, <shop>)` 形态的调用 ⇒ 服务端注入的"
+        "归属无从传下去，工单必然落不了库（或落一条空 shop_id 被外键拒绝）"
+    )
+    injected = ast.dump(calls[0].args[1])
+    assert "_shop_id" in injected, (
+        f"第 2 个位置实参不是 `_shop_id()` 形态：{injected}\n"
+        f"⇒ 归属不是从请求级上下文取的。"
+    )
 
 
 async def test_service_rejects_blank_store_id():

@@ -171,7 +171,9 @@ def test_system_prompt_states_ask_before_handoff():
       LLM），但「规则还在不在」是可判定的 —— 而它被删掉时**不会报任何错**，
       只会让行为悄悄退化。这类「静默退化」正是文本级门禁存在的理由。
     """
-    src = (BACKEND / "modules" / "secretary" / "agent.py").read_text(encoding="utf-8")
+    # ★ 第 283 轮：店秘书提示词正文已归位到 `prompts.py`（注册表键 "secretary"），
+    #   这两条判的是**提示词文本**，所以也必须跟到新家。
+    src = (BACKEND / "modules" / "secretary" / "prompts.py").read_text(encoding="utf-8")
     assert "ask_clarification" in src, "提示词里没提 ask_clarification —— 工具存在但模型不知道何时用"
     assert "handoff_to_agent" in src
     assert "先问后交" in src, "『先问后交』这条规则被删了或改了措辞（改了就把本断言一起改）"
@@ -188,3 +190,49 @@ def test_system_prompt_states_ask_before_handoff():
     assert rule6.index("ask_clarification") < rule6.index("handoff_to_agent"), (
         "规则 6 里的顺序反了 —— 提示词会把模型往「先交接走」的方向推"
     )
+
+
+# ============================================================
+# 5. handoff 的**适用面**边界（第 215 轮）
+# ============================================================
+
+
+def _rule6(src: str) -> str:
+    seg_start = src.index("6. 【重要】")
+    seg_end = src.index("7. ", seg_start)
+    return src[seg_start:seg_end]
+
+
+def test_system_prompt_scopes_handoff_to_generation_only():
+    """提示词必须**划定 handoff 的适用面**（只用于生成类），并给出任务类反例。
+
+    ★ 为什么必须有这条：规则 6 此前只写「信息不足就交接」、**没划适用面** ——
+      于是 LLM 把「把这个链接加进选品库」也判成"信息不足"走了 handoff，
+      老板收到的是一串「请补充 asin / title / price…」。而 handoff **只切页不续跑**，
+      追问是前端模板渲染的 ⇒ 老板以为 Agent 在反问他。
+
+    ★ 判文本而不是行为：提示词的效果无法在单测里断言（那要真跑 LLM），但「边界还在
+      不在」是可判定的，且它被删掉时**不报任何错**，只会让行为悄悄退化。
+    """
+    # ★ 第 283 轮：店秘书提示词正文已归位到 `prompts.py`（注册表键 "secretary"），
+    #   这两条判的是**提示词文本**，所以也必须跟到新家。
+    src = (BACKEND / "modules" / "secretary" / "prompts.py").read_text(encoding="utf-8")
+    rule6 = _rule6(src)
+
+    assert "只用于「生成类」诉求" in rule6, "规则 6 里 handoff 的适用面被删了"
+    assert "任务类" in rule6, "规则 6 里没有「任务类不得用 handoff」的反例约束"
+    assert "务必把老板原话填进 query" in rule6, "规则 6 里「handoff 必须带 query」被删了"
+
+
+def test_handoff_tool_description_states_the_boundary():
+    """工具 **description**（LLM 真正读到的）必须写明边界与 query 要求。
+
+    ★ 为什么单独判 description：`StructuredTool.from_function` 显式传了
+      `description=` ⇒ **函数 docstring 对 LLM 不可见**。只改 docstring 等于没改。
+    """
+    t = next(t for t in _nav_tools() if t.name == "handoff_to_agent")
+    d = t.description
+    assert "适用范围只有「生成类」" in d, "description 没写 handoff 的适用面"
+    assert "任务类诉求禁止用本工具" in d, "description 没有任务类的反例"
+    assert "务必把老板原话填进 query" in d or "必须把老板原话填进 query" in d or "query 参数" in d, \
+        "description 没要求带老板原话"

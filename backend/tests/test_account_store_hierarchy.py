@@ -149,9 +149,14 @@ async def test_legacy_shops_entity_is_gone():
     # ④ 路由表
     #    ★ 直接 import main.app（与 test_auth_and_tenant.py 的做法一致），
     #      不依赖 httpx 客户端的内部属性（那是实现细节，版本升级会变）。
-    from fastapi.routing import APIRoute
     from main import app as fastapi_app
-    paths = {r.path for r in fastapi_app.routes if isinstance(r, APIRoute)}
+    from scripts.route_inventory import route_paths
+
+    # ★ 第 247 轮：原先写 `isinstance(r, APIRoute)` —— 在 0.141 下业务端点被
+    #   投影成 `_EffectiveRouteContext`（不是 APIRoute 实例），且外层还有惰性容器
+    #   ⇒ 这个集合**恒为空**，「没有 /api/v1/shops* 泄漏」于是恒真（假绿）。
+    #   `route_paths` 是唯一真源（穿透容器 + 盘点为 0 时抛错）。
+    paths = route_paths(fastapi_app)
     leaked = sorted(p for p in paths if p == "/api/v1/shops" or p.startswith("/api/v1/shops/"))
     assert not leaked, f"/api/v1/shops* 路由又挂上了：{leaked}"
 
@@ -235,8 +240,9 @@ def test_ownership_kernel_branches():
     `core.auth.accounts._matches` 的**全部分支**（纯函数，不碰 IO）。
 
     ★ 为什么要直接测这个私有内核：它是归属判定的唯一算术，四个分支对应四种
-      语义，混起来就是越权。走 HTTP 只能覆盖到一部分 —— 「平台超管」与
-      「演示模式」都在更外层短路了，从端点根本打不到这两个分支。
+      语义，混起来就是越权。走 HTTP 只能覆盖到一部分 —— 「平台超管」在更外层
+      短路了，从端点根本打不到；「演示模式」分支第 177 轮起被**三条路径共用**
+      （列表筛选 / 单店判定 / `X-Shop-ID` 解析），这里做穷尽分支断言。
 
     ★★ 最要命的一条：`frozenset()`（什么都看不到）与 `None`（不设限）必须
       是两个不同的值。写成 `if not visible: return True` 的"顺手简化"
@@ -248,10 +254,25 @@ def test_ownership_kernel_branches():
     user = SimpleNamespace(id="u-1", role="user")
     other = SimpleNamespace(id="u-2", role="user")
 
-    # ① 演示模式（无身份）⇒ 本内核返回 True，但★ 列表入口已不再走到这里
-    #    （`filter_accessible_stores` 现在 `user is None` 直接返回空列表）；
-    #    走到这里的是**单店**路径，见 accounts.py 里的 P1-5 说明。
-    assert _matches("acct-x", "u-9", frozenset(), None) is True
+    # ① 演示模式（无身份）⇒ **只放行演示店铺**（第 177 轮统一，P1-5 结清）
+    #
+    #    第 175/176 轮此处是 `is True`：列表入口已收成"只给演示店铺"，本内核
+    #    却仍无条件放行 ⇒ 单店详情 / 伪造 `X-Shop-ID` 对**任何** id 都可读
+    #    （"列表紧、单店松"）。同一件事两份实现，必有一份永远测不到。
+    assert _matches("acct-x", "u-9", frozenset(), None) is False, (
+        "★★★ 演示身份拿到了**真实**店铺 —— 单店路径的窄口失效了。"
+        "第 177 轮之前这里是 True（列表紧、单店松不一致）。"
+    )
+    assert _matches("acct-x", "u-9", frozenset(), None, True) is True, (
+        "演示店铺对演示身份必须放行 —— 否则演示模式整站空白（第 175 轮缺陷回归）。"
+    )
+    assert _matches(None, None, frozenset(), None, True) is True, (
+        "演示店铺本身可以无归属（第 175 轮形态）—— 无主不等于不可见。"
+    )
+    assert _matches(None, None, frozenset(), None) is False, (
+        "★ 新增调用点忘了传 `is_demo` ⇒ 默认 False ⇒ 拒绝（fail-closed）。"
+        "默认值若是 True，任何漏传都会变成放行。"
+    )
 
     # ② 平台超管：visible is None 表示「不设限」
     assert _matches("acct-x", "u-9", None, user) is True
@@ -275,12 +296,13 @@ def test_ownership_kernel_branches():
     assert _matches(None, None, frozenset(), user) is False, "无主店铺对非超管一律拒绝"
 
 
-async def test_filter_accessible_stores_no_identity_means_no_data():
+async def test_filter_accessible_stores_no_identity_gets_only_demo_stores():
     """
-    ★★★ 守卫：没有身份 ⇒ 没有数据（2026-09-17）。
+    ★★★ 守卫：没有身份 ⇒ 没有**真实**数据（2026-09-17；第 175 轮补齐演示店铺）。
 
     直接测批量筛法的**两个短路分支**，不碰 IO：
-      · `user is None`（匿名 / 演示哨兵）⇒ **空列表**（改前是"不过滤 ⇒ 全库"）
+      · `user is None`（匿名 / 演示哨兵）⇒ **只有 `is_demo` 的店铺**
+        （2026-09-17 是空列表；第 175 轮补上"演示店铺"这**唯一**例外）
       · `visible is None`（平台超管）    ⇒ **全量**（这条是对的，不能一起收）
 
     ★ 为什么用"会爆炸的 db"当入参：两条分支都应在**查库之前**短路。若哪天有人把
@@ -292,8 +314,19 @@ async def test_filter_accessible_stores_no_identity_means_no_data():
       （全库对任何人不设限地敞开）；都写 `return []` 则超管也看不到东西。
       本用例同时断言两者，任何一个被改坏都会红。
 
-    反向注入：把 `filter_accessible_stores` 里的 `return []` 改回
-    `return list(stores)`，第一条断言必须转红。
+    ★ 用例名沿革：原名 `..._no_identity_means_no_data`。第 175 轮语义从"没有数据"
+      变成"只有演示数据"（老板反馈演示模式整站空白）⇒ 同步改名，
+      不给名字留一个已经不对的断言。`core/auth/accounts.py` 里对该用例名的
+      引用已一并更新。
+
+    ★★ 第 177 轮：演示分支的**判据实现**改为调 `_matches`（与单店路径同一处）。
+      此处传的 `stores` 刻意**不带** `is_demo` 字段 ⇒ `store_is_demo` 返回 False
+      ⇒ 真实店铺仍被排除，本条断言语义**一行未变**（这正是"字段缺失 fail-closed"
+      的可执行证据）。
+
+    反向注入（**两个方向都要能拦住**，只钉一个方向会让另一半静默失守）：
+      · 演示分支改回 `return []`   ⇒ 第 2 条断言转红（演示模式整站空白回归）；
+      · 演示分支改成 `return list(stores)` ⇒ 第 1、3 条断言转红（匿名拿到真实店铺）。
     """
     from types import SimpleNamespace
 
@@ -313,9 +346,25 @@ async def test_filter_accessible_stores_no_identity_means_no_data():
         SimpleNamespace(id="s-2", account_id="acct-2", owner_id="u-2"),
     ]
 
+    # ① 真实店铺：匿名一条都拿不到（安全修复 4612abb 的成果，**不回退**）
     assert await filter_accessible_stores(db, None, stores) == [], (
-        "★★★ 匿名拿到了店铺 —— 「没有身份 ⇒ 没有数据」的守卫失效了。"
-        "改前这里是 `return list(stores)`（不过滤）⇒ 演示档下全库裸奔。"
+        "★★★ 匿名拿到了真实店铺 —— 「没有身份 ⇒ 没有真实数据」的守卫失效了。"
+        "2026-09-17 之前这里是 `return list(stores)`（不过滤）⇒ 演示档下全库裸奔。"
+    )
+
+    # ② 演示店铺：第 175 轮补上的**唯一**例外（带 is_demo 的行会返回）
+    demo = SimpleNamespace(id="s-demo", account_id=None, owner_id=None, is_demo=True)
+    assert await filter_accessible_stores(db, None, [demo]) == [demo], (
+        "演示店铺对匿名不可见 ⇒ 演示模式整站空白（第 175 轮的修复被回退了）。"
+        "根因链：前端 demo-token 不是身份 ⇒ user 恒为 None ⇒ 列表恒空 ⇒ "
+        "current_shop_id 写不进 localStorage ⇒ 所有业务请求不带 X-Shop-ID。"
+    )
+
+    # ③ 混在一起时也只挑出演示那一家（窄口，不是把过滤整体放宽）
+    mixed = await filter_accessible_stores(db, None, stores + [demo])
+    assert mixed == [demo], (
+        f"匿名拿到的不止演示店铺：{[s.id for s in mixed]} —— "
+        f"演示店铺是**窄口**（只多给一家），不是把匿名过滤重新打开。"
     )
 
     admin = SimpleNamespace(id="u-admin", role=PLATFORM_ADMIN_ROLE)

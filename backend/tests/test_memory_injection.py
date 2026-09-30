@@ -14,7 +14,7 @@
 四类判据
 ========
 A. **机制层不带内容** —— 注册表在 `ai_infra` 的定义处必须是空 dict；
-   全仓 `register_prompt_section(...)` 的**调用点**恰好 1 个，且在业务模块里。
+   全仓 `register_prompt_section(...)` 的**调用点**全部落在业务模块、且**逐一登记**。
 B. **接线不能断** —— ① 门面 import 那一行必须在（注册是 import 副作用，
    没有它注册永不发生）；② `_llm_call_node` 真的 await 收集、且结果经
    `_system_prompt_with_plan(sections=...)` 进 `SystemMessage`；
@@ -94,12 +94,49 @@ def registration_calls_in(source: str) -> list:
     return out
 
 
-def test_registration_has_exactly_one_call_site_in_business_layer():
-    """注册只允许发生在**一个**业务模块里。
+#: 允许出现 `register_prompt_section(...)` 的业务模块 —— **名单即判据**。
+#:
+#: ★ 第 181 轮把判据从「恰好 1 个调用点」改成「调用点必须逐一登记在这里」。
+#:   直接原因是真需求变了：本轮新增了第二个注入段
+#:   （`modules/skills/provider.py` 的 `skills_catalog`）。
+#:   **旧断言从资产变成了负资产** —— 它会把一个正交的新能力判成违规。
+#:   这正是本仓那条「门禁是墓志铭」：改需求时必须回来搜钉住旧形态的断言。
+#: ★ 但**没有放宽**，新判据同时钉三件事，比旧判据更硬：
+#:   ① `ai_infra` 里一个调用点都不能有（机制层零内容）；
+#:   ② 同一个文件至多一处（同文件两处 = 幂等写有一处永远不执行）；
+#:   ③ 与这份名单**逐字相等**（多一处/少一处都要来登记 ⇒
+#:      「模型的 system prompt 里到底被注入了几段」始终可枚举）。
+#: ★ ① 值得单列：旧判据的「总数恰好 1」在只有一个业务段时**恰好**覆盖了它，
+#:   但覆盖得很偶然 —— 加第二个业务段时，若只把数字 1 改成 2，
+#:   这条红线就随旧断言一起消失了。
+#: ★ 第 188 轮又加了第三个（`modules/skills/selected_skill_section.py` 的
+#:   `skills_selected`）—— 同一条判据第 3 次生效：新增注入段就来登记。
+ALLOWED_SECTION_REGISTRARS: tuple = (
+    "modules/memory/prompt_section.py",
+    "modules/skills/provider.py",
+    "modules/skills/selected_skill_section.py",
+    # ★ 第 251 轮第 4 次生效：`request_context_target` —— 把「本次请求的作用对象」
+    #   注入 system prompt。它是配那个洞的：实测「没载入选品」的一轮，
+    #   模型把**上一轮**历史里的商品当成了本次的评估对象。
+    # ★★ 第 257 轮**上提**：注册点从 `modules/product_research/context_target_section.py`
+    #   搬到 `modules/context_target_section.py`（`modules/` 根，横切位置）。
+    #   原因：这条机制对**全部 Agent** 生效，却住在一个业务域的目录里 ——
+    #   于是"要给 Listing / AIGC 也接上"时没人会去选品模块里找它。
+    #   注册仍在业务层（不在 `ai_infra`：判据 ① 不松动），
+    #   只是从"某个业务模块私有"改成"公共注册点"。
+    "modules/context_target_section.py",
+)
 
-    ★ 为什么必须唯一：注册是 import 副作用，散落多处就「谁注册了什么」不可数；
+
+def test_registration_call_sites_are_confined_to_business_layer():
+    """注册只允许发生在**已登记**的业务模块里，且每个文件至多一处。
+
+    ★ 为什么必须可枚举：注册是 import 副作用，散落多处就「谁注册了什么」不可数；
       而且重名会被第二次注册撞成 `ValueError` —— 那意味着**进程启动失败**，
       代价远大于「少注入一段」。
+    ★ 为什么还要单列「`ai_infra` 零调用点」：注入点是最贵的那类横切面。
+      机制层一旦自己注册一段，它就从"能力"变成"内容"，
+      而 `ai_infra` 不得带业务内容是本仓的硬红线（见 `test_infra_layering`）。
     """
     sites = []
     for base in (BACKEND / "ai_infra", BACKEND / "modules"):
@@ -112,9 +149,25 @@ def test_registration_has_exactly_one_call_site_in_business_layer():
             for line in registration_calls_in(_src(p)):
                 sites.append(f"{rel}:{line}")
 
-    assert len(sites) == 1, f"注册调用点必须恰好 1 个，实测 {sites}"
-    assert sites[0].startswith("modules/memory/prompt_section.py:"), (
-        f"注册必须落在业务模块 modules/memory/prompt_section.py，实测 {sites[0]}"
+    # ① 一个都不能落在机制层
+    in_infra = [s for s in sites if not s.startswith("modules/")]
+    assert not in_infra, (
+        f"`register_prompt_section` 出现在业务层之外：{in_infra} —— "
+        f"机制层自己注册段落 = 内容住进基础设施层（L3 泄漏的触发路径）。"
+    )
+
+    # ② 每个文件至多一处
+    files = [s.rsplit(":", 1)[0] for s in sites]
+    dup = sorted({f for f in files if files.count(f) > 1})
+    assert not dup, f"同一文件里出现多处注册调用：{dup}"
+
+    # ③ 与白名单逐字相等（新增注入段必须来登记）
+    assert sorted(files) == sorted(ALLOWED_SECTION_REGISTRARS), (
+        f"注册调用点与白名单不一致。\n"
+        f"  实际: {sorted(files)}\n"
+        f"  名单: {sorted(ALLOWED_SECTION_REGISTRARS)}\n"
+        f"新增一个「往 system prompt 注入内容」的段落，就往名单里加一项 —— "
+        f"这份名单是「模型到底看到了什么」的唯一索引。"
     )
 
 
@@ -468,7 +521,7 @@ async def test_llm_call_node_actually_injects_memory(mem_owner, monkeypatch):
             return AIMessage(content="好的")
 
     agent = BA.BaseAgent(agent_name="r152-e2e", system_prompt="你是助手。")
-    monkeypatch.setattr(agent, "_llm_with_tools", lambda: _CapturingLLM())
+    monkeypatch.setattr(agent, "_llm_with_tools", lambda *a, **kw: _CapturingLLM())
     monkeypatch.setattr(BA, "current_user_id", lambda: oid)
 
     await agent._llm_call_node(
@@ -502,7 +555,7 @@ async def test_llm_call_node_does_not_inject_for_anonymous(monkeypatch):
             return AIMessage(content="好的")
 
     agent = BA.BaseAgent(agent_name="r152-anon", system_prompt="你是助手。")
-    monkeypatch.setattr(agent, "_llm_with_tools", lambda: _CapturingLLM())
+    monkeypatch.setattr(agent, "_llm_with_tools", lambda *a, **kw: _CapturingLLM())
     monkeypatch.setattr(BA, "current_user_id", lambda: "")
 
     await agent._llm_call_node(

@@ -42,12 +42,48 @@
     若把判据写成「两者必须相等」，这条门禁会在 25 条正当路由上变红 = **负资产**。
     只有「asyncio 说真、FastAPI 说假」这一侧会炸：**它说异步、它却不 await**。
 
-★ 反向注入已验（两种坏形态各注入一次，都真的变红了）
-    A：`_REQUIRE_USER` 改回 `functools.partial(...)` ⇒ 本条变红（并连带打红
-       `test_memory_distill.py` 的两条 + `test_memory_contract.py` 的三条，
-       后三条报的正是 `AttributeError: 'coroutine' object has no attribute 'id'`
-       —— 事故原样复现）；
-    C：把 `_REQUIRE_USER` 包一层保留 `__wrapped__` 的包装 ⇒ 本条变红。
+★ 反向注入（★★★ 第 300 轮更正：A / C 是否生效**取决于本机 FastAPI 版本**）
+    ⚠️ 本段此前写的是「A / C 自 0.141 起已不再生效、本门禁不再是活体 bug 捕手」
+      —— 那句话**只对 0.141+ 成立**，而本仓 `requirements.txt` 是
+      `fastapi>=0.104.0,<0.142`、**实装 0.115.12**。在 0.115 下 A / C **都可达**，
+      本文件此刻是**真捕手**。把「上游某个版本的行为」写成「本门禁的现状」，
+      会让人据此**低估**这条门禁，属于本仓判过的「声明的字面/暗示失真」。
+
+    按本机版本分档（实测分界 0.141；判据实现名的候选表见
+    `scripts/route_inventory.py::_FASTAPI_AWAIT_PREDICATE_NAMES`）：
+
+      本机 <0.141（含当前实装 0.115.12）
+        · 判据是 `fastapi.dependencies.utils.is_coroutine_callable`：
+          既**不** unwrap `functools.partial`，也**不**跟随 `__wrapped__`。
+        · ⇒ 形态 A / C **都可达**，本文件是**活的 bug 捕手**。
+        · 注入 A（`_REQUIRE_USER` 改回 `functools.partial(require_authenticated_user, ...)`）
+          ⇒ 本条立刻变红（并连带打红 `test_memory_distill.py` 的两条 +
+          `test_memory_contract.py` 的三条，后三条报的正是
+          `AttributeError: 'coroutine' object has no attribute 'id'` —— 事故原样复现）。
+        · 注入 C（包一层保留 `__wrapped__` 的同步包装）同样立刻变红。
+
+      本机 ≥0.141
+        · 判据搬到 `fastapi.dependencies.models._is_coroutine_callable`，
+          前置 `_impartial()` 循环 unwrap `partial`，并用 `inspect.unwrap()`
+          跟随 `__wrapped__` ⇒ 形态 A / C 均**不可达**，本文件退化为
+          「未来反转的报警器」。
+        · （实测表见 `.workbuddy/probes/tools/r247_await_predicate_archaeology.py`；
+          第 300 轮已在本机 0.115.12 上复验过 A 档可达。）
+
+    ⇒ 所以本文件**不再写死**「A / C 已失效」这类与版本绑定的结论。
+      可达性由前提哨兵按**本机版本**推出并断言：
+
+        tests/test_route_inventory_gate.py::
+        test_await_predicate_asks_the_library_and_its_premise_holds
+
+      它用 `fastapi.__version__` × `_AWAIT_PARTIAL_UNWRAP_SINCE` 算出「`partial`
+      该被判 True 还是 False」，与实测不符就先红在**那里**，并在报文里直接写明
+      「形态 A 现在**可达 / 不可达**」以及该回来重验哪个文件。
+      ★ 本仓不允许留着「假装在守、其实永远绿」的断言。
+
+    ★ 两个版本下**都仍然可达**的坏形态（保证本文件不是结构性死门禁）：
+      `__code__` 是协程、而 `__call__` 同步的「鸭子对象」
+      —— 见 `tests/test_route_inventory_gate.py::_FunctionLikeDuck`。
 
 ★ 为什么**没有**「`Depends(async_fn())` 直接塞协程对象」这条断言
     因为 FastAPI 在**建路由时**就拦住了它：`get_dependant()` 里有
@@ -59,13 +95,27 @@
     也就是说那是**响的**失败，不属于本门禁的业务（本门禁只管**静默**那一类）。
     给一个响的失败再写一条永远红不了的断言 = 死断言；而本仓铁律是
     「没被反向注入验证过的门禁 = 没有门禁」—— 所以这里只留注释，不留断言。
+
+★ 第 247 轮修正（框架升级导致的两处失真，都改在这里）
+    A. **判据失明**：本文件原先 `for route in app.routes` 取路由。FastAPI 0.141 起
+       `include_router()` 只往 `app.routes` 里追加惰性容器 `_IncludedRouter`，
+       业务路由一条都遍历不到 ⇒ 只剩 7 条框架内置路由 ⇒ `MIN_ROUTES` 直接报红。
+       现在走 `scripts.route_inventory.iter_api_routes`（唯一真源，会穿透容器，
+       并在盘点为 0 时抛错）。
+    B. **钉住库私有符号**：本文件原先 `from fastapi.dependencies.utils import
+       is_coroutine_callable`，而 0.141 把它改名成 `_is_coroutine_callable`
+       ⇒ ImportError。注意这**不是**「顺手清理」：门禁里出现 ImportError 时，
+       读者会以为「测试环境坏了」，而不是「有依赖形态缺陷」。
+       现在唯一实现是 `scripts.route_inventory.fastapi_awaitable`
+       （按候选名问库本身；一个名字都找不到时**显式抛错**，不静默退回
+       `asyncio.iscoroutinefunction` —— 那正是本文件要抓的那个错的判据）。
 """
 
 from __future__ import annotations
 
 import asyncio
 
-#: 防空跑下限。★ 刻意写得很松（实测：路由 229 / 节点 1212 / 树深 2）——
+#: 防空跑下限。★ 刻意写得很松（第 247 轮实测：带 dependant 的路由 245 / 树深 2）——
 #: 它的用途是抓「app 没 import 起来」或「树没往下递归」这类**全零**读数，
 #: 不是抓「有人删了几个路由」。照实测值写，正当重构就会变红 = 负资产。
 MIN_ROUTES = 100
@@ -107,9 +157,8 @@ def test_no_dependency_that_fastapi_silently_does_not_await():
 
     反向注入已验：见本文件模块 docstring 末尾（A / B 各一次）。
     """
-    from fastapi.dependencies.utils import is_coroutine_callable
-
     from main import app
+    from scripts.route_inventory import fastapi_awaitable, iter_api_routes
 
     route_count = 0
     node_count = 0
@@ -117,7 +166,7 @@ def test_no_dependency_that_fastapi_silently_does_not_await():
     form_a = []  # 两个判定分歧：asyncio 说是协程函数、FastAPI 不会 await
     form_c = []  # __wrapped__ 指向协程函数，而 call 本身不被判为可 await
 
-    for route in app.routes:
+    for route in iter_api_routes(app):
         top = getattr(route, "dependant", None)
         if top is None:
             continue
@@ -131,13 +180,13 @@ def test_no_dependency_that_fastapi_silently_does_not_await():
             call = getattr(node, "call", None)
             if call is None:
                 continue
-            if asyncio.iscoroutinefunction(call) and not is_coroutine_callable(call):
+            if asyncio.iscoroutinefunction(call) and not fastapi_awaitable(call):
                 form_a.append("%s [%s] :: %r" % (path, methods, call))
                 continue
             inner = getattr(call, "__wrapped__", None)
             if (inner is not None
                     and asyncio.iscoroutinefunction(inner)
-                    and not is_coroutine_callable(call)):
+                    and not fastapi_awaitable(call)):
                 form_c.append("%s [%s] :: %r  (__wrapped__=%r)"
                               % (path, methods, call, inner))
 

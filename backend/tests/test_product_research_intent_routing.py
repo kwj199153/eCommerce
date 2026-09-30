@@ -230,3 +230,97 @@ async def test_chat_stream_unmatched_question_goes_blue_ocean(client, auth_off, 
     assert "蓝海" in r.text, r.text
     assert "ASIN" not in r.text, r.text
     assert '"error"' not in r.text, r.text
+
+
+# ====== 6. 同一个 ASIN 在一次输入里重复出现（第 215 轮）======
+#
+# 事故：老板贴了一条 Amazon 商品链接说「这个选品帮我放入选品库」，选品 Agent 却回
+# 「拿到了 ASIN（B09V9TXTKK, B09V9TXTKK, B09V9TXTKK），但平台没返回可对比的竞品数据」。
+#
+# 根因：Amazon 商品链接里**同一个 ASIN 出现 3 次**（`/dp/<ASIN>`、`pd_rd_i=<ASIN>`、
+# `ref_=..._<ASIN>`），而 `_classify_intent` 有一条非关键词**前置信号**：
+#
+#     if len(self._extract_multiple_asins(query)) >= 2:
+#         return "competitor"
+#
+# 它是按**出现次数**数的 ⇒ 把「1 个商品」读成「3 个商品要对比」；而这条判定排在
+# 关键词路由**之前**，所以「选品库」这个关键词永远轮不到。这是确定性缺陷，
+# 与模型能力无关（同样的输入 100% 复现）。
+#
+# 修法：去重收口在 `_extract_multiple_asins`（唯一真源）—— 它的 4 个消费点
+# （意图判定 / 竞品对比 / 待补槽位 / 入库目标解析）同时受益。只在 `_classify_intent`
+# 里 `len(set(...))` 会留下另外三处按重复计数，属于「同一判定两份实现」。
+
+#: 老板那次贴的真实链接（同一个 ASIN 以三种形态各出现一次）
+AMAZON_URL_WITH_REPEATED_ASIN = (
+    "https://www.amazon.com/Junk-Food-Clothing-NFL-Francisco/dp/B09V9TXTKK"
+    "?pd_rd_w=ogerC&content-id=amzn1.sym.e850b2a8-46e9-483d-bf08-f59ae1aebb11"
+    "&pf_rd_p=e850b2a8-46e9-483d-bf08-f59ae1aebb11"
+    "&pd_rd_i=B09V9TXTKK&ref_=slls_san-francisco-49ers_collc_deal_d_B09V9TXTKK"
+    "&th=1&psc=1"
+)
+
+
+def test_repeated_asin_in_one_url_is_deduped():
+    """一个商品链接里同一个 ASIN 出现 3 次 ⇒ 只应提取出 **1 个** ASIN"""
+    agent = ProductResearchAgent()
+    asins = agent._extract_multiple_asins(AMAZON_URL_WITH_REPEATED_ASIN)
+    assert asins == ["B09V9TXTKK"], (
+        f"重复的 ASIN 没被去重（得到 {asins}）—— 「>=2 个 ASIN 判竞品」那条前置判定"
+        f"会把它读成「给了 3 个 ASIN 要对比」"
+    )
+
+
+async def test_amazon_url_with_repeated_asin_routes_to_save_candidate():
+    """★ 本轮主判据：贴链接 + 「放入选品库」必须判 save_candidate，而不是 competitor"""
+    agent = ProductResearchAgent()
+    query = f"{AMAZON_URL_WITH_REPEATED_ASIN} 这个选品帮我放入选品库"
+    intent = await agent._classify_intent(query)
+    assert intent == "save_candidate", (
+        f"判成了 {intent!r} —— 链接里重复的 ASIN 又抢先触发了 competitor 前置判定"
+    )
+
+
+def test_dedup_keeps_first_occurrence_order():
+    """去重不能改顺序（顺序影响「把第 N 个加进去」的指代解析）"""
+    agent = ProductResearchAgent()
+    out = agent._extract_multiple_asins(
+        f"{KNOWN_ASIN_B} 对比 {KNOWN_ASIN_A} 再看 {KNOWN_ASIN_B}")
+    assert out == [KNOWN_ASIN_B, KNOWN_ASIN_A]
+
+
+async def test_two_distinct_asins_still_route_to_competitor():
+    """防修过头：两个**不同** ASIN 仍然是竞品对比的强信号"""
+    agent = ProductResearchAgent()
+    assert await agent._classify_intent(
+        f"对比 {KNOWN_ASIN_A} 和 {KNOWN_ASIN_B}") == "competitor"
+
+
+def test_dedup_is_not_reimplemented_at_the_call_site():
+    """形态判据：去重**不得**在 `_classify_intent` 里再实现一遍（唯一真源）。
+
+    ★ 为什么需要这条**独立于行为**的判据：在 `_classify_intent` 里补一句
+      `len(set(self._extract_multiple_asins(query))) >= 2`，上面两条行为用例也会
+      **全绿** —— 于是"看起来修好了"，而**另外 3 个消费点**（竞品对比 / 待补槽位 /
+      入库目标解析）仍按重复计数。那正是
+      「同一判定两份实现 ⇒ 至少一份永远测不到」。
+      本判据专门抓这个形态：去重只允许住在 `_extract_multiple_asins` 里。
+    ★ 走 AST 判 `ast.Call` 的**函数名**，不用源码字符串 —— docstring / 注释里
+      写一句「此处不去重」就能骗过字符串判据。
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    src = textwrap.dedent(inspect.getsource(ProductResearchAgent._classify_intent))
+    dup_calls = [
+        n for n in ast.walk(ast.parse(src))
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "set"
+    ]
+    assert not dup_calls, (
+        "`_classify_intent` 里出现了 `set(...)` —— 去重被实现了第二遍。"
+        "应当收口在 `_extract_multiple_asins`（唯一真源），否则其余 3 个消费点"
+        "仍按重复计数。"
+    )

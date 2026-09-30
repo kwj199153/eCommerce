@@ -75,10 +75,10 @@ def test_tool_calls_are_ordered_and_deduplicated():
         HumanMessage(content="查一下"),
         _ai(tool_calls=[_tc("get_detail"), _tc("get_detail")]),
         ToolMessage(content="{}", tool_call_id="call_get_detail"),
-        _ai(tool_calls=[_tc("track_batch_asins")]),
-        ToolMessage(content="{}", tool_call_id="call_track_batch_asins"),
+        _ai(tool_calls=[_tc("compare_competitors")]),
+        ToolMessage(content="{}", tool_call_id="call_compare_competitors"),
     ]
-    assert _summary(msgs)["tool_calls"] == ["get_detail", "track_batch_asins"]
+    assert _summary(msgs)["tool_calls"] == ["get_detail", "compare_competitors"]
 
 
 def test_tool_result_is_the_last_non_empty_one():

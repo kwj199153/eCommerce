@@ -161,8 +161,15 @@ async def test_translation_uses_low_temperature(stub_llm):
 
 
 def test_system_prompt_forbids_extra_output():
-    """system prompt 的关键约束不能丢（丢了模型就会加解释/加营销词）"""
-    sp = AIGCMediaAgent._SELECTION_TRANSLATE_SYSTEM
+    """system prompt 的关键约束不能丢（丢了模型就会加解释/加营销词）
+
+    ★ 第 283 轮：提示词版本化时正文已从 `AIGCMediaAgent._SELECTION_TRANSLATE_SYSTEM`
+      归位到 `modules/aigc_media/prompts.py`（注册表键 `aigc_selection_translate`）。
+      本用例原先仍读那个**已删除的类属性** ⇒ AttributeError。
+    """
+    from modules.aigc_media.prompts import AIGC_SELECTION_TRANSLATE_SYSTEM
+
+    sp = AIGC_SELECTION_TRANSLATE_SYSTEM
     assert "只输出译文" in sp
     assert "不要解释" in sp
     assert "主动降噪" in sp, "电商术语惯例是划词翻译的核心价值，不能被删"

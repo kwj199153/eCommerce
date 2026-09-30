@@ -1,0 +1,390 @@
+{
+  "version": "r302-review-register",
+  "note": "买家**已公开发布的商品评价**的风险话术评测集（★ 第 302 轮重写：旧正类全是对卖家喊话的会话体、负类是第三人称体验陈述 ⇒ 正负类按语域可分离，满分是自证）。★ 构造约束：① 正负类**同语域**（都写成买家面向其他买家的评价旁白，不用祈使句逼卖家）；② 第二人称不再是分界线（负类里也有指着卖家鼻子陈述的样本）；③ 每条带 `register` 声明语域，取值走封闭白名单。★ 仍然保留的旧约束：措辞故意不与 risk_scan.py 的模式串逐字对应；负类专挑最易误报的形态。label: r1=加码要挟 r2=索赔 r3=A-to-Z前兆 r4=开case/投诉平台 r5=高情绪无结构 none=无风险。★ 正类 ⟺ 命中 r1~r4；r5 与 none 同为负类。",
+  "items": [
+    {
+      "id": "P01",
+      "label": "r1",
+      "level": "high",
+      "register": "review",
+      "text": "Two of the four arrived dented and a week of messages got me one form letter. If nothing changes by Monday I'm going public with it - photos, screenshots and the lot, everywhere this has been recommended.",
+      "note": "r1：旁白式最后通牒 + 公开扩散（评论体，不是给卖家的私信）"
+    },
+    {
+      "id": "P02",
+      "label": "r1",
+      "level": "high",
+      "register": "review",
+      "text": "The seal failed on day two and emptied into my bag. Two emails, both ignored. Fix it this week or I'll share my story in the two buyer groups where I found this listing.",
+      "note": "r1：条件式 + 社交扩散筹码"
+    },
+    {
+      "id": "P03",
+      "label": "r1",
+      "level": "high",
+      "register": "review",
+      "text": "Nine years buying here and this is how it ends. Thirteen days without a response. Reply by Friday or I'm making sure every shopper scrolling past this sees exactly how it was handled.",
+      "note": "r1：长期客户身份 + 号召他人看见（含 you-less 的第三人称旁白）"
+    },
+    {
+      "id": "P04",
+      "label": "r1",
+      "level": "high",
+      "register": "review",
+      "text": "Charged the full amount and got a damaged unit. Otherwise my next post about this comes with the invoice and the photos side by side.",
+      "note": "r1：以「追加发帖」为筹码 —— 这条差评本身已经公开，不算筹码"
+    },
+    {
+      "id": "P05",
+      "label": "r1",
+      "level": "high",
+      "register": "review",
+      "text": " The lid split and scalded my wrist, and nobody on your side has answered either email. Fix it now or I start talking to a solicitor about what this cost me in lost work days.",
+      "note": "r1：法务升级（不是威胁写差评，差评已经在这儿了）"
+    },
+    {
+      "id": "P06",
+      "label": "r1",
+      "level": "high",
+      "register": "review",
+      "text": "Day one the coating started peeling into my drink. This is your one chance to sort it - after that I go public with every photo and the lot of them go up together.",
+      "note": "r1：含第二人称的正类（★ 防止「有 you = 正类」这条捷径复活）"
+    },
+    {
+      "id": "P07",
+      "label": "r2",
+      "level": "medium",
+      "register": "review",
+      "text": "Paid 89 dollars for something that arrived unusable. I want the full amount back plus something for the two weeks your dispatch delay has cost me.",
+      "note": "r2：明确索取 + 连带损失，无最后通牒 ⇒ 中危"
+    },
+    {
+      "id": "P08",
+      "label": "r2",
+      "level": "medium",
+      "register": "review",
+      "text": "Two units dead on arrival. I expect a full refund, and a coupon towards my next order is not what I am after.",
+      "note": "r2：拒绝替代方案 ⇒ 索取明确但无施压"
+    },
+    {
+      "id": "P09",
+      "label": "r2",
+      "level": "medium",
+      "register": "review",
+      "text": "The delay cost me a client. I'm looking for compensation for the lost work, and a voucher for a future purchase from you will not begin to cover it.",
+      "note": "r2：间接损失索赔（评论体陈述）"
+    },
+    {
+      "id": "P10",
+      "label": "r2",
+      "level": "medium",
+      "register": "review",
+      "text": "Wrong variant sent, third time this month. I want the difference back and I am not paying the return postage for somebody else's mistake.",
+      "note": "r2：索取 + 拒绝承担退货运费"
+    },
+    {
+      "id": "P11",
+      "label": "r2",
+      "level": "medium",
+      "register": "review",
+      "text": "It leaked into my luggage and ruined a jacket. I am asking for the purchase price back, plus what it cost to replace the jacket.",
+      "note": "r2：连带财物损失，语气是陈述不是命令"
+    },
+    {
+      "id": "P12",
+      "label": "r3",
+      "level": "high",
+      "register": "review",
+      "text": "Three weeks of waiting and nothing has shipped out of your warehouse. Tomorrow I'm using the marketplace's own buyer protection to get the payment back.",
+      "note": "r3：未点名 A-to-Z 但语义等价；第一人称将来时旁白"
+    },
+    {
+      "id": "P13",
+      "label": "r3",
+      "level": "high",
+      "register": "review",
+      "text": "The latest reply was the same template for the third time. I'll let the marketplace sort it out under its own purchase protection instead of writing a fourth message.",
+      "note": "r3：绕开卖家走平台担保；含方向明确的意图"
+    },
+    {
+      "id": "P14",
+      "label": "r3",
+      "level": "high",
+      "register": "review",
+      "text": "The claim form is filled in and sitting on my desk. Last chance before it goes in on Monday.",
+      "note": "r3：索赔表已备好 + 最后通牒"
+    },
+    {
+      "id": "P15",
+      "label": "r3",
+      "level": "high",
+      "register": "review",
+      "text": "If nothing arrives by Friday I'm using the protection policy instead of asking again.",
+      "note": "r3：担保政策筹码 + 条件句"
+    },
+    {
+      "id": "P16",
+      "label": "r3",
+      "level": "high",
+      "register": "review",
+      "text": "No reply, no reshipment, no refund. The payment will be reclaimed through the platform's own guarantee whatever your team says from here.",
+      "note": "r3：平台担保 + 被动式将来时（非祈使句）"
+    },
+    {
+      "id": "P17",
+      "label": "r4",
+      "level": "high",
+      "register": "review",
+      "text": "This listing is misleading and the screenshots prove it. Reported to the team that deals with seller violations this morning.",
+      "note": "r4：已举报给卖家违规团队（叙述体，非命令体）"
+    },
+    {
+      "id": "P18",
+      "label": "r4",
+      "level": "high",
+      "register": "review",
+      "text": "Filed with Amazon support at nine this morning; the ticket number is in my inbox. Let us see how those metrics look from here.",
+      "note": "r4：已开单状态 + 以绩效为筹码"
+    },
+    {
+      "id": "P19",
+      "label": "r4",
+      "level": "high",
+      "register": "review",
+      "text": "My next step is a formal complaint through the platform itself, and a note to the consumer ombudsman if that goes nowhere.",
+      "note": "r4：升级到外部监管方"
+    },
+    {
+      "id": "P20",
+      "label": "r4",
+      "level": "high",
+      "register": "review",
+      "text": "Every screenshot from the last three weeks is saved in one folder. They go to whoever handles seller violations if your support leaves this unresolved on Monday.",
+      "note": "r4：证据备齐 + 条件式提交（无第二人称祈使）"
+    },
+    {
+      "id": "P21",
+      "label": "r4",
+      "level": "high",
+      "register": "review",
+      "text": "Three weeks without the parcel or a reply. My next step is my credit card company, filing this as a disputed charge.",
+      "note": "r4：支付渠道争议；注意不写成命令语气"
+    },
+    {
+      "id": "P22",
+      "label": "r5",
+      "level": "low",
+      "register": "review",
+      "text": "Absolute waste of money. Cheapest plastic I have handled and you can see the seams from across the room.",
+      "note": "r5：含第二人称的负类（★ 语域/人称不可分离的第一道保险）"
+    },
+    {
+      "id": "P23",
+      "label": "r5",
+      "level": "low",
+      "register": "review",
+      "text": "Utterly useless and I am done pretending otherwise. DO NOT BUY unless you enjoy throwing money away.",
+      "note": "r5：全大写喊话但无筹码无诉求"
+    },
+    {
+      "id": "P24",
+      "label": "r5",
+      "level": "low",
+      "register": "review",
+      "text": "Two weeks in and it has already given up. Garbage finish and their support has not been any use either.",
+      "note": "r5：情绪强不含结构"
+    },
+    {
+      "id": "N01",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Replacement foam inside was too thin - same problem I read about in other reviews before buying.",
+      "note": "陷阱：replacement 是配件不是索赔（★ 历史上真实误报）"
+    },
+    {
+      "id": "N02",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Returned it Monday and the refund showed up Wednesday. Painless, would order again.",
+      "note": "陷阱：refund 是正面流程叙述"
+    },
+    {
+      "id": "N03",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "The hard case that comes with it is genuinely sturdy. Dropped it twice, no damage.",
+      "note": "陷阱：case = 外壳"
+    },
+    {
+      "id": "N04",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "In case you are wondering about sizing, it runs a bit small - order one up.",
+      "note": "陷阱：in case 是连词（★ 含第二人称的负类）"
+    },
+    {
+      "id": "N05",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Reading other reviews helped me pick the right size. Thanks everyone.",
+      "note": "陷阱：reviews 是别人写的"
+    },
+    {
+      "id": "N06",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Amazon's A-to-Z Guarantee is honestly why I do all my shopping here.",
+      "note": "陷阱：担保政策正面提及"
+    },
+    {
+      "id": "N07",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "The seller sorted it out before it ever got to an A-to-Z claim. Credit where it is due.",
+      "note": "陷阱：明确未走到索赔且已解决"
+    },
+    {
+      "id": "N08",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Their support case got closed the same day. Fast team.",
+      "note": "陷阱：工单历史，已完成"
+    },
+    {
+      "id": "N09",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "I returned it because the size was wrong. No hard feelings, the item itself is perfectly fine.",
+      "note": "陷阱：正常退货无施压"
+    },
+    {
+      "id": "N10",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "There is a small scuff on the lid but I don't want anything for it. Just mentioning it for whoever buys next.",
+      "note": "陷阱：明确放弃索赔"
+    },
+    {
+      "id": "N11",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Exactly as described, arrived early, no complaints at all.",
+      "note": "干净正面"
+    },
+    {
+      "id": "N12",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Took 12 days to arrive even though the listing promised 5. When it finally showed up the outer box was crushed and the unit inside has a dent on the lid. Not happy about paying full price for something that looks like it fell off a truck.",
+      "note": "库形态：情绪强但你猜不到有什么危险动作 —— 没有任何筹码或诉求"
+    },
+    {
+      "id": "N13",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "The item itself is fine but your packaging is letting it down - one unit leaked because there was no padding at all. Please use bubble wrap.",
+      "note": "陷阱式负面：批评 + 建议，含第二人称（★ 语域不可分离的负类样本）"
+    },
+    {
+      "id": "N14",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "I complained to the seller and they put it right the same afternoon.",
+      "note": "陷阱：投诉已完成且已解决"
+    },
+    {
+      "id": "N15",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "I work in a legal office so I actually read the fine print - your warranty terms here are more generous than most.",
+      "note": "陷阱：法务词汇但语义是称赞，含第二人称"
+    },
+    {
+      "id": "N16",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "The app lets you report a problem straight from the order page. Handy.",
+      "note": "陷阱：report 是产品功能"
+    },
+    {
+      "id": "N17",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "There was a billing mix-up on my card, nothing to do with this order, and the payment bounced.",
+      "note": "陷阱：dispute 与本次交易无关"
+    },
+    {
+      "id": "N18",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "The damage from shipping is visible on one corner of the box but the unit works fine and I am keeping it.",
+      "note": "陷阱：damage 单数、明确保留、无诉求"
+    },
+    {
+      "id": "N19",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "You have to escalate this to tier 2 support to get anywhere. Took three days.",
+      "note": "陷阱：escalate 指内部客服分层（★ 含第二人称）"
+    },
+    {
+      "id": "N20",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Not great, not terrible. It does the job but the instructions are useless.",
+      "note": "中性评价"
+    },
+    {
+      "id": "N21",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Customer service answered in five minutes and walked me through it. Impressed.",
+      "note": "正面"
+    },
+    {
+      "id": "N22",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "I filed a warranty claim with the manufacturer and they sent a replacement lid.",
+      "note": "陷阱：claim 指厂商保修，非向卖家索赔"
+    },
+    {
+      "id": "N23",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "The compensation they offered was a ten percent coupon, which I thought was fair enough.",
+      "note": "陷阱：补偿已接受、语气正面"
+    },
+    {
+      "id": "N24",
+      "label": "none",
+      "level": "low",
+      "register": "review",
+      "text": "Great value for the price. The case doubles as a stand.",
+      "note": "正面，含 case 词"
+    }
+  ]
+}
