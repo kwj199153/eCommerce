@@ -908,7 +908,7 @@
  * 没有这张表，「产品详情写着 0 条差评」这句话永远无法被证伪。
  */
 import { WINDOW_W } from '@/config/layout'
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   ReloadOutlined, SafetyCertificateOutlined, ThunderboltOutlined,
@@ -959,6 +959,7 @@ import {
   ruleCondText, ruleActionText, compensationText, rowActionLabel, rowHint, shortTime,
 } from './reviewDesk/reviewDeskVocabulary'
 import { useReviewDeskViews } from './reviewDesk/useReviewDeskViews'
+import { useReviewDeskEdits } from './reviewDesk/useReviewDeskEdits'
 
 /**
  * 处置通道的**含义与可逆性** —— 唯一真源（与后端 `service.DISPOSITION_CHANNELS`
@@ -1830,130 +1831,21 @@ function channelEffect(c: string): string {
 //     · 券码     —— 不能改，它只在核准那一步生成；
 //     · 通道     —— 可改，且必须讲清每类的可逆性；
 //     · 回复措辞 —— 可改（对买家说话吃语境），改措辞不涉及钱，无安全风险。
+//
+// ★ 状态与动作已外移到 `reviewDesk/useReviewDeskEdits.ts`（第 341 轮第二刀）。
+//   这里只留口径说明。通道语义表 `CHANNEL_META` / 通道全集 `ALL_CHANNELS` 仍住在
+//   本文件（门禁 `check-disposition-execution-honesty.cjs` H8 钉住），按**引用**
+//   注入 composable —— 不复制第二份，避免「同一判定两份实现」。
 // ==================================================================
-
-/** 当前编辑中的通道 */
-const editChannels = ref<string[]>([])
-/** 当前编辑中的回复草稿 */
-const editZh = ref('')
-const editEn = ref('')
-/** 光标停在哪个通道上（用于显示它的作用说明） */
-const channelHint = ref('')
-
-/** 抽屉打开 / 处置更新时，把后端值同步进编辑区 */
-watch(
-  disposition,
-  (d) => {
-    editChannels.value = [...(d?.channels || [])]
-    editZh.value = d?.reply_draft_zh || ''
-    editEn.value = d?.reply_draft_en || ''
-    channelHint.value = ''
-  },
-  { immediate: true },
-)
-
-/**
- * 能不能改 —— 只有 `proposed`（含被驳回后重开）可写。
- *
- * ★ 已批准 / 已核准(`issued`) / 已执行(`executed`) 一律锁定：
- *   批准过的内容被悄悄换掉，HITL 就成了形式。
- */
-const editable = computed(
-  () => disposition.value?.status === 'proposed' || disposition.value?.status === 'rejected',
-)
-
-const lockReason = computed(() =>
-  disposition.value?.status === 'issued'
-    ? '已核准（券码已生成并写进回复），历史不可改（要调整只能另开一笔）'
-    : disposition.value?.status === 'executed'
-      ? '平台已执行 —— 终态，不可再改'
-      : '已批准 —— 先驳回再改，避免批准过的内容被换掉',
-)
-
-/** 编辑区有未保存的修改吗 */
-const editDirty = computed(() => {
-  const d = disposition.value
-  if (!d) return false
-  return (
-    editChannels.value.join(',') !== (d.channels || []).join(',') ||
-    editZh.value !== (d.reply_draft_zh || '') ||
-    editEn.value !== (d.reply_draft_en || '')
-  )
+const {
+  editChannels, editZh, editEn, channelHint,
+  editable, lockReason, editDirty, focusChannel, irreversiblePicked,
+  toggleChannel, saveEdits, restoreSystemDraft,
+} = useReviewDeskEdits({
+  disposition, detailView, acting, reload,
+  allChannels: ALL_CHANNELS,
+  channelMeta: CHANNEL_META,
 })
-
-/** 说明行聚焦的通道（没点过就看第一个已选通道） */
-const focusChannel = computed(
-  () => channelHint.value || editChannels.value[0] || ALL_CHANNELS[0],
-)
-
-/** 已选的不可逆通道 —— 必须在核准之前就看得见 */
-const irreversiblePicked = computed(() =>
-  editChannels.value.filter((c) => CHANNEL_META[c]?.irreversible),
-)
-
-function toggleChannel(c: string) {
-  if (!editable.value) return
-  channelHint.value = c
-  const i = editChannels.value.indexOf(c)
-  if (i >= 0) editChannels.value.splice(i, 1)
-  else editChannels.value.push(c)
-}
-
-/**
- * 保存修改 —— 只提交**通道 + 回复措辞**，**故意不提交 `compensation`**。
- *
- * ★ 为什么不能传金额：后端 `propose_disposition` 在 `compensation` 为 `None` 时
- *   会用 `build_disposition_draft` 按**补偿规则**重算一遍 ⇒ 金额永远由规则唯一
- *   决定。前端若能直接塞金额，就直接绕过了预算上限 —— `CompensationOverBudget`
- *   只在规则那条路上拦得住，而这里正是它拦不住的那个入口。
- */
-async function saveEdits() {
-  const reviewId = detailView.value?.id
-  if (!reviewId) return
-  if (!editChannels.value.length) {
-    message.warning('至少要留一个处置通道')
-    return
-  }
-  acting.value = true
-  try {
-    disposition.value = await proposeDisposition({
-      review_id: reviewId,
-      channels: [...editChannels.value],
-      reply_draft_zh: editZh.value,
-      reply_draft_en: editEn.value,
-    })
-    message.success('已保存（仍是待批准，不影响已批准 / 已核准 / 已执行的历史）')
-    void reload()
-  } catch (e: any) {
-    // ★ 每个失败都要看到原因（例如「已批准的行不许被草稿覆盖」）
-    message.error(e?.response?.data?.detail || e?.message || '保存失败')
-  } finally {
-    acting.value = false
-  }
-}
-
-/** 把回复草稿填回系统现算的那一版（`/draft` 不落库，只用来回填编辑框） */
-async function restoreSystemDraft() {
-  const reviewId = detailView.value?.id
-  if (!reviewId) return
-  acting.value = true
-  try {
-    const d = await draftDisposition(reviewId)
-    if (!d.ready) {
-      // ★ 同上：原因一律用后端给的；没有就说「没给」，不补一句像是原因的话
-      message.warning(d.reason || '系统给不出草稿，且后端没返回原因 —— 不猜，请先看这条差评有没有归因')
-      return
-    }
-    if (d.channels) editChannels.value = [...d.channels]
-    editZh.value = d.reply_draft_zh || ''
-    editEn.value = d.reply_draft_en || ''
-    message.info('已填入系统草稿，确认后再点「保存修改」')
-  } catch (e: any) {
-    message.error(e?.response?.data?.detail || e?.message || '读取系统草稿失败')
-  } finally {
-    acting.value = false
-  }
-}
 
 void reload()
 </script>
