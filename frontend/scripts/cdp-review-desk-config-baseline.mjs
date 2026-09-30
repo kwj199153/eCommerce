@@ -24,6 +24,11 @@
 //   7. ★ 计算样式（第 341 轮补）：`.rd-table` 系列 / `.rd-table-act` / `.rd-rule-cond` /
 //      `.rd-detail-grid` 等的 getComputedStyle 读数 —— **只读 DOM 结构看不见样式丢失**，
 //      而「把表格拆成子组件会让父组件 scoped 的后代选择器失效」正是最隐蔽的破坏。
+//   8. ★ 子组件**事件契约**（第 342 轮补）：规则表拆成子组件后，3 个动作改走
+//      `emit('edit'|'toggle'|'remove')` —— emit 名与父组件的 `@edit`/`@toggle`/`@remove`
+//      对不上时按钮**静默失效**，而 DOM 计数 / class / 行数 / 计算样式**一概不变**。
+//      ⇒ 必须**真点**：点【编辑】断言弹窗与参数；【启用】/【删除】先把写请求拦在浏览器层
+//      （不落共享库），再断言「请求真的发出了」。
 //   ★ 刻意**不**钉：DOM 顺序、`style=` 内联属性、行内容文案、以及百分比宽度换算出的 px
 //     —— 那些会随 seed / 浮点抖动变，钉住只会让基线自己变得易碎。
 //
@@ -43,6 +48,13 @@
 //       注入后表头 padding/对齐/边框全变、判据却照样 PASS ⇒ 判据必须把抓到的字段**逐条**断言。
 //     ★ 另注：探针与被测应用**共享限流配额**（60/min），密集连跑会出 429 ⇒ B5a 之类的伪红；
 //       元数据里的 rateHits / netTail 就是用来把「限流降级」与「真红」分开的。
+//     ★ 写操作的接线怎么测才不动数据（第 342 轮补）：用 `Network.setBlockedURLs` 把该资源的
+//       写请求在浏览器层拦掉 —— 请求发不出去、库不变，但 `Network.requestWillBeSent` 照旧触发
+//       ⇒ 用 `sentLog` 断言「应用真的试图发这个请求」。
+//       ★ 判据**必须**取「请求发出了」，不能取「页面没报错」：拦掉后前端必然 message.error，
+//         判「有没有报错」等于恒真 = fail-open 的假门禁。
+//       ★ 拦截是**全局**的 ⇒ 只在该段的点击前后开关，结束立刻解封（否则后续取数一并被挡，
+//         症状看起来像限流降级 B5a）。
 //
 // 用法：node scripts/cdp-review-desk-config-baseline.mjs
 //   PROBE_URL   覆盖地址（默认 http://127.0.0.1:5173/）
@@ -135,6 +147,9 @@ const pending = new Map()
 /** 接口调用留痕：用于区分「抽屉数据没回来」是限流 / 失败 / 单纯慢。 */
 const netLog = []
 const rateHits = []
+/** ★ 「应用**试图**发出的请求」（第 342 轮补）：被 `setBlockedURLs` 拦掉的请求不会有
+ *  responseReceived，只有 requestWillBeSent 能证明接线通、处理器真的打了 API。 */
+const sentLog = []
 ws.addEventListener('message', (ev) => {
   const m = JSON.parse(ev.data)
   if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); return }
@@ -145,6 +160,21 @@ ws.addEventListener('message', (ev) => {
     // ★ 探针与被测应用**共享限流配额**（60/min，按 IP）：429 会让页面降级成残缺态，
     //   症状会伪装成「功能坏了」。记下来才能与真红区分。
     if (r.status === 429) rateHits.push(url.slice(0, 100))
+  }
+  if (m.method === 'Network.requestWillBeSent') {
+    const req = m.params?.request || {}
+    const u = String(req.url || '')
+    if (u.includes('/api/v1/')) {
+      const p = u.split('/api/v1')[1]?.split('?')[0] || ''
+      const segs = p.split('/').filter(Boolean)
+      sentLog.push({
+        m: req.method,
+        path: p,
+        // 末段是资源 id —— 用来对账「两个按钮作用在同一行」
+        id: segs.length ? segs[segs.length - 1] : '',
+        body: req.postData ? String(req.postData).slice(0, 300) : null,
+      })
+    }
   }
 })
 await new Promise((res, rej) => { ws.addEventListener('open', res); ws.addEventListener('error', rej) })
@@ -533,6 +563,223 @@ check('B4c', '规则表计算样式非空且为预期特征值（共享段同台
     act: stRules.styles?.act, actBtn: stRules.styles?.actBtn, ruleCond: stRules.styles?.ruleCond, rulesWrap: stRules.styles?.rulesWrap })
 await shot('rules')
 
+// ------------------------------ B4d~g 规则表动作接线（子组件事件契约，第 342 轮补）
+// ★★ 为什么必须**真点**（而不是继续只采结构）：
+//   规则表拆成 `ReviewDeskRulesTable.vue` 后，3 个动作从「直接调父函数」改成
+//   `emit('edit'|'toggle'|'remove')`。只要 emit 名与父组件的 `@edit`/`@toggle`/`@remove`
+//   对不上，按钮就**静默失效** —— 而 DOM 数量、class、行数、行高、计算样式**一概不变**
+//   ⇒ B4 / B4b / B4c 一律照样绿，这条缺口正是上一刀（1426b74）如实记下的。
+// ★ 三个动作「不落共享库」的测法：
+//   · edit   —— 纯前端（`openRuleEdit` 只填表单、不打接口）⇒ 直接点，零副作用。
+//   · toggle —— 打 `PATCH /trade/compensation-rules/{id}`。
+//   · remove —— 打 `DELETE /trade/compensation-rules/{id}`，且 emit 挂在 popconfirm 的
+//               `@confirm` 上 ⇒ 必须先点【删除】让它弹出，再点【确定】。
+//   后两者用 `Network.setBlockedURLs` 把写请求在浏览器层拦掉：请求**发不出去**、库**不变**，
+//   而 `Network.requestWillBeSent` 仍会触发 ⇒ 既能证接线通、又不动数据。
+//   ★ 拦截是**全局**的：本段之内**只准**点这三处；结束立刻解封再进 B5，
+//     否则会把抽屉的取数请求一起挡掉（症状＝B5a 伪红，看起来像限流降级）。
+// ★ 断言取「请求真的发出了」（sentLog）而**不是**「页面没报错」：拦掉后前端必然 message.error，
+//   判「有没有报错」等于恒真 —— 那是 fail-open 的假门禁。
+// ★ 也不取「点击后行数变了」：拦掉后本来就不该变，这条既不能证通也不能证不通。
+const WRITE_BLOCK = ['*/api/v1/trade/compensation-rules/*']
+const isRuleWrite = (x) => /^\/trade\/compensation-rules\//.test(x.path) && x.m !== 'GET'
+/** 把路径末段的资源 id 归一化（基线要能跨 seed 复跑，不能钉死某条规则的 uuid）。 */
+const normPath = (p) => (p ? p.replace(/\/[^/]+$/, '/<id>') : null)
+
+/** 读规则表**第一行**：行数 / code / 动作按钮清单 / 是否有启停开关。 */
+const READ_RULE_ROW = `
+(() => {
+  const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim()
+  const t = document.querySelector('.rd-root .rd-rules table.rd-table')
+  if (!t) return JSON.stringify({ table: false })
+  const tr = t.querySelector('tbody tr')
+  if (!tr) return JSON.stringify({ table: true, rows: 0 })
+  const codeEl = tr.querySelector('td code')
+  return JSON.stringify({
+    table: true,
+    rows: t.querySelectorAll('tbody tr').length,
+    code: codeEl ? norm(codeEl.textContent) : '',
+    actBtns: [...tr.querySelectorAll('.rd-table-act button')].map(b => norm(b.textContent)),
+    hasSwitch: !!tr.querySelector('td .ant-switch'),
+  })
+})()`
+
+/** 在规则表第一行里按**精确文案**点动作按钮。
+ *  ★ 必须限定在 `.rd-rules` 内：全页第一个 `.rd-table-act .ant-btn` 是**台账表**的。 */
+const clickRuleAct = (label) => `
+(() => {
+  const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim()
+  const t = document.querySelector('.rd-root .rd-rules table.rd-table')
+  if (!t) return JSON.stringify({ ok: false, why: 'no rules table' })
+  const tr = t.querySelector('tbody tr')
+  if (!tr) return JSON.stringify({ ok: false, why: 'no row' })
+  const btns = [...tr.querySelectorAll('.rd-table-act button')]
+  const hit = btns.find(b => norm(b.textContent) === ${JSON.stringify(label)})
+  if (!hit) return JSON.stringify({ ok: false, why: 'no btn', have: btns.map(b => norm(b.textContent)) })
+  hit.click()
+  return JSON.stringify({ ok: true })
+})()`
+
+/** 读当前**可见**的规则编辑弹窗。
+ *  ★ 必须过滤 `display !== none`：a-modal 关掉后 DOM 仍在，只看 `.ant-modal` 会拿到**残留**。 */
+const READ_RULE_MODAL = `
+(() => {
+  const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim()
+  const wraps = [...document.querySelectorAll('.ant-modal-wrap')].filter(w => getComputedStyle(w).display !== 'none')
+  const w = wraps[0] || null
+  const form = w ? w.querySelector('.rd-rule-form') : null
+  const input = form ? form.querySelector('input') : null
+  return JSON.stringify({
+    visible: wraps.length,
+    form: !!form,
+    title: w ? norm(w.querySelector('.ant-modal-title')?.textContent || '') : '',
+    codeValue: input ? input.value : null,
+    codeDisabled: input ? input.disabled === true : null,
+  })
+})()`
+
+/** 关掉规则编辑弹窗：点 footer 里**非 primary** 的那个（= 取消）。
+ *  ★ 不按文案点：antd 会在两个 CJK 字之间插空格（「取 消」）⇒ 精确文案匹配必然落空。 */
+const CLOSE_RULE_MODAL = `
+(() => {
+  const wraps = [...document.querySelectorAll('.ant-modal-wrap')].filter(w => getComputedStyle(w).display !== 'none')
+  const w = wraps[0]
+  if (!w) return JSON.stringify({ ok: true, alreadyClosed: true })
+  const btns = [...w.querySelectorAll('.ant-modal-footer button')]
+  const cancel = btns.find(b => !b.classList.contains('ant-btn-primary')) || btns[0]
+  if (!cancel) return JSON.stringify({ ok: false, why: 'no footer button', have: btns.map(b => (b.textContent || '').trim()) })
+  cancel.click()
+  return JSON.stringify({ ok: true, closedBy: (cancel.textContent || '').trim() })
+})()`
+
+/** 点规则表第一行的启停开关（写请求会被拦掉）。 */
+const CLICK_RULE_SWITCH = `
+(() => {
+  const t = document.querySelector('.rd-root .rd-rules table.rd-table')
+  const tr = t ? t.querySelector('tbody tr') : null
+  const sw = tr ? tr.querySelector('td .ant-switch') : null
+  if (!sw) return JSON.stringify({ ok: false, why: 'no switch' })
+  sw.click()
+  return JSON.stringify({ ok: true })
+})()`
+
+/** 读当前**可见**的 popconfirm（文案 + 是否有确定按钮）。 */
+const READ_POPCONFIRM = `
+(() => {
+  const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim()
+  const ps = [...document.querySelectorAll('.ant-popover')]
+    .filter(p => !p.classList.contains('ant-popover-hidden') && getComputedStyle(p).display !== 'none')
+  const p = ps[0] || null
+  return JSON.stringify({
+    visible: ps.length,
+    text: p ? norm(p.textContent || '') : '',
+    confirmFound: !!p && !!p.querySelector('.ant-popconfirm-buttons .ant-btn-primary'),
+  })
+})()`
+
+/** 点 popconfirm 的【确定】—— 这一步才触发 emit('remove')。 */
+const CONFIRM_POPCONFIRM = `
+(() => {
+  const ps = [...document.querySelectorAll('.ant-popover')]
+    .filter(p => !p.classList.contains('ant-popover-hidden') && getComputedStyle(p).display !== 'none')
+  const b = ps[0] ? ps[0].querySelector('.ant-popconfirm-buttons .ant-btn-primary') : null
+  if (!b) return JSON.stringify({ ok: false, why: 'no confirm btn' })
+  b.click()
+  return JSON.stringify({ ok: true })
+})()`
+
+const ruleRow = JSON.parse(await run(READ_RULE_ROW))
+
+let rulesAct = { skipped: 'no-rule-rows' }
+if (ruleRow.rows === 0) {
+  // ★ 与 B5 同惯例：**数据条件**达不到就如实 SKIP，不伪装成代码回归。
+  check('B4d0', '规则表动作接线（当前规则表无行 ⇒ 无法验证，如实 SKIP）', null, ruleRow)
+} else {
+  check('B4d0', '规则表前置：有行、行内有【编辑】【删除】按钮与启停开关（拆成子组件后动作按钮仍渲染）',
+    ruleRow.table === true && ruleRow.code !== ''
+    && (ruleRow.actBtns || []).includes('编辑') && (ruleRow.actBtns || []).includes('删除')
+    && ruleRow.hasSwitch === true,
+    ruleRow)
+
+  // ---- B4d：edit（纯前端，零副作用）
+  const editClick = JSON.parse(await run(clickRuleAct('编辑')))
+  let rModal = null
+  for (let i = 0; i < 25; i++) {
+    rModal = JSON.parse(await run(READ_RULE_MODAL))
+    if (rModal.form) break
+    await sleep(300)
+  }
+  check('B4d', '点规则表【编辑】⇒ 编辑弹窗出现（证明子组件 emit(edit) 接到了父组件 openRuleEdit）',
+    editClick.ok === true && rModal.form === true, { click: editClick, modal: rModal })
+  check('B4d2', '弹窗标题 = 「编辑补偿规则 · <被点那一行的 code>」且 code 已回填并只读（参数就是那一行，不是别的行）',
+    rModal.form === true && ruleRow.code !== ''
+    && rModal.title === `编辑补偿规则 · ${ruleRow.code}`
+    && rModal.codeValue === ruleRow.code && rModal.codeDisabled === true,
+    { wantTitle: `编辑补偿规则 · ${ruleRow.code}`, gotTitle: rModal?.title,
+      wantCode: ruleRow.code, gotCode: rModal?.codeValue, disabled: rModal?.codeDisabled })
+  const closeRes = JSON.parse(await run(CLOSE_RULE_MODAL))
+  await sleep(700)
+  const modalAfter = JSON.parse(await run(READ_RULE_MODAL))
+  check('B4d3', '编辑弹窗已关闭（证据收干净：残留的 modal 会污染后面的抽屉读数）',
+    closeRes.ok === true && modalAfter.visible === 0 && modalAfter.form === false,
+    { close: closeRes, after: modalAfter })
+  await shot('rules-act-edit')
+
+  // ---- B4e：toggle（写请求拦截，不落库）
+  await send('Network.setBlockedURLs', { urls: WRITE_BLOCK })
+  sentLog.length = 0
+  const swToggle = JSON.parse(await run(CLICK_RULE_SWITCH))
+  await sleep(1500)
+  const toggleReqs = sentLog.filter(isRuleWrite)
+  await send('Network.setBlockedURLs', { urls: [] })
+  let toggleBody = null
+  try { toggleBody = toggleReqs[0]?.body ? JSON.parse(toggleReqs[0].body) : null } catch { toggleBody = null }
+  check('B4e', '点规则表【启用】开关 ⇒ 恰好对**本行**发起 1 个 PATCH（body 为 {enabled:布尔}）——证明 emit(toggle) 接到了 toggleRule',
+    swToggle.ok === true && toggleReqs.length === 1 && toggleReqs[0].m === 'PATCH'
+    && typeof toggleBody?.enabled === 'boolean',
+    { click: swToggle, reqs: toggleReqs, body: toggleBody })
+
+  // ---- B4f / B4g：remove（emit 挂在 popconfirm 的 @confirm 上；同样拦截）
+  await send('Network.setBlockedURLs', { urls: WRITE_BLOCK })
+  sentLog.length = 0
+  const delClick = JSON.parse(await run(clickRuleAct('删除')))
+  await sleep(900)
+  const pop = JSON.parse(await run(READ_POPCONFIRM))
+  // ★ 关键判据：**点确定之前**应当零写请求 —— 这条同时钉住「emit 挂在 @confirm 上」这个契约。
+  const beforeConfirm = sentLog.filter((x) => x.m !== 'GET').length
+  const confirmClick = JSON.parse(await run(CONFIRM_POPCONFIRM))
+  await sleep(1500)
+  const delReqs = sentLog.filter(isRuleWrite)
+  await send('Network.setBlockedURLs', { urls: [] })
+  check('B4f', '点规则表【删除】⇒ popconfirm 弹出（含「确定删除这条规则」）且**点确定前零写请求**（证明 emit 挂在 @confirm 上，不是挂在点击上）',
+    delClick.ok === true && pop.visible === 1 && pop.text.includes('确定删除这条规则')
+    && pop.confirmFound === true && beforeConfirm === 0,
+    { click: delClick, pop, beforeConfirm })
+  check('B4g', '点 popconfirm【确定】⇒ 恰好对**本行**发起 1 个 DELETE —— 证明 emit(remove) 接到了 removeRule',
+    confirmClick.ok === true && delReqs.length === 1 && delReqs[0].m === 'DELETE' && delReqs[0].id !== '',
+    { confirm: confirmClick, delReqs })
+  // ★ 「两次请求打到**同一行**」单独成条，且**只在 B4e 也拿到 PATCH 时**才判（否则 null = SKIP）。
+  //   为什么必须拆开：第一版把 `id === toggleReqs[0]?.id` 写在 B4g 里，实测注入
+  //   「toggle 的 emit 改名」时 **B4g 也转红** —— 可 remove 其实好好的。
+  //   ⇒ 归因被指错方向（本仓铁律：FAIL 行必须指向真正坏掉的那一处）。B4e 坏时本条如实 SKIP。
+  check('B4g2', '【启用】与【删除】打到**同一行**（两次写请求的资源 id 相同）—— 证明行内动作没串到别的行',
+    toggleReqs.length === 1 && delReqs.length === 1 ? delReqs[0].id === toggleReqs[0].id : null,
+    { toggleId: toggleReqs[0]?.id, delId: delReqs[0]?.id, note: 'B4e 未拿到 PATCH ⇒ 条件化 SKIP' })
+
+  rulesAct = {
+    rowCode: ruleRow.code,
+    actBtns: ruleRow.actBtns,
+    hasSwitch: ruleRow.hasSwitch,
+    modalTitle: rModal?.title || null,
+    codeBackfilled: rModal?.codeValue === ruleRow.code,
+    codeReadonly: rModal?.codeDisabled === true,
+    // ★ 存**归一化**路径（id → <id>）：基线要能跨 seed 复跑，不钉死某条规则的 uuid
+    toggle: { m: toggleReqs[0]?.m || null, path: normPath(toggleReqs[0]?.path), body: toggleBody },
+    remove: { m: delReqs[0]?.m || null, path: normPath(delReqs[0]?.path) },
+    popTextHasDeleteConfirm: pop.text.includes('确定删除这条规则'),
+  }
+}
+
 // ---------------------------------------------------------------- B5 抽屉（从台账打开）
 // ★ 第一版漏了这一步：B4 结束时视图停在 rules，直接找 `.rd-act-open` 找不到 ⇒ 误报 SKIP。
 //   抽屉入口长在**台账行**上，必须先切回台账。
@@ -574,7 +821,7 @@ if (!od.ok) {
 
 // ---------------------------------------------------------------- 落盘
 const baseline = {
-  default: stDefault, orphan: stOrphan, ledger: stLedger, rules: stRules, drawer,
+  default: stDefault, orphan: stOrphan, ledger: stLedger, rules: stRules, rulesAct, drawer,
 }
 const payload = {
   meta: {
