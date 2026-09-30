@@ -45,10 +45,10 @@
   而是「注册 / 引导」。把两档混在一起数会得出偏大的数字
   （实测 50 + 7 条；混算成 57 条）。
 
-## 实测值（第 140 轮建立 / 第 327·328·331 轮复算 / 第 335 轮再复算）
+## 实测值（第 140 轮建立 / 第 327·328·331 轮复算 / 第 335 轮再复算 / 第 340 轮复算）
 
-  `core/**/*.py` = **61** 个；unit = 21 个；
-  import 期边 = **50** 条（唯一对）；函数内边 = **7** 条；
+  `core/**/*.py` = **63** 个；unit = **22** 个；
+  import 期边 = **54** 条（唯一对）；函数内边 = **7** 条；
   含环的强连通块 = **1** 个：[['auth', 'identity', 'stores']]；
   `STANDALONE_UNITS` = ['<core>', 'profit_engine', 'timefmt']。
   复算方式：底部的 `_scan_core_graph()` 就是判据本体，直接调用即可，
@@ -178,6 +178,29 @@
     与 `from core.config import config`；`core/bootstrap.py` 新增的
     `import importlib` 与 `from typing import ...` 是标准库，不构成 unit->unit 边。
     实测：unit 仍 21、SCC 仍**恰好 1 个**、孤立单元仍**恰好 3 个**。
+
+## 第 340 轮新增的 4 条边（必须记住）
+
+  给 `scripts/backup_db.py` 接上**每日 beat 调度**（`core/backup/tasks.py`，
+  P0-2）后，`backup` 这个新 unit 有 4 条 import 期出边：
+
+    · `backup -> config`        读保留份数 `config.db_backup_keep`
+    · `backup -> logger`        备份结局必须落日志（定时任务的失效默认是静默的）
+    · `backup -> observability` 指标出口（`backup_runs_total` / `backup_last_bytes`）
+    · `backup -> redis`         `@celery_app.task` 装饰器需要 `celery_app`
+
+  ★ 与 `audit` / `identity` 那两轮同款 —— 这 4 条都是"备份"这个能力的
+    **定义性依赖**（记日志 + 记指标 + 注册任务 + 读配置），不是"顺手拿一下"。
+
+  ★ 本 unit **刻意没有** `backup -> database`：备份的库访问发生在**子进程**里
+    （`pg_dump` / `pg_restore` 通过 `docker exec` 在容器内跑），任务体只是
+    `subprocess.run`。这也正是它**不需要** `_thread_loop` 的原因（见
+    `core/backup/tasks.py` 的 docstring）；`core/backup/__init__.py` 是纯文档、
+    零 import 期边。
+
+  ★ 不构成环：`backup` 是叶子（4 条出边全指向下游/底层 unit，没有谁指向它）。
+    实测：unit **21 -> 22**、import 期边 **50 -> 54**、SCC 仍**恰好 1 个**、
+    孤立单元仍**恰好 3 个**。
 """
 
 from __future__ import annotations
@@ -212,6 +235,14 @@ IMPORT_TIME_EDGES: set[tuple[str, str]] = {
     ("auth", "observability"),
     ("auth", "security"),
     ("auth", "stores"),
+    # ★ 第 340 轮（P0-2 数据库每日备份）：backup 内核的 4 条 import 期出边。
+    #   config（读保留份数 db_backup_keep）/ logger（结局落日志）/
+    #   observability（指标出口）/ redis（@celery_app.task 装饰器）。
+    #   理由见文件头「第 340 轮新增的 4 条边」。
+    ("backup", "config"),
+    ("backup", "logger"),
+    ("backup", "observability"),
+    ("backup", "redis"),
     ("bootstrap", "logger"),
     ("checkpoint", "config"),
     ("database", "config"),

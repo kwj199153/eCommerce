@@ -118,6 +118,15 @@ celery_app.autodiscover_tasks([
     #     ⇒ `celery inspect registered` 里查不到它，而 beat 照常按调度表投递
     #     ⇒ 任务永远停在 pending，日志里一条都没有。
     "core.identity",
+    # ★ 第 340 轮：数据库**每日备份**（`core/backup/tasks.py`）。
+    #   它把此前**零调度**的 `scripts/backup_db.py` 接上 beat ——
+    #   在此之前生产里没有 cron / 没有任务，"备份"只在有人手动跑时发生。
+    #   ★ 同样是"指向 core 下的包"：备份的核跟着驱动它的脚本走，
+    #     不为此新开一个不含业务代码的 `modules/backup` 空壳域。
+    #   ★ 漏了这一行的后果与上面逐字相同：装饰器从未被执行过
+    #     ⇒ `celery inspect registered` 里查不到它，而 beat 照常按调度表投递
+    #     ⇒ 任务永远停在 pending，日志里一条都没有。
+    "core.backup",
 ])
 
 # ====== 定时任务（Celery Beat）======
@@ -153,6 +162,17 @@ AUDIT_PURGE_MINUTE = 7
 #:   各自的 runs/deleted 指标天然分开，告警也能分别定位。
 IDENTITY_PURGE_HOUR = 5
 IDENTITY_PURGE_MINUTE = 17
+
+#: 数据库每日备份的触发时刻（★ 第 340 轮 / P0-2）。
+#: ★ 小时取 **2**、分钟取 **41**，两处都是刻意错峰：
+#:   · 分钟 **41** —— 避开 `billing-expire-pending` 的 `*/5` 边界（5 的倍数）；
+#:   · 小时 **2** —— 排在**维护窗口之前**（memory 3:00 / billing 3:20 /
+#:     支付对账 4:30 / audit 清理 5:07 / identity 清理 5:17）。
+#:     备份要拍的是"前一天收敛后的快照"，所以它应当在这些"删数据"的任务
+#:     **之前**跑；排在它们之后会拍到一份被当天清理改过的库，
+#:     与"日终快照"的语义不符。
+BACKUP_HOUR = 2
+BACKUP_MINUTE = 41
 # ★ 调度表定义在这里而不是 `modules/memory/tasks.py`：`beat_schedule` 是
 #   **应用级**配置，beat 进程只读它、不 import 任何任务模块。
 #   写在任务模块里的话，beat 就得先 import 业务代码才能知道"该调度什么" ——
@@ -261,6 +281,26 @@ celery_app.conf.beat_schedule = {
     "identity-purge-expired": {
         "task": "identity.purge_expired",
         "schedule": crontab(hour=IDENTITY_PURGE_HOUR, minute=IDENTITY_PURGE_MINUTE),
+        "options": {"queue": "default"},
+    },
+    # ====== 数据库每日备份（第 340 轮 / P0-2）======
+    #
+    # ★★ 任务名是**字面量**，理由同上（core 不得 import modules）：它与
+    #    `core/backup/tasks.py::TASK_DB_BACKUP` 构成「同一事实两份写法」。
+    #    写错时的现象是「`backups/` 再不长新文件，且日志里一条都没有」——
+    #    （beat 往一个没人注册的名字投递，队列里只是多了一条没人认识的
+    #    消息，"没人消费"本身不是错误 ⇒ 什么都不发生。）
+    #    ⇒ 由 `tests/test_backup_schedule.py` 把两边**钉成相等**。
+    #
+    # ★ 为什么用 crontab 而不是 timedelta：同 memory 那条理由 ——
+    #   crontab 每次按**当前时间**重算下次触发点，不依赖调度文件的
+    #   last_run_at ⇒ 调度文件丢失 / 重建时不会漏掉一整天。
+    #
+    # ★ 为什么这条**没有**对应的"清理核"：备份是**只增**的（快照），
+    #   它的"保留期"由脚本自己的 `--keep` 轮转处理，不在 beat 里再做一次。
+    "db-backup-daily": {
+        "task": "backup.db_daily",
+        "schedule": crontab(hour=BACKUP_HOUR, minute=BACKUP_MINUTE),
         "options": {"queue": "default"},
     },
 }

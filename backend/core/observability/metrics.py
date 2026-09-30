@@ -355,6 +355,28 @@ IDENTITY_PURGE_DELETED = _Counter(
     ("table",),
 )
 
+# --- 数据库备份（第 340 轮 / P0-2）---
+# ★ 为什么备份也必须有指标：备份的失效**默认是静默的** —— beat 没起 /
+#   任务名两处写法不一致 / 脚本路径漂移，现象全都表现为「`backups/` 目录
+#   不再长新文件」，而这件事在接口、访问日志、业务错误日志里**一个影子都没有**。
+#   等到真要用备份那天才发现"最近一份是三个月前的"，是不可逆的事故。
+#   日志会被滚动覆盖，指标不会 ⇒ 必须有两个出口（跑没跑成 + 备了多少）。
+#   ★ 与审计 / 身份域那两组**逐字同款**，因为失效形态相同。
+BACKUP_RUNS = _Counter(
+    "backup_runs_total",
+    "数据库备份执行次数（按结局：ok / failed）",
+    ("status",),
+)
+# ★ 为什么大小要单独一个 gauge：`runs{status}` 只答"跑没跑成"，答不了
+#   "备了多少"。而"备份是不是真的在长"只能靠字节数看 ——
+#   持续偏小 ⇒ dump 被截断或库被清空；长期一个数 ⇒ 备份没真的重跑。
+#   ★ 用 Gauge 而不是 Counter：这里要的是**最近一次**的绝对值，不是累计。
+BACKUP_LAST_BYTES = _Gauge(
+    "backup_last_bytes",
+    "最近一次成功备份的字节数（0 = 尚无成功备份）",
+    (),
+)
+
 # 对外暴露的顺序（/metrics 输出顺序稳定，便于 diff）
 _REGISTRY = (
     HTTP_REQUESTS,
@@ -374,6 +396,8 @@ _REGISTRY = (
     AUDIT_PURGE_DELETED,
     IDENTITY_PURGE_RUNS,
     IDENTITY_PURGE_DELETED,
+    BACKUP_RUNS,
+    BACKUP_LAST_BYTES,
     DEPENDENCY_UP,
 )
 

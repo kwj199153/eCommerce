@@ -310,3 +310,54 @@ groups:
             ★ 与 AuditPurgeStalled 同款注意：指标序列**完全不存在**时
               increase 返回空 ⇒ 本规则不触发；纯"从未跑过"由 WorkerDown 覆盖。
           runbook: "docker compose logs --tail=200 beat | grep identity-purge-expired"
+
+  # ==========================================================================
+  # 6. 数据库备份（第 340 轮 / P0-2）
+  # ==========================================================================
+  # ★ 与第 4 节 audit / 第 5 节 identity 那两组**同款、方向相反**：
+  #   Failing = 跑了但失败（脚本退出码非 0 / 校验不过 / 子进程超时）；
+  #   Stalled = 压根没跑（beat 没起 / 任务名两处不一致 / autodiscover 漏了
+  #   `core.backup`）。只留 Failing 的话，「从不产生任何指标」的那一半
+  #   永远不会被报出来 —— 而它才是本轮修掉的那个缺陷（脚本在、没人调用）
+  #   最可能复发的形态。
+  - name: storekeeper-backup
+    rules:
+      - alert: BackupFailing
+        expr: increase(backup_runs_total{status="failed"}[26h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "数据库每日备份失败（最近 26 小时）"
+          description: >-
+            `core/backup/tasks.py::db_backup_daily` 抛异常（脚本退出码非 0：
+            1=参数与环境错误 / 2=备份文件校验失败，或子进程超时）。
+            ★ 这是**静默型故障**：备份失败不影响任何业务接口，所以从
+            "系统看起来正常"上完全看不出问题；而后果是 `backups/` 里最近
+            一份越来越旧 —— 等到真要用备份那天才发现，是不可逆的事故。
+            ★ 任何一次都值得查：通常是 my-postgres 容器不在 / 磁盘满 /
+              pg_dump 权限问题 / backups 目录不可写。
+          runbook: "docker compose logs --tail=200 beat worker | grep 数据库每日备份；再手动跑 python scripts/backup_db.py backup"
+
+      - alert: BackupStalled
+        expr: sum(increase(backup_runs_total[26h])) == 0
+        for: 1h
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "数据库备份 26 小时无任何记录"
+          description: >-
+            本任务每天触发一次，26h 内正常情况下至少有 1 条记录
+            （status 可能是 ok / failed 之一）。无记录 ⇒ beat 没跑、任务名
+            两处写法不一致（`core/redis.py::beat_schedule` 里是**字面量**，
+            理由见 `core/backup/tasks.py`），或 `autodiscover_tasks([...])`
+            漏了 `"core.backup"`（后者会让装饰器从未被执行过 ⇒ 任务根本
+            不存在，而 beat 照常投递 ⇒ 永远停在 pending）。两处由
+            tests/test_backup_schedule.py 钉住。
+            ★ 与 AuditPurgeStalled 同款注意：指标序列**完全不存在**时
+              increase 返回空 ⇒ 本规则不触发；纯"从未跑过"由 WorkerDown 覆盖。
+            ★ 本条 severity 取 critical（比 audit / identity 的 warning 高一档）：
+              没有备份是**数据不可恢复**级别的事故，不是"该清理没清理"。
+          runbook: "docker compose logs --tail=200 beat | grep db-backup-daily"
