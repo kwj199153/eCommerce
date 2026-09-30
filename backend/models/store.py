@@ -15,7 +15,7 @@
 from enum import Enum
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 # ====== 枚举 ======
@@ -97,6 +97,19 @@ class Store(BaseModel):
     # 凭证信息（不返回给前端明文）
     has_credentials: bool = Field(default=False, description="是否已配置 API 凭证")
 
+    # ★★★ 第 175 轮：演示店铺标记。
+    #
+    #   为什么必须出现在**这一层**（而不是只加在 ORM 上）：
+    #   `GET /api/v1/stores` 的可见性过滤发生在**内存缓存**上 ——
+    #   `modules/stores/router.py::list_stores()` 先 `sorted(_store_db.values())`
+    #   （拿到的是一批 pydantic `Store`），再交给 `filter_accessible_stores()`。
+    #   这一层若没有 `is_demo`，ORM 里那个字段在过滤时**读不到**：
+    #   演示分支只能拿到 None ⇒ 演示模式依然全白，而类型检查**不会报错**
+    #   （`getattr(s, "is_demo", False)` 这种写法天然吞掉字段缺失）。
+    #
+    #   ⚠️ 它**刻意不进** `StoreCreate`：客户端不能自己声明"我是演示店铺"。
+    is_demo: bool = Field(default=False, description="演示店铺：仅对演示身份可见")
+
     # 时间戳
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -122,6 +135,28 @@ class Store(BaseModel):
     def is_active(self) -> bool:
         return self.status == StoreStatus.ACTIVE
 
+    # ★★★ 2026-09-29（第 318 轮）：`is_connected` **必须**是 `@computed_field`。
+    #
+    #   它原本是普通 `@property` —— 值算得对、类型检查也过，但
+    #   **pydantic v2 不会把普通 property 序列化进 `model_dump()`**。
+    #   而 `GET /api/v1/stores` 的 `response_model=StoreListResponse` 正是
+    #   走 `model_dump()` ⇒ JSON 里**根本没有 `is_connected` 这个键**。
+    #   前端读 `item.is_connected` 恒为 `undefined` ⇒ 无论后端连没连上，
+    #   店铺管理页永远显示「未连接」。
+    #
+    #   ★ 这是本轮「只显示未连接」的**机制性根因**，不是「漏写了一个字段」：
+    #     属性在、值也对，只是没进 JSON。也正因为如此，TS 类型声明
+    #     （`interface Store` 里有 `is_connected`）与后端自测
+    #     （直接读属性得到 True）**两边的检查都不会报错**。
+    #
+    #   ★ 加这个装饰器**不会**让 `Store` 多出一个可赋值字段：
+    #     `computed_field` 只影响序列化输出，构造时仍不接受该关键字。
+    #
+    #   ⚠️ 对照：`is_active` 同样是普通 property、同样不进 JSON。
+    #     它目前**没有**前端消费方，故本轮不动（改它属于扩大改动面）。
+    #     将来前端若要用 `is_active`，必须一并改成 `@computed_field`，
+    #     否则会再踩一次同样"值对但读不到"的坑。
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def is_connected(self) -> bool:
         return self.connection_status == ConnectionStatus.CONNECTED
