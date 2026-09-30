@@ -35,6 +35,7 @@
   解释「原来写成 `check-*.cjs` 是错的」的**注释**本身就含有那个旧串 ——
   不剥注释就会「判据被自己的注释绊倒」（本项目已登记的同族缺陷）。
 """
+import ast
 import fnmatch
 import json
 import re
@@ -213,3 +214,168 @@ def test_py_gates_actually_pass():
 #        ⇒ test_package_json_build_lists_exactly_the_cjs_gates 红
 # 全部逐字节还原后本文件仍绿。
 # ------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------
+# 门禁的读集门禁：扫 backend 根的测试必须排除 vendored 目录
+#
+# 为什么需要它（第 326 轮，全量回归暴露的真实缺陷）：
+#   `backend/.venv/` 下有 **5593 个 .py**（含 joblib 自带的 GBK 夹具
+#   `test_func_inspect_special_encoding.py`，byte 0xa4 @ pos 64）。
+#   任何以 backend 根 `rglob("*.py")` 且用严格 utf-8 读取的测试，都会撞上它：
+#     UnicodeDecodeError: 'utf-8' codec can't decode byte 0xa4 in position 64
+#   第 326 轮实测：4 条用例因此变红（test_context_propagation ×2 /
+#   test_conversation_ownership ×2 / test_stub_signature_tolerance ×2 /
+#   test_tenant_id_spaces ×2 —— 共 8 条），归因时**看不出与改动有关**，
+#   因为报错点在 `.venv` 而不是被测代码。
+#   另有 4 个文件用 `errors="ignore"/"replace"` 或 `except Exception` 兜住了，
+#   不红 —— 但它们**仍在读 5593 个 vendored 文件**（慢且会产假阳性）。
+#
+# 判据（AST，不看字符串）：
+#   1. 模块级名字 → 是否指向 backend 根（`Path(__file__).resolve().parents[N]`
+#      且**无**尾部 `/ "sub"`）；
+#   2. 找出所有 `.rglob("*.py")` / `.glob("*.py")`；
+#   3. 接收者是 backend 根名、或「形参且调用点传了 backend 根」⇒ 命中；
+#   4. 该文件必须**在 AST 里**把 `.venv` / `site-packages` 用作集合元素
+#      或比较操作数（禁「源码字符串包含」——docstring/注释会骗过它）。
+#
+# ★ 有意边界：只判「文件级」排除（不判排除是否恰好覆盖该行）——
+#   后者需要数据流分析，收益低而误报面大。文件级已足够拦住本次这类缺陷。
+# ------------------------------------------------------------------
+
+_BACKEND_ROOT_NAMES = {"BACKEND", "_BACKEND", "BACKEND_ROOT", "backend"}
+
+
+def _module_level_path_names(tree) -> set:
+    """模块级名字里，值形如 `Path(__file__).resolve().parents[N]`（纯根）的。"""
+    names = set()
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        src = ast.unparse(node.value)
+        if "parents[" not in src:
+            continue
+        # 纯根：parents[N] 之后没有 `/ "..."`
+        if "/" in src.split("parents[")[-1]:
+            continue
+        for t in node.targets:
+            if isinstance(t, ast.Name):
+                names.add(t.id)
+    return names
+
+
+def _func_params(tree) -> dict:
+    out = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = list(node.args.args) + list(node.args.kwonlyargs)
+            if node.args.vararg:
+                args.append(node.args.vararg)
+            out[node.name] = {a.arg for a in args}
+    return out
+
+
+def _funcs_called_with_root(tree, root_names) -> set:
+    """被以 backend 根为实参调用的函数名集合。"""
+    hit = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fname = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+        if not fname:
+            continue
+        for a in list(node.args) + [k.value for k in node.keywords]:
+            src = ast.unparse(a)
+            if (isinstance(a, ast.Name) and a.id in root_names) or (
+                "parents[" in src and "/" not in src.split("parents[")[-1]
+            ):
+                hit.add(fname)
+                break
+    return hit
+
+
+def _venv_excluded(tree) -> bool:
+    """`.venv` / `site-packages` 是否作为**集合元素或比较操作数**出现。
+
+    ★ 刻意用 AST 而不是「源码里含 .venv 串」（本仓铁律：那是字符串判据）：
+      注释不在 AST 里；docstring 是 `ast.Expr(Constant)`，也不是集合元素
+      ⇒ 两种骗法都无效。反向注入 I4 专门验证：注释里写 `.venv` 但代码没排除
+      ⇒ 本条**仍红**。
+    """
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Set, ast.Tuple, ast.List)):
+            for e in node.elts:
+                if isinstance(e, ast.Constant) and e.value in (".venv", "site-packages"):
+                    return True
+        elif isinstance(node, ast.Compare):
+            for c in [node.left] + list(node.comparators):
+                if isinstance(c, ast.Constant) and c.value in (".venv", "site-packages"):
+                    return True
+    return False
+
+
+def _backend_root_scan_sites(tree):
+    """产出以 backend 根扫 *.py 的调用点行号列表。"""
+    root_names = _module_level_path_names(tree) | _BACKEND_ROOT_NAMES
+    params = _func_params(tree)
+    root_callers = _funcs_called_with_root(tree, root_names)
+    sites = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        if not (isinstance(fn, ast.Attribute) and fn.attr in ("rglob", "glob")):
+            continue
+        if not node.args or ast.unparse(node.args[0]) not in ("'*.py'", '"*.py"'):
+            continue
+        recv = fn.value
+        ok = False
+        if isinstance(recv, ast.Name):
+            if recv.id in root_names:
+                ok = True
+            else:
+                for fname, pset in params.items():
+                    if recv.id in pset and fname in root_callers:
+                        ok = True
+                        break
+        else:
+            s = ast.unparse(recv)
+            if "parents[" in s and "/" not in s.split("parents[")[-1]:
+                ok = True
+        if ok:
+            sites.append(node.lineno)
+    return sites
+
+
+def test_backend_scanning_gates_exclude_vendored_dirs():
+    """扫 backend 根的测试必须排除 `.venv` / `site-packages`。
+
+    反向注入：删掉 `test_context_propagation.py` 里刚加的 `.venv` ⇒ 必红。
+    """
+    tests_dir = Path(__file__).resolve().parent
+    offenders = []
+    scanned = 0
+    for f in sorted(tests_dir.glob("test_*.py")):
+        try:
+            src = f.read_bytes().decode("utf-8")
+        except UnicodeDecodeError:  # pragma: no cover
+            continue
+        tree = ast.parse(src)
+        sites = _backend_root_scan_sites(tree)
+        if not sites:
+            continue
+        scanned += 1
+        if not _venv_excluded(tree):
+            offenders.append(f"{f.name}:{sites}")
+
+    # 防空转（本仓铁律：没有反例的断言 = 没有断言）
+    assert scanned >= 10, (
+        f"只扫到 {scanned} 个「以 backend 根扫 *.py」的测试文件 —— "
+        "AST 判据本身可能失效（函数解析/根识别退化），先修判据再看结果。"
+    )
+    assert not offenders, (
+        "这些测试以 backend 根扫 *.py 却没排除 vendored 目录：\n  "
+        + "\n  ".join(offenders)
+        + "\n⇒ 会读到 `.venv` 下的 5593 个 .py（含 GBK 夹具），"
+        "轻则 UnicodeDecodeError、重则把第三方实现判成本项目代码。"
+    )

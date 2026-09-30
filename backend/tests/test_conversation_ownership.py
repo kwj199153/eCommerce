@@ -445,7 +445,7 @@ def test_legacy_unauthenticated_reader_is_gone():
     """
     hits = []
     for p in BACKEND.rglob("*.py"):
-        if "__pycache__" in p.parts or "versions_legacy" in p.parts:
+        if "__pycache__" in p.parts or "versions_legacy" in p.parts or {".venv", "venv", "site-packages"} & set(p.parts):
             continue
         try:
             t = ast.parse(p.read_text(encoding="utf-8"))
@@ -465,7 +465,7 @@ def test_create_conversation_call_sites_pass_owner_id():
     """★ `create_conversation` 的每个调用点都必须显式传 `owner_id=`（防新增通道漏传）。"""
     bad = []
     for p in BACKEND.rglob("*.py"):
-        if "__pycache__" in p.parts or p == CONV_SERVICE:
+        if "__pycache__" in p.parts or {".venv", "venv", "site-packages"} & set(p.parts) or p == CONV_SERVICE:
             continue
         try:
             t = ast.parse(p.read_text(encoding="utf-8"))
@@ -550,3 +550,38 @@ async def test_orchestrator_gate_is_not_vacuous(
     )
     # 读写两侧都复现：A 的会话真的被 B 追加了消息
     assert await _history_count(sid_a) > before, "写侧没复现 ⇒ 只拦住了读"
+
+
+# ================================ 演示身份的会话范围（第 177 轮统一）
+
+def test_demo_identity_only_reaches_ownerless_conversations():
+    """
+    ★★★ 第 177 轮：演示身份（`user is None`）**不再无条件放行**会话。
+
+    第 175～176 轮只收口了店铺可见性，会话侧仍写着 `if user is None: return True`
+    ⇒ 演示身份可读**任何人的**对话历史。这与店铺侧是同一类缺陷
+    （同一件事两份实现 ⇒ 必然有一份测不到，体检报告 P1-5 的另一半）。
+
+    ★ 收紧方向**不是** `return False`（这是最容易改错的地方）：那会让演示档
+      **每一轮都新建会话**（`get_owned_conversation` 找不到旧会话就建新的），
+      历史永久丢失 —— 老板实测症状正是"对话记不住上一句"。正确形态是
+      **只认无主会话**：演示档建会话时写的 `owner_id` 本来就是 None
+      （`modules/secretary/router.py`：`owner_id=current_user.id if current_user
+      else None`）⇒ 演示自己的历史照旧可续，别人的历史读不到。
+
+    反向注入：把该分支改回 `return True`，第 2 条断言立刻转红。
+    """
+    from types import SimpleNamespace
+
+    from core.auth.accounts import can_access_conversation
+
+    demo_session = SimpleNamespace(owner_id=None)        # 演示档自己建的
+    real_session = SimpleNamespace(owner_id="u-real")    # 真实用户的
+
+    assert can_access_conversation(None, demo_session) is True, (
+        "演示档读不到自己刚建的会话 —— 会退化成「每轮新建会话、历史永久丢失」。\n"
+        "这正是不许写成 `return False` 的原因。"
+    )
+    assert can_access_conversation(None, real_session) is False, (
+        "★★★ 演示身份读到了真实用户的会话 —— 会话是私有资源，无身份不得继承。"
+    )

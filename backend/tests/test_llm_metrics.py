@@ -259,7 +259,9 @@ def test_metric_writes_have_exactly_one_implementation():
     hits = set()
     for p in _BACKEND.rglob("*.py"):
         rel = p.relative_to(_BACKEND).as_posix()
-        if rel.startswith(("tests/", "scripts/", "alembic/")) or "__pycache__" in rel:
+        if rel.startswith(("tests/", "scripts/", "alembic/")) or any(
+            s in rel for s in ("__pycache__", ".venv", "venv", "site-packages")
+        ):
             continue
         text = p.read_text(encoding="utf-8", errors="ignore")
         if "LLM_CALLS.inc(" in text or "LLM_TOKENS.inc(" in text:

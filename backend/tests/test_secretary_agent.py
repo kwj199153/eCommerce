@@ -12,6 +12,8 @@
 真实 LLM 判断的正确性需连线上环境人工/联调确认，这里只验证机制闭环。
 """
 
+import json
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -110,6 +112,31 @@ def test_navigation_tools_marker():
     assert '"dark"' in theme_out
 
 
+def test_handoff_carries_the_boss_original_words():
+    """★ 第 215 轮：handoff 必须能把老板**原话**一起带过去。
+
+    事故链条：老板贴了一条 Amazon 链接要求入库 → 店秘书走了 handoff → 而 handoff
+    的 payload 里只有一句概括（`intent`），**链接本身丢了**；前端又只渲染追问、
+    不续跑 ⇒ 老板看到的是一个「读不懂链接、只会反问 asin / title」的假 Agent。
+
+    判据是**行为**：原话进 → payload 里有原话。
+    """
+    url = "https://www.amazon.com/dp/B09V9TXTKK?pd_rd_i=B09V9TXTKK"
+    out = _handoff_to_agent("product-research", "把商品加入选品库", ["asin"], query=url)
+    data = json.loads(out)
+    assert data["action"] == "handoff"
+    assert data["query"] == url, "老板原话没进 payload —— 交接后链接就永久丢了"
+
+
+def test_handoff_without_query_keeps_the_old_shape():
+    """不传 query（或只传空白）时 payload **不带** query 键 —— 纯导航语义，不与空串混淆"""
+    data = json.loads(_handoff_to_agent("aigc-media", "生成水壶白底图", ["材质"]))
+    assert "query" not in data, "不传 query 时不该凭空多出一个键"
+
+    blank = json.loads(_handoff_to_agent("aigc-media", "生成水壶白底图", ["材质"], query="   "))
+    assert "query" not in blank, "空白原话不该被当成有效 query"
+
+
 def test_product_tools_registry():
     """select_product 工具正确构建，空店铺返回空标记"""
     tools = build_product_tools(shop_id="")
@@ -118,10 +145,16 @@ def test_product_tools_registry():
 
 
 def test_shop_tools_registry():
-    """switch_shop 工具正确构建"""
+    """店铺工具正确构建：只读 `list_shops` + 替换语义的 `switch_shop`。
+
+    ★ 第 243 轮（第 240 轮方案 A′）：修前这里断言的是 `== {"switch_shop"}` ——
+      它把「店秘书**没有**读店铺的工具」这个**缺陷**钉成了规格（本仓判据
+      「门禁是墓志铭」：需求变了，钉住旧形态的断言就从资产变负资产）。
+      现在把「读有哪些店铺」与「切店铺」拆成两个工具，本条随之收紧为两者都在。
+    """
     tools = build_shop_tools()
     names = {t.name for t in tools}
-    assert names == {"switch_shop"}
+    assert names == {"list_shops", "switch_shop"}
 
 
 # ============================================================
@@ -344,7 +377,27 @@ async def test_switch_shop_action_matches_frontend_contract():
 
 
 def test_product_research_tools_registry():
-    """选品分析 5 个工具正确构建（4 个只读分析 + 1 个写入：save_candidate）"""
+    """选品分析 10 个工具正确构建（4 个只读分析 + 3 个写入 + 1 个只读详情
+    + 6 个**跨 Agent 共用**）。
+
+    ★ 7 → 10（第 205 轮批 B）：新增候选生命周期的三条原子工具
+      `get_candidate` / `review_candidate` / `approve_candidate`。
+      它们的实现原先**只内联在 `candidates/router.py` 的 handler 里**，
+      Agent 够不着 —— 正是第 204 轮盘点里老板点名的两条缺口
+      （「获取选品」与「入产品库」）。其中「入产品库」是候选 → 产品库的
+      **唯一通道**，不补上则选品闭环在 Agent 侧断掉。
+      ★ `review_candidate` / `approve_candidate` 声明了 `SIDE_EFFECT_METADATA`
+      ⇒ 会被 `BaseAgent._wrap_hitl_tools()` **自动**包进人工审批
+      （见 `tests/test_hitl_wiring.py`）。
+
+    ★ 5 → 7（第 205 轮批 A）：尾部追加了 `list_candidates` / `list_products`
+      —— 它们来自 `modules/library/`（SHARED 层），与店秘书手里的是
+      **同一个实现**。收敛动因：`GET /api/v1/candidates` 与 `GET /api/v1/skus`
+      此前被不同 Agent 提议成不同名字，而「同一能力两个名字」会让模型在两处
+      乱选、测试只覆盖其中一条。共用关系本身由
+      `tests/test_tool_catalog.py::test_shared_tool_agents_match_runtime_holders`
+      与 `...::test_one_capability_has_exactly_one_implementation` 钉住。
+    """
     names = {t.name for t in product_research_tools}
     assert names == {
         "analyze_blue_ocean",
@@ -352,44 +405,93 @@ def test_product_research_tools_registry():
         "analyze_pain_points",
         "compare_competitor_listings",
         "save_candidate",
+        "get_candidate",
+        "review_candidate",
+        "approve_candidate",
+        "query_market_insight",
+        "list_candidates",
+        "list_products",
+        "list_assets",
+        "list_monitors",
+        "list_faqs",
+        "list_platform_rules",
     }
 
 
 def test_customer_service_tools_registry():
-    """智能客服 4 个工具正确构建"""
+    """智能客服 4 个自有工具 + 6 个 trade 域工具（共 10 个）
+
+    ★ 第 283 轮：客服从「话术 + 建单」升级为「能取订单 / 物流 / 差评证据」，
+      5 个 trade 域工具经 `modules/trade` 门面挂进来（接线与理由见
+      `modules/customer_service/tools.py` 文件头）。
+
+    ★★ 这 5 个名字**必须写字面量**，不许 `from modules.trade import trade_tools`
+      后再 `{t.name for t in trade_tools}` —— 那样期望值由被测对象自己提供，
+      「接线掉了」和「接线在」会得到同一个结果 ⇒ 假绿。
+    """
     names = {t.name for t in customer_service_tools}
     assert names == {
+        # ---- 客服自有 4 个 ----
         "search_faq",
         "create_ticket",
         "analyze_sentiment",
         "get_conversation_summary",
+        # ---- trade 域 6 个：订单 / 差评列表 / 差评上下文 / 健康分 / 补偿建议 / 处置草稿 ----
+        "fetch_order_tracking",
+        "list_customer_reviews",
+        "get_customer_review_context",
+        "get_sku_health_score",
+        "plan_compensation",
+        # ★ 第 287 轮 P0-2：`review_dispositions` 唯一的 Agent 侧写入点。
+        #   表里全库 0 行的根因就是没有它 —— 有模型有状态机，没人往里写。
+        "propose_review_disposition",
     }
 
 
 def test_ad_analysis_tools_registry():
-    """广告分析 6 个工具正确构建"""
+    """广告分析 4 个工具正确构建（第 316 轮由 6 收敛到 4）"""
     names = {t.name for t in ad_analysis_tools}
     assert names == {
         "diagnose_ad_account",
         "analyze_search_terms",
         "optimize_bids",
         "analyze_ad_competitors",
-        "optimize_budget",
-        "detect_ad_anomalies",
     }
 
 
 def test_secretary_agent_binds_tools():
-    """店秘书 agent 应持有 11 个工具（9 业务/导航 + 2 规划），业务细粒度工具全部下沉到子 Agent"""
+    """店秘书 agent 应持有 19 个工具（16 业务/导航 + 2 规划 + 1 技能加载），业务细粒度工具全部下沉到子 Agent"""
     agent = SecretaryAgent(llm=MagicMock())
     # 8 → 9：第 145 轮 批 B3 把「提问」从提示词规则升级成真工具（`ask_clarification`）
     # 9 → 11：第 148 轮 C3 开启规划器，注入 `plan_tasks` / `update_task`（todo 外置落图状态）
+    # 11 → 12：第 181 轮 批 B 技能渐进披露，注入 `load_skill`（技能目录每轮进 system prompt）
+    # 12 → 14：第 205 轮 资料库只读工具 `list_candidates` / `list_products`
+    #          （跨 Agent 共用，见 `modules/library/`）
+    # 14 → 18：第 218 轮 P1 资料库扩到 6 库（+ `list_assets` / `list_monitors` /
+    #          `list_faqs` / `list_platform_rules`，同样是跨 Agent 共用）
+    # 18 → 19：第 243 轮（第 240 轮方案 A′）`build_shop_tools()` 新增只读 `list_shops`
+    #          —— 修前「读有哪些店铺」**没有工具**，只能拿 switch_shop（会真切店）
+    #          或 get_my_subscription（套餐上限）凑数。
     names = [t.name for t in agent.tools]
-    assert len(names) == 11
+    assert len(names) == 19
     # 只断言数字会在内容漂移时静默退化成假绿：必须锁住「多出来的恰是这两个」
     planner_names = ["plan_tasks", "update_task"]
     assert sorted(set(names) & set(planner_names)) == planner_names
     assert names.count("plan_tasks") == 1 and names.count("update_task") == 1
+    assert names.count("load_skill") == 1
+    # ★ 第 205 轮：共用工具**各只有一份**（秘书与选品分析师各拿一份实例，
+    #   但实现是同一个）—— 秘书这一侧不许出现重复条目。
+    assert names.count("list_candidates") == 1 and names.count("list_products") == 1
+    # ★ 第 218 轮：新增的 4 个资料库工具同样**各只有一份**。
+    assert (
+        names.count("list_assets") == 1
+        and names.count("list_monitors") == 1
+        and names.count("list_faqs") == 1
+        and names.count("list_platform_rules") == 1
+    )
+    # ★ 第 243 轮：**读**（list_shops）与**写/切**（switch_shop）必须是两个工具，
+    #   且各只有一份 —— 少了 list_shops，「问有几家店」就只能靠会切店的工具回答。
+    assert names.count("list_shops") == 1 and names.count("switch_shop") == 1
     assert agent.enable_planning is True
     assert agent.system_prompt == SECRETARY_SYSTEM_PROMPT
 
@@ -502,10 +604,11 @@ def test_listing_agent_deep_router_lazy():
     agent = ListingGeneratorAgent()
     # 未触发 invoke 前 router 为空（懒加载，避免循环导入）
     assert agent._router is None
-    # 触发懒加载后应构建出注入 8 个工具的 BaseAgent 路由层
+    # 触发懒加载后应构建出 BaseAgent 路由层：8 个业务工具
+    # + 1 个恒带的技能按需加载工具（第 181 轮批 B）⇒ 共 9
     router = agent._get_router()
     if router is not None:
-        assert len(router.tools) == 8
+        assert len(router.tools) == 9
         names = {t.name for t in router.tools}
         assert "generate_complete_listing" in names
         assert "optimize_listing_title" in names
@@ -514,14 +617,18 @@ def test_listing_agent_deep_router_lazy():
 
 
 def test_product_research_agent_deep_router_lazy():
-    """深层分层路由：ProductResearchAgent 懒加载工具化路由层，注入 5 个工具"""
+    """深层分层路由：ProductResearchAgent 懒加载工具化路由层，10 业务工具 + 1 技能加载"""
     from modules.product_research.agent_product_research import ProductResearchAgent
 
     agent = ProductResearchAgent()
     assert agent._router is None
     router = agent._get_router()
     if router is not None:
-        assert len(router.tools) == 5
+        # 14 个业务工具 + 1 个恒带的技能按需加载工具（第 181 轮批 B）⇒ 共 15
+        # ★ 10 → 14（第 218 轮 P1）：资料库从 2 库扩到 6 库。
+        # ★ 7 → 10（第 205 轮批 B）：候选生命周期三条 `get_candidate` /
+        #   `review_candidate` / `approve_candidate`（解释见上一条用例）。
+        assert len(router.tools) == 16
         names = {t.name for t in router.tools}
         assert names == {
             "analyze_blue_ocean",
@@ -529,6 +636,17 @@ def test_product_research_agent_deep_router_lazy():
             "analyze_pain_points",
             "compare_competitor_listings",
             "save_candidate",
+            "get_candidate",
+            "review_candidate",
+            "approve_candidate",
+            "query_market_insight",
+            "list_candidates",
+            "list_products",
+            "list_assets",
+            "list_monitors",
+            "list_faqs",
+            "list_platform_rules",
+            "load_skill",
         }
 
 

@@ -125,7 +125,9 @@ def test_context_writer_set_is_closed():
     found = set()
     for p in _BACKEND.rglob("*.py"):
         rel = p.relative_to(_BACKEND).as_posix()
-        if rel.startswith(("tests/", "scripts/", "alembic/")) or "__pycache__" in rel:
+        if rel.startswith(("tests/", "scripts/", "alembic/")) or any(
+            s in rel for s in ("__pycache__", ".venv", "venv", "site-packages")
+        ):
             continue
         if "set_request_context(" in p.read_text(encoding="utf-8"):
             found.add(rel)
@@ -149,7 +151,9 @@ def test_client_ip_has_exactly_one_implementation():
     hits = set()
     for p in _BACKEND.rglob("*.py"):
         rel = p.relative_to(_BACKEND).as_posix()
-        if rel.startswith(("tests/", "scripts/", "alembic/")) or "__pycache__" in rel:
+        if rel.startswith(("tests/", "scripts/", "alembic/")) or any(
+            s in rel for s in ("__pycache__", ".venv", "venv", "site-packages")
+        ):
             continue
         if 'headers.get("X-Forwarded-For"' in p.read_text(encoding="utf-8"):
             hits.add(rel)

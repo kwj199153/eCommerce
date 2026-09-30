@@ -33,7 +33,10 @@ BACKEND = Path(__file__).resolve().parents[1]
 
 # ---------------------------------------------------------------- 通用
 
-EXCLUDE_DIR_PARTS = {"__pycache__", "tests", "alembic", "logs", "uploads"}
+EXCLUDE_DIR_PARTS = {
+    "__pycache__", "tests", "alembic", "logs", "uploads",
+    ".venv", "venv", "site-packages",
+}
 
 
 def _py_files(*roots: Path):
