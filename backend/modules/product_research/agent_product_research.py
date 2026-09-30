@@ -64,6 +64,17 @@ from modules.product_research import prompts as _prompts  # noqa: F401
 from modules.conversation import hydrate_state as _hydrate_session_state
 from modules.conversation import persist_state as _persist_session_state
 
+# P0-6 第一刀：领域纯逻辑层（类目映射 / 机会评分 / ASIN 解析 / 文案）外移。
+# 主类继承 `ResearchHelpersMixin` 拿到这些方法 ⇒ `self._x` / `cls._x` 调用点零改动；
+# 两个常量在此 re-export —— `tests/test_product_research_blue_ocean.py` 与
+# `tests/test_product_research_intent_routing.py` 按**本模块路径**导入它们，
+# 改测试的导入路径等于替第三方改契约，不做。
+from modules.product_research.agent_helpers import (  # noqa: F401
+    ResearchHelpersMixin,
+    _ASIN_RE,
+    _TRENDING_KEYWORDS,
+)
+
 
 # 深层分层路由：子 Agent 的工具化路由层（bind_tools + LangGraph 图）。
 # 深层分层路由：工具化路由层（bind_tools + LangGraph 图），以**组合**方式引入。
@@ -245,31 +256,17 @@ _current_user_id: ContextVar[Optional[str]] = ContextVar(
 _DEFAULT_STATE_SCOPE = "_default"
 
 
-# 全类目高潜关键词——老板没指定类目时用它，替代原先的 "general" 泛化词表。
-#
-# 为什么不用泛化词（smart home / organizer / portable…）：这些词在关键词库里
-# **命中不到**，会走 `AmazonAdapter.get_keyword_data` 的「未匹配 → 随机估算」
-# 分支（search_volume 随机 5k~80k、competition 随机 0.2~0.85、trend 随机），
-# 于是机会分数完全随机、「发现 6 个蓝海机会」这个结论不可信。
-#
-# 下面这批词取自 `platforms/amazon/client.py` 的 MOCK_KEYWORDS（有真实量级的
-# 搜索量/竞争度/趋势），跨 kitchen / pet / office / garden / sports 五个类目。
-_TRENDING_KEYWORDS = [
-    "coffee grinder", "portable coffee maker", "pet feeder automatic",
-    "desk organizer mesh", "led grow lights indoor", "yoga mat non slip",
-    "cat food dispenser", "exercise mat alignment lines",
-]
-
-# ASIN 正则：真实 ASIN 是 `B0` + 8 位字母数字（如 B0C1234567、B01N4ABCD1），
-# 共 10 位。**不是 `[Bb]\d{9}`**——那个要求 B 后 9 位纯数字，会把
-# `B0C1234567`（第 3 位是字母 C）全部漏掉，导致「对比 B0C… B0C…」
-# 被判成「未提供 ASIN」。
-_ASIN_RE = r"[Bb]0[0-9A-Za-z]{8}"
+# 全类目高潜关键词 `_TRENDING_KEYWORDS` 与 ASIN 正则 `_ASIN_RE`
+# 已随 P0-6 第一刀外移到 `modules/product_research/agent_helpers.py`；
+# 本模块顶部 re-export 它们，既有的按路径导入继续可用。
 
 
 # ====== 选品 Agent 实现 ======
 
-class ProductResearchAgent(BaseAgent):
+# ★ P0-6 第一刀：纯解析 / 评分 / 文案层住 `ResearchHelpersMixin`
+#   （`modules/product_research/agent_helpers.py`）。继承而不是复制：那 11 个
+#   方法体里一个 `self` 都没有，本就不需要 Agent 实例。
+class ProductResearchAgent(ResearchHelpersMixin, BaseAgent):
     """
     选品分析 Agent
 
@@ -2284,169 +2281,20 @@ class ProductResearchAgent(BaseAgent):
         if is_skill_requested() and not produced_text:
             yield SKILL_CHANNEL_UNAVAILABLE
 
-    # ====== 内部辅助方法 ======
-
-    @staticmethod
-    def _extract_category(query: str) -> Optional[str]:
-        """从查询中提取类目"""
-        categories = {
-            "厨房": "kitchen", "家居": "home", "电子": "electronics",
-            "户外": "outdoor", "运动": "sports", "宠物": "pet",
-            "美妆": "beauty", "办公": "office", "母婴": "baby",
-            "服装": "clothing", "玩具": "toys", "园艺": "garden",
-        }
-        for cn, en in categories.items():
-            if cn in query or en in query.lower():
-                return en
-        return None
-
-    @staticmethod
-    def _generate_search_keywords(category: Optional[str]) -> List[str]:
-        """
-        生成搜索关键词列表
-
-        Args:
-            category: 平台英文类目标识；None / 未收录的类目 → 全类目高潜关键词
-
-        Returns:
-            关键词列表
-        """
-        keyword_templates = {
-            "kitchen": ["coffee grinder", "portable blender", "air fryer accessories"],
-            "home": ["desk organizer", "storage bins", "led strip lights"],
-            "electronics": ["wireless charger", "bluetooth speaker", "usb hub"],
-            "outdoor": ["camping gear", "solar lights", "garden tools"],
-            "sports": ["yoga mat", "resistance bands", "water bottle"],
-            "pet": ["automatic feeder", "cat tree", "dog harness"],
-        }
-        base = keyword_templates.get(category) if category else None
-        if not base:
-            # 未识别出具体类目（或类目未收录）→ 全类目高潜关键词，
-            # 而不是原先的 general 泛化词表（那会走随机估算，分数不可信）
-            return list(_TRENDING_KEYWORDS)
-        # 添加修饰词（base 已以该修饰词开头时跳过，否则会拼出 "portable portable blender"）
-        modifiers = ["portable", "smart", "mini", "professional", "premium"]
-        expanded = [
-            f"{m} {b}" for m in modifiers[:2] for b in base[:2] if not b.startswith(m)
-        ]
-        return base + expanded
-
-    @staticmethod
-    def _calculate_opportunity_score(keyword_data: KeywordData) -> float:
-        """
-        计算机会评分（0-100）
-
-        公式：
-        score = (search_volume_factor * 40) +
-               (low_competition_factor * 35) +
-               (trend_factor * 25)
-        """
-        # 搜索量因子（对数缩放）
-        import math
-        if keyword_data.search_volume > 0:
-            sv_normalized = min(math.log10(keyword_data.search_volume + 1) / 5, 1)
-        else:
-            sv_normalized = 0
-        sv_score = sv_normalized * 40
-
-        # 低竞争因子（竞争越低越好）
-        comp_score = (1 - keyword_data.competition) * 35
-
-        # 趋势因子
-        trend_scores = {"rising": 25, "stable": 15, "declining": 0}
-        trend_score = trend_scores.get(keyword_data.trend_direction, 15)
-
-        return round(sv_score + comp_score + trend_score, 1)
-
-    @staticmethod
-    def _generate_reason(keyword_data: KeywordData) -> str:
-        """生成推荐理由"""
-        reasons = []
-
-        if keyword_data.trend_direction == "rising":
-            reasons.append(f"搜索量呈上升趋势 (+{keyword_data.search_volume:,}/月)")
-
-        if keyword_data.competition < 0.5:
-            reasons.append(f"竞争度较低 ({keyword_data.competition:.0%})")
-
-        if keyword_data.search_volume > 20000:
-            reasons.append("市场需求充足")
-
-        if keyword_data.suggested_bid and keyword_data.suggested_bid < 1.5:
-            reasons.append(f"广告成本低 (${keyword_data.suggested_bid:.2f})")
-
-        return "；".join(reasons) if reasons else "综合指标表现良好"
-
-    @staticmethod
-    def _estimate_price_range(category: str) -> str:
-        """估算建议售价区间"""
-        ranges = {
-            "kitchen": "$15-$45", "home": "$12-$35", "electronics": "$20-$80",
-            "outdoor": "$18-$55", "sports": "$15-$40", "pet": "$20-$60",
-        }
-        return ranges.get(category, "$15-$50")
-
-    @staticmethod
-    def _estimate_margin(competition: float) -> str:
-        """估算利润率"""
-        if competition < 0.4:
-            return "35%-50%"
-        elif competition < 0.7:
-            return "25%-35%"
-        else:
-            return "15%-25%"
-
-    @staticmethod
-    def _extract_product_info(query: str) -> dict:
-        """从查询中提取产品信息"""
-        info = {}
-
-        # 尝试提取价格（`$29.99` / `售价 29.99` / `价格 29.99` 都认）
-        import re
-        prices = re.findall(r'(?:\$|售价|价格|定价)\s*(\d+(?:\.\d+)?)', query)
-        if prices:
-            info["price"] = float(prices[0])
-
-        # 尝试提取 ASIN
-        asin_match = re.search(_ASIN_RE, query)
-        if asin_match:
-            info["asin"] = asin_match.group().upper()
-        else:
-            # 尝试提取产品名称（简化处理）
-            info["name"] = query.replace("分析", "").replace("利润", "").strip()[:50]
-
-        return info
-
-    @staticmethod
-    def _extract_asin(query: str) -> Optional[str]:
-        """提取单个 ASIN"""
-        import re
-        match = re.search(_ASIN_RE, query)
-        return match.group().upper() if match else None
-
-    @staticmethod
-    def _extract_multiple_asins(query: str) -> List[str]:
-        """提取多个 ASIN（**去重**，保持首次出现顺序）。
-
-        ★ 去重不是性能优化，是**语义修正**：「多个 ASIN」指的是多个**不同**的商品。
-          Amazon 商品链接里同一个 ASIN 常出现 3 次（`/dp/<ASIN>`、`pd_rd_i=<ASIN>`、
-          `ref_=..._<ASIN>`），不去重则「把这个链接加进选品库」会被判成
-          「给了 3 个 ASIN 要对比」（`>=2 => competitor`，实测确定性复现）。
-        ★ 收口在**唯一真源**这里：4 个消费点（意图判定 / 竞品对比 / 待补槽位 /
-          入库目标解析）同时受益 —— 只修 `_classify_intent` 会让其余三处继续按
-          重复计数，属于「同一判定两份实现」。
-        """
-        import re
-        out: List[str] = []
-        for a in re.findall(_ASIN_RE, query):
-            up = a.upper()
-            if up not in out:
-                out.append(up)
-        return out
-
-    # 中文数字（用于解析「第一个 / 第 2 个」这类序数指代）
-    _CN_NUM = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
-               "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+    # ====== 内部辅助方法（纯解析 / 评分层已外移） ======
+    #
+    # P0-6 第一刀把下面这批**不依赖实例状态**的方法搬到了
+    # `agent_helpers.py::ResearchHelpersMixin`（本类继承它，调用点零改动）：
+    #   _extract_category      _generate_search_keywords  _calculate_opportunity_score
+    #   _generate_reason       _estimate_price_range     _estimate_margin
+    #   _generate_improvement_suggestions
+    #   _extract_product_info  _extract_asin             _extract_multiple_asins
+    #   _extract_ordinal
+    #
+    # 判据是形态不是口味：这 11 个函数体里一个 `self` 都没有 ⇒ 它们不需要 Agent 实例，
+    # 留在类里只会让「类目映射表」「机会评分公式」必须造实例才能测。
+    #
+    # 下面这个常量**留在本类**：消费方是 `_named_tokens`（实例方法，未外移）。
 
     # 英文「动作/指令」词：出现它们**不代表**用户点名了商品。
     # 若不过滤，「add this to candidate library」会被判成「点名了商品但池里没匹配上」→ 误追问。
@@ -2455,55 +2303,6 @@ class ProductResearchAgent(BaseAgent):
         "please", "candidate", "candidates", "library", "pool", "list", "collection",
         "item", "items", "product", "products", "cart", "wishlist", "new",
     }
-
-    @classmethod
-    def _extract_ordinal(cls, query: str) -> Optional[int]:
-        """
-        从查询里抽「第几个」，返回 **0-based** 下标；没写返回 None。
-
-        支持「第 1 个 / 第2个 / 第一个 / 第一款 / top1」等说法，
-        供「把第 N 个加进选品库」定位目标商品。
-        """
-        import re
-
-        m = re.search(r"第\s*([0-9]+|[一二两三四五六七八九十])\s*(?:个|款|条|名|项)?", query)
-        if m:
-            raw = m.group(1)
-            n = int(raw) if raw.isdigit() else cls._CN_NUM.get(raw)
-            if n and n >= 1:
-                return n - 1
-
-        m2 = re.search(r"top\s*([0-9]+)", query, re.IGNORECASE)
-        if m2:
-            n = int(m2.group(1))
-            if n >= 1:
-                return n - 1
-
-        return None
-
-    @staticmethod
-    def _generate_improvement_suggestions(pain_points: List[dict]) -> List[str]:
-        """基于痛点生成改进建议"""
-        suggestions = []
-        pain_mapping = {
-            "电池续航不足": "开发长续航版本或支持快充",
-            "连接不稳定": "优化蓝牙/WiFi模块，强调稳定连接",
-            "质量问题": "提升材质和工艺，增加质保期",
-            "APP问题": "重构 APP，简化操作流程",
-            "缺少功能": "调研用户需求，补充核心功能",
-            "使用困难": "优化产品设计，提供详细教程",
-            "速度慢": "升级硬件配置，提升性能",
-            "性价比低": "优化供应链降低成本，或提升附加值",
-        }
-
-        seen = set()
-        for pp in pain_points[:5]:
-            pain = pp["pain_point"]
-            if pain in pain_mapping and pain not in seen:
-                suggestions.append(pain_mapping[pain])
-                seen.add(pain)
-
-        return suggestions[:4]  # 最多返回4条建议
 
     async def _process_query(
         self,
