@@ -20,9 +20,12 @@
 //   3. 每个视图下**哪些容器出现**（risk-bar / ledger / rules / list 的互斥关系）；
 //   4. 各视图下的行数、表数、分节标题；
 //   5. 按钮 title 集合（本仓把「读 / 写 / 只能人点」口径挂在 title 上）；
-//   6. 抽屉结构（detail-grid / section / kv / block / chips 的计数）。
-//   ★ 刻意**不**钉：DOM 顺序、style 属性、行内容文案 —— 那些会随 seed 变，
-//     钉住它们只会让基线自己变得易碎。
+//   6. 抽屉结构（detail-grid / section / kv / block / chips 的计数）；
+//   7. ★ 计算样式（第 341 轮补）：`.rd-table` 系列 / `.rd-table-act` / `.rd-rule-cond` /
+//      `.rd-detail-grid` 等的 getComputedStyle 读数 —— **只读 DOM 结构看不见样式丢失**，
+//      而「把表格拆成子组件会让父组件 scoped 的后代选择器失效」正是最隐蔽的破坏。
+//   ★ 刻意**不**钉：DOM 顺序、`style=` 内联属性、行内容文案、以及百分比宽度换算出的 px
+//     —— 那些会随 seed / 浮点抖动变，钉住只会让基线自己变得易碎。
 //
 // ============================================================================
 // ★ 两条本仓纪律
@@ -32,6 +35,14 @@
 //     那是**注入失败**，不是功能坏了，报告时必须区分这两件事。
 //   · **基线要自证可复读**：每个状态**连采两遍**，两遍不等就当场 FAIL
 //     （读数不稳定 ⇒ 这样的基线拿去做比对只会制造假红）。
+//   · **基线要自证有牙齿**（第 341 轮补）：样式类判据若对「样式丢失」不敏感，基线就是白做的。
+//     ⇒ 用 `.workbuddy/probes/r341_inject_style.py` 做两次受控注入，实测两条都转红：
+//       - `inject th`（`.rd-table th,` 后缀改名 ⇒ 后代选择器失效）：B3c/B4c 红（th padding 4px→0px…）
+//       - `inject act`（`.rd-table-act {` 改名 ⇒ sticky 列失效）：B3c/B4c 红（position sticky→static…）
+//     ★ 教训：**读数抓到了 ≠ 判据会红**。第一版 B3c 只断言 th.fontWeight（由另一条幸存的规则提供），
+//       注入后表头 padding/对齐/边框全变、判据却照样 PASS ⇒ 判据必须把抓到的字段**逐条**断言。
+//     ★ 另注：探针与被测应用**共享限流配额**（60/min），密集连跑会出 429 ⇒ B5a 之类的伪红；
+//       元数据里的 rateHits / netTail 就是用来把「限流降级」与「真红」分开的。
 //
 // 用法：node scripts/cdp-review-desk-config-baseline.mjs
 //   PROBE_URL   覆盖地址（默认 http://127.0.0.1:5173/）
@@ -208,6 +219,45 @@ const CAPTURE = `
   const hint = q('.rd-root .rd-hint')
   const filters = qa('.rd-root .rd-filter')
   const main = [!!hint, !!q('.rd-root .rd-ledger'), !!q('.rd-root .rd-rules'), !!q('.rd-root .rd-list')]
+  // ★★ 计算样式读数（第 341 轮 · #1253 补）—— 为什么非要有它：
+  //   scoped CSS 只作用在**本组件模板**的元素上，且父组件的 scopeId 只加在**子组件根元素**上
+  //   ⇒ 把 rules 视图里的 table.rd-table 拆成子组件后，父组件 scoped 的**后代选择器**
+  //     （.rd-table th / .rd-table td / .rd-table-act / .rd-rule-cond …）不再命中子组件内部元素
+  //     ⇒ rules 表**静默丢样式**（padding / sticky 列 / 字号回落默认值）。
+  //   而只读 DOM 结构（计数 / class / 行数）**完全看不出**这件事 —— 必须量计算样式。
+  //   ★ 只取**稳定量**：类别型（collapse / table / nowrap / sticky / 整数字号）与整数像素；
+  //     刻意**不取 width**（百分比宽度换算成 px 可能带小数 ⇒ 会制造假红）。
+  //   ★ 注释里**禁写反引号**：本表达式整体是模板字符串，反引号会当场截断它（第 340 轮踩过）。
+  const csOf = (el, props) => {
+    if (!el) return null
+    const s = getComputedStyle(el)
+    const o = {}
+    for (const p of props) o[p] = s[p]
+    return o
+  }
+  const tbl = q('.rd-root table.rd-table')
+  const act = q('.rd-root .rd-table-act')
+  const styles = {
+    table: csOf(tbl, ['display', 'borderCollapse', 'whiteSpace', 'fontSize', 'tableLayout']),
+    th: csOf(tbl && tbl.querySelector('thead th'), ['paddingTop', 'paddingLeft', 'backgroundColor', 'fontWeight', 'textAlign', 'borderBottomWidth']),
+    td: csOf(tbl && tbl.querySelector('tbody td'), ['paddingTop', 'paddingLeft', 'textAlign', 'borderBottomWidth']),
+    act: csOf(act, ['position', 'right', 'backgroundColor', 'borderLeftWidth', 'textAlign']),
+    // ★ 按钮必须**直接查**，不能从 act 里 querySelector：DOM 顺序里第一个 .rd-table-act 是 thead 的
+    //   **空 th**（里面没有按钮）⇒ 取到 null（第 341 轮实测踩过，B3c/B4c 因此假红）。
+    actBtn: csOf(q('.rd-root .rd-table-act .ant-btn'), ['paddingLeft', 'paddingRight']),
+    ruleCond: csOf(q('.rd-root .rd-rule-cond'), ['whiteSpace', 'fontSize', 'color']),
+    ruleOff: csOf(q('.rd-root .rd-rule-off'), ['opacity']),
+    ledger: csOf(q('.rd-root .rd-ledger'), ['overflowX', 'borderTopWidth', 'borderRadius']),
+    rulesWrap: csOf(q('.rd-root .rd-rules'), ['display', 'flexDirection', 'rowGap']),
+    rulesBar: csOf(q('.rd-root .rd-rules-bar'), ['display', 'justifyContent', 'alignItems']),
+    // 差评列表卡片（default / orphan 视图）—— 刀 3（CSS 外移）同样要有覆盖。
+    list: csOf(q('.rd-root .rd-list'), ['display', 'flexDirection', 'rowGap']),
+    item: csOf(q('.rd-root .rd-item'), ['paddingTop', 'paddingLeft', 'borderTopWidth', 'borderTopLeftRadius', 'cursor']),
+    itemTop: csOf(q('.rd-root .rd-item-top'), ['display', 'alignItems', 'columnGap', 'marginBottom']),
+    body: csOf(q('.rd-root .rd-body'), ['fontSize', 'overflow']),
+    stars: csOf(q('.rd-root .rd-stars'), ['letterSpacing', 'color']),
+    riskBarBox: csOf(q('.rd-root .rd-risk-bar'), ['display', 'alignItems', 'flexWrap', 'rowGap']),
+  }
   return JSON.stringify({
     root: true,
     tabs,
@@ -236,6 +286,7 @@ const CAPTURE = `
     ledgerCols: qa('.rd-root .rd-ledger thead th').length,
     rulesRows: qa('.rd-root .rd-rules tbody tr').length,
     rulesCols: qa('.rd-root .rd-rules thead th').length,
+    styles,
   })
 })()`
 
@@ -248,6 +299,25 @@ const CAPTURE_DRAWER = `
   //   第一版写 .rd-root .rd-detail-grid ⇒ 恒 0，把「选择器写错」误报成「抽屉没渲染」。
   const D = '.ant-drawer-content'
   const sections = qa(D + ' .rd-section')
+  // ★ 抽屉区块的计算样式（第 341 轮补）—— 同 CAPTURE：scoped 后代选择器拆子组件后会失配。
+  //   只取稳定量；注释里禁写反引号（模板字符串会被截断）。
+  const csOf = (el, props) => {
+    if (!el) return null
+    const s = getComputedStyle(el)
+    const o = {}
+    for (const p of props) o[p] = s[p]
+    return o
+  }
+  const styles = {
+    grid: csOf(q(D + ' .rd-detail-grid'), ['display', 'flexDirection', 'alignItems', 'columnGap']),
+    col: csOf(q(D + ' .rd-detail-col'), ['flexGrow', 'flexShrink', 'flexBasis', 'minWidth']),
+    section: csOf(q(D + ' .rd-section'), ['marginTop']),
+    kv: csOf(q(D + ' .rd-kv'), ['display', 'fontSize', 'marginBottom']),
+    block: csOf(q(D + ' .rd-block'), ['marginBottom']),
+    chip: csOf(q(D + ' .rd-chip'), ['paddingTop', 'paddingLeft', 'fontSize']),
+    warn: csOf(q(D + ' .rd-warn'), ['paddingTop', 'fontSize', 'borderTopWidth', 'backgroundColor']),
+    steps: csOf(q(D + ' .rd-steps'), ['display', 'columnGap', 'marginBottom']),
+  }
   return JSON.stringify({
     drawerContent: !!q(D),
     drawerTitle: norm(q('.ant-drawer-title')?.textContent || ''),
@@ -263,6 +333,7 @@ const CAPTURE_DRAWER = `
     chips: qa(D + ' .rd-chips').length,
     chipDesc: qa(D + ' .rd-chip-desc').length,
     buttons: [...new Set(qa(D + ' button').map(b => norm(b.textContent)).filter(Boolean))].sort(),
+    styles,
   })
 })()`
 
@@ -332,6 +403,10 @@ check('B0c', '能点到「差评台账」入口卡片', toolHit.ok === true, too
 // ══════════════════════════════════════════════════════════════════════
 const exclusivity = (s) => s.main?.exclusiveCount === 1
 
+/** 从捕获结果里取一条计算样式读数 —— 用于「读数真的抓到了东西」的自检。
+ *  ★ 没有这层自检，选择器写错 ⇒ styles 全 null ⇒ 拆完 null === null 照样「一致」= 假绿。 */
+const st = (o, group, prop) => o?.styles?.[group]?.[prop]
+
 // ---------------------------------------------------------------- B1 默认视图
 const stDefault = await twoPass('default', CAPTURE)
 check('B1', '默认落在「近期差评」：risk-bar 在场、主内容互斥链恰好一支、ledger/rules 均不在场',
@@ -356,6 +431,20 @@ check('B1c', '四个 tab 纯文案与顺序 = [近期差评, 未关联产品, �
 check('B1d', '激活态恰好一个、且落在第 1 个 tab',
   (stDefault.tabs || [])[0]?.active === true && (stDefault.tabs || []).filter((t) => t.active).length === 1,
   (stDefault.tabs || []).map((t) => ({ l: t.label, a: t.active })))
+// ★★ 自检（default 视图）：差评列表卡片 = **没有表格**的那一支，这里证明列表侧的计算样式也真抓到了。
+//   非表格视图（recent/orphan）此前 styles 全 null ⇒ 拆/改只覆盖了表格，列表侧是盲区。
+//   ★ 条件化：空数据时走 .rd-hint，此时没有 .rd-list（本检查如实说明「本轮无卡片可比」）。
+check('B1e', '差评列表卡片计算样式非空且为预期特征值（.rd-list 列向 flex / .rd-item 圆角·内边距 / .rd-body 12px / risk-bar flex）',
+  stDefault.main?.list !== true || (
+    st(stDefault, 'list', 'display') === 'flex'
+    && st(stDefault, 'list', 'rowGap') === '6px'
+    && st(stDefault, 'item', 'paddingTop') === '8px'
+    && st(stDefault, 'item', 'borderTopLeftRadius') === '6px'
+    && st(stDefault, 'itemTop', 'alignItems') === 'center'
+    && st(stDefault, 'body', 'fontSize') === '12px'
+    && st(stDefault, 'riskBarBox', 'display') === 'flex'
+  ),
+  { hasList: stDefault.main?.list, list: stDefault.styles?.list, item: stDefault.styles?.item, body: stDefault.styles?.body, riskBarBox: stDefault.styles?.riskBarBox })
 await shot('default')
 
 // ---------------------------------------------------------------- B2 orphan 视图
@@ -381,6 +470,30 @@ check('B3b', '台账视图 filter 恰好 1 个（只剩 L120 状态型）、9 �
   stLedger.filterCount === 1 && stLedger.filterHasGenerate === true && stLedger.ledgerCols === 9
   && stLedger.ledgerRows > 0,
   { filterCount: stLedger.filterCount, cols: stLedger.ledgerCols, rows: stLedger.ledgerRows })
+// ★★ 自检：证明台账表的计算样式**真的抓到了**（选择器没错）—— 这是拆子组件后比对的牙齿。
+//   ★ 铁律教训（第 341 轮实测）：**读数抓到了 ≠ 判据会红**。第一版只断言了 th.fontWeight，
+//     而注入「`.rd-table th,` 选择器失效」时表头 padding 4px→0px、textAlign left→center、
+//     border 1px→0px 全变了，判据却**照样 PASS**（fontWeight 来自另一条幸存的 `.rd-table th{}`）。
+//     ⇒ 判据必须把**所有**已抓到的字段逐条断言，否则就是留了盲区的假门禁。
+check('B3c', '台账表计算样式非空且为预期特征值（nowrap·collapse·12px / th:4px·6px·600·left·1px / td:4px·6px·1px / act:sticky·0px·1px·left / actBtn:2px / 外框 6px）',
+  st(stLedger, 'table', 'borderCollapse') === 'collapse'
+  && st(stLedger, 'table', 'whiteSpace') === 'nowrap'
+  && st(stLedger, 'table', 'fontSize') === '12px'
+  && st(stLedger, 'th', 'paddingTop') === '4px'
+  && st(stLedger, 'th', 'paddingLeft') === '6px'
+  && st(stLedger, 'th', 'fontWeight') === '600'
+  && st(stLedger, 'th', 'textAlign') === 'left'
+  && st(stLedger, 'th', 'borderBottomWidth') === '1px'
+  && st(stLedger, 'td', 'paddingTop') === '4px'
+  && st(stLedger, 'td', 'paddingLeft') === '6px'
+  && st(stLedger, 'td', 'borderBottomWidth') === '1px'
+  && st(stLedger, 'act', 'position') === 'sticky'
+  && st(stLedger, 'act', 'right') === '0px'
+  && st(stLedger, 'act', 'borderLeftWidth') === '1px'
+  && st(stLedger, 'act', 'textAlign') === 'left'
+  && st(stLedger, 'actBtn', 'paddingLeft') === '2px'
+  && st(stLedger, 'ledger', 'borderRadius') === '6px',
+  { table: stLedger.styles?.table, th: stLedger.styles?.th, td: stLedger.styles?.td, act: stLedger.styles?.act, actBtn: stLedger.styles?.actBtn, ledger: stLedger.styles?.ledger })
 await shot('ledger')
 
 // ---------------------------------------------------------------- B4 rules 视图
@@ -393,6 +506,31 @@ check('B4', '「补偿规则」：rules 在场、risk-bar 退场、主内容互�
 check('B4b', '规则视图 filter 2 个、9 列表头（金额规则的唯一落点）',
   stRules.filterCount === 2 && stRules.rulesCols === 9,
   { filterCount: stRules.filterCount, cols: stRules.rulesCols })
+// ★★ 自检：规则表与台账表**共享** .rd-table 那一段 scoped 样式（源码 L2287-2337）
+//   ⇒ 拆 rules 表为子组件后这一段最容易静默失配，必须有读数才有牙齿。
+//   ruleCond 的 white-space 是**冲突值**：.rd-table 给 nowrap，.rd-rule-cond 显式改回 normal
+//   —— 若子组件丢了 .rd-rule-cond，它会被 nowrap 接管，恰恰是最灵敏的探针。
+//   （ruleCond 只在表内有行时才存在 ⇒ 无行时不参与判定，避免因数据为空而假红。）
+check('B4c', '规则表计算样式非空且为预期特征值（共享段同台账 + .rd-rule-cond 把 white-space 从 nowrap 改回 normal + .rd-rules 列向 flex）',
+  st(stRules, 'table', 'borderCollapse') === 'collapse'
+  && st(stRules, 'table', 'whiteSpace') === 'nowrap'
+  && st(stRules, 'table', 'fontSize') === '12px'
+  && st(stRules, 'th', 'paddingTop') === '4px'
+  && st(stRules, 'th', 'paddingLeft') === '6px'
+  && st(stRules, 'th', 'fontWeight') === '600'
+  && st(stRules, 'th', 'textAlign') === 'left'
+  && st(stRules, 'th', 'borderBottomWidth') === '1px'
+  && st(stRules, 'td', 'paddingTop') === '4px'
+  && st(stRules, 'td', 'borderBottomWidth') === '1px'
+  && st(stRules, 'act', 'position') === 'sticky'
+  && st(stRules, 'act', 'right') === '0px'
+  && st(stRules, 'act', 'borderLeftWidth') === '1px'
+  && st(stRules, 'actBtn', 'paddingLeft') === '2px'
+  && st(stRules, 'rulesWrap', 'display') === 'flex'
+  && st(stRules, 'rulesWrap', 'flexDirection') === 'column'
+  && (stRules.rulesRows > 0 ? st(stRules, 'ruleCond', 'whiteSpace') === 'normal' : true),
+  { rows: stRules.rulesRows, table: stRules.styles?.table, th: stRules.styles?.th, td: stRules.styles?.td,
+    act: stRules.styles?.act, actBtn: stRules.styles?.actBtn, ruleCond: stRules.styles?.ruleCond, rulesWrap: stRules.styles?.rulesWrap })
 await shot('rules')
 
 // ---------------------------------------------------------------- B5 抽屉（从台账打开）
@@ -421,6 +559,16 @@ if (!od.ok) {
   check('B5b', '抽屉标题为「差评处置 · …」且左右两栏结构正确（通道区块随状态出现，仅记录）',
     String(drawer.drawerTitle).startsWith('差评处置') && drawer.detailCol === 2,
     { title: drawer.drawerTitle, cols: drawer.detailCol, block: drawer.block, chips: drawer.chips, kv: drawer.kv })
+  // ★★ 自检：抽屉内计算样式也真的抓到了（.rd-detail-grid 两栏 flex / .rd-detail-col 的 flex:1 1 0 + min-width:0）。
+  //   ★ 实测：`flex: 1 1 0` 里的单位零被计算成 **0px**（不是 0%）—— 第一版按 0% 断言 ⇒ 假红。
+  check('B5c', '抽屉计算样式非空且为预期特征值（两栏 display:flex / col 的 flex:1 1 0 与 min-width:0）',
+    st(drawer, 'grid', 'display') === 'flex'
+    && st(drawer, 'grid', 'alignItems') === 'flex-start'
+    && st(drawer, 'grid', 'columnGap') === '20px'
+    && st(drawer, 'col', 'flexGrow') === '1'
+    && st(drawer, 'col', 'flexBasis') === '0px'
+    && st(drawer, 'col', 'minWidth') === '0px',
+    { grid: drawer.styles?.grid, col: drawer.styles?.col })
   await shot('drawer')
 }
 
