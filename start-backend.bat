@@ -41,6 +41,11 @@ echo.
 echo   Press Ctrl+C to stop
 echo ----------------------------------------
 
-%PY% -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload --log-level info
+rem --- 排除监听：logs/ 与 .venv/（P0-2 日志治理，2026-09-30）---
+rem     uvicorn --reload 原本监听整个 backend 目录，**包括 backend/logs 自己**，
+rem     于是形成「写日志 -> watchfiles 报告文件变更 -> 再写一条日志 -> ...」的自反馈，
+rem     实测单日白刷约 2000 条 watchfiles 日志（日志原文里能看到 logs\2026-09-30.log 自己）。
+rem     backend/.venv 也在监听范围内，一并排除。
+%PY% -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload --log-level info --reload-exclude "logs/*" --reload-exclude "*.log" --reload-exclude "*.log.gz" --reload-exclude ".venv/*" --reload-exclude "__pycache__/*"
 
 pause

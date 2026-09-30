@@ -57,8 +57,13 @@ echo   NOTE: beat owns a single-instance schedule file.
 echo         Never run two beats - they double-dispatch every task.
 echo.
 
-start "Celery Worker" /d "%~dp0backend" cmd /k ""%PY%" worker.py"
-start "Celery Beat"   /d "%~dp0backend" cmd /k ""%PY%" beat.py"
+rem --- LOG_SINK_ROLE：让 worker / beat 各写自己的日志文件（P0-2 日志治理）---
+rem     loguru 不是多进程安全的：三个进程共写 backend/logs/{date}.log 时，
+rem     午夜会各自触发轮转，产出**内容完全相同的重复 .gz**（实测 2026-09-28 两份
+rem     gz 解压后 md5 全等、均 738,001 行）。按角色分文件即可根治；
+rem     默认角色为空，uvicorn 那份文件名不变（backend/logs/{date}.log）。
+start "Celery Worker" /d "%~dp0backend" cmd /k "set LOG_SINK_ROLE=worker&& "%PY%" worker.py"
+start "Celery Beat"   /d "%~dp0backend" cmd /k "set LOG_SINK_ROLE=beat&& "%PY%" beat.py"
 
 echo.
 echo Both launched. Close their windows to stop them.

@@ -824,6 +824,14 @@ class Settings(BaseSettings):
     log_dir: str = Field(default="logs", description="日志目录（相对 CWD 或绝对路径）")
     log_level: str = Field(default="", description="日志级别，留空=按 debug 自动（debug→DEBUG，否则 INFO）")
     log_json: bool = Field(default=False, description="是否输出 JSON 结构化日志（生产采集建议 true）")
+    #   - log_file_max_mb 是**防爆闸门**：loguru 的 rotation 字符串只能表达
+    #     「时间」或「体积」**其中之一**。原先写 rotation="00:00" 等于完全不设体积上限，
+    #     实测单日单文件涨到 435 MB（backend/logs/2026-09-22.log），1.2 GB 里九成来自它。
+    log_file_max_mb: int = Field(
+        default=200,
+        ge=1,
+        description="单个日志文件体积上限（MB），超限即轮转（防止单日日志无界增长）",
+    )
 
     # 指标：/metrics 按 Prometheus 文本格式暴露（自研，零新依赖）。
     #   - metrics_enabled=false 时不注册该路由（404 语义）

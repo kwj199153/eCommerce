@@ -15,10 +15,27 @@
        便于 Filebeat / Promtail / 阿里云 SLS 采集；本地开发保持彩色单行。
     4. **日志目录可配**：`LOG_DIR`（默认 logs）。容器里 CWD 未必是项目根，
        写死相对路径会导致日志落到意料之外的位置甚至因权限失败。
+
+★ 2026-09-30 日志治理（P0-2：`backend/logs` 已堆到 1.2 GB）：
+    1. **单文件体积上限**：`rotation="00:00"` 只表达时间条件、**完全没有体积上限**，
+       实测单日涨到 435 MB（2026-09-22.log）。改为 `_make_rotation()` 复合判据
+       （跨天 **或** 超过 `log_file_max_mb`）。
+    2. **多进程不再共写一个文件**：按进程角色（`LOG_SINK_ROLE`）分文件。
+       loguru 明确不是多进程安全的：uvicorn / celery worker / celery beat 同写一个
+       路径时，午夜会各自触发轮转 ⇒ 产生**内容全等的重复 .gz**（实测 2026-09-28
+       两份 gz 解压后 md5 相同、均 738,001 行）。
+       ⚠️ 为什么不用 `{process.id}`：loguru 文件名**只认 `{time}`**（见
+       `_file_sink.py:_create_path` 只提供 time 键，写 process 直接 KeyError）；
+       而硬插 pid 会让 retention 的 glob 变成 `*.12345.log`，旧 pid 的历史文件
+       永远不被清理。角色是固定集合，才同时满足「分文件」与「可清理」。
+    3. **第三方噪音降级**：python_multipart / watchfiles / celery.utils.functional
+       这些库在 INFO 级刷屏（单日万条量级），统一压到 WARNING。
 """
 
 import logging
+import os
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from loguru import logger
@@ -115,7 +132,26 @@ def setup_stdlib_interception() -> None:
         logging.getLogger(name).propagate = True
 
     # 第三方库降噪（保留 ERROR/CRITICAL）
-    for noisy in ("httpx", "httpcore", "urllib3", "asyncio"):
+    #
+    # ★ 2026-09-30 扩展（P0-2 日志治理）：按「logger:function:line」聚类 09-30 单日日志，
+    #   前几名**全是第三方库**，业务日志被淹没（当日 INFO 48 万条）：
+    #     python_multipart.multipart:callback      7.5k  "Calling on_field_* with ..."
+    #     watchfiles.main:_log_changes             2.0k  文件变更（uvicorn --reload）
+    #     celery.utils.functional:head_from_fun    1.3k
+    #   这些在 INFO/DEBUG 级只刷文件、排障价值近乎为零，统一压到 WARNING。
+    for noisy in (
+        "httpx",
+        "httpcore",
+        "urllib3",
+        "asyncio",
+        "python_multipart",
+        "multipart",
+        "watchfiles",
+        "celery.utils.functional",
+        "celery.app.trace",
+        "celery.worker.strategy",
+        "celery.app.amqp",
+    ):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
@@ -202,6 +238,60 @@ def _inject_context(record) -> bool:
     return True
 
 
+# ====== 文件轮转判据（P0-2）======
+
+def _make_rotation(max_bytes: int):
+    """
+    构造 loguru 的 rotation 回调：**跨天** 或 **单文件超过 max_bytes** 任一成立即轮转。
+
+    ★ 为什么必须自己写（2026-09-30，P0-2）：
+        loguru 的 `rotation=` 传字符串时**只支持单一条件** ——
+        传 `"00:00"` 就是「只看时间、完全不管体积」。
+        线上实测：`backend/logs/2026-09-22.log` 一天涨到 **435 MB** 也没有任何轮转，
+        整个目录堆到 **1.2 GB**。官方支持的最小改动是传一个
+        `(message, file) -> bool` 回调，在这里同时判断两条独立条件。
+
+    ⚠️ 两个实现细节（已实测）：
+        1. `file` 是 loguru 打开的文件对象（实现 `tell()`），**不是路径字符串**。
+           轮转后 loguru 会重新 open，`tell()` 自动归零，不需要我们复位。
+        2. `next_midnight` 放在闭包外的可变容器里 —— 状态语义最清楚，
+           也省掉 `nonlocal` 声明。
+
+    Args:
+        max_bytes: 单文件体积上限（字节）。<=0 表示不设体积限制。
+
+    Returns:
+        loguru 接受的 rotation 回调，签名 (message, file) -> bool。
+    """
+    state = {"next_midnight": None}
+
+    def _rotation(message, file) -> bool:  # noqa: ANN001 - loguru 约定签名
+        now = datetime.now()
+        nxt = state["next_midnight"]
+        if nxt is None:
+            # 首次：只记下「下一个 0 点」，本次绝不轮转
+            state["next_midnight"] = (now + timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+        elif now >= nxt:
+            # 已越过记录的 0 点 ⇒ 轮转，并推进到再下一个 0 点
+            state["next_midnight"] = (now + timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            return True
+
+        if max_bytes > 0:
+            try:
+                if file.tell() >= max_bytes:
+                    return True
+            except (OSError, ValueError):
+                # 文件不可 seek（管道/特殊设备）时忽略体积判据，只保留时间轮转
+                pass
+        return False
+
+    return _rotation
+
+
 def _add_sinks() -> None:
     """注册控制台 + 文件两个 sink"""
     level = "DEBUG" if config.debug else (getattr(config, "log_level", "") or "INFO")
@@ -218,7 +308,7 @@ def _add_sinks() -> None:
         diagnose=bool(config.debug),
     )
 
-    # --- 文件（按天轮转 + gz 压缩 + 30 天保留）---
+    # --- 文件（按天轮转 + 体积上限 + gz 压缩 + 30 天保留）---
     log_dir = Path(getattr(config, "log_dir", "logs") or "logs")
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -226,11 +316,29 @@ def _add_sinks() -> None:
         logger.warning("日志目录 {} 不可用（{}），本次仅输出到控制台", log_dir, exc)
         return
 
+    # ★ 多进程分文件（P0-2）：loguru 明确不是多进程安全的。
+    #   uvicorn / celery worker / celery beat 若写同一路径，午夜会各自触发轮转
+    #   ⇒ 竞态产出**内容完全相同的重复 .gz**。实测证据：
+    #     2026-09-28.log.gz 与 2026-09-28.2026-09-29_00-07-13_129807.log.gz
+    #     字节数同为 8,789,619，解压后 md5 全等（711bde67…，738,001 行）。
+    #
+    #   ⚠️ 不用 `{process.id}`，两个原因：
+    #     ① loguru 文件名**只认 `{time}`** —— `_file_sink.py:_create_path` 只给
+    #        `{"time": ...}` 这一个键，写 process 会直接 KeyError（已实测）；
+    #     ② 硬插 pid 会让 retention 的 glob（`_make_glob_patterns` 把 {...} 变 *）
+    #        变成 `*.12345.log`，**旧 pid 的历史文件永远清不掉**。
+    #   角色（LOG_SINK_ROLE）是固定集合，两个目标一次满足；
+    #   默认角色为空 ⇒ 文件名仍是 `{time:YYYY-MM-DD}.log`，与既有日志兼容。
+    _role = (os.environ.get("LOG_SINK_ROLE") or "").strip()
+    _log_name = "{time:YYYY-MM-DD}" + (("." + _role) if _role else "") + ".log"
+
     logger.add(
-        log_dir / "{time:YYYY-MM-DD}.log",
+        log_dir / _log_name,
         format=LOG_FORMAT,
         level=level,
-        rotation="00:00",      # 每天轮转
+        rotation=_make_rotation(  # 跨天 **或** 超 log_file_max_mb，见上方函数说明
+            int(getattr(config, "log_file_max_mb", 200) or 200) * 1024 * 1024
+        ),
         retention="30 days",   # 保留30天
         compression="gz",      # 压缩旧日志
         encoding="utf-8",
