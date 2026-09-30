@@ -1,0 +1,67 @@
+/**
+ * 差评工作台 —— **表格共享样式**（第 341 轮第四刀从 reviewDesk.css 切出）。
+ *
+ * ★ 为什么单独成文件：`.rd-table` 这一套被两处消费 ——
+ *   · 台账表：在 `ReviewDeskConfig.vue`；
+ *   · 规则表：在 `ReviewDeskRulesTable.vue`（子组件）。
+ *   而 scoped CSS 的**后代选择器不穿透子组件**（父组件的 scopeId 只加在子组件根元素上）
+ *   ⇒ 两边必须各自 `src` 同一份，**不许各抄一份**（抄两份必然漂移）。
+ *   两边都写 `<style scoped src="./rdTable.css">`：`src` 形式的样式块由 SFC 编译器
+ *   当作写在组件内处理 ⇒ scoped 照常生效，且不会外泄成全局样式。
+ *
+ * ★ 规则表**独有**的 `.rd-rule-off` / `.rd-rule-cond` / `.rd-rule-action` 不在这里，
+ *   它们跟着子组件走（只有子组件用）。
+ *
+ * ★ 下面整段是**逐字搬运**，未作任何改写（含第 292 / 298 轮的原始注释）。
+ */
+.rd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-12);
+  white-space: nowrap;
+}
+.rd-table th,
+.rd-table td {
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--border-base);
+  text-align: left;
+}
+.rd-table th {
+  background: var(--bg-elevated);
+  font-weight: 600;
+}
+.rd-table .num {
+  text-align: right;
+}
+.rd-table tbody tr {
+  cursor: pointer;
+}
+.rd-table tbody tr:hover {
+  background: var(--bg-elevated);
+}
+.rd-table-title {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rd-table-act {
+  text-align: right;
+  /* ★ 第 292 轮：面板默认宽只有 ~290px，整张台账横向溢出 ⇒ 「编辑 / 查看」这一列
+     被推到视口外（实测 clientWidth 290 / scrollWidth 500+），老板的原话正是
+     「我在台账列表也找不到去哪里编辑」。钉在右侧 ⇒ 表格多宽都看得见。
+     背景必须取 `--bg-elevated`：它与面板底色、`tr:hover` 同色，否则右侧内容会从
+     下面透出来；`border-left` 用来划出这列的边界。 */
+  position: sticky;
+  right: 0;
+  background: var(--bg-elevated);
+  border-left: 1px solid var(--border-base);
+}
+
+/* ★ 第 298 轮：这一列多了第二个按钮（💬）⇒ 两个都收紧内边距、拉开间距，
+   否则窄面板下 sticky 列会被撑宽、把「编辑 / 查看」再挤出视口（第 292 轮的坑）。 */
+.rd-table-act .ant-btn {
+  padding-inline: 2px;
+}
+.rd-table-act .ant-btn + .ant-btn {
+  margin-left: var(--space-2);
+}

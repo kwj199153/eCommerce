@@ -258,48 +258,12 @@
         </a-button>
       </div>
       <a-alert v-if="rulesError" type="error" show-icon :message="rulesError" class="rd-alert" />
-      <table class="rd-table">
-        <thead>
-          <tr>
-            <th>归因</th>
-            <th>规则代号</th>
-            <th>名称</th>
-            <th class="num">优先级</th>
-            <th>命中条件</th>
-            <th>补偿方案</th>
-            <th class="num">单笔上限</th>
-            <th>启用</th>
-            <th class="rd-table-act"></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="r in rules" :key="r.id" :class="{ 'rd-rule-off': !r.enabled }">
-            <td><a-tag>{{ r.cause_label }}</a-tag></td>
-            <td><code>{{ r.code }}</code></td>
-            <td>{{ r.name || '—' }}</td>
-            <td class="num">{{ r.priority }}</td>
-            <td class="rd-rule-cond">{{ ruleCondText(r) }}</td>
-            <td class="rd-rule-action">{{ ruleActionText(r) }}</td>
-            <td class="num">{{ r.budget_cap > 0 ? r.budget_cap : '未设' }}</td>
-            <td>
-              <a-switch
-                :checked="r.enabled"
-                size="small"
-                @click="toggleRule(r)"
-              />
-            </td>
-            <td class="rd-table-act">
-              <a-button type="link" size="small" @click="openRuleEdit(r)">编辑</a-button>
-              <a-popconfirm
-                title="确定删除这条规则？已生成的处置不受影响（存的是方案快照）。"
-                @confirm="removeRule(r)"
-              >
-                <a-button type="link" size="small" danger>删除</a-button>
-              </a-popconfirm>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <ReviewDeskRulesTable
+        :rules="rules"
+        @edit="openRuleEdit"
+        @toggle="toggleRule"
+        @remove="removeRule"
+      />
     </div>
 
     <!-- ===== 差评列表：以差评为主语 ===== -->
@@ -956,10 +920,11 @@ import {
   REVIEW_STATUS_LABELS, COMPENSATION_TYPE_LABELS, DISPOSITION_STATUS_OPTIONS,
   VIEWS, type ViewKey, SYSTEMIC_COLORS, CONFIRM_TITLES, CONFIRM_TEXTS,
   CAUSE_OPTIONS, ACTION_TYPE_OPTIONS, CURRENCY_OPTIONS,
-  ruleCondText, ruleActionText, compensationText, rowActionLabel, rowHint, shortTime,
+  compensationText, rowActionLabel, rowHint, shortTime,
 } from './reviewDesk/reviewDeskVocabulary'
 import { useReviewDeskViews } from './reviewDesk/useReviewDeskViews'
 import { useReviewDeskEdits } from './reviewDesk/useReviewDeskEdits'
+import ReviewDeskRulesTable from './reviewDesk/ReviewDeskRulesTable.vue'
 
 /**
  * 处置通道的**含义与可逆性** —— 唯一真源（与后端 `service.DISPOSITION_CHANNELS`
@@ -1851,3 +1816,4 @@ void reload()
 </script>
 
 <style scoped src="./reviewDesk/reviewDesk.css"></style>
+<style scoped src="./reviewDesk/rdTable.css"></style>
