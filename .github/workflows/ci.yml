@@ -26,13 +26,21 @@
 #      当前跑 --select T20）。全量基线 2796 条，一次性修不现实 ——
 #      每收敛一类就往 --select 加一项，形成棘轮；
 #    - mypy：**仍未接入**（存量无标注，接入前要先跑基线）；
-#    - 前端 ESLint：package.json 有 lint 脚本，但 devDependencies 里**没有 eslint**
-#      ⇒ 该脚本是死的，直接加进 CI 会失败。补 devDeps + 配置文件是独立任务；
+#    - 前端 ESLint：**第 346 轮已接入**（见 frontend job 的 `npm run lint:ci` 步骤）。
+#      接入前的形态与本仓 ruff 那次同形 —— `package.json` 里有 `lint` 脚本，
+#      但 `devDependencies` 里**没有任何 eslint 包**，脚本还写着 `--ext`
+#      （该参数在 ESLint 9 已被移除）且带 `--fix`（破坏性）⇒ 从未执行过。
+#      现在的口径：基线 8116 条问题**全部**出自 21 条规则，那 21 条显式关闭并登记欠账
+#      （`frontend/eslint.config.mjs` 的 `LEGACY_DEBT_OFF`），其余 181 条生效规则
+#      由 `eslint . --max-warnings=0` 拦住 ⇒ 稳态 0 problem。
+#      棘轮不靠注释约定：`frontend/scripts/check-eslint-ratchet.cjs` 用 ESLint 自己的
+#      `calculateConfigForFile` 解析真实档位，守住「生效集合不缩水、欠账不扩张」，
+#      它按 `check-*.*` glob 自动进下面那个门禁步骤。
 #    - 前端 `scripts/check-*.py` 门禁：**第 161 轮已接进 CI**。此前 glob 写死
 #      `.cjs` 后缀（且 .py 用下划线命名，连 `check-*` 都匹配不上）⇒ 两道门禁
 #      存在却从未执行。现改 `check-*.*` + 覆盖率自证 + 文件名统一连字符；
 #    - 覆盖率 / 安全扫描：**已接入**（见 backend job 的覆盖率步骤与 security job）；
-#      npm audit 暂以 critical 为线，2 项 high 是已知待办（理由写在 security job 里）。
+#      npm audit 暂以 critical 为线，3 项 high 是已知待办（理由写在 security job 里）。
 #    - CD 资产门禁：**已接入**（assets job 的 `CD 资产门禁` 步骤，第 333 轮）。
 #      CD 的三份资产（.github/workflows/cd.yml / scripts/deploy/remote_deploy.sh /
 #      docker-compose.yml 的 image 插值）之间的一致性没人替你检查，
@@ -286,6 +294,24 @@ jobs:
           fi
           echo "前端门禁执行 $ran/$total 个 ✓"
 
+      - name: ESLint（棘轮：已收敛到零的规则集）
+        # ★★ 为什么必须有这一步：本仓 `package.json` 里一直有 `lint` 脚本，
+        #   但 `devDependencies` 里没有任何 eslint 包 ⇒ 那是**死脚本**，
+        #   从写下那天起从未在 CI 里执行过（「配置写了但不生效」，与 ruff 那次同形）。
+        #   第 346 轮补齐 devDeps + `eslint.config.mjs`，并在这里接上。
+        #
+        # ★ 为什么跑 `lint:ci` 而不是 `npx eslint .`：
+        #   棘轮第一档里有 21 条规则是 **warn 档**（它们在基线里零违规），
+        #   只判 error 的话这 21 条就没有牙齿 ⇒ `--max-warnings=0` 让 warning 也算失败。
+        #
+        # ★ 为什么这不是「又一道常红的门禁」：基线 8116 条问题全部出自 21 条规则，
+        #   那 21 条已显式关闭并登记为欠账；其余 181 条生效规则当前零违规
+        #   ⇒ 本步骤的稳态就是 0 problem。每清掉一类欠账就从欠账表删一条（回到预设档位 = 收紧）。
+        #
+        # ★ 旧脚本为什么不能直接用：`--ext` 在 ESLint 9 已移除（连参数都过不去），
+        #   而且它带 `--fix` —— 会改写工作区且**永远退出 0**，在 CI 里既破坏性又不判红。
+        run: npm run lint:ci
+
       - name: 类型检查
         run: npx vue-tsc --noEmit
 
@@ -417,11 +443,16 @@ jobs:
 
       - name: npm audit（前端依赖漏洞）
         # ★ 门禁为什么定在 critical 而不是 high：
-        #   当前 high 有 2 项、且**都无法在本轮修**：
+        #   当前 high 有 3 项、且**都无法在本轮修**：
         #     · vite（devDependency，仅构建期）：修复要 5.x → 8.x 的 major 升级，
         #       跨越 3 个大版本，属于独立改造任务，不能顺手塞进来；
         #     · xlsx（**生产依赖**）：SheetJS 已不在 npm 上发新版（fixAvailable: false），
         #       要么改用官方 CDN 源安装、要么整体换 exceljs —— 需要单独评估。
+        #     · brace-expansion@1.1.21（devDependency 的**传递**依赖，仅构建期）：
+        #       第 346 轮接入 ESLint 时随 `minimatch@3` 树进来（ReDoS 类公告）。
+        #       它不在生产依赖链上、也不在运行期被调用，实际风险低；
+        #       要修得动 ESLint 自己的依赖树（用 `overrides` 强升 brace-expansion 2.x
+        #       与 minimatch@3 的调用方式不兼容）⇒ 同样属于独立评估。
         #   门禁若定在 high，CI 会**立刻常红**，最后必然被人绕过或关掉
         #   （本仓库记忆里有明确一条：门禁一亮红就被 --no-verify 绕过）。
         #   所以先锁 critical（当前 0 ⇒ 绿），把 high 当**已知待办**跟踪，

@@ -90,7 +90,7 @@
 <tr><td><b>前端死代码</b></td><td class="bad">347 行零引用</td><td class="good">108 个 .vue <b>0 个孤儿</b></td><td><span class="tag t-ok">已清</span></td></tr>
 <tr><td><b>巨型文件（&gt;800 行）</b></td><td class="num">14 个</td><td class="num bad">19 个（最大 <code>ProductLibrary.vue</code> 2069 行）</td><td><span class="tag t-p1">恶化</span></td></tr>
 <tr><td><b>mock 被生产引用</b></td><td class="num">toolExecutors 1772 行</td><td class="num bad">1832 行；37 个执行器 <b>34 个纯 mock</b></td><td><span class="tag t-p1">恶化</span></td></tr>
-<tr><td><b>lint 死脚本</b></td><td class="bad">有 lint 脚本无 eslint</td><td class="bad">仍未装 eslint；ruff/mypy 配置在但 CI 不跑</td><td><span class="tag t-p1">未修</span></td></tr>
+<tr><td><b>lint 死脚本</b></td><td class="bad">有 lint 脚本无 eslint</td><td class="bad">仍未装 eslint；ruff/mypy 配置在但 CI 不跑</td><td><span class="tag t-ok">✔ 已修 · r346</span></td></tr>
 </tbody>
 </table>
 <p style="font-size:13.5px;color:var(--ink2);margin-top:-2px">
@@ -271,7 +271,7 @@
 <tr><td><span class="tag t-p1">3</span><br><span class="tag t-new">新</span><br><span class="tag t-ok">✔ 已修 · r127</span></td><td><b>记忆不按人隔离</b></td><td><code>conversations.owner_id</code> 57 行全 NULL；<code>create_conversation</code> 调用处不传 owner</td><td>与 P0-1 同修：写入点收口到 <code>current_user</code>，删除 body 里的 <code>owner_id</code> 入参</td></tr>
 <tr><td><span class="tag t-p1">4</span><br><span class="tag t-new">新</span></td><td><b>账号安全 5 端点后端有、前端无入口</b></td><td>闲置：<code>/auth/forgot-password</code>、<code>/auth/reset-password</code>、<code>/auth/verify-email</code>(+resend)、<code>/auth/logout-all</code>；<b>「改密」已接线</b></td><td>第 554/555 号任务把后端做齐了，前端只接了改密。<b>忘记密码</b>是最该有的一个（没有它，用户忘了密码 = 账号报废）；<b>全端登出</b>是安全响应动作，应挪到账户菜单</td></tr>
 <tr><td><span class="tag t-p1">5</span><br><span class="tag t-new">新</span></td><td><b>演示模式 fail-open：匿名可见全库店铺</b></td><td>同一端点三种身份实测：<b>匿名 7 条（全库）</b> / A 4 条 / B 0 条</td><td>生产模式被 <code>auth_required=True</code> 硬护栏挡住（复验匿名 → 401），所以不是线上漏洞；但本地/演示下<b>真实数据会裸奔</b>。修法：身份为 None 时<b>返回空列表</b>（而不是不过滤），守卫写「没有身份 ⇒ 没有数据」</td></tr>
-<tr><td><span class="tag t-p1">6</span><br><span class="tag t-old">遗留</span></td><td><b>lint 仍是死脚本</b></td><td><code>eslint</code> 未安装（<code>node_modules/eslint</code> 不存在）⇒ <code>npm run lint</code> 必失败；<code>pyproject.toml</code> 有 <code>[tool.ruff]</code>/<code>[tool.mypy]</code> 但 CI 不跑、本机 ruff 未装。CI 注释已自认此坑</td><td>二选一，别拖：① 补 <code>eslint</code> + 配置文件进 devDeps 并接入 CI；② 删掉 <code>lint</code> 脚本。<b>当前状态最差</b>——它让人觉得「有 lint」</td></tr>
+<tr><td><span class="tag t-p1">6</span><br><span class="tag t-old">遗留</span><br><span class="tag t-ok">✔ 已修 · r346</span></td><td><b>lint 仍是死脚本</b></td><td><code>eslint</code> 未安装（<code>node_modules/eslint</code> 不存在）⇒ <code>npm run lint</code> 必失败；<code>pyproject.toml</code> 有 <code>[tool.ruff]</code>/<code>[tool.mypy]</code> 但 CI 不跑、本机 ruff 未装。CI 注释已自认此坑</td><td>二选一，别拖：① 补 <code>eslint</code> + 配置文件进 devDeps 并接入 CI；② 删掉 <code>lint</code> 脚本。<b>当前状态最差</b>——它让人觉得「有 lint」<br><b>修复记录（r346）</b>：走 ① —— devDeps +6（<code>eslint</code> / <code>@eslint/js</code> / <code>typescript-eslint</code> / <code>eslint-plugin-vue</code> / <code>globals</code> / <code>vue-eslint-parser</code>）、新建 <code>frontend/eslint.config.mjs</code>、修 <code>lint</code> 脚本（去掉 <code>--fix</code> 与已废弃的 <code>--ext</code>）、新增 <code>lint:ci</code>（<code>--max-warnings=0</code>）并接入 CI。<b>棘轮口径</b>：显式 <code>off</code> 21 条欠账、其余 162 条已生效零违规不动（档位按文件类解析，全局提级会新开闸）；可证实 <code>npx eslint .</code> = 0 problem、反向注入 13/13 PASS</td></tr>
 <tr><td><span class="tag t-p1">7</span><br><span class="tag t-old">遗留·恶化</span></td><td><b>巨型文件 14 → 19 个</b></td><td><code>ProductLibrary.vue</code> 2069、<code>PlatformRules.vue</code> 1917、<code>toolExecutors.ts</code> 1832、<code>useChatOrchestrator.ts</code> 1567、<code>data.ts</code> 1254</td><td><code>useChatOrchestrator.ts</code> 已 1567 行且是对话主链路 ⇒ 接 P0-2 时<b>顺手按域拆</b>（每域一个 executor 模块），不要在里面继续加分支</td></tr>
 </tbody>
 </table>
@@ -295,7 +295,7 @@
   <li><b>再做 P0-2 批 1（4 个高曝光工具接线）</b> —— 这是老板问的「是否符合 AI 原生」体感最强的一刀：广告诊断 / 竞品对比 / SEO 诊断 / 五点描述。后端端点都在，纯前端接线 + 拆 <code>toolExecutors</code>。</li>
   <li><b>紧接着 P0-3 + P1-1</b> —— 竞品域接通 + 给业务 Agent 接记忆（同一个改动面：把 <code>_build_router()</code> 的裸 BaseAgent 绑上已有 checkpointer 单例 + 传 session_id）。做完这两项，「AI 原生」就从不达标跨到部分达标。</li>
   <li><b>然后 P1-4 / P1-5</b> —— 忘记密码前端入口（安全 + 可用性）、演示模式 fail-closed。</li>
-  <li><b>最后工程债</b> —— P1-6 lint 二选一了断、P2 清散落文件、结算 <code>_pending/</code>。<b>持续盯 P1-7（巨型文件）与 P0-2 的剩余批次</b>，这两条是还在涨的指标。</li>
+  <li><b>最后工程债</b> —— P1-6 lint 二选一（<b>r346 已了断</b>：补 eslint + 配置 + 接 CI）、P2 清散落文件、结算 <code>_pending/</code>。<b>持续盯 P1-7（巨型文件）与 P0-2 的剩余批次</b>，这两条是还在涨的指标。</li>
 </ol>
 
 <h2>五、证据清单（可复跑）</h2>

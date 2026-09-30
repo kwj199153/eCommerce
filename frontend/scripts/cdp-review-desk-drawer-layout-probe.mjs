@@ -193,7 +193,14 @@ const drawerOpen = JSON.parse(await run(`
 (() => {
   const rows = [...document.querySelectorAll('.rd-table tbody tr')]
   if (!rows.length) return JSON.stringify({ ok: false, reason: '台账为空（无行可点）', rows: 0 })
-  // ★ 第 298 轮：这一列多了 💬 按钮 ⇒ 必须点名 `.rd-act-open`（开抽屉那个）。
+  // ★ 第 298 轮：这一列多了 💬 按钮 ⇒ 必须点名「.rd-act-open」这个类（开抽屉那个）。
+  //   ★★ 第 346 轮修：本句原写作「反引号包住类名」，而它位于 run() 的模板字面量内部
+  //   ⇒ 反引号把模板提前截断，残留的 .rd-act-open 被解析成
+  //     (await run(...)).rd - act - open 再接到另一段模板 ⇒ 求 run() 的实参时即抛
+  //     ReferenceError: act is not defined（run() 一次都没被调用过）。
+  //   后果：本探针自第 298 轮起整段死掉（D1 之后的检查全没跑过），
+  //   而它不在 CI 的 check-* glob 里 ⇒ 无人发现。
+  //   规矩：已处于模板字面量内部的注释里，类名 / 选择器一律用「」，不得用反引号。
   const btn = rows[0].querySelector('.rd-table-act button.rd-act-open') || rows[0].querySelector('button')
   if (!btn) return JSON.stringify({ ok: false, reason: '行内无按钮', rows: rows.length })
   btn.click()

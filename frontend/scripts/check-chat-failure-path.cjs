@@ -201,7 +201,9 @@ function loadTs(p, registry) {
     }
     throw new Error(`本门禁未打桩的模块：${spec}（新依赖请显式补桩，别让它静默拿到空实现）`)
   }
-  // eslint-disable-next-line no-new-func
+  // ★ 此处原本挂着 `// eslint-disable-next-line no-new-func`，但 `no-new-func`
+  //   **不在 eslint:recommended 里**（也不在任何本仓启用的预设里）⇒ 那条指令从头到尾
+  //   都是空转的。第 346 轮接 ESLint 时把「多余的 disable 指令」提为 error，它才现形。
   new Function('require', 'module', 'exports', '__filename', code)(req, mod, mod.exports, p)
   return mod.exports
 }

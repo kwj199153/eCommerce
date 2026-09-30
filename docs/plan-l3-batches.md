@@ -21,6 +21,11 @@
 
 ## 1. 批次 1 —— 「补齐写了但从未生效的工程配置」
 
+> **▶ 执行状态（第 346 轮）：前端部分（F-1）已落地并验收通过 —— 逐条对账见 §1.6。**
+> §1.1 / §1.2 记录的是**第 344 轮立项时的现状与方案**，保留原文不改 ——
+> 落地与方案之间的偏差本身就是证据（§1.6 最后一列），能防止下次照抄一份错的方案。
+> 后端部分（B-1）另记。
+
 ### 1.1 现状（实测，非推测）
 
 | 项 | 实测结果 |
@@ -88,6 +93,47 @@
 | ESLint 9 flat config 与 `eslint-plugin-vue` / `typescript-eslint` **版本矩阵**不匹配 | `npm ci` 会直接失败 ⇒ 装完立刻 `npm ci` 复跑一次验证 |
 | mypy 对 SQLAlchemy / pydantic 噪声大（`plugins = []` 是**刻意**不开） | 基线可能比预期脏 ⇒ 如实收窄圈定范围，不硬凑 |
 | 直连全量 ⇒ 常红 ⇒ 被绕过 | 已在 1.3 明确禁止；第 1 步必须跑基线 |
+
+### 1.6 执行记录 · F-1 前端 ESLint 棘轮（第 346 轮 · #1258）
+
+**方案与落地逐条对账**（★ 这正是「方案写了 N 条、落地只做 1 条」的防复发动作）：
+
+| §1.2 条目 | 方案原文 | 实际落地 | 偏差 |
+|---|---|---|---|
+| 1 | devDeps **+3** | devDeps **+6** | 方案漏了 `@eslint/js` / `globals` / `vue-eslint-parser`。★ 最后一个必须**显式**装 —— 它只是 `eslint-plugin-vue` 的 **peerDependency**，不装则 `npm ci` 直接失败 |
+| 2 | `frontend/eslint.config.js` | **`frontend/eslint.config.mjs`** | 仓内其它前端配置一律 `.mjs` ⇒ 跟随仓内约定 |
+| 2 | 「逐条列当前零违规的规则为 `error`」 | **只显式 `off` 掉 21 条欠账，其余一条不动** | ★★ 方案方向**是错的**：ESLint 档位**按文件类解析**（同一条规则在 `.ts` / `.vue` / `.cjs` / `.mjs` 上可以不同）⇒ 把「基线里在某文件类是关闭」的规则全局钉成 `error` 会**新开一道闸**（实测冒出 `no-unused-vars` / `prefer-const` 等新 error） |
+| 3 | `check-eslint-ratchet.cjs`「可选加强」 | **已做，且是必需件** | 棘轮方向与 ruff **相反**（ruff `--select` 是白名单=天然棘轮；ESLint / mypy 默认全开=黑名单）⇒ 没有这条门禁，棘轮只是口头约定 |
+| — | 方案未提 | **`lint` 脚本同时删掉 `--ext`** | ESLint 9 已移除 `--ext`，不删则 `npm run lint` 自身报错 |
+
+**权威口径（最终采用的数字，全部由实测产物现算、禁手写）：**
+
+| 指标 | 值 | 口径 |
+|---|---|---|
+| `--print-config` 生效规则 | **204** | 基线配置（`recommended` 全集 + browser/node globals） |
+| ├ 有违规的规则 | **21** | 8115 条问题（另有 1 条无 `ruleId` 的「多余 eslint-disable」⇒ 8116） |
+| ├ 已生效且零违规 | **162** | 档位 `error` 141 + 档位 `warn` 21 |
+| └ 基线即关闭 | **21** | 21+162+21 = 204 ✓ |
+| `ENFORCED`（四文件类并集里任一 >0） | **181** | 规则全集 206 − `OFF_EVERYWHERE` 25 |
+| `CEILING_DEBT`（显式关掉的欠账） | **21** | = 配置导出的 `LEGACY_DEBT_OFF` 条数 |
+
+★ **`warn` 也按失败处理**：那 21 条 `warn` 是「已生效的零违规」（有牙齿的规则），
+只判 `error` 会让它们形同不存在 ⇒ 门禁跑 `--max-warnings=0`。
+★ 判据**问库本身**（ESLint Node API `calculateConfigForFile`），**不用文本正则抠 config**。
+
+**验收三条（全过）：**
+1. `npx eslint .` = **0 problem / 退出码 0**；`--max-warnings=0` 同样 0。
+2. **反向注入 13/13 PASS**（R1 生效集合缩水 / R2 逐类条数缩水 / R3 欠账扩张 / R4 门禁自身自检）。
+3. **不破坏现有流程**：前端 37 个 `check-*` 门禁全过 + `vite build` 成功 + `npm ci` 一致
+   （★ 棘轮门禁文件名匹配既有 `scripts/check-*.*` glob，自动纳入 CI，无需单独加步骤）。
+
+**顺带照出并修掉的两条真实缺陷**（不是本批目标，但正好被本批的「提级」照出来）：
+- `frontend/scripts/cdp-review-desk-drawer-layout-probe.mjs:196`：一句**注释里的反引号**
+  落在 ``run(`...`)`` 模板字面量内部 ⇒ 模板提前截断 ⇒ 该探针自第 298 轮起**整段死掉**
+  （`run()` 一次都没被调用就抛 `ReferenceError`）；且它不在 CI 的 `check-*` glob 里 ⇒ 无人发现。
+- `frontend/scripts/check-chat-failure-path.cjs`：挂着 `// eslint-disable-next-line no-new-func`，
+  但 `no-new-func` **不在 `eslint:recommended` 里** ⇒ 该指令从写下起就是空转的
+  （把「多余的 disable 指令」提为 `error` 后才现形）。
 
 ---
 
