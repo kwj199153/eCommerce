@@ -176,8 +176,10 @@ probe_lo = literals("#141414")
 check(bool(probe_lo) and lum(probe_lo[0][1]) <= LUM_MIN, "自检② 合成样本 #141414 不达标（深色不算）")
 probe_alpha = literals("rgba(24, 144, 255, 0.12)")
 check(not probe_alpha, "自检③ 半透明底 rgba(...,0.12) 被跳过（它会与底色融合，不属本形态）")
-check(len(files) >= 100, "自检④ 扫描面规模达标（实测 %d 个，期望 ≥100；= 100 个 .vue + 3 个 .css，"
-      "TS 里不写 CSS 声明故不纳入）" % len(files))
+n_vue = sum(1 for p in files if p.suffix == ".vue")
+n_css = sum(1 for p in files if p.suffix == ".css")
+check(len(files) >= 100, "自检④ 扫描面规模达标（实测 %d 个 = %d 个 .vue + %d 个 .css，期望 ≥100；"
+      "TS 里不写 CSS 声明故不纳入）" % (len(files), n_vue, n_css))
 check(bool(hits), "自检⑤ 当前盘面确有命中（实测 %d 处）—— 零命中说明阈值或正则失效" % len(hits))
 print()
 print("[2] 非豁免命中必须为 0")
