@@ -7,7 +7,8 @@
 三张表：
 1. `knowledge_bases` —— 知识库容器（顶层文件夹：通用库 / 店铺库 / 平台库）
 2. `knowledge_faqs`  —— 结构化话术条目（智能客服 RAG 的一路检索源）
-3. `knowledge_docs`  —— 文档素材（RAG 补充资料，正文供后续切片检索）
+3. `knowledge_docs`  —— 文档素材（**AI 拆成话术的输入源**；拆出的条目先落草稿，
+   人工发布后才进客服检索。文档正文本身**不参与**检索 —— 见下面第 143 行注释）
 
 **三个刻意的设计取舍**：
 
@@ -140,7 +141,18 @@ class KnowledgeDocRecord(Base):
     uploaded_at: Mapped[str] = mapped_column(String(64), default=_now)
     description: Mapped[str] = mapped_column(Text, default="")
 
-    # 文档正文（文本类文件上传时提取）；智能客服 RAG 切片检索的输入源。
+    # 文档正文（文本类文件上传时提取）；**AI 拆成话术的输入源**。
+    #
+    # ★ 第 288 轮改口径：这里**曾经**声称文档正文会进入客服的智能检索，
+    #   但全仓没有任何代码把文档正文送进检索 —— 检索只吃 `knowledge_faqs`。
+    #   那句旧注释把「登记素材」说成了「参与检索」，是典型的「声明承诺型假门禁」：
+    #   第 287 轮我就是被它指引着去找那一路，结果那一路根本不存在。
+    #   （这里刻意**不复述**旧文案：写下来就会让「旧说法已消失」的判据永远为真。）
+    #
+    #   现在的真实链路：`content` → `ai_split_faq.split_faqs_from_doc` →
+    #   `knowledge_faqs`（status=draft）→ 人工发布（active）→ 客服检索命中。
+    #   文档本身始终不进检索，它是**原料**不是**语料**。
+    #
     # 列表接口不返回（整篇动辄数千字符），需要时按 id 单独取。
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 

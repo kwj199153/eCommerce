@@ -19,7 +19,90 @@ from pydantic import AliasChoices, Field, model_validator
 #
 # 用途：生产环境护栏据此判定「配了一个只是占位名的网关」→ 拒绝启动。
 # 见 Settings._enforce_production_safety() 与 payment_gateway.UnimplementedGateway。
-KNOWN_UNIMPLEMENTED_GATEWAYS = ("stripe", "alipay", "wechat", "wechatpay", "paypal")
+#
+# ★ 2026-09-25：`alipay` 已**摘除** —— 它不再是"占位名"，而是真实现
+#   （platforms/payment/alipay.py）。摘除动作必须与 `_GATEWAYS` 的登记同时发生，
+#   否则会出现最坏的中间态：配置写 alipay、实现没登记 ⇒ 502/501 看着像故障；
+#   或者实现登记了、却仍被本清单拦在生产门外 ⇒ 明明配好了却起不来。
+#   两者都由 tests/test_billing_payment.py 的参数化用例钉住。
+KNOWN_UNIMPLEMENTED_GATEWAYS = ("stripe", "wechat", "wechatpay", "paypal")
+
+
+# ★ 已接入的真实网关 → 生产环境启动前**必须非空**的配置项（2026-09-25）
+#
+# 用途：把「配了网关名但没配凭证」这类配置在**启动期**拦住。
+# 为什么这一条不能省（与 payment_gateway=mock 是同一枚硬币的两面）：
+#   漏配凭证时，应用能正常启动、页面能正常打开、下单接口也返回 200 ——
+#   只是每次调支付宝都会拿到 `invalid-app-id` / `sign check fail`，
+#   而我们把它转成一句「支付失败，请重试」交给用户。现象是
+#   「支付功能时好时坏」，排查方向会被带到「用户网络/支付宝侧故障」上，
+#   而真相只是一行空配置。
+#   ⇒ 判据：能在启动期拦住就拦住；拦不住的（凭证错、余额不足）才留到运行期。
+#
+# 值为 (配置字段名, 人话说明) 元组；字段名用字符串而不是直接取值，
+# 是因为这里只需要「名字」，而取值判定在 _enforce_production_safety 里统一做
+# （避免清单与取值两处各自演进）。
+IMPLEMENTED_GATEWAY_REQUIRED_CONFIG: dict[str, tuple[tuple[str, str], ...]] = {
+    "alipay": (
+        ("payment_alipay_app_id", "支付宝应用 APPID"),
+        ("payment_alipay_app_private_key", "应用私钥（PKCS#8，用于请求签名）"),
+        ("payment_alipay_public_key", "支付宝公钥（用于回调验签，不是应用公钥）"),
+    ),
+}
+
+
+# ★ 支付回调的**路由路径**（唯一真源，2026-09-25）
+#
+# 为什么它住在 core/config.py 而不是计费模块：
+#   这一条路径同时被两个**不能互相 import** 的地方需要 ——
+#     · `modules/billing/payment_router.py`：真正把它挂到 FastAPI 上的地方；
+#     · `core/config.py::Settings.resolve_payment_notify_url()`：把它拼成
+#       完整 URL 交给支付宝的地方。
+#   若各写一份，改路径时必然只改一半：支付宝打到旧路径 ⇒ 404 ⇒
+#   它按重试策略反复投递 ⇒ 而我们的订阅永远不会激活，日志里只有一堆 404。
+#   ⇒ 放 core，让"改路径"变成一次改动（`resolve_payment_notify_url` 与
+#     路由挂载同时读它）。
+PAYMENT_NOTIFY_PATH = "/api/v1/billing/webhook/alipay"
+
+
+# ============================================================================
+# 支付相关定时任务的节奏（唯一定义处，2026-09-25）
+# ============================================================================
+#
+# ★ 为什么这些数字住在 core/config.py 而不是 modules/billing/tasks.py：
+#   调度表在 `core/redis.py::beat_schedule` 里，而 **core 不允许 import modules**
+#   （`tests/test_core_internal_layering.py` 守着这条边）。
+#   若把数字写在任务模块里，core 就只能把 3 / 20 / 4 / 30 再手抄一遍 ——
+#   于是"同一事实两份写法"，改了周期只会改一半：
+#     · 改了任务模块里的常量 → 调度表没变 → 任务还是按旧时间跑（不报错）；
+#     · 改了调度表 → 任务内部的窗口判定没变 → 扫的范围与频率不匹配。
+#   两条都是"安静地跑错"。放在 core 之后，两个消费方 import 同一个值。
+#
+# ★ 这些是**运维节奏**，不是业务规则：改它们不需要动代码逻辑，
+#   但必须同时意识到"更频繁 = 更多次网关调用"。
+# ============================================================================
+
+#: 回收「超时未支付」账单的间隔（分钟）。
+#: ★ 取 5 分钟：TTL 是 30 分钟，回收频率远高于 TTL 即可保证
+#:   "页面上的待支付"与"支付宝侧还活着的码"最多错开一个回收周期。
+#:   再密没有收益（它只是一条 UPDATE，且 TTL 没到就不会命中）。
+BILLING_EXPIRE_PENDING_INTERVAL_MINUTES = 5
+
+#: 订阅到期清算的时刻（每天）。★ 凌晨低峰执行：它会批量 UPDATE 订阅行。
+BILLING_SWEEP_HOUR = 3
+BILLING_SWEEP_MINUTE = 20
+
+#: 支付对账的时刻（每天）。★ 排在到期清算**之后**：
+#:   对账可能把一笔"我们以为没付"的单补成已支付并开通订阅，
+#:   而到期清算会撤销已过期订阅 —— 先清算再对账，当天的最终状态才收敛。
+BILLING_RECONCILE_HOUR = 4
+BILLING_RECONCILE_MINUTE = 30
+
+#: 对账回看的窗口（天）。★ 不能只对"昨天"：
+#:   支付宝的通知最长重投约 24 小时，而我们的服务可能连续几天没跑 beat
+#:   （重启、维护窗口）。窗口太窄会把那几天的漏单永久漏掉。
+#:   7 天 = 一个"人工发现问题的常规周期"，再多会让每天的查询量无谓增长。
+BILLING_RECONCILE_LOOKBACK_DAYS = 7
 
 
 class Settings(BaseSettings):
@@ -44,6 +127,30 @@ class Settings(BaseSettings):
         if not self.checkpoint_database_url or "+asyncpg" in self.checkpoint_database_url:
             self.checkpoint_database_url = self.database_url.replace("+asyncpg", "")
         return self
+
+    def resolve_payment_notify_url(self) -> str:
+        """支付回调地址（唯一真源）。
+
+        优先级：显式 `PAYMENT_NOTIFY_URL` > 由 `PUBLIC_BASE_URL` + 回调路径拼出。
+
+        ★ 为什么不在字段上直接给默认值：默认值必须是**推导**出来的
+          （依赖另一个字段），而 pydantic 字段默认值看不到其它字段。
+          写成「留空 = 自动推导」还有一个好处：用户看到 `.env` 里是空的，
+          自然会去读 description，也就知道该配什么。
+
+        ★ 返回值可能是空串（两个来源都空）。**调用方必须显式处理空串**：
+          · 生产护栏把它当作"配置缺失"拒绝启动；
+          · 网关侧把它交给支付宝时，宁可报错也不要传空 ——
+            传空字符串给支付宝，它会退回"应用配置里的默认回调地址"，
+            而那通常是另一个环境的地址（用户付了钱、回调打到别处）。
+        """
+        explicit = (self.payment_notify_url or "").strip()
+        if explicit:
+            return explicit
+        base = (self.public_base_url or "").strip().rstrip("/")
+        if not base:
+            return ""
+        return f"{base}{PAYMENT_NOTIFY_PATH}"
 
     @model_validator(mode="after")
     def _enforce_production_safety(self):
@@ -88,6 +195,43 @@ class Settings(BaseSettings):
                 "PAYMENT_GATEWAY 不能为 mock（模拟网关无条件支付成功 ⇒ 用户白拿付费套餐）。"
                 "接入真实网关后把 PAYMENT_GATEWAY 改为对应实现名"
             )
+        elif gw in IMPLEMENTED_GATEWAY_REQUIRED_CONFIG:
+            # ★ 2026-09-25 新增：已接入的**真**网关，凭证必须齐全。
+            #   它与上下两条构成三段完整覆盖：
+            #     mock            → 拒（不产生真实收款）
+            #     已接入真实网关  → 查凭证（配了名，但可能没配钥匙）
+            #     未接入占位名    → 拒（配了名，但实现还没写）
+            #   ★ 三个分支的判据都是同一条：**让「看起来配好了」和「真的配好了」
+            #     不可能长得一样**。
+            missing = [
+                f"{label}（{field}）"
+                for field, label in IMPLEMENTED_GATEWAY_REQUIRED_CONFIG[gw]
+                if not str(getattr(self, field, "") or "").strip()
+            ]
+            # 回调地址是第二个必须项，且它**不可从网关侧推导** —— 支付宝只能
+            # 按我们给它的 notify_url 回调；地址为空或不是公网绝对地址，
+            # 表现是「用户付了钱、订阅永远不激活」，而支付记录在支付宝侧是成功的。
+            notify = self.resolve_payment_notify_url()
+            if not notify:
+                missing.append(
+                    "回调地址（设 PUBLIC_BASE_URL，例如 https://api.example.com；"
+                    "或显式设 PAYMENT_NOTIFY_URL）"
+                )
+            elif not notify.lower().startswith(("http://", "https://")):
+                # ★ 相对路径 / 裸域名在这里必须拒：支付宝只会拿这个字符串去发
+                #   HTTP 请求，它没有"我们的域名"这个概念。写成 `api.example.com/...`
+                #   （少了 scheme）不会报错，只会让支付宝把回调发到一个不存在的
+                #   主机上，而我们在这一侧什么日志都看不到。
+                errors.append(
+                    f"回调地址不是绝对 URL（当前 '{notify}'）：支付宝会原样拿它发请求，"
+                    f"必须以 http:// 或 https:// 开头"
+                )
+            if missing:
+                errors.append(
+                    f"PAYMENT_GATEWAY='{gw}' 的接入配置不完整，缺少：" + "、".join(missing)
+                    + "。★ 这类漏配不会让启动失败，只会让每一笔支付都"
+                    "「看起来像支付宝那边出了问题」，必须在启动期拦住。"
+                )
         elif gw in KNOWN_UNIMPLEMENTED_GATEWAYS:
             # ★ 这条与上一条方向相反，却是同一个道理的背面：
             #   把网关填成 stripe/alipay/wechat 只是**填了个名字**，
@@ -187,6 +331,24 @@ class Settings(BaseSettings):
                     "（否则邮件里给不出可点的激活链接）"
                 )
 
+        # ★ P0-4（2026-09-30）：数据库弱口令 / 默认口令。
+        #   为什么必须拦在启动期：compose 里 POSTGRES_PASSWORD 走
+        #   ${POSTGRES_PASSWORD:-123456} 插值，默认值只为「本地一键起」保留 ——
+        #   生产若忘了覆盖，服务会**正常启动、正常连库、接口全部 200**，
+        #   唯一的现象是「库对公网开着 5432 且口令是 123456」，
+        #   而这件事不会有任何报错、告警或异常日志。属典型「静默放行」。
+        #   ★ 判据不是「口令够不够长」（那是口令学问题），而是
+        #     **让「看起来配好了」和「真的配好了」不可能长得一样**。
+        #   与上面几条同一精神：能在启动期拦住就拦住。
+        _db_url = (self.database_url or "").strip().lower()
+        for _weak in ("123456", "postgres", "password", "root", "admin"):
+            if f":{_weak}@" in _db_url:
+                errors.append(
+                    f"DATABASE_URL 使用了默认/弱口令（命中 '{_weak}'）："
+                    f"生产环境请把 POSTGRES_PASSWORD 设为高强度随机值，"
+                    f"并同步 backend/worker/beat 的 DATABASE_URL（两处必须一致）"
+                )
+                break
         if errors:
             raise ValueError(
                 "生产环境安全校验未通过，请修正以下配置后重启：\n  - " + "\n  - ".join(errors)
@@ -400,6 +562,48 @@ class Settings(BaseSettings):
         default=30, description="登录尝试审计记录保留天数（用于清理脚本）"
     )
 
+    # ====== 通用审计保留期（★ 2026-09-30）======
+    #
+    # ★ 与 `login_attempt_retention_days` **分开**、不共用一个数字：
+    #   两张表的写入速率与"留多久才有排查价值"完全不同 ——
+    #     · `login_attempts` 每次登录都写（且可被脚本刷）⇒ 30 天足够；
+    #     · `audit_logs` 只在业务写操作时写，是「谁对**什么对象**做了什么」的
+    #       **问责证据**（成员变更 / 店铺归属 / 删除这类事件），
+    #       追溯期应与这些事件的复查周期对齐 ⇒ 90 天。
+    #   共用一个字段的后果：想延长审计追溯期时会顺手把登录审计表也撑大
+    #   （反之亦然），而两边都不报错。
+    #
+    # ★ 为什么它是配置而不是常量：延长追溯期常来自合规要求或一次事故复盘，
+    #   属于"当天就要生效"的需求 ⇒ 必须能改环境变量，
+    #   而不是改代码 + 重新发版。
+    audit_retention_days: int = Field(
+        default=90, description="通用审计日志（audit_logs）保留天数（用于定时清理）"
+    )
+
+    # ====== 邮件一次性 token 保留期（★ 第 331 轮）======
+    #
+    # ★ 为什么它此前**不存在**、以及为什么这算缺陷：
+    #   清理核 `core/identity/email_tokens.py::purge_spent_tokens` 从 P1-b 起
+    #   就在，但保留期写死在函数签名里（`older_than_days: int = 7`）——
+    #   于是"想多留几天排查邮件没收到"必须改代码 + 重新发版。
+    #   而隔壁两张表都是配置（`login_attempt_retention_days=30` /
+    #   `audit_retention_days=90`）。同一件事三张表两种形态 ⇒ 收口成配置。
+    #
+    # ★ 为什么默认 **7** 天（比另两张表短得多）：
+    #   `email_tokens` 的行在 `used_at` 非空或 `expires_at` 过期之后**再无任何用途**
+    #   （一次性凭据：已经被消费或已经失效，永远不会再被读）。
+    #   它不像登录审计那样"留久点能复盘"，留久只是把"用户点过几次重发"的
+    #   隐私残留堆在库里。7 天已足够覆盖"用户说邮件链接坏了"这类工单周期。
+    #
+    # ★ 为什么不是常量：同 `audit_retention_days` 的理由 —— 保留期属于
+    #   运维/合规参数，要能改环境变量当天生效。
+    #   ★ 下限由 `core/identity/retention.py::MIN_RETENTION_DAYS` 钳住：
+    #     配成 0 / 负数会退化成"每次清空全表"，那是一条不可逆的销毁路径。
+    email_token_retention_days: int = Field(
+        default=7,
+        description="邮件一次性 token（email_tokens）保留天数（用于定时清理；仅清已消费/已过期的行）",
+    )
+
     # 业务接口强制鉴权开关（★ P0 安全修复 2026-09-15：默认 False → True）
     # True （默认）= 生产模式，全部业务接口要求 Bearer Token，未登录返回 401
     # False        = 演示模式，业务接口不校验 Token，方便本地演示与联调
@@ -428,6 +632,8 @@ class Settings(BaseSettings):
     #       ⇒ 任何登录用户看到所有人的店铺（老板看到的就是这个）；
     #     · `accounts.can_access_store` / `_matches` → 恒真
     #       ⇒ 伪造 `X-Shop-ID` 即可读写任意店铺的业务数据（BOLA 回归）。
+    #       （★ 2026-09-17 起已改为必须解析真身份；第 177 轮进一步收紧为
+    #         「演示身份只放行演示店铺」，此处描述的是**当时**的形态。）
     #
     #   ⇒ 正确分工是**两件独立的事**，此前被搓成了一件事：
     #       · auth_required —— **匿名**访问（完全不带凭据）放不放行；
@@ -448,10 +654,49 @@ class Settings(BaseSettings):
         description="是否承认前端演示哨兵 token（demo-token）为匿名演示身份；默认关闭",
     )
 
+    # ★ 第 182 轮：演示身份从「匿名旁路」升级为「**一个真实的账号**」。
+    #
+    #   需求原文：「演示模式也当作一个真实的账号，只是无需账号密码。也有全套功能」。
+    #   于是 `demo-token` 不再映射到 `None`，而是映射到**这个 email 的主人**：
+    #   他有 User 行、有 Account、有成员记录 ⇒ 整条归属链一行不改就能工作
+    #   （`ensure_default_account` / `filter_accessible_skills` / `can_access_skill`）。
+    #
+    #   ⇒ 为什么必须由**服务端**决定是哪个人（而不是让前端传 `user_id`）：
+    #     前端源码是公开的（`frontend/src/config/demoMode.ts` 里连哨兵串都写着）。
+    #     直传 user_id 等于「任何人改一行就能让后端以任意身份行事」。
+    #     正确分工：哨兵只表达「我要演演示账号」，**具体是谁由 .env 决定**。
+    #
+    #   ⇒ 为什么默认值写死成这个 email：它是库里唯一一个装满了演示数据的账号
+    #     （第 175～177 轮把它定为演示店铺/技能的唯一落点）。默认值必须与
+    #     `modules/stores/demo.py` 在**迁移前**用的 os.getenv 默认值逐字一致，
+    #     否则本地不配 .env 时会出现「店铺挂在 A、技能挂在 B」的分叉
+    #     —— 而演示身份只能命中其中一个。
+    #
+    #   ⇒ 与 `demo_mode` 的分工（两件独立的事，不能搓成一件）：
+    #       demo_mode          —— 承不承认那个哨兵串；
+    #       demo_account_email —— 承认之后，那份身份是**谁**。
+    demo_account_email: str = Field(
+        default="tenant-test-a@example.com",
+        description=(
+            "演示模式绑定的账号主人 email：demo-token 会被解析成这个真实用户。"
+            "留空 ⇒ 演示身份降级为匿名（只见 is_demo 行），不影响真实账号。"
+        ),
+    )
+
     # ====== LLM (DashScope/Qwen) ======
     dashscope_api_key: str = Field(default="", description="阿里 DashScope API Key")
     llm_default_model: str = Field(default="qwen-max", description="默认 LLM 模型")
-    llm_fallback_model: str = Field(default="qwen-plus", description="备用 LLM 模型")
+    llm_fallback_model: str = Field(
+        default="qwen-plus",
+        description="备用 LLM 模型（更快/更便宜）。第 238 轮起**真的被消费**",
+    )
+    llm_fast_first_round: bool = Field(
+        default=True,
+        description=(
+            "第一轮决策是否改用备用（更快）模型 —— 见 `BaseAgent.FAST_FIRST_ROUND`。"
+            "关掉即回到「所有轮次都用默认模型」"
+        ),
+    )
     llm_max_tokens: int = Field(default=4096, description="最大 Token 数")
     llm_temperature: float = Field(default=0.7, description="生成温度")
     llm_timeout_seconds: int = Field(default=120, description="LLM 调用超时(秒)")
@@ -477,7 +722,46 @@ class Settings(BaseSettings):
     # ====== 支付网关 ======
     payment_gateway: str = Field(
         default="mock",
-        description="支付网关实现：mock（模拟支付，默认）/ stripe / alipay / wechat（待接入）",
+        description="支付网关实现：mock（模拟支付，默认）/ alipay（支付宝当面付，已接入）"
+                    " / stripe / wechat（待接入）",
+    )
+
+    # ====== 支付宝（当面付 / 扫码支付）======
+    #
+    # ★ 密钥字段的格式（`.env` 里必须写成一行，换行用字面量 `\n` 转义）：
+    #     PAYMENT_ALIPAY_APP_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----
+    #   解析由 platforms/payment/alipay.py::_load_private_key 统一处理，
+    #   它同时接受「带 PEM 头尾」「纯 base64（密钥工具里复制出来的那种）」
+    #   两种形态 —— 支付宝开放平台的密钥工具给的就是后者，直接贴进 .env
+    #   是最常见的用法，要求用户自己加头尾是没必要的摩擦。
+    payment_alipay_app_id: str = Field(
+        default="", description="支付宝应用 APPID（开放平台应用详情页）"
+    )
+    payment_alipay_app_private_key: str = Field(
+        default="", description="应用私钥（PKCS#8；RSA2 请求签名用）"
+    )
+    payment_alipay_public_key: str = Field(
+        default="",
+        description="支付宝公钥（**回调验签**用）。注意不是应用公钥 —— 用错了"
+                    "表现为「每一条回调都验签失败」，而被误读成支付宝在乱发通知",
+    )
+    payment_alipay_gateway: str = Field(
+        default="https://openapi.alipay.com/gateway.do",
+        description="支付宝网关地址。沙箱环境为 "
+                    "https://openapi-sandbox.dl.alipaydev.com/gateway.do",
+    )
+    payment_notify_url: str = Field(
+        default="",
+        description="支付回调地址。留空 = 由 PUBLIC_BASE_URL 派生（推荐）；"
+                    "两者都为空 ⇒ 生产环境拒绝启动（收不到回调就永远不激活订阅）",
+    )
+    payment_return_url: str = Field(
+        default="",
+        description="用户支付完成后跳回的前端页面地址（仅用于展示引导）。"
+                    "★ 截至 2026-09-26 本字段**无任何消费点** —— 当面付是扫码支付，"
+                    "不需要跳回地址（全仓唯一提到它的地方是 gateway.py 的一行注释）。"
+                    "字段保留是为了将来接入 JSAPI / H5 这类**会跳转**的支付方式；"
+                    "在那之前，把它当成一个不生效的占位即可，别在部署文档里承诺它有用。",
     )
 
     # ====== 文件存储 ======

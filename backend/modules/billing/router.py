@@ -19,20 +19,27 @@
 import json
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.logger import get_logger
+from core.timefmt import utc_iso
 
 from core.database import get_db
-from core.auth.dependencies import get_current_user, get_admin_user
+from core.auth.dependencies import get_admin_user, require_acting_user
+# ★ 演示身份判定唯一真源（core/auth/demo_identity.py）。见 change_plan 的分流说明。
+from core.auth.demo_identity import is_demo_request
 from core.metering.usage_tracker import UsageTracker, init_default_plans
-from platforms.payment.gateway import get_gateway, ChargeIntent
+from platforms.payment.gateway import (
+    ChargeIntent,
+    GatewayConfigError,
+    get_gateway,
+)
 from modules.billing.pricing import (
     build_idempotency_key,
     is_duplicate_submission,
@@ -41,6 +48,11 @@ from modules.billing.pricing import (
     plan_amount,
     subscription_state_fingerprint,
     yearly_price,
+)
+from modules.billing.payments import (
+    find_reusable_pending,
+    pending_payment_payload,
+    supersede_other_pending,
 )
 from core.identity.models import User
 from modules.billing.models import Subscription, SubscriptionPlan, Invoice, PaymentMethod
@@ -53,7 +65,12 @@ _log = get_logger("billing")
 
 # ====== 网关 DTO -> ORM 的转换 ======
 
-def _invoice_from_draft(draft) -> Invoice:
+def _invoice_from_draft(
+    draft,
+    *,
+    plan_id: Optional[int] = None,
+    billing_cycle: Optional[str] = None,
+) -> Invoice:
     """把支付网关返回的账单草案（纯数据 InvoiceDraft）转成 ORM 实体。
 
     ★ 为什么转换点在这个层，而不是让网关直接返回 Invoice：
@@ -62,6 +79,14 @@ def _invoice_from_draft(draft) -> Invoice:
       SubscriptionPlan），适配层就反向耦合了业务模型 —— 独立部署 webhook
       服务、或换一家网关时，会被业务模型一起拖走。
       转换点全项目只有这一处，改动收敛在这里。
+
+    ★ `plan_id` / `billing_cycle` 为什么是**关键字参数**而不是 InvoiceDraft 的字段：
+      这两列回答的是「这笔钱买的是什么」—— 是**业务事实**，
+      只有计费层知道（网关收到的只是一个 `plan_name` 字符串）。
+      把它们塞进 InvoiceDraft，等于让适配层"认识"套餐主键，
+      而那正是上一条要避免的耦合方向。
+      ⇒ 网关填它知道的（渠道 / 订单号 / 二维码），计费层补它知道的（套餐 / 周期），
+        唯一汇合点就是本函数。
     """
     return Invoice(
         id=draft.id or str(uuid.uuid4()),
@@ -75,6 +100,12 @@ def _invoice_from_draft(draft) -> Invoice:
         paid_at=draft.paid_at,
         pdf_url=draft.pdf_url,
         idempotency_key=draft.idempotency_key,
+        # ---- 下列字段回应"这笔钱买的是什么 / 走的哪个通道 / 码在哪" ----
+        plan_id=plan_id,
+        billing_cycle=normalize_cycle(billing_cycle) if billing_cycle else None,
+        transaction_id=draft.transaction_id or None,
+        payment_channel=draft.payment_channel or None,
+        pay_url=draft.pay_url or None,
     )
 
 
@@ -150,12 +181,14 @@ def _serialize_subscription(sub: Subscription) -> dict:
             "ai_gen_used": sub.api_calls_used,
             "ai_gen_limit": plan.api_calls_limit,
         },
+        # ★ 一律走 core/timefmt.py::utc_iso —— 裸 isoformat() 输出无偏移字符串，
+        #   浏览器按本地时区解析，UTC+8 下周期起止日期在午夜附近会显示成前一天。
         "period": {
-            "start": sub.current_period_start.isoformat() if sub.current_period_start else None,
-            "end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+            "start": utc_iso(sub.current_period_start),
+            "end": utc_iso(sub.current_period_end),
         },
         "cancel_at_period_end": sub.cancel_at_period_end,
-        "created_at": sub.created_at.isoformat() if sub.created_at else None,
+        "created_at": utc_iso(sub.created_at),
     }
 
 
@@ -175,7 +208,7 @@ async def _get_subscription_or_404(db: AsyncSession, user_id: str) -> Subscripti
 
 @router.get("/usage")
 async def get_usage(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_acting_user),
     db: AsyncSession = Depends(get_db),
 ):
     """获取当前用户的使用量信息"""
@@ -201,7 +234,7 @@ async def list_plans(
 
 @router.get("/subscription")
 async def get_current_subscription(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_acting_user),
     db: AsyncSession = Depends(get_db),
 ):
     """获取当前用户的订阅详情（含当前套餐、到期时间、用量）"""
@@ -219,7 +252,8 @@ async def get_current_subscription(
 @router.post("/subscribe")
 async def change_plan(
     body: SubscribeRequest,
-    current_user: User = Depends(get_current_user),
+    request: Request,
+    current_user: User = Depends(require_acting_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -229,13 +263,57 @@ async def change_plan(
 
     plan_id 为套餐表主键的字符串形式（与 /plans 返回的 id 一致）。
 
-    支付流程：面向 `PaymentGateway` 协议编程（见 platforms/payment/gateway.py），
-    扣款由当前配置的网关完成（默认 mock 模拟支付成功）。
-    接入 Stripe / 支付宝 / 微信时改 config.payment_gateway 即可，无需改动此端点。
+    ==========================================================================
+    ★★ 两种支付形态（P0/P1，2026-09-25 支付宝接入后）
+    ==========================================================================
 
-    返回：{ subscription, client_secret, charged, already_subscribed? }
-      - charged=True  本次真的走了扣款
-      - charged=False 未扣款（命中「同套餐同周期重复提交」或金额为 0）
+      **同步**（mock / 演示身份）—— 与接入支付宝前完全一致：
+        扣款成功即开通，落一张 paid 账单，响应 `charged=True`。
+
+      **异步**（支付宝当面付）—— 两段式：
+        ① 本端点：调 `alipay.trade.precreate` 拿二维码 → 落一张 `pending`
+           账单 → **不动订阅**（用户还没付钱，凭什么动他的权益）→
+           响应 `charged=False, requires_confirmation=True, payment={...}`；
+        ② 用户扫码付款 → 支付宝回调 `POST /billing/webhook/alipay` →
+           `modules/billing/payments.py::settle_invoice()` 才把账单改 paid、
+           把订阅改成 active。
+
+      ★ 为什么异步必须两段：`charge()` 返回 success 只代表"二维码生成成功"。
+        沿用同步那套（先开权限、后收钱）就是**用户没付钱就拿到套餐** ——
+        而且它在测试环境完全看不出来（因为测试环境走 mock，是同步的）。
+
+      ★★ 「演示用户保持现状」是怎么实现的（老板的硬要求）：
+        **两级配合**，缺任何一级都会变成死代码 —— 这正是本轮踩到的坑：
+
+          ① **路由级**：本模块全部端点用 `require_acting_user`
+             （`core/auth/dependencies.py`）而不是 `get_current_user`。
+             ★ 这一级是**前置**的：`get_current_user` **不认** `demo-` 哨兵，
+               演示请求在鉴权层就被 401 —— 那么下面 ② 的分支**永远走不到**。
+               写成 `Depends(get_current_user)` 时，② 是一段看着很对、
+               注释很全、但一行都不会执行的死代码（门禁再强也测不到它）。
+          ② **业务级**：`is_demo_request(request)` 为真 ⇒ **强制**取
+             `MockGateway` ⇒ 同步扣款成功 ⇒ 订阅立刻 active，整条链路
+             与接入支付宝前逐字节一致（**无需扫码**）。
+
+        这一条不影响真实用户：`is_demo_request` 判定的是「凭据形态
+        （`demo-` 前缀 + Bearer）+ `config.demo_mode`」，而真实用户带的是 JWT，
+        判定恒为 False；测试用例也带真 JWT ⇒ 现有支付用例天然不受影响。
+
+        判据：演示身份与真实用户走的是**同一个端点里的两条分支**，
+        而不是两套代码 —— 后者必然漂移，且漂移的那一边没人测。
+
+        ★ 反向断言（同样必须成立，否则「认演示」会变成「谁都能白拿套餐」）：
+          `demo_mode=False`（生产）下哨兵与任意伪造串同等待遇 ⇒ 401；
+          `auth_required=True` 下取更严的一侧 ⇒ 401；
+          演示账号找不到 / 是平台超管 / 已停用 ⇒ 三重守卫降级 ⇒ 401。
+          三条守卫都在 `resolve_demo_user` 里，本模块一行都不复制。
+
+    返回：{ subscription, client_secret, charged, requires_confirmation?, payment? }
+      - charged=True   本次真的走了扣款（同步形态）
+      - charged=False  未扣款。**三种原因必须分清**（前端据此显示不同文案）：
+          · already_subscribed=True  → 同套餐同周期重复提交，权益已满足
+          · requires_confirmation    → 已下单待支付，请看 payment.qr_code_url
+          · skipped_reason           → 金额为 0（免费套餐）等，无需支付
       ★ 前端不得把「HTTP 200」等同于「已收款」，必须看 charged。
 
     ★ P1-4 收敛的三处「钱」行为（口径统一 / 重复提交不重复扣款 / 先扣款后改订阅）
@@ -294,6 +372,10 @@ async def change_plan(
 
     # ---- 守卫：同套餐同周期重复提交 → 不扣款、不开票 ----
     if is_duplicate_submission(sub, plan.id, billing_cycle):
+        # ★ 真实网关下要**先看一眼有没有待支付单**：用户上次下单没付、
+        #   这一次又点同一套餐时，`is_duplicate_submission` 只在
+        #   "已经生效的订阅"命中，而下单未付的情况订阅根本没变
+        #   ⇒ 这里能走到，说明确实是重复提交（不是待支付），直接返回。
         return {
             "subscription": _serialize_subscription(sub),
             "client_secret": "",
@@ -302,13 +384,41 @@ async def change_plan(
             "message": "当前已在所选套餐的有效周期内，未重复扣款",
         }
 
+    # ======================================================================
+    # ★★ 演示身份分流（老板硬要求：演示用户无需扫码，保持现状）
+    # ======================================================================
+    # `is_demo_request` 是「这次请求是不是以演示身份行事」的唯一真源
+    # （core/auth/demo_identity.py），它只看**凭据形态 + config.demo_mode**，
+    # 不解析身份。真实用户带 JWT ⇒ 恒 False ⇒ 走真实网关。
+    demo = is_demo_request(request)
+    if demo:
+        gateway = get_gateway("mock")
+        _log.info("演示身份走模拟支付直通 user={} plan={}", _user_id, _plan_id)
+    else:
+        gateway = get_gateway()
+        # ---- 两段式第 0 步：能复用上一张未支付的二维码吗？ ----
+        # ★ 见 payments.find_reusable_pending 的论证：两段式之后订阅行不变，
+        #   所以"连点两次"在订阅状态上完全同形，只能靠"有没有待支付单"来分辨。
+        reusable = await find_reusable_pending(
+            db, current_user.id, plan.id, billing_cycle, now=now
+        )
+        if reusable is not None:
+            return {
+                "subscription": _serialize_subscription(sub) if sub else None,
+                "client_secret": "",
+                "charged": False,
+                "requires_confirmation": True,
+                "already_pending": True,
+                "payment": pending_payment_payload(reusable),
+                "message": "已有一笔待支付的订单，请继续扫码完成支付（未重复下单）",
+            }
+
     # ---- 先扣款（不可回滚的一步），成功后再改订阅 ----
     amount = plan_amount(plan, billing_cycle)
     # 幂等键基底 = 「本次变更的起点状态」，见 pricing.subscription_state_fingerprint
     idem_key = build_idempotency_key(
         current_user.id, plan.id, billing_cycle, subscription_state_fingerprint(sub)
     )
-    gateway = get_gateway()
     try:
         charge = await gateway.charge(ChargeIntent(
             user_id=current_user.id,
@@ -320,13 +430,24 @@ async def change_plan(
             idempotency_key=idem_key,
         ))
     except NotImplementedError as exc:
-        # 配置里写了一个「已知但未接入」的真实网关（stripe/alipay/wechat）。
+        # 配置里写了一个「已知但未接入」的真实网关（stripe/wechat/...）。
         # ★ 为什么是 501 而非 500、且绝不降级成 mock 成功：
         #   tests/test_billing_payment.py::test_unimplemented_gateway_returns_501
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail=str(exc),
+        ) from exc
+    except GatewayConfigError as exc:
+        # ★ 已接入的真实网关但这个部署**没配钥匙**（缺 app_id / 私钥 / 回调地址）。
+        #   503 而不是 501：代码在、依赖没就绪，运维照 503 的语义去修配置；
+        #   501 会把人引到"这个功能还没开发"的错误方向。
+        #   ★ 同样绝不降级成 mock 成功 —— 那正是"用户白拿套餐"的形态。
+        await db.rollback()
+        _log.error("支付网关配置不完整，拒绝下单：{}", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"支付通道未就绪：{exc}",
         ) from exc
 
     if not charge.success:
@@ -336,7 +457,50 @@ async def change_plan(
             detail=charge.error or "支付失败，请重试",
         )
 
-    # ---- 扣款成功：写订阅状态 + 落账单 ----
+    # ======================================================================
+    # ★★ 异步支付（支付宝当面付）：只落 pending 账单，**不开通**任何权益
+    # ======================================================================
+    if charge.requires_confirmation:
+        invoice = _invoice_from_draft(
+            charge.invoice, plan_id=plan.id, billing_cycle=billing_cycle
+        )
+        db.add(invoice)
+        # 顶掉同一用户此前其它还没付的待支付单（保留刚生成的这张）。
+        # ★ 让"同一时刻只有一张有效二维码"，降低用户扫两次付两次的概率；
+        #   被顶掉的那些若钱还是到了，settle_invoice 会照常认账（见 payments.py 不变量 ③）。
+        await supersede_other_pending(db, current_user.id, keep_invoice_id=invoice.id, now=now)
+
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            # 与同步形态同一道兜底闸（并发首购时唯一约束拦下其中一个）。
+            # 只吞幂等键冲突，其余完整性错误原样抛 —— 见
+            # tests/test_billing_payment.py::test_other_integrity_errors_are_not_swallowed
+            if "idempotency_key" not in str(getattr(exc, "orig", exc)):
+                raise
+            await db.rollback()
+            _log.warning(
+                "待支付账单幂等键冲突（并发下单），按重复提交拒绝 user={} plan={} cycle={} key={}",
+                _user_id, _plan_id, billing_cycle, idem_key,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="检测到重复下单，请刷新后查看待支付订单",
+            ) from exc
+
+        await db.refresh(invoice)
+        return {
+            # 订阅**没有**被改动 —— 用户当前仍在原有套餐上（付了钱才升级）。
+            # 从未订阅过的用户在支付完成前就是 None（前端需容忍 null）。
+            "subscription": _serialize_subscription(sub) if sub else None,
+            "client_secret": "",
+            "charged": False,
+            "requires_confirmation": True,
+            "payment": pending_payment_payload(invoice),
+            "message": "请使用支付宝扫描二维码完成支付，支付成功后套餐将自动生效",
+        }
+
+    # ---- 扣款成功（同步形态）：写订阅状态 + 落账单 ----
     if sub is None:
         # 首次订阅：新建
         sub = Subscription(
@@ -364,7 +528,9 @@ async def change_plan(
     # 落账单（零元时网关返回 invoice=None，此处自然跳过）
     # 网关给的是**纯数据草案**，由本层转成 ORM 实体后落库（见 _invoice_from_draft）。
     if charge.invoice is not None:
-        db.add(_invoice_from_draft(charge.invoice))
+        db.add(_invoice_from_draft(
+            charge.invoice, plan_id=plan.id, billing_cycle=billing_cycle
+        ))
 
     try:
         await db.commit()
@@ -398,13 +564,14 @@ async def change_plan(
         # mock 下无真实 secret，返回网关透传值（空串占位）。
         "client_secret": charge.client_secret,
         "charged": charge.invoice is not None,
+        "requires_confirmation": False,
         "skipped_reason": charge.skipped_reason,
     }
 
 
 @router.post("/cancel")
 async def cancel_subscription(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_acting_user),
     db: AsyncSession = Depends(get_db),
 ):
     """取消订阅（周期结束后生效）"""
@@ -426,7 +593,7 @@ async def cancel_subscription(
 
 @router.post("/resume")
 async def resume_subscription(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_acting_user),
     db: AsyncSession = Depends(get_db),
 ):
     """恢复已发起取消的订阅"""
@@ -450,7 +617,7 @@ async def resume_subscription(
 async def list_invoices(
     page: int = 1,
     page_size: int = 10,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_acting_user),
     db: AsyncSession = Depends(get_db),
 ):
     """获取账单历史（分页）"""
@@ -477,8 +644,8 @@ async def list_invoices(
                 "currency": inv.currency,
                 "status": inv.status,
                 "description": inv.description,
-                "issued_at": inv.issued_at.isoformat() if inv.issued_at else None,
-                "paid_at": inv.paid_at.isoformat() if inv.paid_at else None,
+                "issued_at": utc_iso(inv.issued_at),
+                "paid_at": utc_iso(inv.paid_at),
                 "pdf_url": inv.pdf_url,
             }
             for inv in items
@@ -504,7 +671,7 @@ def _serialize_payment_method(pm: PaymentMethod) -> dict:
 
 @router.get("/payment-methods")
 async def list_payment_methods(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_acting_user),
     db: AsyncSession = Depends(get_db),
 ):
     """获取支付方式列表"""
@@ -520,7 +687,7 @@ async def list_payment_methods(
 @router.post("/payment-methods")
 async def add_payment_method(
     body: AddPaymentMethodRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_acting_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -564,7 +731,7 @@ async def add_payment_method(
 async def update_payment_method(
     method_id: str,
     body: PaymentMethodActionRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_acting_user),
     db: AsyncSession = Depends(get_db),
 ):
     """

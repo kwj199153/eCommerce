@@ -3,12 +3,15 @@
 
 提供 RESTful API 接口供前端调用。
 
-端点列表：
+端点列表（共 9 个 —— 与路由表**逐条对应**，由 `tests/test_product_research_capabilities.py` 钉住不许漂移）：
 - POST /api/v1/product-research/blue-ocean     - 蓝海品类分析
 - POST /api/v1/product-research/profit          - SKU 利润分析
 - POST /api/v1/product-research/pain-points      - 痛点机会识别
 - POST /api/v1/product-research/competitors      - 竞品对比分析
 - POST  /api/v1/product-research/chat            - 自然语言对话（主入口）
+- POST  /api/v1/product-research/approval/resume - 人工审批决策回传（HITL 闭环）
+- POST  /api/v1/product-research/chat/stream     - 对话流式返回（SSE）
+- GET  /api/v1/product-research/market-insight/treemap - 选品市场洞察大盘云图
 - GET  /api/v1/product-research/capabilities     - 查询 Agent 能力说明
 
 ★★★ 多租户边界（P0 安全修复 2026-09-16，OWASP API Security #1 BOLA）
@@ -33,6 +36,16 @@ from core.metering.usage_tracker import meter_agent_chat
 from typing import List, Optional
 
 from ai_infra.sse import sse_event_stream
+from ai_infra.context_target import bind_context_target, context_target_payload
+from ai_infra.skills import bind_requested_skill
+
+# ★ 读口（「本次请求的作用对象」注入段）的**注册不需要在本文件里触发**：
+#   第 257 轮起注册点已上提到 `modules/context_target_section.py`，
+#   由 `modules/__init__.py` 在包初始化时 import ⇒ 任何业务模块被导入都覆盖到。
+#   本文件**故意不再 import 它** —— 注册与某个具体 Agent 的 router 解耦，
+#   是那一轮的核心目的（此前「机制属于选品」是一条从未被声明的约定）。
+#   判据：`tests/test_context_target_gate.py::test_reader_section_is_imported_at_module_level`
+#   钉住"谁负责 import 它"仍是**可查的一行**（现在是 `modules/__init__.py`）。
 
 from core.auth.dependencies import require_auth_if_enabled
 from core.identity.models import User
@@ -48,7 +61,7 @@ from modules.product_research.schemas import (
     ApprovalResumeRequest,
     ApiResponse,
 )
-from modules.product_research.service import product_research_service
+from modules.product_research.service import product_research_service, get_market_insight_treemap as _get_market_insight_treemap
 
 
 # 创建路由器
@@ -60,6 +73,37 @@ router = APIRouter(
 # 复用 service 层的**唯一**单例（与 tools.py 同源）——
 # 否则 router 与 tools 各持一个 Agent 实例，会话状态互不可见。
 service = product_research_service
+
+
+@router.get("/market-insight/treemap")
+async def get_market_insight_treemap(
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
+    shop_id: Optional[str] = Depends(get_current_shop_id_optional),
+):
+    """
+    选品市场洞察大盘云图（第 305 轮 · 蓝海挖掘大盘云图）
+
+    返回站点 × 类目 的市场洞察快照，供前端 ECharts Treemap 渲染「品类分布、
+    价格带、竞争密度、搜索热度、卖家分布、趋势」六维度大盘。
+
+    ★ 为什么是 GET + `get_current_shop_id_optional`：
+      · 大盘云图是**只读**展示，走 GET（不是写端点，缺 `X-Shop-ID` 不会 400，
+        而是返回空 —— 与「未选店铺看空列表」的既有体验一致）。
+      · 用 `optional` 而非严格版：用户还没选店铺时，看大盘是合法只读意图；
+        隔离由 `MARKET_SNAPSHOT_SPEC` 上内核的 `scoped()` 承担
+        （第 325 轮后不再是 service 里手写的那一句）
+        （`shop_id=None` ⇒ 查不到任何行 ⇒ 空态 fail-closed），
+        门禁在「读」这一层，与 `/chat` 的「门禁放在写层」同理。
+
+    ★ 真源诚实：演示账号返回 mock 快照且 `degraded=True`（前端如实标注）；
+      真实账号返回空 + `degraded=False` + 引导文案，不编假大盘。
+    """
+    result = await _get_market_insight_treemap(shop_id)
+    return ApiResponse(
+        success=True,
+        message="市场洞察大盘已就绪",
+        data=result,
+    )
 
 
 @router.post("/blue-ocean", response_model=ApiResponse)
@@ -86,15 +130,12 @@ async def analyze_blue_ocean(
     - 各等级统计（优质蓝海 / 一般潜力 / 高竞争）
     - 完整分析报告摘要
     """
-    try:
-        result = await service.analyze_blue_ocean(request)
-        return ApiResponse(
-            success=True,
-            message="蓝海挖掘完成",
-            data=result,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await service.analyze_blue_ocean(request)
+    return ApiResponse(
+        success=True,
+        message="蓝海挖掘完成",
+        data=result,
+    )
 
 
 @router.post("/profit", response_model=ApiResponse)
@@ -116,15 +157,12 @@ async def analyze_profit(
     - 费用明细（佣金、FBA配送费、仓储费、广告费）
     - 净利润、ROI、盈亏平衡点
     """
-    try:
-        result = await service.analyze_profit(request)
-        return ApiResponse(
-            success=True,
-            message="利润分析完成",
-            data=result,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await service.analyze_profit(request)
+    return ApiResponse(
+        success=True,
+        message="利润分析完成",
+        data=result,
+    )
 
 
 @router.post("/pain-points", response_model=ApiResponse)
@@ -144,15 +182,12 @@ async def analyze_pain_points(
     - 高频痛点列表及出现频率
     - 改进建议和市场空白度评分
     """
-    try:
-        result = await service.analyze_pain_points(request)
-        return ApiResponse(
-            success=True,
-            message="痛点分析完成",
-            data=result,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await service.analyze_pain_points(request)
+    return ApiResponse(
+        success=True,
+        message="痛点分析完成",
+        data=result,
+    )
 
 
 @router.post("/competitors", response_model=ApiResponse)
@@ -173,15 +208,12 @@ async def compare_competitors(
     - 优势/劣势对比
     - 定位策略建议
     """
-    try:
-        result = await service.compare_competitors(request)
-        return ApiResponse(
-            success=True,
-            message="竞品对比完成",
-            data=result,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await service.compare_competitors(request)
+    return ApiResponse(
+        success=True,
+        message="竞品对比完成",
+        data=result,
+    )
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -207,16 +239,22 @@ async def chat(
     - 结构化数据（用于右侧展示区渲染）
     - 后续操作建议
     """
-    try:
+    # ★ 点名通道（第 188 轮）：本次对话若指定了技能名，把它置进
+    #   调用链上下文，由 `skills_selected` 段落把该技能正文注入
+    #   system prompt（与 `load_skill` 共用同一个解析实现）。
+    # ★ 「作用对象」与它**同一个作用域**（第 251 轮）：两条通道一起
+    #   入栈、一起出栈，避免出现「技能读到了、对象没读到」的半态。
+    async with (
+        bind_requested_skill(request.skill),
+        bind_context_target(context_target_payload(request)),
+    ):
         result = await service.chat(
             message=request.message,
             context_id=request.context_id,
             shop_id=shop_id,
             user_id=current_user.id if current_user else None,
         )
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return result
 
 
 @router.post("/approval/resume", response_model=ChatResponse)
@@ -275,15 +313,22 @@ async def chat_stream(
     async def _wrapped():
         try:
             # context_id 必须传下去：入库待补槽位与「上一轮蓝海结果」都按会话隔离
-            async for event in sse_event_stream(
-                service.stream_chat(
-                    request.message,
-                    context_id=request.context_id,
-                    shop_id=shop_id,
-                    user_id=current_user.id if current_user else None,
-                )
+            # ★ 写入点必须在**生成器体内**：包在返回 StreamingResponse
+            #   的外层，`async with` 会在生成器被第一次迭代之前就退出 ⇒ 等于没设。
+            # ★ 作用对象同域入栈（第 251 轮），理由见 `/chat` 那处注释。
+            async with (
+                bind_requested_skill(request.skill),
+                bind_context_target(context_target_payload(request)),
             ):
-                yield event
+                async for event in sse_event_stream(
+                    service.stream_chat(
+                        request.message,
+                        context_id=request.context_id,
+                        shop_id=shop_id,
+                        user_id=current_user.id if current_user else None,
+                    )
+                ):
+                    yield event
         except Exception as e:
             yield f"event: error\ndata: {_json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
 
@@ -334,6 +379,30 @@ async def get_capabilities(
                 "endpoint": "/product-research/chat",
                 "description": "用对话方式驱动所有分析功能",
                 "example": {"message": "帮我找蓝海机会"},
+            },
+            {
+                "name": "对话流式返回",
+                "endpoint": "/product-research/chat/stream",
+                "description": "同上，SSE 逐段返回（打字机效果）",
+                "example": {"message": "帮我找蓝海机会"},
+            },
+            {
+                "name": "人工审批决策",
+                "endpoint": "/product-research/approval/resume",
+                "description": "回传 accept / reject / edit / response，恢复被挂起的写操作",
+                "example": {"context_id": "ctx-1", "decision": "accept"},
+            },
+            {
+                "name": "选品市场洞察大盘云图",
+                "endpoint": "/product-research/market-insight/treemap",
+                "description": "品类分布/价格带/竞争密度/搜索热度/卖家分布/趋势六维度大盘 Treemap",
+                "example": {},
+            },
+            {
+                "name": "能力说明",
+                "endpoint": "/product-research/capabilities",
+                "description": "本接口：返回功能清单与示例（静态说明，不探测运行期状态）",
+                "example": {},
             },
         ],
         "supported_categories": [

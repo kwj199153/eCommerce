@@ -117,6 +117,11 @@ def register_all_models() -> None:
     from core.identity.auth_models import EmailToken, LoginAttempt, UserApiKey  # noqa: F401
     # ★ 第 140 轮：StoreRecord 随实体归位搬到 core/stores/，本行由 modules 组挪到 core 组。
     from core.stores import StoreRecord  # noqa: F401
+    # 通用审计日志（audit_logs）—— 第 327 轮 P0-5：把「谁在什么时候对**哪个
+    # 对象**做了什么」从各处散落的 logger.info 提升为可查询、可追责的记录。
+    # ★ core 层实体（入边 ≥ 2 的基础域，与 stores 同组）；**零外键** ——
+    #   审计必须比被记录的主体活得久，理由见 core/audit/models.py 文件头。
+    from core.audit.models import AuditLog  # noqa: F401
     from modules.billing.models import SubscriptionPlan, Subscription, Invoice, PaymentMethod  # noqa: F401
     from modules.products.db_model import (  # noqa: F401
         SpuRecord, SkuRecord, ProductGroupRecord,
@@ -156,6 +161,29 @@ def register_all_models() -> None:
     from modules.memory.db_model import (  # noqa: F401
         MemoryEntryRecord, MemoryLogRecord, MemoryProfileRecord,
     )
+    # 技能仓库三张表（skills / skill_revisions / skill_favorites）：
+    # 第 181 轮 · 批 B 建前两张（「能力全量常驻 system prompt」→
+    # 「按需加载的技能机制」）；第 194 轮补第三张（技能收藏）。
+    from modules.skills.db_model import (  # noqa: F401
+        SkillFavoriteRecord, SkillRecord, SkillRevisionRecord,
+    )
+    # 复盘库表（review_reports）：「资料库 → 复盘库」——
+    # 复盘结果**人工确认后**才留档。此前 6 项能力算完即弃：
+    # 老板看一眼就没了，既无从回看，也无从「拿上期做对比」。
+    from modules.review_analyst.db_model import ReviewReportRecord  # noqa: F401
+    # 交易履约 + 买家反馈域（orders / order_items / shipments / customer_reviews /
+    # review_attributions / review_dispositions / compensation_rules / sku_health_scores）
+    # —— 第 283 轮新增。注意：这里的 `customer_reviews` 与上面 review_analyst 的
+    #    `review_reports` 是**两回事**（买家差评 vs 运营复盘归档）—— 别只看名字。
+
+    from modules.trade.db_model import (  # noqa: F401
+        CompensationRuleRecord, CustomerReviewRecord, OrderItemRecord, OrderRecord,
+        ReviewAttributionRecord, ReviewDispositionRecord, ShipmentRecord,
+        SkuHealthScoreRecord,
+    )
+    # 选品市场洞察快照（market_snapshots）—— 第 305 轮「蓝海挖掘大盘云图」。
+    # 「选品前市场洞察」六维度的数据落点，演示 mock 只灌演示账号（is_demo 标记）。
+    from modules.product_research.db_model import MarketSnapshotRecord  # noqa: F401
 
 
 async def init_db():

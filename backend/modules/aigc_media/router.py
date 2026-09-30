@@ -17,6 +17,8 @@ from typing import Optional, Dict, Any
 import logging
 
 from ai_infra.sse import sse_event_stream
+from ai_infra.context_target import bind_context_target, context_target_payload
+from ai_infra.skills import bind_requested_skill
 
 from core.auth.dependencies import require_auth_if_enabled
 from core.identity.models import User
@@ -102,17 +104,20 @@ async def generate_image(request: ImageGenerationRequest):
 @router.post(
     "/image/analyze",
     response_model=AgentResponse,
-    summary="主图质量分析",
-    description="分析主图的视觉吸引力、合规性、预估点击率，并提供优化建议和A/B测试变体"
+    summary="主图质量分析（含模拟值声明）",
+    description=(
+        "分析主图的视觉吸引力、预估点击率，并提供优化建议和A/B测试变体。"
+        "注意：视觉评分与 CTR 当前为模拟值；合规项未接入自动判定，返回待人工核查清单。"
+    )
 )
 async def analyze_image(request: MainImageAnalysisRequest):
     """
     主图分析功能
 
     分析维度：
-    - 视觉吸引力评分（5个子维度）
-    - Amazon 合规性检查
-    - CTR 预测
+    - 视觉吸引力评分（5个子维度，⚠️ 当前为模拟值）
+    - Amazon 合规核查清单（⚠️ 未接入自动判定，不产出通过/不通过结论）
+    - CTR 预测（⚠️ 当前为模拟值）
     - A/B 测试变体建议
     """
     result = await AIGCMediaService.analyze_main_image(request)
@@ -384,20 +389,25 @@ async def design_infographic(request: InfographicRequest):
 @router.post(
     "/compliance/check",
     response_model=AgentResponse,
-    summary="图片合规检查",
-    description="检查图片是否符合目标平台（如 Amazon）的规范要求"
+    summary="图片合规核查清单（不产出自动判定结论）",
+    description=(
+        "整理目标平台（如 Amazon）的合规核查清单供人工逐项确认。"
+        "本接口未接入自动判定能力，overall_status 恒为 manual_review_required，"
+        "不产出「通过/警告/不通过」结论。"
+    )
 )
 async def check_image_compliance(request: ComplianceCheckRequest):
     """
-    图片合规性检查
+    图片合规核查清单
 
-    检查项目：
+    覆盖范围（按平台规则整理）：
     - 主图规范（白背景、无水印、占比等）
     - 生活场景图规范
     - 通用版权/侵权规则
     - 类目特殊要求
 
-    输出：通过/警告/不通过 + 具体问题 + 修改建议
+    输出：overall_status = "manual_review_required" + 人工核查清单。
+    **不产出通过/警告/不通过结论**（未接入图片合规自动判定能力，禁止编造结论）。
     """
     result = await AIGCMediaService.check_compliance(request)
     if not result["success"]:
@@ -472,13 +482,23 @@ async def aigc_chat(
     - 品牌故事 → 引导至品牌故事工具
     - 翻译 → 引导至翻译工具
     - 信息图 → 引导至信息图设计
-    - 合规检查 → 引导至合规检测
+    - 合规检查 → 引导至合规核查清单
     - 视频脚本 → 引导至视频脚本工具
     """
-    result = await AIGCMediaService.chat(
-        message=request.message,
-        context=request.context
-    )
+        # ★ 点名通道（第 188 轮）：本次对话若指定了技能名，把它置进
+        #   调用链上下文，由 `skills_selected` 段落把该技能正文注入
+        #   system prompt（与 `load_skill` 共用同一个解析实现）。
+        # ★ 「作用对象」与它**同一个作用域**（第 257 轮）：两条通道一起
+        #   入栈、一起出栈，避免出现「技能读到了、对象没读到」的半态。
+        #   ★ 本 Agent **只注入、不拒答**，理由见 `.schemas.ChatRequest` 的字段注释。
+    async with (
+        bind_requested_skill(request.skill),
+        bind_context_target(context_target_payload(request)),
+    ):
+        result = await AIGCMediaService.chat(
+            message=request.message,
+            context=request.context
+        )
     return AgentResponse(
         success=result.get("success", True),
         agent="aigc_media",
@@ -502,8 +522,15 @@ async def aigc_chat_stream(
 
     async def _wrapped():
         try:
-            async for event in sse_event_stream(AIGCMediaService.stream_chat(request.message)):
-                yield event
+            # ★ 写入点必须在**生成器体内**：包在返回 StreamingResponse
+            #   的外层，`async with` 会在生成器被第一次迭代之前就退出 ⇒ 等于没设。
+            # ★ 作用对象同域入栈（第 257 轮），理由见 `/chat` 那处注释。
+            async with (
+                bind_requested_skill(request.skill),
+                bind_context_target(context_target_payload(request)),
+            ):
+                async for event in sse_event_stream(AIGCMediaService.stream_chat(request.message)):
+                    yield event
         except Exception as e:
             yield f"event: error\ndata: {_json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
 
@@ -534,7 +561,7 @@ async def get_tools():
         {
             "id": "main-image-diagnosis",
             "name": "🔍 主图诊断",
-            "description": "分析主图质量、合规性、预测 CTR",
+            "description": "分析主图质量、预测 CTR（模拟值）；合规项只出核查清单，不产出通过/不通过结论",
             "endpoint": "/api/v1/aigc/image/analyze",
             "mode": "form",
             "status": "active"
@@ -573,8 +600,8 @@ async def get_tools():
         },
         {
             "id": "compliance-checker",
-            "name": "✅ 合规检查",
-            "description": "检查图片是否符合平台规范",
+            "name": "✅ 合规核查清单",
+            "description": "整理平台合规核查清单供人工确认（未接入自动判定，不产出通过/不通过结论）",
             "endpoint": "/api/v1/aigc/compliance/check",
             "mode": "form",
             "status": "active"

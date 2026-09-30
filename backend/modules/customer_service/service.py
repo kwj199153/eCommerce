@@ -10,7 +10,6 @@
 
 import logging
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError
@@ -100,22 +99,31 @@ class CustomerServiceService:
     """智能客服业务逻辑层"""
 
     @staticmethod
-    async def chat(request: ChatRequest) -> ChatResponse:
+    async def chat(request: ChatRequest,
+                   store_id: Optional[str] = None) -> ChatResponse:
         """
         处理客服对话
 
         Args:
             request: 对话请求
+            store_id: 当前店铺（**服务端从 `X-Shop-ID` 注入**，第 286 轮）。
+                话术是租户隔离数据（`knowledge_faqs.shop_id`），没有它就
+                读不到这个店铺的话术 —— 与订单追踪同理。
 
         Returns:
             ChatResponse 包含回复、意图、情感等
         """
         agent = get_cs_agent()
 
+        # ★ 归属注入：**服务端值后写** —— 请求体里即便也带 `store_id`
+        #   也会被覆盖。归属不由客户端决定（与 `create_ticket` 同纪律）。
+        context = dict(request.context or {})
+        context["store_id"] = store_id
+
         # 调用 Agent 处理
         result: AgentResponse = await agent.invoke(
             query=request.message,
-            context=request.context,
+            context=context,
             conversation_id=request.conversation_id
         )
 
@@ -143,28 +151,40 @@ class CustomerServiceService:
         return response
 
     @staticmethod
-    async def stream_chat(message: str):
-        """流式对话入口（返回逐 token 异步迭代器）"""
+    async def stream_chat(message: str, store_id: Optional[str] = None):
+        """流式对话入口（返回逐 token 异步迭代器）。
+
+        ★ 第 204 轮：`store_id` 由 router 从请求头解析后传入，供 agent 的工具
+          环路注入归属（`create_ticket` 落库必须带租户维度）。工具**入参**由
+          LLM 生成，归属绝不能走工具形参。
+        """
         agent = get_cs_agent()
-        async for chunk in agent.stream_chat(message):
+        async for chunk in agent.stream_chat(message, {"store_id": store_id}):
             yield chunk
 
     @staticmethod
-    async def search_faq(request: FAQSearchRequest) -> FAQSearchResponse:
+    async def search_faq(request: FAQSearchRequest,
+                         store_id: Optional[str] = None) -> FAQSearchResponse:
         """
-        搜索知识库
+        搜索知识库（**真源：`knowledge_faqs` 表**）
 
         Args:
             request: 搜索请求
+            store_id: 当前店铺（服务端注入）。话术按店铺隔离，缺了读不到。
 
         Returns:
             FAQSearchResponse 匹配结果列表
+
+        Raises:
+            PermissionError: 缺店铺（端点转 400）
+            RuntimeError:    话术库读不出来（端点转 503）
         """
         agent = get_cs_agent()
 
         results = await agent.search_knowledge_base(
             query=request.query,
-            limit=request.limit
+            limit=request.limit,
+            shop_id=store_id,
         )
 
         best_match = results[0] if results else None
@@ -235,12 +255,20 @@ class CustomerServiceService:
         )
 
     @staticmethod
-    async def track_order(request: OrderTrackRequest) -> OrderTrackResponse:
+    async def track_order(
+        request: OrderTrackRequest,
+        store_id: Optional[str] = None,
+    ) -> OrderTrackResponse:
         """
         追踪订单
 
+        ★ 第 285 轮：`store_id` 由端点从 `X-Shop-ID` 注入（**服务端注入**，
+          请求体里没有这个字段）。缺了它就查不了自有订单库（租户隔离），
+          只能退回平台适配层 —— 所以这是「能不能用自己的数据」的分水岭。
+
         Args:
             request: 订单追踪请求
+            store_id: 当前店铺（服务端注入，可空）
 
         Returns:
             OrderTrackResponse 订单信息
@@ -249,27 +277,46 @@ class CustomerServiceService:
 
         order_id = request.order_id
 
-        if not order_id and (request.email or request.phone_last4):
-            # 模拟通过邮箱/手机查找订单
-            order_id = f"ORD-{datetime.now().strftime('%Y%m%d')}{hash(request.email or '') % 10000:08d}"
-
-        if order_id:
-            # 调用 Agent 的订单追踪能力
-            result: AgentResponse = await agent.invoke(
-                query=f"查询订单 {order_id}",
-                context={"order_id": order_id}
+        if not order_id:
+            # ★ 这里曾经用 `hash(email) % 10000` **编一个订单号**再去查
+            #   （形如 ORD-YYYYMMDDxxxxxxxx）。那个号在平台侧永远不存在，
+            #   而当时的订单查询是随机 mock —— 任何输入都会「查到」一张
+            #   随机生成的订单表。于是「编造订单号 + 编造订单」形成闭环：
+            #   用户只给邮箱，也会收到一份 found=True 的假订单。
+            #   按 fail-closed：没有订单号就不假装查。
+            return OrderTrackResponse(
+                found=False,
+                message=(
+                    "请提供订单号（Amazon 订单号形如 123-1234567-1234567）。"
+                    "按邮箱 / 手机号后四位检索需要卖家后台授权，暂未开放。"
+                ),
             )
 
-            if result.data and result.data.get("type") == "order_detail":
-                return OrderTrackResponse(
-                    found=True,
-                    order=result.data["order"],
-                    message="订单信息获取成功"
-                )
+        # 调用 Agent 的订单追踪能力
+        result: AgentResponse = await agent.invoke(
+            query=f"查询订单 {order_id}",
+            # ★ `store_id` 必须进 context：agent 的 `_handle_order_tracking`
+            #   从 context 取它传给 `_fetch_order_info`，用于查自有订单库。
+            #   此前这里只传 `order_id` ⇒ 范式 B 全程没有店铺归属。
+            context={"order_id": order_id, "store_id": store_id},
+        )
 
+        if result.data and result.data.get("type") == "order_detail":
+            return OrderTrackResponse(
+                found=True,
+                order=result.data["order"],
+                message="订单信息获取成功"
+            )
+
+        # ★ 把真实原因带回调用方：此前一律回「未找到匹配的订单」，
+        #   会让「店铺没接数据源」和「订单号打错了」看起来一模一样。
+        reason = (result.data or {}).get("reason")
         return OrderTrackResponse(
             found=False,
-            message="未找到匹配的订单，请检查订单号或联系客服"
+            message=(
+                f"未能查询到订单 {order_id}：{reason}" if reason
+                else "未找到匹配的订单，请检查订单号或联系客服"
+            )
         )
 
     @staticmethod
@@ -314,6 +361,29 @@ class CustomerServiceService:
         return None
 
     @staticmethod
+    async def list_faq_categories(store_id: Optional[str] = None) -> Dict[str, Any]:
+        """话术分类统计（**按店铺**，读 `knowledge_faqs`）。
+
+        ★ 为什么 `faq_error` 要一并返回：分类列表为空有两种截然不同的原因
+          ——「这个店铺还没配话术」（正常）与「话术库读不出来」（故障）。
+          只回一个空数组，前端只能显示「暂无分类」，把故障显示成正常。
+        """
+        agent = get_cs_agent()
+        err = await agent.ensure_faq(store_id)
+
+        counts: Dict[str, int] = {}
+        for f in agent.faq_database:
+            counts[f.category] = counts.get(f.category, 0) + 1
+
+        return {
+            "categories": [
+                {"name": name, "count": count}
+                for name, count in sorted(counts.items())
+            ],
+            "faq_error": err,
+        }
+
+    @staticmethod
     def get_capabilities() -> CapabilityResponse:
         """
         获取 Agent 能力描述
@@ -326,7 +396,8 @@ class CustomerServiceService:
         return CapabilityResponse(**caps)
 
     @staticmethod
-    async def quick_reply(query: str) -> Dict[str, Any]:
+    async def quick_reply(query: str,
+                          store_id: Optional[str] = None) -> Dict[str, Any]:
         """
         快速回复（简化接口）
 
@@ -334,13 +405,14 @@ class CustomerServiceService:
 
         Args:
             query: 用户输入
+            store_id: 当前店铺（服务端注入，供读话术）
 
         Returns:
             简化的响应字典
         """
         service = CustomerServiceService()
         request = ChatRequest(message=query)
-        response = await service.chat(request)
+        response = await service.chat(request, store_id)
 
         return {
             "reply": response.reply,

@@ -8,6 +8,7 @@ from core.metering.usage_tracker import meter_agent_chat
 from typing import Optional, List
 
 from ai_infra.sse import sse_event_stream
+from ai_infra.skills import bind_requested_skill
 
 from .schemas import (
     CompetitorMonitorRequest, BatchTrackRequest, MarketShareRequest,
@@ -17,6 +18,9 @@ from .schemas import (
 from core.tenant.middleware import get_current_shop_id
 from . import service
 from .service import CompetitorIntelService
+
+#: 本模块的对话端点**没有请求体**（参数全在 query 上）⇒ 技能名也只能走 query。
+SKILL_QUERY_DESC = "本次对话指定使用的技能名（可选）"
 
 router = APIRouter(prefix="/competitor", tags=["竞品情报监控"])
 
@@ -248,6 +252,7 @@ async def compare_competitors(
 @router.post("/analyze", response_model=CompetitorAnalysisResponse, summary="通用分析入口")
 async def general_analysis(
     query: str = Query(..., description="自然语言查询"),
+    skill: Optional[str] = Query(default=None, description=SKILL_QUERY_DESC),
     context: Optional[dict] = None,
     store_id: Optional[str] = Depends(get_current_shop_id),
 ):
@@ -261,7 +266,11 @@ async def general_analysis(
     - "对比这几个ASIN" → 多维对比
     """
     try:
-        result = await service.general_analysis(query=query, context=context, store_id=store_id)
+        # ★ 点名通道（第 188 轮）：本次对话若指定了技能名，把它置进
+        #   调用链上下文，由 `skills_selected` 段落把该技能正文注入
+        #   system prompt（与 `load_skill` 共用同一个解析实现）。
+        async with bind_requested_skill(skill):
+            result = await service.general_analysis(query=query, context=context, store_id=store_id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"分析失败: {str(e)}")
@@ -270,6 +279,7 @@ async def general_analysis(
 @router.post("/chat/stream", summary="竞品情报对话（SSE 流式）")
 async def chat_stream(
     query: str = Query(..., description="自然语言查询"),
+    skill: Optional[str] = Query(default=None, description=SKILL_QUERY_DESC),
     store_id: Optional[str] = Depends(get_current_shop_id),
     _meter=Depends(meter_agent_chat),
 ):
@@ -278,8 +288,11 @@ async def chat_stream(
 
     async def _wrapped():
         try:
-            async for event in sse_event_stream(CompetitorIntelService.stream_chat(query, store_id)):
-                yield event
+            # ★ 写入点必须在**生成器体内**：包在返回 StreamingResponse
+            #   的外层，`async with` 会在生成器被第一次迭代之前就退出 ⇒ 等于没设。
+            async with bind_requested_skill(skill):
+                async for event in sse_event_stream(CompetitorIntelService.stream_chat(query, store_id)):
+                    yield event
         except Exception as e:
             yield f"event: error\ndata: {_json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
 

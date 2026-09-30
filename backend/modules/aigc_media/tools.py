@@ -114,7 +114,10 @@ async def _analyze_main_image_tool(
     image_url: str,
     product_category: str = "",
 ) -> str:
-    """分析产品主图质量，返回整体评分、CTR 预测、视觉评分、合规检查与改进建议。
+    """分析产品主图质量，返回整体评分、CTR 预测、视觉评分、合规核查清单与改进建议。
+
+    ⚠️ 视觉评分与 CTR 当前为模拟值；合规项未接入自动判定，只给人工核查清单，
+    不产出通过/不通过结论。
 
     Args:
         image_url: 图片 URL 或路径（必填）。

@@ -27,6 +27,7 @@ from core.database import async_session_factory
 from core.tenant.middleware import get_current_shop_id
 from core.tenant.scoping import scoped
 from modules.assets.db_model import AssetRecord, AssetGroupRecord
+from modules.assets.service import list_assets as list_assets_svc
 
 router = APIRouter(prefix="/api/v1", tags=["素材库"])
 
@@ -71,22 +72,26 @@ def _group_to_dict(g: AssetGroupRecord) -> dict:
 
 @router.get("/assets")
 async def list_assets(shop_id: Optional[str] = Depends(get_current_shop_id)):
-    if not shop_id:
-        return {"items": [], "total": 0}
-    async with async_session_factory() as session:
-        rows = (await session.execute(
-            scoped(select(AssetRecord), AssetRecord, shop_id)
-        )).scalars().all()
-    items = [_record_to_dict(r) for r in rows]
-    return {"items": items, "total": len(items)}
+    """素材列表。
+
+    ★ 第 218 轮（P1）：查询收口到 `assets/service.list_assets`
+      （内部走 `core.library_query` 内核）—— 改前是本 handler 体里的**内联实现**，
+      Agent 侧够不着。REST 与 Agent 工具从此同源。
+    ★ **出参零变化**：仍是 `{"items": [...], "total": N}`，且不传 limit ⇒
+      `total == len(items)`。只是排序从「DB 自然顺序」收敛成
+      `createdAt` 倒序（前端本来就自己这么排，用户看不到差异）。
+    """
+    rows = await list_assets_svc(shop_id)
+    return {"items": [_record_to_dict(r) for r in rows], "total": len(rows)}
 
 
 @router.get("/assets/{asset_id}")
 async def get_asset(asset_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(AssetRecord).where(AssetRecord.id == asset_id)
-        if shop_id:
-            q = scoped(q, AssetRecord, shop_id)
+        # 无条件挂店铺作用域：缺 X-Shop-ID 时 shop_id=None ⇒ col IS NULL ⇒ 0 行，
+        # 走 404（安全失败方向），而非跨租户读。
+        q = scoped(q, AssetRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="素材不存在")
@@ -130,8 +135,7 @@ async def create_asset(payload: dict, shop_id: Optional[str] = Depends(get_curre
 async def update_asset(asset_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(AssetRecord).where(AssetRecord.id == asset_id)
-        if shop_id:
-            q = scoped(q, AssetRecord, shop_id)
+        q = scoped(q, AssetRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="素材不存在")
@@ -152,8 +156,7 @@ async def update_asset(asset_id: str, payload: dict, shop_id: Optional[str] = De
 async def delete_asset(asset_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(AssetRecord).where(AssetRecord.id == asset_id)
-        if shop_id:
-            q = scoped(q, AssetRecord, shop_id)
+        q = scoped(q, AssetRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="素材不存在")
@@ -168,8 +171,7 @@ async def batch_delete_assets(payload: dict, shop_id: Optional[str] = Depends(ge
     async with async_session_factory() as session:
         for aid in ids:
             q = select(AssetRecord).where(AssetRecord.id == aid)
-            if shop_id:
-                q = scoped(q, AssetRecord, shop_id)
+            q = scoped(q, AssetRecord, shop_id)
             r = (await session.execute(q)).scalar_one_or_none()
             if r:
                 await session.delete(r)
@@ -213,8 +215,7 @@ async def create_group(payload: dict, shop_id: Optional[str] = Depends(get_curre
 async def update_group(group_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(AssetGroupRecord).where(AssetGroupRecord.id == group_id)
-        if shop_id:
-            q = scoped(q, AssetGroupRecord, shop_id)
+        q = scoped(q, AssetGroupRecord, shop_id)
         g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
@@ -232,15 +233,13 @@ async def update_group(group_id: str, payload: dict, shop_id: Optional[str] = De
 async def delete_group(group_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(AssetGroupRecord).where(AssetGroupRecord.id == group_id)
-        if shop_id:
-            q = scoped(q, AssetGroupRecord, shop_id)
+        q = scoped(q, AssetGroupRecord, shop_id)
         g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
         await session.delete(g)
         aq = select(AssetRecord)
-        if shop_id:
-            aq = scoped(aq, AssetRecord, shop_id)
+        aq = scoped(aq, AssetRecord, shop_id)
         assets = (await session.execute(aq)).scalars().all()
         for a in assets:
             if a.groups and group_id in a.groups:
@@ -254,8 +253,7 @@ async def move_group(group_id: str, payload: dict, shop_id: Optional[str] = Depe
     direction = payload.get("direction") or "down"
     async with async_session_factory() as session:
         q = select(AssetGroupRecord)
-        if shop_id:
-            q = scoped(q, AssetGroupRecord, shop_id)
+        q = scoped(q, AssetGroupRecord, shop_id)
         rows = (await session.execute(
             q.order_by(AssetGroupRecord.createdAt)
         )).scalars().all()

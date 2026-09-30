@@ -44,15 +44,17 @@
 
 
 ===============================================================================
-真实网关接入清单（P1-4 留位：无商户凭证时只能留位，不能真接）
+真实网关接入清单（第 1~3 家按此清单接入）
 ===============================================================================
 
-现状：`_GATEWAYS` 目前只登记了 "mock"。若把 PAYMENT_GATEWAY 配成
-stripe / alipay / wechat，`get_gateway()` 会**显式抛 ValueError** 并列出
-可用实现名——这是有意的：静默回落 mock 会让「配了真实网关」和
-「没配」看起来一样，是最危险的失败模式。
+现状（2026-09-25 更新）：`_GATEWAYS` 登记了 **mock** 与 **alipay**。
+支付宝已按下面 6 步完整接入（见 `platforms/payment/alipay.py`）；
+stripe / wechat / wechatpay / paypal 仍是占位名 —— 把 PAYMENT_GATEWAY
+配成这些名字，`get_gateway()` 会返回 UnimplementedGateway，
+在**真正收钱那一步**显式失败并列出整改路径。这是有意的：
+静默回落 mock 会让「配了真实网关」和「没配」看起来一样，是最危险的失败模式。
 
-要把某个真实网关接上，按下面 6 步做（以 Stripe 为例）：
+要把下一家网关接上，按下面 6 步做（以 Stripe 为例）：
 
 1) 加依赖
    requirements.txt: `stripe>=11.0`（支付宝用 `alipay-sdk-python`，
@@ -175,24 +177,51 @@ class InvoiceDraft:
       业务模型落库，是调用方（modules/billing）的决定。网关若直接 new 一个
       ORM Invoice，就等于替业务层做了持久化决策，适配层也无法脱离业务模型复用。
       调用方转换见 modules/billing/router.py::_invoice_from_draft()。
+
+    ★ 字段分工（加字段前先想清楚它属于哪一侧，别混）：
+
+      · **网关侧事实**（谁来收款、网关给了什么号、二维码是什么）
+        → 由网关填：`payment_channel` / `transaction_id` / `pay_url` / `status`。
+        这些值**只有网关知道**，调用方无从推算。
+
+      · **业务侧事实**（这笔钱买的是哪个套餐、几个月）
+        → 由调用方填：见 `_invoice_from_draft(..., plan_id=, billing_cycle=)`。
+        网关刻意不认识这两个字段 —— `ChargeIntent.plan_name` 只给了个字符串，
+        真正的套餐主键是业务概念，让适配层认识它就把适配层绑死在计费域上了。
     """
 
     user_id: str
     number: str                                  # 账单号 INV-xxxx
     amount: float
     currency: str = "CNY"
-    status: str = "paid"                        # paid / pending / failed / refunded
+    status: str = "paid"                        # paid / pending / failed / refunded / expired
     description: str = ""
     issued_at: Optional[datetime] = None
     paid_at: Optional[datetime] = None
     pdf_url: Optional[str] = None
     idempotency_key: Optional[str] = None
     id: str = ""                                # 网关预生成的账单 UUID
+    # ---- 以下三列为真实支付（异步确认）新增，见 platforms/payment/alipay.py ----
+    transaction_id: str = ""                    # 网关侧商户订单号（支付宝 out_trade_no）
+    payment_channel: str = ""                   # 实际收款渠道：mock / alipay / ...
+    pay_url: str = ""                           # 二维码内容（待用户扫码的地址）
 
 
 @dataclass
 class ChargeResult:
-    """一次扣款的结果（网关无关）"""
+    """一次扣款的结果（网关无关）
+
+    ★★ 区分两个经常被混为一谈的字段（这是本层最容易出人命的地方）：
+
+      `success=True` 的语义是「**这笔单被受理了**」，不是「钱到账了」。
+      在同步网关（mock）下两者等价，在异步网关（支付宝当面付）下**不等价**：
+      precreate 返回 200 只代表二维码生成了，用户还没扫。
+
+      ⇒ 因此多出一个 `requires_confirmation`：它为 True 时，调用方**必须**
+        走两段式（建 pending 账单 → 用户扫码 → webhook 到达才激活订阅）。
+        把 success 直接当"已收款"就是「用户没付钱就拿到套餐」，
+        也正是本文件顶部接入清单第 3 步用一整段警告的那个坑。
+    """
 
     success: bool
     invoice: Optional[InvoiceDraft] = None      # 成功时返回待落库的账单**草案**；零元或纯授权返回 None
@@ -202,6 +231,55 @@ class ChargeResult:
     # 未产生账单的原因（如「零元无需开票」），便于调用方区分
     # 「扣款成功但没账单」和「压根没扣款」。
     skipped_reason: str = ""
+    # ---- 异步真实支付（P0，2026-09-25）新增 ----
+    #: 是否为「先受理、后确认」的异步支付。True ⇒ 调用方必须保留 pending 状态，
+    #: 等 webhook 到达才开通服务。mock 恒为 False。
+    requires_confirmation: bool = False
+    #: 待用户扫码/跳转的地址（支付宝 qr_code 原值）。仅 requires_confirmation 时有意义。
+    qr_code_url: str = ""
+
+
+# ====== 结算模式 ======
+
+#: 同步结算：`charge()` 返回时钱已经收到了（mock）。调用方可以在**同一个事务**里
+#: 直接把订阅改成 active。
+SETTLEMENT_IMMEDIATE = "immediate"
+
+#: 异步结算：`charge()` 返回时只是"受理成功"，真正的到账由 webhook 确认
+#: （支付宝当面付 / 微信 Native）。调用方**必须**两段式。
+SETTLEMENT_ASYNC = "async"
+
+
+#: 一笔「待支付」订单的有效窗口（分钟）。**唯一定义处**。
+#
+# 两个消费方都从这里取，不允许各写一个数字：
+#   · `platforms/payment/alipay.py`  → 下单时的 `timeout_express`（支付宝侧超时）；
+#   · `modules/billing`（下单复用判定 / 定时回收）→ 判定"这张 pending 单还能不能续用"。
+#
+# ★ 两侧必须一致，且**业务侧不得短于网关侧**：
+#   若我们提前把订单判为过期、又让用户扫了那张还活着的码，
+#   就会出现「用户付了钱，我们库里那张单已经是 expired」——
+#   钱到了、权限没开，是最难排查的一类事故（支付宝侧一切正常）。
+#   取相等值 + 「expired 的单收到回调照样认账」（见 payment_router）双保险。
+PENDING_PAYMENT_TTL_MINUTES = 30
+
+
+# ====== 错误类型 ======
+
+class GatewayConfigError(RuntimeError):
+    """真实网关的接入配置不完整（缺凭证 / 缺回调地址）。
+
+    ★ 为什么要与 `NotImplementedError` 分开：
+      两者的**整改动作完全不同**，混成一个类型会让运维照着错误的清单去修。
+        · NotImplementedError → 「这个网关的代码还没写」→ 开发者的事；
+        · GatewayConfigError   → 「代码写了，但这个部署没配钥匙」→ 运维的事。
+      调用方的映射也不同：前者 501（Not Implemented），后者 503（Service
+      Unavailable，语义是"服务依赖没就绪"）。
+
+    ★ 而且它绝对不能靠"静默返回 success=False"来表达：那样这张单会被记成
+      「一次正常的支付失败」进了业务表，而真实原因是环境没配好 ——
+      用户看到的是"支付失败请重试"，重试一万次也一样。
+    """
 
 
 # ====== 网关协议 ======
@@ -211,6 +289,11 @@ class PaymentGateway(Protocol):
     """支付网关协议：计费端点只面向此接口编程"""
 
     name: str
+
+    #: 结算模式（见上面的 SETTLEMENT_* 常量）。
+    #: ★ 必须由**网关自己声明**，不能让调用方按网关门牌号 if/else 猜 ——
+    #:   那样每接一家新网关都要回去改计费端点，正是本模块要消除的耦合。
+    settlement_mode: str
 
     async def charge(self, intent: ChargeIntent) -> ChargeResult:
         """发起一次扣款，返回统一结果"""
@@ -236,6 +319,9 @@ class MockGateway:
     """
 
     name = "mock"
+    #: 模拟网关是**同步**的：`charge()` 返回时"钱已经收到了"，
+    #: 所以调用方可以在同一个事务里直接把订阅改成 active（当前的既有行为）。
+    settlement_mode = SETTLEMENT_IMMEDIATE
 
     async def charge(self, intent: ChargeIntent) -> ChargeResult:
         amount = round(float(intent.amount or 0), 2)
@@ -263,13 +349,21 @@ class MockGateway:
             paid_at=now,
             pdf_url=None,
             idempotency_key=intent.idempotency_key or None,
+            # ★ 渠道落成 "mock" 而不是空串：账单表里必须一眼看得出
+            #   「这笔钱是模拟收的」。演示环境的账单混进真实账单列表时，
+            #   唯一的区分依据就是这一列 —— 对账时靠人工回看日志是来不及的。
+            payment_channel=self.name,
+            transaction_id=f"mock-{uuid.uuid4().hex}",
         )
         return ChargeResult(
             success=True,
             invoice=invoice,
             client_secret="",
-            transaction_id=f"mock-{uuid.uuid4().hex}",
+            transaction_id=invoice.transaction_id,
             error="",
+            # mock 恒为同步：不产生"待确认"状态，调用方走原来那条路。
+            requires_confirmation=False,
+            qr_code_url="",
         )
 
 
@@ -293,6 +387,12 @@ class UnimplementedGateway:
     """
 
     name = "unimplemented"
+    #: 取值本身无意义（`charge()` 必抛），但协议要求有 —— 且**不能**随便填
+    #: `immediate` 之外的值：假如将来有人在调用 `charge()` 之前读它做分支，
+    #: 填 "async" 会让调用方走进"建 pending 账单等回调"那条路，
+    #: 而这条路永远不会有人回调 ⇒ 用户钱没付、订阅挂着 pending 烂尾。
+    #: 填 immediate 时，调用方必然走到 `charge()`，然后**当场炸在**这里。
+    settlement_mode = SETTLEMENT_IMMEDIATE
 
     def __init__(self, requested: str) -> None:
         self.requested = requested
@@ -307,10 +407,27 @@ class UnimplementedGateway:
 
 # ====== 网关注册表 & 工厂 ======
 
-# 已实现网关注册表：name -> 工厂函数
+def _load_alipay_gateway():
+    """懒加载支付宝网关。
+
+    ★ 为什么是函数而不是直接写类名：`platforms/payment/alipay.py` 需要
+      `from platforms.payment.gateway import ChargeIntent, GatewayConfigError, ...`
+      —— 名字定义在**本模块**里。若本模块在顶层 `import alipay`，
+      两个模块就形成 import 环：谁先被导入，另一方拿到的都是**半初始化**的
+      模块对象，报 `ImportError: cannot import name ...`（而且报错时机取决于
+      谁先被 import，测试单跑绿、全量跑红那类最难查的问题）。
+      懒加载把环打开：正常路径下 `get_gateway("alipay")` 第一次调用时才 import。
+    """
+    from platforms.payment.alipay import AlipayGateway
+
+    return AlipayGateway()
+
+
+# 已实现网关注册表：name -> 工厂（类或返回实例的可调用对象）
 # 接入真实网关时在此登记，并新增对应配置项分支（见顶部接入清单第 2、3 步）。
 _GATEWAYS: dict = {
     "mock": MockGateway,
+    "alipay": _load_alipay_gateway,
 }
 
 # 已知但尚未实现的真实网关名。命中时**不报配置错误**，

@@ -1,18 +1,27 @@
 """
-Amazon 平台适配器
+Amazon 平台适配器（Phase 2 遗留的 **MOCK 世界**）
 
-Phase 2 MVP 使用模拟数据演示完整流程。
-后续升级：接入 Amazon SP-API 获取真实数据。
+⚠️ 真假边界（第 164 轮逐个方法标明，别再靠猜）：
 
-功能：
-- 产品搜索（模拟）
-- 关键词数据（模拟）
-- FBA 费用计算（真实算法）
-- 评论数据（模拟）
-- BSR 排名（模拟）
+| 方法 | 数据真假 |
+|---|---|
+| `search_products` / `match_products` / `get_product_detail` | **编造**（读内存 `MOCK_PRODUCTS`） |
+| `get_keyword_data` | **编造**（命中 `MOCK_KEYWORDS`，未命中则**现编随机值**） |
+| `get_reviews` | **编造**（模板 + 随机评分/作者/日期/有用票） |
+| `analyze_competitors` | **编造**（由上面两条拼出来） |
+| `calculate_fees` | ✅ **真实**（2024 年 Amazon US FBA 费率表算法） |
+
+★ 为什么必须逐点打 WARNING：本适配器由 `get_platform_adapter("amazon")` 提供给
+  `product_research` / `listing_generator`，而这两个模块**全程没有一处告警** ——
+  用户看到的是「蓝海机会」三个字，不是「演示数据」。
+  对照新世界 `modules.amazon_sp.get_data_source()`：它在回退 mock 时会 `logger.warning`。
+  **静默的假数据比报错的假数据危害大一个量级。**
+
+需要真实 Amazon 数据请走 `modules.amazon_sp.get_data_source(prefer="sp_api")`。
 """
 
 import asyncio
+import logging
 import random
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -27,6 +36,33 @@ from platforms.base import (
     ReviewData,
     CompetitorAnalysis,
 )
+
+
+logger = logging.getLogger(__name__)
+# ★ 用 stdlib logging 而不是 `core.logger.get_logger()`（loguru）：
+#   ① 同目录 `platforms/amazon/sp_api/*` 全是 stdlib，保持一致；
+#   ② loguru 按 `str.format` 插值 —— 写 `%s` **不报错、参数被静默丢弃、日志原样打出 `%s`**，
+#      stdlib 走 `InterceptHandler` 会先 `record.getMessage()` 做 `%` 插值，`%s` 才对。
+#      同一个仓两套日志栈，同一行代码的对错取决于 logger 从哪来（第 164 轮实测）。
+
+
+def _warn_mock(source: str, detail: str = "") -> None:
+    """把「这里返回的是编造数据」喊出来。
+
+    Args:
+        source: 编造点（方法名 / 函数名），写进日志便于定位。
+        detail: 当次的补充上下文（关键词、product_id 等）。
+
+    ★ 为什么不做「同 key 只告警一次」的 dedup：dedup 需要一个进程级的已告警集合，
+      它会让「第 N 次调用还告不告警」取决于此前跑过什么 —— 门禁随测试顺序抖动、
+      线上首次请求之外全静默。**告警量换确定性，值。**
+    """
+    logger.warning(
+        "%s 返回的是 MOCK 编造数据（非真实 Amazon 数据）%s；"
+        "需要真实数据请走 modules.amazon_sp.get_data_source()",
+        source,
+        detail,
+    )
 
 
 # ====== 模拟数据池 ======
@@ -380,12 +416,16 @@ def get_mock_products(category_key: Optional[str] = None) -> List[dict]:
     所有需要「商品实体」的调用方（选品 Agent 的蓝海挖掘、REST 蓝海端点、
     关键词 → 商品匹配）都必须经由此函数取数，禁止再各自维护一份内联商品表。
 
+    ⚠️ 返回的是**编造商品**（内存 `MOCK_PRODUCTS`），不是真实 Amazon 数据。
+    每次调用都会打一条 WARNING 留痕，别把下游的「蓝海机会」读成真实市场结论。
+
     Args:
         category_key: 可选类目键（见 CATEGORY_KEYS）。None 或未收录 → 返回全池。
 
     Returns:
         商品 dict 列表（深拷贝，调用方可安全修改）。
     """
+    _warn_mock("get_mock_products", f"(category_key={category_key or '-'})")
     pool = MOCK_PRODUCTS
     if category_key and category_key in CATEGORY_KEYS:
         pool = [p for p in pool if p.get("category_key") == category_key] or MOCK_PRODUCTS
@@ -492,8 +532,8 @@ class AmazonAdapter(PlatformAdapter):
     """
     Amazon 平台适配器
 
-    Phase 2: 使用模拟数据 + 真实 FBA 费用算法
-    Phase 3+: 接入 SP-API 替换为真实数据
+    ⚠️ Phase 2 遗留：**除 `calculate_fees` 外全部为编造数据**（见模块 docstring 的真假表）。
+    每个编造点都会打 WARNING；真实数据请走 `modules.amazon_sp.get_data_source()`。
     """
 
     #: 假延迟系数：0 = 关闭（默认），1.0 = 原始仿真值。
@@ -515,7 +555,7 @@ class AmazonAdapter(PlatformAdapter):
         category: Optional[str] = None,
     ) -> List[ProductData]:
         """
-        搜索产品（模拟数据）
+        搜索产品（⚠️ MOCK：从内存 `MOCK_PRODUCTS` 里挑，**不是真实 Amazon 搜索结果**）
 
         修复记录：原实现**完全忽略 `query`**，无条件 `random.sample` 返回 5 条随机商品。
         后果有两个：①「关键词 → 商品」这条路根本不存在（同一个词每次结果不同且与词无关），
@@ -528,6 +568,7 @@ class AmazonAdapter(PlatformAdapter):
         实际实现在 Phase 3+ 会调用 Amazon Product Advertising API 或爬虫 + 数据库缓存。
         """
         await self._simulate_delay(0.3)
+        _warn_mock("AmazonAdapter.search_products", f"(query={query!r} category={category or '-'})")
 
         page_size = 5
         ranked = match_products_by_keyword(query, limit=10 ** 6)
@@ -566,16 +607,20 @@ class AmazonAdapter(PlatformAdapter):
         """
         关键词 → 具体商品（覆写基类默认实现）。
 
+        ⚠️ MOCK：命中结果来自内存 `MOCK_PRODUCTS`，不是真实 Amazon 在售商品。
+
         直接用统一 Mock 池做 token 命中，好处是能带上 `roi` / `category_key`
         / `brand` / 原始 `category` 路径等派生字段——基类默认实现走
         `search_products` 会退化成 `ProductData`，丢掉这些字段。
         """
         await self._simulate_delay(0.15)
+        _warn_mock("AmazonAdapter.match_products", f"(keyword={keyword!r} limit={limit})")
         return match_products_by_keyword(keyword, limit=limit)
 
     async def get_product_detail(self, product_id: str) -> Optional[ProductData]:
-        """获取产品详情（模拟）"""
+        """获取产品详情（⚠️ MOCK：只认内存 `MOCK_PRODUCTS` 里的 ASIN，其余返回 None）"""
         await self._simulate_delay(0.2)
+        _warn_mock("AmazonAdapter.get_product_detail", f"(product_id={product_id!r})")
 
         for p in MOCK_PRODUCTS:
             if p["asin"] == product_id.upper():
@@ -598,9 +643,16 @@ class AmazonAdapter(PlatformAdapter):
 
     async def get_keyword_data(self, keyword: str) -> KeywordData:
         """
-        获取关键词数据（模拟）
+        获取关键词数据（⚠️ MOCK）
 
-        返回基于训练数据的合理估算值
+        两条分支**都是编造**，只是「编造的来源」不同：
+
+        - 命中 `MOCK_KEYWORDS`：读内存里的固定假表；
+        - **未命中：现编随机值**（`random.randint` / `random.uniform` / `random.choice`）
+          —— 同一个词每次调用结果都不同，这一条最危险，也是最需要告警的。
+
+        两条分支都会打 WARNING（未命中那条的 detail 里带 `unmatched` 标记，
+        便于线上按关键词捞「被随机编出来的搜索量」）。
         """
         await self._simulate_delay(0.15)
 
@@ -612,11 +664,19 @@ class AmazonAdapter(PlatformAdapter):
             base_volume = data["volume"]
             competition = data["competition"]
             trend = data["trend"]
+            _warn_mock(
+                "AmazonAdapter.get_keyword_data",
+                f"(keyword={keyword!r} 命中模拟关键词库，数值仍为编造)",
+            )
         else:
             # 未匹配的关键词生成合理随机值
             base_volume = random.randint(5000, 80000)
             competition = round(random.uniform(0.2, 0.85), 2)
             trend = random.choice(["rising", "stable", "declining"])
+            _warn_mock(
+                "AmazonAdapter.get_keyword_data",
+                f"(keyword={keyword!r} unmatched：未命中模拟关键词库，搜索量/竞争度/趋势均为现编随机值)",
+            )
 
         # 添加波动
         volume = int(base_volume * random.uniform(0.9, 1.1))
@@ -639,6 +699,8 @@ class AmazonAdapter(PlatformAdapter):
         dimensions_inch: tuple = (10, 7, 5),
     ) -> FeeStructure:
         """
+        ✅ 真实算法（本适配器**唯一**不编造的方法 —— 因此这里**不打 MOCK 告警**）
+
         计算 Amazon FBA 费用（真实算法！）
 
         基于 2024 年 Amazon US FBA 费率表：
@@ -714,8 +776,9 @@ class AmazonAdapter(PlatformAdapter):
         page: int = 1,
         rating_filter: Optional[int] = None,
     ) -> List[ReviewData]:
-        """获取评论（模拟）"""
+        """获取评论（⚠️ MOCK：模板文案 + 随机评分/作者/日期/有用票，不是真实评论）"""
         await self._simulate_delay(0.2)
+        _warn_mock("AmazonAdapter.get_reviews", f"(product_id={product_id!r} page={page})")
 
         reviews = []
 
@@ -766,18 +829,9 @@ class AmazonAdapter(PlatformAdapter):
 
         return reviews
 
-    async def get_bsr_rank(self, product_id: str) -> Optional[int]:
-        """获取 BSR 排名（模拟）"""
-        await self._simulate_delay(0.1)
-
-        for p in MOCK_PRODUCTS:
-            if p["asin"] == product_id.upper():
-                return p["bsr_rank"]
-
-        return random.randint(100, 50000)
-
     async def analyze_competitors(self, product_ids: List[str]) -> List[CompetitorAnalysis]:
-        """竞品分析（增强版）"""
+        """竞品分析（⚠️ MOCK：输入就是上面两条编造数据，结论同样是编造出来的）"""
+        _warn_mock("AmazonAdapter.analyze_competitors", f"(product_ids={product_ids!r})")
         results = []
         for pid in product_ids:
             product = await self.get_product_detail(pid)

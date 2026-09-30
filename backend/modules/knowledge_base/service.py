@@ -30,12 +30,14 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 
 from core.database import async_session_factory
-from core.tenant.scoping import scoped, scoped_if
+from core.library_query import count_library, query_library
+from core.tenant.scoping import scoped
 from modules.knowledge_base.db_model import (
     KnowledgeBaseRecord,
     KnowledgeDocRecord,
     KnowledgeFaqRecord,
 )
+from modules.knowledge_base.spec import FAQ_SPEC
 
 
 # ====== 字段契约（与前端类型严格对齐）======
@@ -259,10 +261,14 @@ async def list_knowledge_bases(shop_id: Optional[str]) -> List[dict]:
 
 
 async def get_kb_by_id(kb_id: str, shop_id: Optional[str] = None) -> Optional[KnowledgeBaseRecord]:
-    """按主键取知识库（带租户校验：给了 shop_id 就必须匹配）"""
+    """按主键取知识库（**无条件**按 shop_id 过滤：缺店铺 ⇒ 0 行 ⇒ None）
+
+    ★ 第 283 轮修正：原文「给了 shop_id 就必须匹配」等于承认「没给 ⇒ 不过滤」，
+      而 GET 缺 `X-Shop-ID` 时下层确实返回 None ⇒ 可读任意租户的知识库容器。
+    """
     async with async_session_factory() as session:
         q = select(KnowledgeBaseRecord).where(KnowledgeBaseRecord.id == kb_id)
-        q = scoped_if(q, KnowledgeBaseRecord, shop_id)
+        q = scoped(q, KnowledgeBaseRecord, shop_id)
         return (await session.execute(q)).scalar_one_or_none()
 
 
@@ -270,7 +276,7 @@ async def get_kb_dict(kb_id: str, shop_id: Optional[str] = None) -> Optional[dic
     """按主键取知识库（含计数）"""
     async with async_session_factory() as session:
         q = select(KnowledgeBaseRecord).where(KnowledgeBaseRecord.id == kb_id)
-        q = scoped_if(q, KnowledgeBaseRecord, shop_id)
+        q = scoped(q, KnowledgeBaseRecord, shop_id)
         kb = (await session.execute(q)).scalar_one_or_none()
         if kb is None:
             return None
@@ -297,7 +303,7 @@ async def update_kb(kb_id: str, payload: dict, shop_id: Optional[str] = None) ->
     """更新知识库元信息；不存在（或不属于该租户）返回 None"""
     async with async_session_factory() as session:
         q = select(KnowledgeBaseRecord).where(KnowledgeBaseRecord.id == kb_id)
-        q = scoped_if(q, KnowledgeBaseRecord, shop_id)
+        q = scoped(q, KnowledgeBaseRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return None
@@ -316,7 +322,7 @@ async def delete_kb(kb_id: str, shop_id: Optional[str] = None) -> Optional[dict]
     """
     async with async_session_factory() as session:
         q = select(KnowledgeBaseRecord).where(KnowledgeBaseRecord.id == kb_id)
-        q = scoped_if(q, KnowledgeBaseRecord, shop_id)
+        q = scoped(q, KnowledgeBaseRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return None
@@ -337,22 +343,57 @@ async def delete_kb(kb_id: str, shop_id: Optional[str] = None) -> Optional[dict]
 
 # ====== 话术条目 ======
 
-async def list_faqs(shop_id: Optional[str]) -> List[dict]:
-    """列出该店铺的全部话术（前端按 kb_id 自己分组，故这里一次拉全）"""
-    if not shop_id:
-        return []
-    async with async_session_factory() as session:
-        rows = (await session.execute(
-            scoped(select(KnowledgeFaqRecord), KnowledgeFaqRecord, shop_id)
-            .order_by(KnowledgeFaqRecord.created_at.asc())
-        )).scalars().all()
-        return [faq_to_dict(f) for f in rows]
+async def list_faqs(
+    shop_id: Optional[str],
+    *,
+    order_by: Optional[str] = None,
+    kb_id: Optional[str] = None,
+    category: Optional[str] = None,
+    priority: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> List[dict]:
+    """列出该店铺的话术（**唯一实现**）。
+
+    ★ 第 218 轮（P1）：查询收口到 `core.library_query`（`FAQ_SPEC`）——
+      排序白名单 / 过滤 / limit 从此只有一份实现；
+      REST（`knowledge_base/router.py`）与 Agent 工具共用本函数。
+    ★ 默认排序仍是 `created_at` 升序（改前 `order_by(...created_at.asc())`），
+      逐字不变 —— 前端按 kb_id 自己分组，这里一次拉全的既有语义也保持不变。
+    ★ 新增的 `order_by` / `kb_id` / `category` / `status` / `limit` 全部**可选**：
+      不传即改前行为。
+    """
+    rows = await query_library(
+        FAQ_SPEC,
+        shop_id,
+        order_by=order_by,
+        filters={"kb_id": kb_id, "category": category, "priority": priority, "status": status},
+        limit=limit,
+    )
+    return [faq_to_dict(row[0]) for row in rows]
+
+
+async def count_faqs(
+    shop_id: Optional[str],
+    *,
+    kb_id: Optional[str] = None,
+    category: Optional[str] = None,
+    priority: Optional[str] = None,
+    status: Optional[str] = None,
+) -> int:
+    """话术**真实**条数（与 `list_faqs` 同口径，两者都走内核）——
+    ★ 工具层答「话术库里有几条」必须用这个，不能用「这次返回了几条」。"""
+    return await count_library(
+        FAQ_SPEC,
+        shop_id,
+        filters={"kb_id": kb_id, "category": category, "priority": priority, "status": status},
+    )
 
 
 async def get_faq_by_id(faq_id: str, shop_id: Optional[str] = None) -> Optional[KnowledgeFaqRecord]:
     async with async_session_factory() as session:
         q = select(KnowledgeFaqRecord).where(KnowledgeFaqRecord.id == faq_id)
-        q = scoped_if(q, KnowledgeFaqRecord, shop_id)
+        q = scoped(q, KnowledgeFaqRecord, shop_id)
         return (await session.execute(q)).scalar_one_or_none()
 
 
@@ -387,7 +428,7 @@ async def update_faq(faq_id: str, payload: dict, shop_id: Optional[str] = None) 
     """更新话术；不存在（或不属于该租户）返回 None"""
     async with async_session_factory() as session:
         q = select(KnowledgeFaqRecord).where(KnowledgeFaqRecord.id == faq_id)
-        q = scoped_if(q, KnowledgeFaqRecord, shop_id)
+        q = scoped(q, KnowledgeFaqRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return None
@@ -402,7 +443,7 @@ async def delete_faq(faq_id: str, shop_id: Optional[str] = None) -> bool:
     """删除话术；不存在（或不属于该租户）返回 False"""
     async with async_session_factory() as session:
         q = select(KnowledgeFaqRecord).where(KnowledgeFaqRecord.id == faq_id)
-        q = scoped_if(q, KnowledgeFaqRecord, shop_id)
+        q = scoped(q, KnowledgeFaqRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return False
@@ -421,11 +462,121 @@ async def delete_faqs_batch(ids: List[str], shop_id: Optional[str] = None) -> in
         return 0
     async with async_session_factory() as session:
         stmt = sa_delete(KnowledgeFaqRecord).where(KnowledgeFaqRecord.id.in_(ids))
-        if shop_id:
-            stmt = scoped(stmt, KnowledgeFaqRecord, shop_id)
+        # ★ 无条件挂作用域：批量删更不能依赖「调用方记得传 shop_id」——
+        #   这批 ids 来自请求体，漏一次就在别人的话术库里删一批。
+        stmt = scoped(stmt, KnowledgeFaqRecord, shop_id)
         res = await session.execute(stmt)
         await session.commit()
         return res.rowcount or 0
+
+
+# ====== 文档 → 话术草稿（第 288 轮：`knowledge_docs` 的出口）======
+
+async def create_faq_drafts(items: List[dict], shop_id: Optional[str] = None) -> dict:
+    """
+    批量写入 AI 拆分出的**草稿**话术（status 恒为 draft）。
+
+    ★ 两个"强制"都在服务端，不信前端传值：
+      ① `status` 覆盖为 draft —— 拆出来的条目未经人工确认不得进检索
+         （`customer_service/faq_source.load_faq_items` 只查 active）。
+      ② 同 kb 下 `question` 完全相同的跳过 —— 话术没有"新版本"语义，
+         同问不同答是错误而不是更新，判重权交回给人（见 ai_split_faq 注释 ②）。
+
+    ★ 缺 `question` 或 `answer` 的条目**丢弃**而不是补空壳：空条目在列表里
+      显示为一行空白，用户不知道它是什么，还得手动删。
+    """
+    async with async_session_factory() as session:
+        kb_ids = {str(it.get("kb_id") or "") for it in items if isinstance(it, dict)}
+        existing: set = set()
+        if kb_ids:
+            q = select(KnowledgeFaqRecord.question).where(
+                KnowledgeFaqRecord.kb_id.in_(kb_ids)
+            )
+            q = scoped(q, KnowledgeFaqRecord, shop_id)
+            existing = {row[0] for row in (await session.execute(q)).all()}
+
+        seen: set = set()
+        records = []
+        duplicated = 0
+        dropped = 0
+        for it in items:
+            if not isinstance(it, dict):
+                dropped += 1
+                continue
+            question = str(it.get("question") or "").strip()
+            answer = str(it.get("answer") or "").strip()
+            if not question or not answer:
+                dropped += 1
+                continue
+            if question in existing or question in seen:
+                duplicated += 1
+                continue
+            seen.add(question)
+            payload = dict(it)
+            payload["question"] = question
+            payload["answer"] = answer
+            payload["status"] = "draft"   # ★ 服务端强制（见 docstring ①）
+            records.append(build_faq_record(payload, shop_id=shop_id))
+
+        for r in records:
+            session.add(r)
+        await session.commit()
+        for r in records:
+            await session.refresh(r)
+        return {
+            "added": len(records),
+            "duplicated": duplicated,
+            "dropped": dropped,
+            "items": [faq_to_dict(r) for r in records],
+        }
+
+
+async def publish_draft_faqs(ids: List[str], shop_id: Optional[str] = None) -> dict:
+    """
+    把**草稿**话术发布为 active（进入客服检索）。
+
+    ★ 只转 `draft`，**不复活 archived**：归档是用户主动做的动作，
+      点"发布"时不该顺手把它拉回来 —— 那是另一个意图，要走编辑改状态。
+
+    ★ 「不存在」与「不属于本租户」**同一响应**（都进 `not_found`）：
+      区分二者等于把"这个 id 存在但属于别人"告诉调用方，可枚举别人的话术 id。
+    """
+    if not ids:
+        return {"published": 0, "ids": [], "skipped": [], "not_found": [], "items": []}
+
+    async with async_session_factory() as session:
+        q = select(KnowledgeFaqRecord).where(KnowledgeFaqRecord.id.in_(ids))
+        q = scoped(q, KnowledgeFaqRecord, shop_id)
+        rows = (await session.execute(q)).scalars().all()
+        found = {r.id: r for r in rows}
+
+        published: List[str] = []
+        skipped: List[dict] = []
+        for faq_id in ids:
+            record = found.get(faq_id)
+            if record is None:
+                continue
+            if record.status != "draft":
+                skipped.append({
+                    "id": faq_id,
+                    "status": record.status,
+                    "reason": f"当前状态为 {record.status}，只有草稿可以发布",
+                })
+                continue
+            record.status = "active"
+            record.updated_at = datetime.utcnow().isoformat()
+            published.append(faq_id)
+
+        await session.commit()
+        for faq_id in published:
+            await session.refresh(found[faq_id])
+        return {
+            "published": len(published),
+            "ids": published,
+            "skipped": skipped,
+            "not_found": [i for i in ids if i not in found],
+            "items": [faq_to_dict(found[i]) for i in published],
+        }
 
 
 # ====== 文档素材 ======
@@ -445,7 +596,7 @@ async def list_docs(shop_id: Optional[str]) -> List[dict]:
 async def get_doc_by_id(doc_id: str, shop_id: Optional[str] = None) -> Optional[KnowledgeDocRecord]:
     async with async_session_factory() as session:
         q = select(KnowledgeDocRecord).where(KnowledgeDocRecord.id == doc_id)
-        q = scoped_if(q, KnowledgeDocRecord, shop_id)
+        q = scoped(q, KnowledgeDocRecord, shop_id)
         return (await session.execute(q)).scalar_one_or_none()
 
 
@@ -463,7 +614,7 @@ async def delete_doc(doc_id: str, shop_id: Optional[str] = None) -> bool:
     """删除文档素材；不存在（或不属于该租户）返回 False"""
     async with async_session_factory() as session:
         q = select(KnowledgeDocRecord).where(KnowledgeDocRecord.id == doc_id)
-        q = scoped_if(q, KnowledgeDocRecord, shop_id)
+        q = scoped(q, KnowledgeDocRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return False

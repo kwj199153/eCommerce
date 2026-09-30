@@ -122,7 +122,11 @@ class Invoice(Base):
     number: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # 账单号 INV-xxxx
     amount: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 金额（元，正=收款，负=退款）
     currency: Mapped[str] = mapped_column(String(8), default="CNY")
-    status: Mapped[str] = mapped_column(String(20), default="pending")  # paid / pending / failed / refunded
+    # paid / pending / failed / refunded / expired
+    #   ★ expired = 「下单后超时未支付」或「被后一笔新订单顶掉」，由定时任务或下单路径写入。
+    #     它与 failed 的区别：failed 是网关明确告诉「这笔付不了」，expired 是「没等到钱」。
+    #     分开记是因为两者的善后不同（failed 要提示重试，expired 直接静默回收即可）。
+    status: Mapped[str] = mapped_column(String(20), default="pending")
     description: Mapped[Optional[str]] = mapped_column(String(255))  # 描述（如「专业版年付」）
     issued_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -137,6 +141,39 @@ class Invoice(Base):
     idempotency_key: Mapped[Optional[str]] = mapped_column(
         String(128), nullable=True, unique=True, index=True
     )
+
+    # ★★ 支付宝扫码支付（P0/P1，2026-09-25）：账单必须同时记下「**支付意图**」。
+    #
+    #   修复前 invoices 只回答「收了多少钱」，回答不了「这笔钱是为哪个套餐收的」。
+    #   这在 mock 支付下看不出问题（同一次请求内就改完了订阅），但真实支付的
+    #   确认是**异步**的：webhook 回调到达时，手上只有一个商户订单号，
+    #   要恢复「该给这个人开通什么」就只能从账单里读。
+    #   ⇒ 下面四个字段是「异步确认能闭环」的必要条件，不是冗余列。
+    plan_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("subscription_plans.id"), nullable=True
+    )
+    billing_cycle: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+
+    # 网关侧商户订单号（支付宝 out_trade_no；mock 下形如 mock-xxxx）。
+    # ★★ 唯一约束是 webhook 幂等的**硬**保证，不能只靠应用层判重：
+    #    支付宝会在没有收到 "success" 响应时重复投递同一个通知，
+    #    而应用层判重天生是「读-判断-写」，两个并发回调都读到 pending
+    #    就会各自激活一次订阅（表现为「续费周期被推进两次」）。
+    #    唯一约束让「重复落库」在 DB 层直接失败，不依赖任何应用层时序。
+    transaction_id: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, unique=True, index=True
+    )
+
+    # 支付渠道（mock / alipay / ...）。与 PaymentMethod.type 同词表，
+    # 但对账统计只认这一列 —— 它记的是「这笔钱**实际走哪个通道**收的」，
+    # 而 config.payment_gateway 只说明「当前配置是哪个」，两者不能互推。
+    payment_channel: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
+    # 扫码支付的二维码内容（支付宝 alipay.trade.precreate 返回的 qr_code）。
+    # ★ 必须落库，不能只在响应体里回给前端：用户扫码前刷新页面是常态，
+    #   不落库 ⇒ 「刷新即丢失待支付订单」⇒ 用户只能重新下单，多出一张废单，
+    #   而对账时那张废单看起来和「真实漏单」一模一样。
+    pay_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

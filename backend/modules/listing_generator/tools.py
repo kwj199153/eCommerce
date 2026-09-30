@@ -23,6 +23,7 @@ from .schemas import (
     TitleOptimizationRequest,
     BulletPointsRequest,
     DescriptionRequest,
+    KeywordRequest,
     SEOAnalysisRequest,
     ABTestRequest,
 )
@@ -101,7 +102,8 @@ async def _generate_search_terms_tool(
         title: 已确定的产品标题（必填）。
         category: 产品类目，用于补充类目词（可选）。
     """
-    resp = await _service.generate_search_terms(title, category)
+    req = KeywordRequest(title=title, category=category)
+    resp = await _service.generate_search_terms(req)
     return resp.model_dump_json()
 
 

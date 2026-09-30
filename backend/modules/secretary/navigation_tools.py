@@ -31,8 +31,23 @@ AGENT_IDS = [
     "review-analyst",
 ]
 
-# 与前端 utils/appActions.ts 的 AppView 对齐
-VIEW_IDS = ["faq", "candidates", "products", "assets", "rules", "monitor"]
+# 与前端 utils/appActions.ts 的 AppView 对齐。
+#
+# ★ 第 251 轮补齐两项（前端 AppView 加了、这里不跟就是「两边两套值」）：
+#   · `reviews`     —— 复盘库（第 7 个资料库，按店铺隔离）。
+#   · `competitors` —— 竞品监控**池**视图。
+#     ⚠️ 与 `monitor` **不是重复**：`monitor` 是「竞品监控**看板**」（大屏模式），
+#        前端 `handleKnowledgeNavigate` 收到它会**重定向**到 `openIntelBoard()`。
+#        两者都留：前者跳池子页面、后者开大屏，是两件事。
+    # ★ 第 291 轮：`dispositions`（差评处置）**从视图清单撤掉** ——
+    #   它不是独立视图，而是「差评台账」这条能力的后半段（批准 / 发放），
+    #   已并进客服功能栏「差评台账」右栏面板的**处置台账**。
+    #   留在这里的后果有两个：① LLM 以为有个资料库可跳，跳过去是空白；
+    #   ② 与前端 `AppView` 集合不等 ⇒ `check-review-library-view.cjs` 的 D5 红。
+VIEW_IDS = [
+    "faq", "candidates", "products", "assets", "rules", "reviews",
+    "competitors", "monitor",
+]
 
 # 账户菜单网关的 target（与前端 appActions.ts 的 account_menu 对齐）
 ACCOUNT_MENU_TARGETS = ["settings", "memory", "subscription", "logout"]
@@ -46,7 +61,10 @@ AgentId = Literal[
     "customer-service",
     "review-analyst",
 ]
-ViewId = Literal["faq", "candidates", "products", "assets", "rules", "monitor"]
+ViewId = Literal[
+    "faq", "candidates", "products", "assets", "rules", "reviews",
+    "competitors", "monitor",
+]
 AccountMenuTarget = Literal["settings", "memory", "subscription", "logout"]
 # ⚠️ 必须与前端 frontend/src/theme/presets.ts 的 `ThemeName` 保持一致（外加 system）。
 # 本枚举是**工具签名**的一部分 → LLM 只能从这里取值，所以加主题时漏改这里，
@@ -105,10 +123,11 @@ def _set_theme(mode: ThemeMode) -> str:
     return f'{{"action": "set_theme", "mode": "{mode}"}}'
 
 
-def _handoff_to_agent(agent_id: AgentId, intent: str, missing_fields: list[str]) -> str:
+def _handoff_to_agent(agent_id: AgentId, intent: str, missing_fields: list[str],
+                      query: str = "") -> str:
     """把当前对话「交接」给某个专业 Agent 接管。
 
-    适用场景：老板提出一个专业生成类需求，但主 Agent 判断当前信息不足，
+    适用场景：老板提出一个专业**生成类**需求，但主 Agent 判断当前信息不足，
     不足以直接产出结果（例如「帮我生成一张水壶的白底图」—— 缺少材质、
     造型、视角、是否需要 logo、产品细节等关键字段）。
 
@@ -117,10 +136,19 @@ def _handoff_to_agent(agent_id: AgentId, intent: str, missing_fields: list[str])
     - 列出需要向老板追问的缺失字段（missing_fields）
     - 专业 Agent 会接管对话，逐项追问补齐后再执行
 
+    ★ 它**不适用于任务类诉求**（入库 / 找品 / 算利润 / 分析链接）：那类诉求
+      信息再全也要落地执行，走 `switch_agent` + query。用 handoff 有两个后果 ——
+      原话丢失（`intent` 只是一句概括）、且前端只渲染追问、**不续跑**，
+      老板于是看到一个「只会反问字段的假 Agent」（实测：发了商品链接却被反问
+      要 asin / title / price）。
+
     Args:
         agent_id: 接管对话的目标 Agent 标识（枚举值）。
         intent: 已识别的意图，一句话描述老板想做什么（原样转述老板诉求）。
         missing_fields: 需要向老板追问的缺失字段清单（如 ["材质", "造型", "视角", "是否需要 logo"]）。
+        query: 老板**原话**（可选，但强烈建议带）。交接会切走对话，原话不带过去，
+            子 Agent 手里就只剩一句概括 —— 链接 / ASIN / 具体诉求这些**只在原话里**
+            存在的东西会丢。带上它，前端会把原话一并注入子 Agent 的对话区。
     """
     payload = {
         "action": "handoff",
@@ -128,7 +156,10 @@ def _handoff_to_agent(agent_id: AgentId, intent: str, missing_fields: list[str])
         "intent": intent,
         "missing_fields": missing_fields,
     }
+    if query and query.strip():
+        payload["query"] = query.strip()
     return json.dumps(payload, ensure_ascii=False)
+
 
 
 navigation_tools = [
@@ -157,8 +188,10 @@ navigation_tools = [
         description=(
             "打开资料库 / 看板视图。当老板想查看或管理某类数据时使用，例如"
             "「打开产品库」→ products，「打开选品库」→ candidates，"
-            "「打开竞品监控」→ monitor（仅竞品价格/上新监控，不含经营复盘），"
-            "「打开平台规则」→ rules。"
+            "「打开平台规则」→ rules，"
+            "「打开复盘库」/「看看以前归档的复盘」→ reviews，"
+            "「打开竞品监控池」/「竞品盯盘清单」→ competitors（清单页面），"
+            "「打开竞品监控看板」→ monitor（大屏；仅竞品价格/上新监控，不含经营复盘）。"
         ),
         metadata=READ_ONLY_METADATA,
     ),
@@ -199,6 +232,11 @@ navigation_tools = [
             "当老板提出专业生成类需求（如「生成一张 XX 的白底图」「写一个 XX 的视频脚本」「做 A+ 内容」）"
             "但主 Agent 判断关键信息不足（如生图缺材质/造型/视角/是否需要 logo/产品细节）时，"
             "**必须**调用本工具交接，而不是自己用默认值硬凑结果。"
+            "★ **适用范围只有「生成类」**（做图 / 视频脚本 / A+ 内容 / 详情页素材）。"
+            "★ **任务类诉求禁止用本工具**（「把这个链接加进选品库」「分析这个 ASIN 的利润」"
+            "「找找蓝海品类」等）—— 它们要的是**落地执行**而不是追问，请改用 switch_agent 并带上 query。"
+            "用本工具处理任务类诉求会丢原话、且切过去后不会真的开干，老板只会看到一个反问字段的假 Agent。"
+            "★ **必须把老板原话填进 query 参数**：链接 / ASIN 这类信息只在原话里，不带过去就永久丢了。"
             "各 Agent 与触发词对应同 switch_agent："
             "「做图/生成产品图/主图/白底图/素材」→ aigc-media；"
             "「视频脚本」→ aigc-media；"

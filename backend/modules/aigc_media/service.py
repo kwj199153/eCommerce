@@ -8,6 +8,8 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import logging
 
+from ai_infra.skills import is_skill_requested
+
 from .agent_aigc import AIGCMediaAgent
 from . import asset_gen
 from .schemas import (
@@ -82,7 +84,8 @@ async def analyze_main_image_service(request: MainImageAnalysisRequest) -> Dict[
         return {
             "success": True,
             "data": result_dict,
-            "message": "主图分析完成"
+            # 合规项未做自动判定 ⇒ 不能只说「分析完成」（会被读成「合规也没问题」）
+            "message": "主图分析完成（视觉评分/CTR 为模拟值；合规项未做自动判定，需人工核查）"
         }
     except Exception as e:
         logger.error(f"主图分析失败: {e}")
@@ -105,7 +108,8 @@ async def generate_a_plus_content_service(request: APlusContentRequest) -> Dict[
             brand=request.brand,
             features=request.features,
             specifications=request.specifications,
-            target_audience=request.target_audience
+            target_audience=request.target_audience,
+            product_asin=request.product_asin
         )
         result_dict = {
             "product_asin": result.product_asin,
@@ -368,10 +372,15 @@ async def check_compliance_service(request: ComplianceCheckRequest) -> Dict[str,
             "passed_checks": result.passed_checks,
             "recommendations": result.recommendations
         }
+        if result.overall_status == "manual_review_required":
+            # 不能报「合规检查完成」——那样读起来像「已经检查过了」
+            message = "本次未做自动合规判定（该能力未接入）：已列出待人工核查清单，请逐项确认后再发布"
+        else:
+            message = f"合规检查完成 - 状态: {result.overall_status}"
         return {
             "success": True,
             "data": result_dict,
-            "message": f"合规检查完成 - 状态: {result.overall_status}"
+            "message": message
         }
     except Exception as e:
         logger.error(f"合规检查失败: {e}")
@@ -443,6 +452,25 @@ async def chat_service(message: str, context: Optional[Dict] = None) -> Dict[str
     根据用户意图分发到对应的处理函数
     """
     try:
+        # ★★ 点名技能 ⇒ 关键词引导表不适用（第 246 轮）：它只会回一句
+        #   「请使用顶部工具」，用户点的技能一次都渲染不到（技能正文住在
+        #   system prompt 里，而本函数从不构造 prompt）。
+        #   让路给 `agent.stream_chat()` —— 那条路有工具环路，是**唯一**会把
+        #   技能正文注入 prompt 的通道。攒齐文本后按原契约返回。
+        #   ★ 未点名时下面的逻辑逐字不变。
+        if is_skill_requested():
+            parts: List[str] = []
+            async for chunk in agent.stream_chat(message):
+                if isinstance(chunk, str):
+                    parts.append(chunk)
+            return {
+                "intent": "skill",
+                "agent": "aigc_media",
+                "timestamp": datetime.now().isoformat(),
+                "message": "".join(parts),
+                "success": True,
+            }
+
         intent = agent.classify_intent(message)
 
         response = {

@@ -72,10 +72,23 @@ async def lifespan(app: FastAPI):
     seeded_map = await seed_base_data()
     _log.info("✅ 基础数据引导完成: {}", seeded_map)
 
+    # ★ P0-3（2026-09-30）：依赖探活必须是**周期性**的，
+    #   不能只在有人访问 /health 时才更新 —— 理由见
+    #   `_refresh_dependency_metrics_forever` 的 docstring。
+    dependency_task = asyncio.create_task(_refresh_dependency_metrics_forever())
+    _log.info("✅ 依赖指标刷新任务已启动（每 30s）")
+
     yield  # 应用运行中...
 
     # 关闭时：清理资源
     _log.info("🛑 正在关闭服务...")
+    # ★ 后台任务必须显式取消：不取消的话它会一直 sleep，
+    #   进程收不到退出条件（先取消、再 await，才算真的停住）。
+    dependency_task.cancel()
+    try:
+        await dependency_task
+    except asyncio.CancelledError:
+        pass
     try:
         from core.checkpoint import close_checkpoint
         await close_checkpoint()
@@ -265,6 +278,39 @@ def _probe_llm() -> dict:
     }
 
 
+async def _refresh_dependency_metrics_forever(interval: float = 30.0) -> None:
+    """
+    周期性刷新 `dependency_up` 指标（P0-3 新增）。
+
+    ★ 为什么需要它（否则告警是假的）：
+      `dependency_up` 原先**只**在 `/health` 端点里 `set()`。而 Prometheus
+      抓的是 `/metrics`，不会访问 `/health`；在没有外部探针的部署里，
+      这条时间序列**根本不存在** ⇒ `DependencyDown` 告警永远不触发。
+      「永不触发的告警」比「没有告警」更坏：它让人以为已经有监控了。
+
+    ★ 30s 的取法：比 Prometheus 的 15s 抓取周期略慢即可 —— 依赖状态不需要
+      更细的粒度，而每次探测都会真的发一条 SQL / PING，过密只是浪费。
+    """
+    from core.observability.metrics import DEPENDENCY_UP
+
+    while True:
+        try:
+            db_state = await _probe_database()
+            redis_state = await _probe_redis()
+            llm_state = _probe_llm()
+            DEPENDENCY_UP.set(1 if db_state["up"] else 0, name="postgres")
+            DEPENDENCY_UP.set(1 if redis_state["up"] else 0, name="redis")
+            DEPENDENCY_UP.set(1 if llm_state["up"] else 0, name="llm_config")
+            DEPENDENCY_UP.set(1, name="api")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # 探活自身失败不能让任务死掉：否则一次网络抖动就让指标永久停更，
+            # 而「停更」表现为「值停留在最后一次」，看着像一切正常。
+            _log.debug("依赖指标刷新失败: {}", exc)
+        await asyncio.sleep(interval)
+
+
 @app.get("/health")
 async def health_check(detail: bool = False):
     """
@@ -377,8 +423,15 @@ BUSINESS_AUTH = [Depends(require_auth_if_enabled)]
 #   platform_rules / knowledge_base / stores / conversation）**不挂** ——
 #   它们不烧钱，挂了只会误伤：用户翻几页资料库就把 API 额度耗光。
 #
-# 演示模式：两个 check_* 内部都会先调 require_auth_if_enabled，返回 None
-#   （演示模式）时直接 return，不计量不拦截 ⇒ 本地演示零影响。
+# 演示模式（★ 第 220 轮**更正**，此前那段话已失真）：
+#   旧注释写的是「两个 check_* 内部都会先调 require_auth_if_enabled，返回 None
+#   （演示模式）时直接 return，不计量不拦截」。前半句在第 182 轮就变了 ——
+#   `demo-token` 起被解析成一个**真 User**（不再是 None），于是后半句
+#   「直接 return」不再发生：免费版额度用满后演示链路一律 429
+#   （实测症状：选品分析师只能落到前端兜底文案）。
+#   第 220 轮由老板拍板「演示身份免配额」：两个 check_* 显式调用
+#   `demo_identity.is_demo_request`（唯一真源），演示身份放行且不计量；
+#   真账号（含普通免费用户）照常拦截。
 from core.metering.usage_tracker import check_api_quota, check_agent_chat_quota
 
 # API 调用配额：LLM 生成 / 出图 / 视频 / 声音复刻
@@ -427,6 +480,10 @@ app.include_router(device_router, prefix="/api/v1")
 #   拿不到店铺上下文。层级判定一律走 core/auth/accounts.py 的能力表。
 from core.auth.accounts_router import router as accounts_router
 app.include_router(accounts_router, prefix="/api/v1")
+# 审计读口（P0-5b）—— 仅**平台超管**可读。写入不经此 router：
+# 各写端点内自行调用 core.audit.record_audit()（自带会话，见其文件头）。
+from core.audit.router import router as audit_router
+app.include_router(audit_router, prefix="/api/v1")
 
 # 用户自助管理（个人资料 / 头像 / API 密钥 / 通知偏好）—— ★ 第 100 轮
 # 补的是 Settings.vue 那 7 个一直 404 的 `/users/*` 路径。
@@ -436,6 +493,44 @@ app.include_router(users_router, prefix="/api/v1")
 # 计费模块（自带鉴权）
 from modules.billing.router import router as billing_router
 app.include_router(billing_router, prefix="/api/v1")
+
+# 计费-支付回调与待支付查询（P0，2026-09-25 支付宝扫码支付）
+#   ★★ 为什么**不挂** BUSINESS_AUTH / API_QUOTA（本文件唯一的无鉴权业务路由）：
+#       `POST /billing/webhook/alipay` 的调用方是**支付宝服务器** ——
+#       它没有、也不可能有我们的 Bearer Token。挂上 BUSINESS_AUTH 会让
+#       每一条回调都 401，而支付宝只会按重试策略反复投递、最终放弃，
+#       表现是「用户付了钱、订阅永远不激活」，且我们这一侧零业务日志。
+#
+#   ★ 免鉴权**不等于**免门禁。这条路径的门是**验签 + 金额核对**，
+#     实现在 modules/billing/payment_router.py 与 payments.py：
+#       ① verify_notify()     —— 用支付宝公钥验 RSA2 签名（防伪造通知）
+#       ② amount_matches()    —— 金额必须与账单一致（防改金额）
+#     两道门缺任何一道都等于「任何人 curl 一下就能白拿年付套餐」。
+#
+#   ★ 该路径同时必须在限流中间件的豁免名单里
+#     （core/middleware/rate_limit.py::DEFAULT_EXEMPT_PATHS），
+#     否则支付宝的重试会被 429 —— 而 429 在支付宝看来只是"没收到确认"，
+#     它会继续重试，我们这边却看不到任何"被限流"的业务信号。
+#   ★ 同一模块下的另外三个端点（/payment/*）**自带**鉴权依赖
+#     （`require_acting_user`，见下一条注释），所以整个 router 不加全局依赖是安全的。
+#     ★ 判据：**免鉴权是按端点给的，不是按 router 给的** ——
+#       否则「回调免鉴权」这个需求会顺带把"查别人的账单"也一起开放。
+#
+#   ★★ 为什么 /billing/* 与 /payment/* 用 `require_acting_user` 而不是
+#      `get_current_user`（本轮修复的死代码，2026-09-25）：
+#        老板硬要求「演示用户无需扫码支付，保持目前功能」。
+#        `get_current_user` **不认** `demo-` 哨兵 ⇒ 演示请求在鉴权层就 401 ⇒
+#        `change_plan` 里 `if is_demo_request(request): gateway = get_gateway("mock")`
+#        那段分支**永远走不到**（注释很全、一行不执行）。
+#        `require_acting_user` 认演示身份（解析成演示账号主人，真 `User`），
+#        同时对**真匿名** fail-closed 401 —— 与 `get_current_user` 的唯一差别
+#        就是前者那一格，因此换成它之后「演示直通」才真正生效。
+#        ★ 与 `modules/skills/router.py` 第 182 轮的处置同判据：那边把技能写口
+#          从 `require_auth_if_enabled` 换成 `get_acting_user`，理由一模一样。
+#        ★ 为什么不直接把 `require_auth_if_enabled` 挂成 router 级依赖：
+#          那会把**公开定价** `/billing/plans` 一起关掉（见 router.py 该端点注释）。
+from modules.billing.payment_router import router as billing_payment_router
+app.include_router(billing_payment_router, prefix="/api/v1")
 
 # 选品分析模块 (Phase 2)（自带 get_current_user 鉴权）
 from modules.product_research.router import router as product_research_router
@@ -497,6 +592,13 @@ app.include_router(platform_rules_router, dependencies=BUSINESS_AUTH)  # 路由�
 from modules.knowledge_base.router import router as knowledge_base_router
 app.include_router(knowledge_base_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
 
+# 差评处置出口（第 287 轮 P0-2）
+# ★ 本模块此前只有 model / service / tools，**没有 router 也没挂载** ⇒
+#   `review_dispositions` 是「全库 0 行 + 无端点 + 前端零消费」的三无表。
+#   路由自带 /api/v1 前缀；不挂 API_QUOTA（这些端点不调 LLM、不烧钱）。
+from modules.trade.router import router as trade_router
+app.include_router(trade_router, dependencies=BUSINESS_AUTH)
+
 # 店秘书（主 Agent / 编排层）
 from modules.secretary.router import router as secretary_router
 app.include_router(secretary_router, dependencies=BUSINESS_AUTH + CHAT_QUOTA)  # 路由已包含 /api/v1 前缀
@@ -521,6 +623,16 @@ app.include_router(conversation_router, prefix="/api/v1", dependencies=BUSINESS_
 #   在 C2-4 落地，并由那个端点**自己**声明配额依赖。
 from modules.memory.router import router as memory_router
 app.include_router(memory_router, prefix="/api/v1")
+
+# 技能仓库（第 181 轮 · 批 B）—— 「Skill 仓库 / 技能管理」页的数据源。
+#
+# ★ 挂 `BUSINESS_AUTH`（optional auth），**不挂 `API_QUOTA`**：
+#   配额门的挂载原则是「只挂真正烧钱的端点」（LLM / 出图 / 视频 / 声音复刻），
+#   技能管理是纯 CRUD（读表 / 写表），不产生任何对模型的调用。
+#   读口必须是 optional auth —— 演示身份（user is None）要能读到演示技能；
+#   写口由服务层对无身份硬拒绝（403），见 modules/skills/router.py 的 docstring。
+from modules.skills.router import router as skills_router
+app.include_router(skills_router, dependencies=BUSINESS_AUTH)
 
 
 # ====== 附加模块（可插拔，默认关闭）======

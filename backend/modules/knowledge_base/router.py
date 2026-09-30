@@ -11,11 +11,13 @@ DELETE /api/v1/knowledge-base/{kb_id}            - 删除容器（级联删其�
 POST   /api/v1/knowledge-base/faqs               - 新建话术
 POST   /api/v1/knowledge-base/faqs/batch         - 批量导入（文件解析后提交）
 POST   /api/v1/knowledge-base/faqs/batch-delete  - 批量删除（勾选删除）
+POST   /api/v1/knowledge-base/faqs/publish       - 发布草稿（draft → active，进检索）
 PUT    /api/v1/knowledge-base/faqs/{faq_id}      - 更新话术
 DELETE /api/v1/knowledge-base/faqs/{faq_id}      - 删除话术
 POST   /api/v1/knowledge-base/docs               - 登记文档素材
 GET    /api/v1/knowledge-base/docs/{doc_id}      - 取单篇文档（含正文）
 DELETE /api/v1/knowledge-base/docs/{doc_id}      - 删除文档素材
+POST   /api/v1/knowledge-base/docs/{doc_id}/ai-split-faq - 从文档正文拆话术（落**草稿**）
 
 租户隔离：全部走 `get_current_shop_id`（X-Shop-ID 头）。
 无租户上下文时列表返回空 —— 与 candidates / monitors / platform-rules 一致。
@@ -142,6 +144,22 @@ async def batch_delete_faqs(payload: dict, shop_id: Optional[str] = Depends(get_
     return {"deleted": deleted, "ids": ids}
 
 
+@router.post("/knowledge-base/faqs/publish")
+async def publish_drafts(payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
+    """
+    发布草稿话术（draft → active），**发布后才会被客服检索命中**。
+
+    ★ 只转 draft，不复活 archived —— 归档是主动动作，不该被"发布"顺手拉回来。
+    ★ 部分成功是常态（勾选里可能混着已发布的），故返回
+      `published` / `skipped`（含原因）/ `not_found` 三份，前端逐类提示，
+      而不是一句"发布成功"把失败也盖过去。
+    """
+    ids = (payload or {}).get("ids")
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(status_code=422, detail="ids 不能为空")
+    return await service.publish_draft_faqs(ids, shop_id=shop_id)
+
+
 @router.put("/knowledge-base/faqs/{faq_id}")
 async def update_faq(
     faq_id: str,
@@ -195,3 +213,48 @@ async def delete_doc(doc_id: str, shop_id: Optional[str] = Depends(get_current_s
     if not ok:
         raise HTTPException(status_code=404, detail="文档不存在")
     return {"message": "文档已删除", "id": doc_id}
+
+
+@router.post("/knowledge-base/docs/{doc_id}/ai-split-faq")
+async def ai_split_faq_from_doc(doc_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
+    """
+    从文档正文提取话术条目，并**以草稿状态落库**（不进检索）。
+
+    ★ 这是 `knowledge_docs` 的**出口**：文档此前只能被列出来看一眼，
+      拆成话术后才真正进入业务链路（客服检索）。
+
+    ★ 为什么落草稿而不是直接落 active：
+      LLM 会把文档里的内部口径（成本价 / 供应商 / 只对某站点生效的承诺）
+      写进答案。草稿不进检索（`load_faq_items` 只查 active），
+      ⇒ 人工确认前，这些内容**不可能**被发给买家。
+
+    ★ 失败方向（LLM 不可用 / 无正文 / 提取不到）返回 200 + `degraded=True`
+      + 中文 reason，**不抛 4xx/5xx**：这不是请求写错了，是能力不可用；
+      但**绝不**返回空 items 假装成功 —— `degraded` 与 `reason` 必须同时给出，
+      前端据此提示"AI 拆分暂不可用"。
+    """
+    from modules.knowledge_base.ai_split_faq import split_faqs_from_doc
+
+    doc = await service.get_doc_by_id(doc_id, shop_id=shop_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+
+    result = await split_faqs_from_doc(doc)
+    if result.get("degraded"):
+        return {
+            "extracted": 0, "added": 0, "items": [],
+            "degraded": True, "reason": result.get("reason") or "AI 拆分暂不可用",
+        }
+
+    saved = await service.create_faq_drafts(result["faqs"], shop_id=shop_id)
+    return {
+        "extracted": result["extracted"],
+        "added": saved["added"],
+        "duplicated": saved["duplicated"],
+        "dropped": saved["dropped"],
+        "items": saved["items"],
+        "degraded": False,
+        "reason": "",
+        # ★ 明确告诉前端（进而告诉用户）这批条目**还没进检索**
+        "message": f"已拆出 {saved['added']} 条草稿话术，确认无误后发布才会被客服检索命中",
+    }

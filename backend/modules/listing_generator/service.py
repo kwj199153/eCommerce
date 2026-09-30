@@ -14,6 +14,7 @@ from .schemas import (
     TitleOptimizationRequest,
     BulletPointsRequest,
     DescriptionRequest,
+    KeywordRequest,
     SEOAnalysisRequest,
     ABTestRequest,
     TitleOptimizationResponse,
@@ -102,6 +103,7 @@ class ListingGeneratorService:
             brand="",
             category="",
             features=[],
+            custom_prompt=request.custom_prompt,
         )
 
         # 同时分析原标题的问题
@@ -127,6 +129,7 @@ class ListingGeneratorService:
         result = await self.agent._generate_bullet_points(
             product_name=request.product_name,
             features=request.features,
+            custom_prompt=request.custom_prompt,
         )
 
         tips = []
@@ -151,6 +154,7 @@ class ListingGeneratorService:
         result = await self.agent._generate_description(
             product_name=request.product_name,
             features=request.features,
+            custom_prompt=request.custom_prompt,
         )
 
         return DescriptionResponse(
@@ -162,11 +166,12 @@ class ListingGeneratorService:
         )
 
     async def generate_search_terms(
-        self, title: str, category: str = ""
+        self, request: "KeywordRequest"
     ) -> SearchTermsResponse:
         """生成后台搜索词"""
         from .agent_listing import ListingTitle
 
+        title = request.title
         # 构建临时标题对象
         title_obj = ListingTitle(
             title=title,
@@ -176,7 +181,9 @@ class ListingGeneratorService:
             seo_score=0,
         )
 
-        result = await self.agent._generate_search_terms(title_obj, category)
+        result = await self.agent._generate_search_terms(
+            title_obj, request.category, custom_prompt=request.custom_prompt
+        )
 
         usage_tips = [
             "使用空格分隔各个关键词",

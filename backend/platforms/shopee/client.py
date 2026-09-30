@@ -89,7 +89,3 @@ class ShopeeAdapter(PlatformAdapter):
     ) -> List[ReviewData]:
         # TODO: 对接 Shopee Get Comment List API
         return []
-
-    async def get_bsr_rank(self, product_id: str) -> Optional[int]:
-        # Shopee 无 BSR 概念，返回 None
-        return None

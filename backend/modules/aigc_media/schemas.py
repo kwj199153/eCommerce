@@ -8,6 +8,10 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
+# ★ 「本次请求的作用对象」的形状定义在机制层（`ai_infra/context_target.py`）。
+#   第 257 轮起三条、第 298 轮起四条（+ 客服）共用同一个形状。
+from ai_infra.context_target import ContextTargetPayload
+
 
 # ============================================================
 # 枚举类型
@@ -119,10 +123,19 @@ class ComplianceCheckItem(BaseModel):
 
 
 class ComplianceCheckResult(BaseModel):
-    """合规检查结果"""
+    """合规检查结果
+
+    status 是**唯一权威判别位**：
+
+    - "manual_review_required"：未做自动判定。score / passed / issues 都是空占位
+      （score=0.0 **不代表 0 分**），checklist 给出人工核查项。
+    - "checked"：已做自动判定，其余字段才有效。
+    """
+    status: str = "checked"
     score: float
     passed: List[str]
     issues: List[ComplianceCheckItem]
+    checklist: List[str] = []
 
 
 class ABTestVariant(BaseModel):
@@ -153,6 +166,10 @@ class APlusContentRequest(BaseModel):
     features: List[str] = Field(..., min_length=1, description="产品特性列表")
     specifications: Optional[Dict[str, str]] = Field(default=None, description="规格参数")
     target_audience: str = Field(default="", description="目标受众")
+    product_asin: str = Field(
+        default="",
+        description="产品 ASIN（可选；留空则响应里 product_asin 为空串 —— 服务端不编造）",
+    )
 
 
 class APlusModuleResponse(BaseModel):
@@ -361,7 +378,8 @@ class ComplianceIssueItem(BaseModel):
 
 class ComplianceReportResponse(BaseModel):
     """合规报告响应"""
-    overall_status: str  # pass/warning/fail
+    # pass/warning/fail；manual_review_required = 未做自动判定（其余字段为空占位，勿当「0 分」读）
+    overall_status: str
     score: float
     issues: List[ComplianceIssueItem]
     passed_checks: List[str]
@@ -450,6 +468,24 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="用户消息")
     session_id: Optional[str] = Field(default=None, description="会话ID")
     context: Optional[Dict[str, Any]] = Field(default=None, description="上下文信息")
+
+    # ★ 点名通道（第 188 轮）：用户点名本次对话要用的技能名（可选）。
+    #   留空 ⇒ 只注入技能目录，仍由模型自己判断用哪条（渐进披露的原路径）。
+    #   ★ 归属校验不在这里：技能名由服务端在 `read_skill_text` 里按
+    #     身份 + 启用 + 对本 Agent 启用 三重过滤，请求体只负责**传递名字**。
+    skill: Optional[str] = Field(default=None, description="本次对话指定使用的技能名（可选）")
+
+    # ★ 本次请求的「作用对象」（第 257 轮）。与 `skill` 是**一对**：
+    #   `skill` 说「这次用哪条技能」，它说「这次冲着哪个对象来的」。
+    #   本 Agent 的素材生成此前只能靠用户消息里的人话知道"给哪个商品做图/做脚本"。
+    #   ★ 传 `null` 与**不传**含义不同（明确没有 vs 客户端未参与），
+    #     判别由 `model_fields_set` 承担，本字段故意不给默认值。
+    #   ★ 本 Agent **只注入、不拒答**（与选品不同）：图片 / 脚本类技能里
+    #     有一部分本来就按类目或风格作答，不针对具体商品，挂 fail-closed 会误伤。
+    context_target: Optional[ContextTargetPayload] = Field(
+        default=None,
+        description="本次请求的作用对象；传 null 表示本次明确没有对象",
+    )
 
 
 # ============================================================

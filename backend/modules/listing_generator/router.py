@@ -25,6 +25,8 @@ from core.auth.dependencies import require_auth_if_enabled
 from core.identity.models import User
 
 from ai_infra.sse import sse_event_stream
+from ai_infra.context_target import bind_context_target, context_target_payload
+from ai_infra.skills import bind_requested_skill
 
 from .schemas import (
     GenerateListingRequest,
@@ -32,6 +34,7 @@ from .schemas import (
     TitleOptimizationRequest,
     BulletPointsRequest,
     DescriptionRequest,
+    KeywordRequest,
     SEOAnalysisRequest,
     ABTestRequest,
     ListingChatRequest,
@@ -69,11 +72,8 @@ async def generate_listing(request: GenerateListingRequest):
     }
     ```
     """
-    try:
-        result = await service.generate_complete_listing(request)
-        return ApiResponse(data=result.dict(), message="Listing 生成成功")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await service.generate_complete_listing(request)
+    return ApiResponse(data=result.dict(), message="Listing 生成成功")
 
 
 @router.post("/optimize", response_model=ApiResponse, summary="优化现有 Listing")
@@ -86,21 +86,15 @@ async def optimize_listing(request: OptimizeListingRequest):
     - 优化原因
     - 预期提升效果
     """
-    try:
-        result = await service.optimize_listing(request)
-        return ApiResponse(data=result.dict(), message="优化分析完成")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await service.optimize_listing(request)
+    return ApiResponse(data=result.dict(), message="优化分析完成")
 
 
 @router.post("/optimize/title", response_model=ApiResponse, summary="优化标题")
 async def optimize_title(request: TitleOptimizationRequest):
     """单独优化 Listing 标题，返回 SEO 改进版本"""
-    try:
-        result = await service.optimize_title(request)
-        return ApiResponse(data=result.dict(), message="标题优化完成")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await service.optimize_title(request)
+    return ApiResponse(data=result.dict(), message="标题优化完成")
 
 
 @router.post("/generate/bullets", response_model=ApiResponse, summary="生成五点描述")
@@ -113,11 +107,8 @@ async def generate_bullets(request: BulletPointsRequest):
     - 详细说明文字
     - 情感触发设计
     """
-    try:
-        result = await service.generate_bullet_points(request)
-        return ApiResponse(data=result.dict(), message="五点描述生成成功")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await service.generate_bullet_points(request)
+    return ApiResponse(data=result.dict(), message="五点描述生成成功")
 
 
 @router.post("/generate/description", response_model=ApiResponse, summary="生成产品描述")
@@ -130,18 +121,12 @@ async def generate_description(request: DescriptionRequest):
     - HTML 富文本格式（A+ Content 风格）
     - 多段落结构化内容
     """
-    try:
-        result = await service.generate_description(request)
-        return ApiResponse(data=result.dict(), message="产品描述生成成功")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await service.generate_description(request)
+    return ApiResponse(data=result.dict(), message="产品描述生成成功")
 
 
 @router.post("/generate/keywords", response_model=ApiResponse, summary="生成后台关键词")
-async def generate_keywords(
-    title: str,
-    category: str = "",
-):
+async def generate_keywords(request: KeywordRequest):
     """
     基于标题自动生成后台搜索词（Search Terms）
 
@@ -149,12 +134,10 @@ async def generate_keywords(
     - 总长度 ≤ 250 字节
     - 不重复标题已有词汇
     - 包含同义词、长尾词、拼写变体
+    - 可选 `custom_prompt`：完全替换默认词池，直接 LLM 生成
     """
-    try:
-        result = await service.generate_search_terms(title, category)
-        return ApiResponse(data=result.dict(), message="关键词生成成功")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await service.generate_search_terms(request)
+    return ApiResponse(data=result.dict(), message="关键词生成成功")
 
 
 @router.post("/analyze/seo", response_model=ApiResponse, summary="SEO 分析诊断")
@@ -168,12 +151,19 @@ async def analyze_seo(request: SEOAnalysisRequest):
     - 通过/未通过检查项清单
     - 具体改进建议
     - 等级评定（A/B/C/D/F）
+
+    ★ 第 300 轮：`service.analyze_seo` 会在「Agent 未产出结构化结果」时
+      抛 `ValueError`（消息里说清真因，不编造全 0 分报告）。该异常原先
+      在**本层无人捕获** ⇒ 穿透到 Starlette 全局 500 ⇒ 前端只看到
+      「服务器内部错误」，把「LLM 没配好」误读成「代码崩了」。
+      状态码选 503 而不是 422：422 在本仓语义是「载荷不合法」，而这里
+      用户入参合法、缺的是**上游依赖未产出**（同 aigc_media 的 503 用法）。
     """
     try:
         result = await service.analyze_seo(request)
-        return ApiResponse(data=result.dict(), message="SEO 分析完成")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    return ApiResponse(data=result.dict(), message="SEO 分析完成")
 
 
 @router.post("/ab-test", response_model=ApiResponse, summary="生成 A/B 测试变体")
@@ -186,11 +176,8 @@ async def create_ab_test(request: ABTestRequest):
     - 测试假设
     - 修改后的内容
     """
-    try:
-        result = await service.generate_ab_test_variants(request)
-        return ApiResponse(data=result.dict(), message="A/B 变体生成成功")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await service.generate_ab_test_variants(request)
+    return ApiResponse(data=result.dict(), message="A/B 变体生成成功")
 
 
 @router.post("/chat", response_model=ApiResponse, summary="自然语言对话")
@@ -208,16 +195,25 @@ async def chat_with_listing_agent(
     - 获取平台规则解读
     - 请求案例参考
     """
-    try:
+    # ★ 点名通道（第 188 轮）：本次对话若指定了技能名，把它置进
+    #   调用链上下文，由 `skills_selected` 段落把该技能正文注入
+    #   system prompt（与 `load_skill` 共用同一个解析实现）。
+    # ★ 「作用对象」与它**同一个作用域**（第 257 轮）：两条通道一起
+    #   入栈、一起出栈，避免出现「技能读到了、对象没读到」的半态。
+    #   ★ 本 Agent **只注入、不拒答**（与选品不同）：本家的关键词挖掘 /
+    #     类目分析类技能按类目或全市场作答，不需要具体商品，
+    #     挂 fail-closed 会把一次正常提问变成一句拒答（误伤）。
+    async with (
+        bind_requested_skill(request.skill),
+        bind_context_target(context_target_payload(request)),
+    ):
         result = await service.chat(
             request.message,
             request.context,
             request.session_id,
             user_id=current_user.id if current_user else None,
         )
-        return ApiResponse(data=result, message="OK")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return ApiResponse(data=result, message="OK")
 
 
 @router.post("/chat/stream", summary="自然语言对话（SSE 流式）")
@@ -237,8 +233,15 @@ async def chat_with_listing_agent_stream(
 
     async def _wrapped():
         try:
-            async for event in sse_event_stream(service.stream_chat(request.message)):
-                yield event
+            # ★ 写入点必须在**生成器体内**：包在返回 StreamingResponse
+            #   的外层，`async with` 会在生成器被第一次迭代之前就退出 ⇒ 等于没设。
+            # ★ 作用对象同域入栈（第 257 轮），理由见 `/chat` 那处注释。
+            async with (
+                bind_requested_skill(request.skill),
+                bind_context_target(context_target_payload(request)),
+            ):
+                async for event in sse_event_stream(service.stream_chat(request.message)):
+                    yield event
         except Exception as e:
             yield f"event: error\ndata: {_json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
 

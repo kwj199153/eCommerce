@@ -39,6 +39,7 @@ from modules.monitors.service import (
     group_to_dict,
     apply_fields,
     normalize_asin,
+    list_monitors as list_monitors_svc,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["竞品监控池"])
@@ -48,24 +49,24 @@ router = APIRouter(prefix="/api/v1", tags=["竞品监控池"])
 
 @router.get("/monitors")
 async def list_monitors(shop_id: Optional[str] = Depends(get_current_shop_id)):
-    """监控池列表（按店铺过滤；新增的排在前面）"""
-    if not shop_id:
-        return {"items": [], "total": 0}
-    async with async_session_factory() as session:
-        rows = (await session.execute(
-            scoped(select(MonitorRecord), MonitorRecord, shop_id)
-            .order_by(MonitorRecord.created_at.desc())
-        )).scalars().all()
-    items = [record_to_dict(r) for r in rows]
-    return {"items": items, "total": len(items)}
+    """监控池列表（按店铺过滤；新增的排在前面）。
+
+    ★ 第 218 轮（P1）：查询收口到 `monitors/service.list_monitors`
+      （内部走 `core.library_query` 内核）—— 改前是本 handler 体里的**内联实现**。
+    ★ **出参零变化**：仍是 `{"items": [...], "total": N}`；
+      默认排序仍是 `created_at` 倒序（逐字不变）。
+    """
+    rows = await list_monitors_svc(shop_id)
+    return {"items": [record_to_dict(r) for r in rows], "total": len(rows)}
 
 
 @router.get("/monitors/{monitor_id}")
 async def get_monitor(monitor_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(MonitorRecord).where(MonitorRecord.id == monitor_id)
-        if shop_id:
-            q = scoped(q, MonitorRecord, shop_id)
+        # 无条件挂店铺作用域：缺 X-Shop-ID 时 shop_id=None ⇒ col IS NULL ⇒ 0 行，
+        # 走 404（安全失败方向），而非跨租户读。
+        q = scoped(q, MonitorRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="监控记录不存在")
@@ -89,8 +90,7 @@ async def create_monitor_endpoint(payload: dict, shop_id: Optional[str] = Depend
 async def update_monitor(monitor_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(MonitorRecord).where(MonitorRecord.id == monitor_id)
-        if shop_id:
-            q = scoped(q, MonitorRecord, shop_id)
+        q = scoped(q, MonitorRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="监控记录不存在")
@@ -106,8 +106,7 @@ async def update_monitor(monitor_id: str, payload: dict, shop_id: Optional[str] 
 async def delete_monitor(monitor_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(MonitorRecord).where(MonitorRecord.id == monitor_id)
-        if shop_id:
-            q = scoped(q, MonitorRecord, shop_id)
+        q = scoped(q, MonitorRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="监控记录不存在")
@@ -240,8 +239,7 @@ async def create_monitor_group(payload: dict, shop_id: Optional[str] = Depends(g
 async def update_monitor_group(group_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(MonitorGroupRecord).where(MonitorGroupRecord.id == group_id)
-        if shop_id:
-            q = scoped(q, MonitorGroupRecord, shop_id)
+        q = scoped(q, MonitorGroupRecord, shop_id)
         g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
@@ -265,8 +263,7 @@ async def delete_monitor_group(group_id: str, shop_id: Optional[str] = Depends(g
     """
     async with async_session_factory() as session:
         q = select(MonitorGroupRecord).where(MonitorGroupRecord.id == group_id)
-        if shop_id:
-            q = scoped(q, MonitorGroupRecord, shop_id)
+        q = scoped(q, MonitorGroupRecord, shop_id)
         g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")

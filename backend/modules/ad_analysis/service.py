@@ -13,15 +13,11 @@ from .schemas import (
     SearchTermAnalysisRequest,
     BidOptimizationRequest,
     CompetitorAnalysisRequest,
-    BudgetOptimizationRequest,
-    AnomalyDetectionRequest,
     AdChatRequest,
     DiagnosisResponse,
     SearchTermResponse,
     BidStrategyResponse,
     CompetitorResponse,
-    BudgetOptimizationResponse,
-    AnomalyResponse,
     ChatResponse,
 )
 
@@ -190,80 +186,6 @@ class AdAnalysisService:
         _guard(response, data)
         return CompetitorResponse(**data)
 
-    @staticmethod
-    async def optimize_budget(request: BudgetOptimizationRequest, store_id: Optional[str] = None) -> BudgetOptimizationResponse:
-        """
-        预算分配优化
-
-        Args:
-            request: 优化请求参数
-
-        Returns:
-            预算分配方案
-        """
-        agent = get_agent()
-
-        seasonality_map = {
-            "low": "淡季（减少投放）",
-            "normal": "正常季节",
-            "high": "旺季前（逐步加码）",
-            "peak": "旺季（全力投放）",
-        }
-
-        query = f"优化预算分配，{seasonality_map.get(request.seasonality_factor, '正常季节')}"
-
-        if request.target_roas:
-            query += f"，目标 RoAS {request.target_roas}x"
-        if request.total_daily_budget:
-            query += f"，总日预算 ${request.total_daily_budget}"
-
-        context = {
-            "store_id": store_id,
-            "total_daily_budget": request.total_daily_budget,
-            "target_roas": request.target_roas,
-            "min_campaign_budget": request.min_campaign_budget,
-            "seasonality_factor": request.seasonality_factor,
-        }
-
-        response = await agent.invoke(query, context)
-        data = response.data or {}
-
-        _guard(response, data)
-        return BudgetOptimizationResponse(**data)
-
-    @staticmethod
-    async def detect_anomalies(request: AnomalyDetectionRequest, store_id: Optional[str] = None) -> AnomalyResponse:
-        """
-        广告异常检测
-
-        Args:
-            request: 检测请求参数
-
-        Returns:
-            异常检测报告
-        """
-        agent = get_agent()
-        sensitivity_map = {
-            "low": "低灵敏度（仅报严重异常）",
-            "medium": "中灵敏度（推荐）",
-            "high": "高灵敏度（捕捉所有波动）",
-        }
-
-        query = f"检测广告数据异常，{sensitivity_map.get(request.sensitivity, '中灵敏度')}"
-
-        context = {
-            "store_id": store_id,
-            "check_period": request.check_period,
-            "sensitivity": request.sensitivity,
-            "alert_thresholds": request.alert_thresholds,
-            "notify": request.notify,
-        }
-
-        response = await agent.invoke(query, context)
-        data = response.data or {}
-
-        _guard(response, data)
-        return AnomalyResponse(**data)
 
     @staticmethod
     async def chat(request: AdChatRequest, store_id: Optional[str] = None) -> ChatResponse:
@@ -289,8 +211,6 @@ class AdAnalysisService:
             "看看搜索词报告",
             "给我一些出价建议",
             "分析一下竞品广告",
-            "优化一下预算分配",
-            "最近有没有异常",
         ]
 
         return ChatResponse(
@@ -343,20 +263,6 @@ class AdAnalysisService:
                     "description": "分析竞争对手广告策略、展示份额、关键词重叠",
                     "endpoint": "/api/v1/ad-analysis/competitors",
                     "input_fields": ["competitor_asins", "auto_detect"],
-                },
-                {
-                    "id": "budget",
-                    "name": "预算优化",
-                    "description": "多Campaign 智能预算分配，提升整体 ROI",
-                    "endpoint": "/api/v1/ad-analysis/budget",
-                    "input_fields": ["total_daily_budget", "target_roas"],
-                },
-                {
-                    "id": "anomaly",
-                    "name": "异常检测",
-                    "description": "自动检测花费突增、转化骤降等异常情况",
-                    "endpoint": "/api/v1/ad-analysis/anomalies",
-                    "input_fields": ["check_period", "sensitivity"],
                 },
             ],
             "supported_platforms": ["amazon"],

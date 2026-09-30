@@ -389,6 +389,23 @@ async def login(
     )
     await db.commit()
 
+    # ★ P0-5（第 327 轮）：登录成功再补一条**通用审计**。
+    #   与上面的 `login_attempts`（登录专用：每次尝试一条、含失败）刻意并存 ——
+    #   本行回答的是「谁在什么时候从哪个 IP 登录成功了」，走统一审计表，
+    #   与其余写操作共用同一套读口与查询口径（见 core/audit/models.py 文件头）。
+    #   ★ 函数内 import：core 内部避免新增 import 期环
+    #     （audit 读口反向依赖 auth，顶层互相 import 会把初始化顺序变成隐式约束）。
+    from core.audit import ACTION_LOGIN_SUCCESS, TARGET_USER, record_audit
+
+    await record_audit(
+        action=ACTION_LOGIN_SUCCESS,
+        actor=user,
+        target_type=TARGET_USER,
+        target_id=user.id,
+        summary=f"登录成功：{user.email}",
+        request=request,
+    )
+
     # 7. 生成 Token（带凭据版本，供改密后整批失效）
     tokens = create_token_pair(
         user_id=user.id,

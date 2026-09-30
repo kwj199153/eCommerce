@@ -8,26 +8,49 @@
 2. 出价策略建议 - 基于历史数据+竞品分析的智能出价
 3. 搜索词效果报告 - 高效/低效词识别与建议
 4. 竞品广告监控 - 关键词重叠、出价对比、展示份额
-5. 预算分配优化 - 多Campaign智能调拨
-6. 广告异常检测 - 花费突增、转化骤降、展示量异常
 
 设计模式：
-- 与 ProductResearchAgent 保持一致的独立实现（不继承 BaseAgent）
-- 意图分类 + 多方法路由架构
+- 继承 `BaseAgent`，并组合一个 `BaseAgent` 作**工具路由子层**（`_build_router()`）
+  ⇒ 模型能自主调用 `ad_analysis_tools` 的 4 个工具（第 204 轮接线；
+    第 316 轮由 6 收敛到 4 —— 「预算分配 / 异常检测」两个工具退役）。
+  ★ 原文写的是「与 ProductResearchAgent 保持一致的独立实现（**不继承
+    BaseAgent**）」—— 早已过时（类声明就是 `class AdAnalysisAgent(BaseAgent)`），
+    第 204 轮一并更正。
+- 意图分类（`_classify_intent`）+ 多方法路由架构；**工具环路优先**，
+  未命中再落到规则引擎
 - 结构化数据输出供前端 SmartPanel 渲染
 """
 
 import json
 import re
+from contextvars import ContextVar
 from typing import List, Dict, Any, Optional, AsyncIterable
 from datetime import date, datetime, timedelta
 
 from pydantic import BaseModel, Field
 
 from core.logger import get_logger
-from ai_infra.sse import progress
+from ai_infra.sse import StreamDigest, progress
+# 竞品快照读取入口（表的所有者 amazon_sp 提供）。本模块原先自己走数据源工厂，
+# 无 SP-API 凭据时静默回退 Mock ⇒ 「竞品广告分析」看的是现编竞品。见函数 docstring。
+from modules.amazon_sp import load_competitor_snapshots
 
 logger = get_logger(__name__)
+
+
+#: 请求级店铺归属（第 204 轮）。
+#:
+#: ★★★ 工具层**没有** `store_id` 形参 —— 工具入参由 LLM 生成，而归属只能由
+#:   服务端注入（同族判据：`core.tenant.middleware.get_current_shop_id`）。
+#:   所以 6 个广告工具从本 ContextVar 取归属，写法与
+#:   `competitor_intel` / `product_research` 完全一致。
+#:
+#: ★ 唯一写入点 = `_route_via_tools()`（工具环路的唯一入口），且必须发生在
+#:   工具被调用**之前** —— 否则第一次工具调用会带着 `store_id=None` 跑完，
+#:   服务层 `_load_ad_rows(None, ...)` 直接返回空表，症状是「工具接了却永远没数据」。
+_current_shop_id: ContextVar[Optional[str]] = ContextVar(
+    "ad_analysis_current_shop_id", default=None
+)
 
 
 # ====== 数据源接入（唯一取数点）======
@@ -60,6 +83,35 @@ def _agg_rows(rows: List[Dict]) -> Dict[str, float]:
     }
 
 
+def _daily_trend_from_rows(rows: List[Dict]) -> Dict[str, List[Any]]:
+    """按日期聚合花费/销售（纯函数，零随机数）。
+
+    ★ 为什么必须有它：诊断响应此前只有「账户级聚合值」，**没有任何时间序列**。
+      前端看板的趋势图因此只能读本地硬编码数组 —— 一个「画得像在动、
+      其实永远不变」的假图表。而 rows 本身**带 `date` 字段**（两个数据源都写），
+      所以这里是**把已有数据聚合出来**，不是补造数值。
+
+    ★ 关于粒度诚实性（重要，别把它当 bug 修）：
+      `SpApiDataSource.fetch_ad_metrics` 在拿不到按天拆分的花费时，会把整段
+      活动数据写在 `date_to` 当天，其 docstring 已明示「不做随机插值」。
+      于是这里的 `labels` 可能只有 1 个点 —— 那是**真实情况**。
+      前端应能渲染单点，而**不得**为了让曲线好看去插值。
+    """
+    buckets: Dict[str, Dict[str, float]] = {}
+    for r in rows:
+        d = str(r.get("date") or "").strip()
+        if not d:
+            continue
+        b = buckets.setdefault(d, {"spend": 0.0, "sales": 0.0})
+        b["spend"] += float(r.get("spend") or 0)
+        b["sales"] += float(r.get("sales") or 0)
+    labels = sorted(buckets)
+    return {
+        "labels": labels,
+        "spend": [round(buckets[d]["spend"], 2) for d in labels],
+        "sales": [round(buckets[d]["sales"], 2) for d in labels],
+    }
+
 def _load_ad_rows(store_id, time_range="30d") -> List[Dict]:
     """取本店铺的广告指标（唯一入口，经工厂）。
 
@@ -85,20 +137,54 @@ def _load_ad_rows(store_id, time_range="30d") -> List[Dict]:
         raise
 
 
-def _load_competitor_rows(store_id, time_range="30d") -> List[Dict]:
-    """取本店铺的竞品快照（唯一入口，经工厂）。语义同 `_load_ad_rows`。"""
+def _latest_row_per_asin(rows: List[Dict]) -> List[Dict]:
+    """逐日快照行 → 每个竞品 ASIN **最新一行**（纯函数，口径同 competitor_intel）。
+
+    ★ 为什么必须收口在这里：`amazon_competitor_snapshots` 是**逐日行**
+      （一个 ASIN 一天一行），而「竞品格局」要的是每个竞品的**当前位置**
+      （BSR / 评论数 / 评分）。把时序直接摊成 `List[CompetitorAdData]`
+      会把同一个竞品重复 N 次 —— 实测 6 个竞品变成 126 条，且份额分母被撑大
+      ⇒ ΣSOV 只有 42 而不是 ~100。
+
+    ★ 这不是本次改造引入的缺陷：改造前的数据源 `fetch_competitors()` 同样返回
+      「每 2 天一个点」的时序，旧实现在 6 个竞品上也会产出 ~90 条；只是那时
+      每条都带随机 SOV，看着"很专业"，所以从来没被发现。改造把行数从「每 2 天」
+      变成「每天」，只是把同一个缺陷放大了。
+
+    ★ 取最新一行的理由与 `competitor_intel._build_from_rows()` 完全一致：
+      两个 Agent 看的是同一张表、同一个"当前值"口径，结果才不会又分叉。
+    """
+    grouped: Dict[str, Dict] = {}
+    for r in rows:
+        asin = str(r.get("competitor_asin") or "").upper()
+        if not asin:
+            continue
+        prev = grouped.get(asin)
+        if prev is None or str(r.get("snapshot_date") or "") >= str(prev.get("snapshot_date") or ""):
+            grouped[asin] = r
+    return [grouped[a] for a in sorted(grouped)]
+
+
+async def _load_competitor_rows(store_id, time_range="30d") -> List[Dict]:
+    """取本店铺的竞品快照（唯一入口 → 走 `amazon_sp` 的**表读取**）。
+
+    ★ 第 172 轮修正：本函数曾经是**第二份**「经工厂取竞品」的实现 ——
+      `get_data_source(prefer="auto")` 在无 SP-API 凭据时回退到
+      `MockAmazonDataSource`，于是「竞品广告分析」看到的是现编的
+      TP-Link / Anker / JBL，而同一平台的「竞品情报」已经在读监控池展开的真表。
+      两个功能回答两个竞品世界，且**没有任何测试会发现**（本模块此前无测试）。
+      ⇒ 查询本体上收到表的所有者 `modules/amazon_sp`，两处共用同一个入口。
+
+    ★ 与 `_load_ad_rows` 的差别是**刻意的**：广告指标没有「用户定义的盯防对象」
+      那样的输入，落库只能靠编数；竞品快照有监控池作真源 ⇒ 前者继续经工厂，
+      后者读表。别为了"统一"把广告指标也灌成假数据。
+    """
     if not store_id:
         return []
-    from modules.amazon_sp import get_data_source
-
-    src = get_data_source(prefer="auto", seed=42)
-    d_to = date.today()
-    d_from = d_to - timedelta(days=_days_of(time_range) - 1)
-    try:
-        return list(src.fetch_competitors(store_id, d_from, d_to))
-    except Exception as e:
-        logger.error(f"[ad_analysis] 取竞品快照失败 store={store_id}: {e}")
-        raise
+    # ★ 出口处收敛成「每 ASIN 一行」—— 见 `_latest_row_per_asin` 的 docstring
+    #   （逐日行摊平会把同一竞品重复 N 次，份额分母被撑大）。
+    rows = await load_competitor_snapshots(store_id, days=_days_of(time_range))
+    return _latest_row_per_asin(rows)
 
 
 # 结构化意图 → 阶段进度文案（stream_chat 在耗时分析前发给前端，避免空转）
@@ -107,8 +193,6 @@ _INTENT_PROGRESS = {
     "search_terms": "正在分析搜索词报告…",
     "bid_optimize": "正在生成出价建议…",
     "competitor": "正在分析广告竞争格局…",
-    "budget": "正在优化预算分配…",
-    "anomaly": "正在检测投放异常…",
 }
 
 
@@ -172,6 +256,10 @@ class DiagnosisReport(BaseModel):
     top_issues: List[Dict[str, Any]]
     recommendations: List[str]
     benchmark_comparison: Dict[str, float]
+    # ★ 按日期的花费/销售序列（labels/spend/sales）。默认空 dict ——
+    #   「没取到日粒度」与「确实只有一天」在数据上都表现为短序列，
+    #   前端按空序列渲染「暂无趋势」，不得插值。
+    daily_trend: Dict[str, List[Any]] = Field(default_factory=dict)
 
 
 # ---- 搜索词报告相关 ----
@@ -251,55 +339,11 @@ class CompetitorAdReport(BaseModel):
     actionable_insights: List[str]
 
 
-# ---- 预算分配相关 ----
-
-class BudgetAllocation(BaseModel):
-    """预算分配方案"""
-    campaign_name: str
-    current_budget: float
-    suggested_budget: float
-    allocation_pct: float
-    reason: str
-    expected_roas: float
-
-
-class BudgetOptimizationReport(BaseModel):
-    """预算优化报告"""
-    total_current_budget: float
-    total_suggested_budget: float
-    allocations: List[BudgetAllocation]
-    projected_improvement: Dict[str, float]
-    risk_assessment: str
-
-
-# ---- 异常检测相关 ----
-
-class AnomalyItem(BaseModel):
-    """异常项"""
-    type: str  # spend_spike / conversion_drop / impression_anomaly / ctr_drop
-    severity: str  # high/medium/low
-    campaign: str
-    metric: str
-    current_value: float
-    expected_value: float
-    deviation_pct: float
-    detected_at: str
-    possible_cause: str
-    suggested_action: str
-
-
-class AnomalyReport(BaseModel):
-    """异常检测报告"""
-    check_period: str
-    anomalies: List[AnomalyItem]
-    summary: str
-    alert_count: int
-
-
 # LLM 能力（可用性判据 / 降级 / RAG）已统一到唯一基类 BaseAgent：
 # 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
 from ai_infra.base_agent import BaseAgent
 from ai_infra.intent import Route, first_match
+from ai_infra.skills import SKILL_CHANNEL_UNAVAILABLE, is_skill_requested
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
 from modules.ad_analysis import prompts as _prompts  # noqa: F401
 
@@ -320,37 +364,170 @@ class AdAnalysisAgent(BaseAgent):
     ENABLE_LLM = True
     FALLBACK_TO_MOCK = True
 
-    # 系统提示词
-    SYSTEM_PROMPT = """你是跨境电商广告分析专家，专精 Amazon PPC 广告优化。
-
-你的能力：
-1. **广告健康诊断** - 多维度评估账户/Campaign 表现
-2. **搜索词分析** - 识别高效/低效/浪费词，挖掘新机会
-3. **出价优化** - 数据驱动的智能出价建议
-4. **竞品监控** - 分析竞争对手广告策略
-5. **预算调优** - 多Campaign智能预算分配
-6. **异常预警** - 自动检测广告数据异常
-
-分析原则：
-- 以数据为依据，给出可量化的改进预期
-- 区分"必须改"、"建议改"、"观察中"三级优先级
-- 考虑季节性、类目特性、竞争环境等因素
-- 给出的建议要具体可执行，不说空话
-
-Amazon PPC 关键指标基准（参考值）：
-- ACoS: <20% 优秀, 20-30% 良好, >30% 需优化
-- RoAS: >5 优秀, 3-5 良好, <3 需优化
-- CTR: >0.5% 优秀, 0.3-0.5% 正常, <0.3% 需优化
-- CVR: >10% 优秀, 5-10% 正常, <5% 需优化
-- CPC: 因类目而异，一般控制在售价的 3-8%
-"""
+    #: 系统提示词 → `modules/ad_analysis/prompts.py`（注册表键 `"ad_analysis"`）
+    #: ★ 第 283 轮：正文归位后带版本与指纹，散落在 agent 里无法对账。
 
     def __init__(self):
         # 初始化 LLM 基类
         super().__init__()
 
-        self.system_prompt = self.SYSTEM_PROMPT
+        self.system_prompt = self.get_prompt_template("ad_analysis")
         self.agent_name = "ad_analysis"
+        # ★ 第 204 轮：工具化路由子层（懒加载）。**不能**在 __init__ 里构建 ——
+        #   那会触发 `tools → service → agent_ad` 循环导入。
+        self._router: Optional[Any] = None
+
+    # ==================== 工具化路由（第 204 轮）====================
+    #
+    # 本 Agent 此前是**范式 B**：`invoke()` / `stream_chat()` → `_classify_intent()`
+    # （关键词表）→ `_handle_*` 规则引擎；LLM 只出现在写文案的辅助方法里。
+    # 于是 `ad_analysis_tools`（6 个）**零装配** —— 注册了、却没有任何 Agent
+    # 绑定它（全仓 `from .tools import ad_analysis_tools` 零命中）。
+    #
+    # 现在接到**范式 A**（LLM 自主 bind_tools），做法与
+    # `competitor_intel` / `listing_generator` / `product_research` 的
+    # `_build_router()` 逐字同构。
+
+    def _get_router(self):
+        """懒加载工具化路由层，返回 None 表示不可用（回退关键词路由）。"""
+        if self._router is None:
+            self._router = self._build_router()
+        return self._router
+
+    def _build_router(self):
+        """构建工具化路由层（BaseAgent 实例，注入 6 个广告工具）。
+
+        ★★★ 为什么必须**组合一个 BaseAgent**，而不能只在 `super().__init__()`
+          里多写一个 `tools=`：
+            工具只在 `BaseAgent._llm_with_tools()` 里被 `bind_tools`，而它
+            只被图节点 `_llm_call_node` 调用。本 Agent 自己的 `invoke()` /
+            `stream_chat()` **从不驱动那张图** ⇒ 只加 `tools=` 是**装饰性接线**：
+            注册表不再「悬空」、门禁变绿，而模型手里依旧没有工具 ——
+            比不接更糟（把缺口藏起来）。
+        """
+        if not self.ENABLE_LLM:
+            return None
+        try:
+            from .tools import ad_analysis_tools
+
+            from ai_infra.base_agent import BaseAgent
+            from ai_infra.budget import BUDGET_ROUTER
+            from ai_infra.context import CONTEXT_ROUTER
+            from core.checkpoint import get_checkpointer
+
+            return BaseAgent(
+                # ★ 子层名字带 `_router` 后缀（同 competitor / listing / PR），
+                #   技能注入边界由 `modules.skills.agents.business_agent_name()` 归一回业务名。
+                agent_name=f"{self.agent_name}_router",
+                system_prompt=self.system_prompt,
+                tools=ad_analysis_tools,
+                # 路由子层是「单次决策 + 一串工具调用、用完即答」⇒ 用 ROUTER 档。
+                budget=BUDGET_ROUTER,
+                context_policy=CONTEXT_ROUTER,
+                checkpointer=get_checkpointer(),
+                checkpoint_ns="ad_analysis",
+            )
+        except Exception as e:  # noqa: BLE001 —— 路由层不可用时回退，不影响主流程
+            logger.warning(f"[ad_analysis] router build failed: {e}")
+            return None
+
+    async def _stream_via_tools(self, query: str,
+                                context: Optional[Dict[str, Any]] = None) -> AsyncIterable:
+        """流式工具路由：**实时**下发思考过程（step），答复文本仍一次性给出。
+
+        ★ 与 `_route_via_tools` 是**同一条决策路径**（router 的 LLM 自主选工具），
+          差别只在「过程能不能边跑边看」：
+          · `run_session` 一次性返回 state ⇒ 轨迹**事后**才拿得到，而调用方
+            只取最后一条 AIMessage ⇒ 轨迹被整段丢掉，前端只看到一个转圈
+            （这正是第 210 轮老板的原始诉求）；
+          · 这里改走 `stream_session` + `StreamDigest`：工具事件**逐条**转成
+            step 事件下发，答复按原时序**攒齐一次吐出** ——
+            即「只做加法、正文行为零变化」。
+
+        Yields:
+            step 事件（dict）/ 整段答复文本（str）；**没有产出就什么都没 yield**，
+            由调用方按空结果回退关键词路由（与 `_route_via_tools` 返回 None 同义）。
+        """
+        router = self._get_router()
+        if router is None:
+            return
+
+        # ★★★ 归属的**唯一写入点**：必须在这里（工具被调用之前）。
+        #   与非流式路径**同源** —— 换成流式却漏掉这一句，工具就拿不到
+        #   店铺归属（而漏掉不会报错，只会静默按「无店铺」取数）。
+        _current_shop_id.set((context or {}).get("store_id"))
+
+        prompt = query
+        if context:
+            try:
+                ctx_json = json.dumps(context, ensure_ascii=False, default=str)
+            except (TypeError, ValueError):
+                ctx_json = str(list(context.keys()))
+            prompt = f"{query}\n\n[上下文数据] {ctx_json[:2000]}"
+
+        from langchain_core.messages import HumanMessage
+
+        # ★ 工具人话标题走**注入**：真源在业务侧
+        #   （`modules/skills/tools_catalog.py::tool_title`，全仓唯一查询口），
+        #   而 `ai_infra` 不许依赖业务（分层硬红线）⇒ 只能把查询口传进去。
+        #   惰性 import：Agent 的**模块导入期**无需把 `modules.skills` 拉进依赖图，
+        #   只有真跑流式工具环路时才需要它。
+        # 走**包门面**（本仓条款 1：跨模块引用不得伸手进包内部）。
+        from modules.skills import tool_title
+
+        digest = StreamDigest(title_resolver=tool_title)
+        try:
+            async for ev in router.stream_session(
+                {"messages": [HumanMessage(content=prompt)]},
+            ):
+                s = digest.feed(ev)
+                if s is not None:
+                    yield s
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[ad_analysis] stream tool routing failed: {e}")
+            return
+
+        if digest.reply:
+            yield digest.reply
+
+    async def _route_via_tools(self, query: str,
+                               context: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """工具化路由：LLM 自主选工具执行，返回可读回复文本。
+
+        返回 None 表示不可用或失败，调用方回退关键词路由（`_classify_intent`）。
+        """
+        router = self._get_router()
+        if router is None:
+            return None
+
+        # ★★★ 归属的**唯一写入点**：必须在这里（工具被调用之前）。
+        #   `context` 由 service 用请求头解析出的 store_id 填好，
+        #   模型看不到也改不了它。
+        _current_shop_id.set((context or {}).get("store_id"))
+
+        prompt = query
+        if context:
+            try:
+                ctx_json = json.dumps(context, ensure_ascii=False, default=str)
+            except (TypeError, ValueError):
+                ctx_json = str(list(context.keys()))
+            prompt = f"{query}\n\n[上下文数据] {ctx_json[:2000]}"
+
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        try:
+            state = await router.run_session(
+                {"messages": [HumanMessage(content=prompt)]},
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[ad_analysis] tool routing failed: {e}")
+            return None
+
+        reply = ""
+        for m in state.get("messages") or []:
+            if isinstance(m, AIMessage) and m.content:
+                reply = m.content if isinstance(m.content, str) else str(m.content)
+        return reply.strip() or None
 
     async def _llm_summarize(self, context: str) -> Optional[str]:
         """
@@ -395,22 +572,15 @@ Amazon PPC 关键指标基准（参考值）：
             return await self._optimize_bids(query, context)
         elif intent == "competitor":
             return await self._analyze_competitors(query, context)
-        elif intent == "budget":
-            return await self._optimize_budget(query, context)
-        elif intent == "anomaly":
-            return await self._detect_anomalies(query, context)
         else:
             # 默认通用回答
             return await self._general_response(query)
 
     #: 意图路由表（**策略数据**留业务模块；控制流见 `ai_infra.intent.first_match`）。
-    #: 顺序即优先级 —— 保持收敛前的原序「异常 → 预算 → 竞品 → 出价 → 搜索词 → 诊断」，
+    #: 顺序即优先级 —— 保持收敛前的相对原序「竞品 → 出价 → 搜索词 → 诊断」，
     #: 后几组关键词之间存在交集，换序会改变判定结果。
+    #: ★ 第 316 轮：「异常」「预算」两条路由随其工具 / 端点一并退役。
     _INTENT_ROUTES = (
-        Route("anomaly", ("异常", "突然", "骤降", "突增", "不对劲",
-                          "波动", "anomaly", "alert", "警告")),
-        Route("budget", ("预算", "budget", "分配", "调拨", "花费",
-                         "钱花在哪", "投放")),
         Route("competitor", ("竞品", "对手", "竞争", "competitor", "别人",
                              "展示份额", "share of voice", "soy")),
         Route("bid_optimize", ("出价", "bid", "竞价", "调价", "降价", "加价",
@@ -425,7 +595,7 @@ Amazon PPC 关键指标基准（参考值）：
         """分类用户意图（控制流与兜底见 `ai_infra.intent.first_match`）。
 
         Returns:
-            diagnosis / search_terms / bid_optimize / competitor / budget / anomaly / general
+            diagnosis / search_terms / bid_optimize / competitor / general
         """
         return first_match(query, self._INTENT_ROUTES, "general")
 
@@ -472,7 +642,8 @@ Amazon PPC 关键指标基准（参考值）：
                 "roas_industry": 4.0,
                 "ctr_industry": 0.4,
                 "cvr_industry": 8.0,
-            }
+            },
+            daily_trend=_daily_trend_from_rows(rows),
         )
 
         content = f"""## 📊 广告账户健康诊断报告
@@ -634,7 +805,7 @@ Amazon PPC 关键指标基准（参考值）：
 
     async def _analyze_competitors(self, query: str, context: Optional[Dict] = None) -> AgentResponse:
         """竞品广告分析"""
-        comp_rows = _load_competitor_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
+        comp_rows = await _load_competitor_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
         if not comp_rows:
             return self._no_data("竞品广告分析", (context or {}).get("store_id"))
         competitors = self._competitor_data_from_rows(comp_rows)
@@ -699,138 +870,6 @@ Amazon PPC 关键指标基准（参考值）：
             display_type="competitor_analysis"
         )
 
-    async def _optimize_budget(self, query: str, context: Optional[Dict] = None) -> AgentResponse:
-        """预算分配优化"""
-        rows = _load_ad_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
-        if not rows:
-            return self._no_data("预算分配优化", (context or {}).get("store_id"))
-        allocations = self._budget_from_rows(rows)
-        if not allocations:
-            return self._no_data("预算分配优化", (context or {}).get("store_id"))
-        total_current = sum(a.current_budget for a in allocations)
-        total_suggested = sum(a.suggested_budget for a in allocations)
-
-        # 预期改善：由加码/削减两组的预期 RoAS 相对基准推导（零随机数）
-        _all = [a.expected_roas for a in allocations]
-        _ups = [a.expected_roas for a in allocations if a.suggested_budget > a.current_budget]
-        _cuts = [a.expected_roas for a in allocations if a.suggested_budget < a.current_budget]
-        _avg_all = sum(_all) / len(_all) if _all else 0.0
-        _avg_up = sum(_ups) / len(_ups) if _ups else 0.0
-        _avg_cut = sum(_cuts) / len(_cuts) if _cuts else 0.0
-        improvement = {
-            "expected_roas_increase": round((_avg_up / _avg_all - 1) * 100, 1) if _avg_all else 0.0,
-            "expected_acos_decrease": round((1 - _avg_cut / _avg_all) * 100, 1) if _avg_all else 0.0,
-            "efficiency_gain": round(
-                (total_suggested - total_current) / total_current * 100, 1
-            ) if total_current else 0.0,
-        }
-
-        report = BudgetOptimizationReport(
-            total_current_budget=total_current,
-            total_suggested_budget=total_suggested,
-            allocations=allocations,
-            projected_improvement=improvement,
-            risk_assessment="中等风险 — 建议分两周逐步调整，每周监测效果"
-        )
-
-        # ====== LLM 增强：风险评估 ======
-        llm_context = f"""请基于以下预算优化方案，生成一段专业风险提示（80字以内，中文）：
-- 预算从 ${total_current:.2f} 调整为 ${total_suggested:.2f}（变化 {((total_suggested - total_current) / total_current * 100):+.1f}%）
-- 涉及 {len(allocations)} 个 Campaign
-请说明主要风险和规避方式。"""
-        llm_risk = await self._llm_summarize(llm_context)
-        if llm_risk:
-            report.risk_assessment = llm_risk
-
-        content = f"""## 💰 预算分配优化方案
-
-**当前日预算**: ${total_current:.2f} | **建议日预算**: ${total_suggested:.2f}
-**变化**: {((total_suggested - total_current) / total_current * 100):+.1f}%
-
-### 各 Campaign 分配建议
-| Campaign | 当前预算 | 建议预算 | 变化 | 原因 |
-|----------|---------|---------|------|------
-"""
-
-        for alloc in allocations:
-            change = ((alloc.suggested_budget - alloc.current_budget) / alloc.current_budget * 100)
-            content += f"| {alloc.campaign_name} | ${alloc.current_budget:.0f} | ${alloc.suggested_budget:.0f} | {change:+.0f}% | {alloc.reason[:20]} |\n"
-
-        content += f"""
-### 预期改善
-- RoAS 提升: +{improvement['expected_roas_increase']}%
-- ACoS 降低: -{improvement['expected_acos_decrease']}%
-- 整体效率提升: +{improvement['efficiency_gain']}%
-
-> ⚠️ {report.risk_assessment}
-"""
-
-        return AgentResponse(
-            content=content,
-            data=report.model_dump(),
-            display_type="budget_optimization"
-        )
-
-    async def _detect_anomalies(self, query: str, context: Optional[Dict] = None) -> AgentResponse:
-        """广告异常检测"""
-        rows = _load_ad_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
-        if not rows:
-            return self._no_data("广告异常检测", (context or {}).get("store_id"))
-        anomalies = self._anomalies_from_rows(
-            rows, sensitivity=str((context or {}).get("sensitivity") or "medium")
-        )
-        alert_count = len([a for a in anomalies if a.severity == "high"])
-
-        summary_parts = []
-        if alert_count > 0:
-            summary_parts.append(f"⚠️ 发现 **{alert_count} 个高风险异常**，需立即关注")
-        medium_count = len([a for a in anomalies if a.severity == "medium"])
-        if medium_count > 0:
-            summary_parts.append(f"📋 还有 **{medium_count} 个中等风险项")
-
-        summary = " ".join(summary_parts) or "✅ 未发现明显异常，账户运行正常"
-
-        # ====== LLM 增强：异常检测总结 ======
-        llm_context = f"""请基于以下广告异常检测结果，生成一段简明总结（100字以内，中文）：
-- {alert_count} 个高风险异常、{medium_count} 个中等风险
-- 异常类型: {', '.join(a.type for a in anomalies[:5]) or '无'}
-请说明最需优先处理的问题和建议。"""
-        llm_summary = await self._llm_summarize(llm_context)
-        if llm_summary:
-            summary = llm_summary
-
-        report = AnomalyReport(
-            check_period="近7天 vs 前7天",
-            anomalies=anomalies,
-            summary=summary,
-            alert_count=alert_count
-        )
-
-        content = f"""## 🚨 广告异常检测报告
-
-**检测周期**: {report.check_period}
-**{report.summary}**
-
-### 异常详情
-"""
-
-        for i, anom in enumerate(anomalies[:8]):
-            severity_emoji = {"high": "🔴", "medium": "🟡", "low": "🔵"}
-            content += f"""
-#### {severity_emoji.get(anom.severity, '')} [{anom.type.upper()}] {anom.campaign}
-- **指标**: {anom.metric}
-- **当前值**: {anom.current_value} | **预期值**: {anom.expected_value}
-- **偏差**: {anom.deviation_pct:+.1f}%
-- **可能原因**: {anom.possible_cause}
-- **建议操作**: {anom.suggested_action}
-"""
-
-        return AgentResponse(
-            content=content,
-            data=report.model_dump(),
-            display_type="anomaly_report"
-        )
-
     def _no_data(self, what: str, store_id=None) -> AgentResponse:
         """显式空状态：没取到数据就如实说，不返回「编出来的报告」。
 
@@ -863,8 +902,6 @@ Amazon PPC 关键指标基准（参考值）：
 2. 🔍 **搜索词分析** — "看看我的搜索词报告"
 3. 💡 **出价优化** — "给我一些出价建议"
 4. 🎯 **竞品监控** — "分析一下我的竞品广告"
-5. 💰 **预算优化** — "帮我重新分配广告预算"
-6. 🚨 **异常检测** — "最近广告数据有没有异常"
 
 你可以说：「{query.split()[0] if query else '帮我诊断广告账户'}」开始分析。
 """
@@ -881,11 +918,37 @@ Amazon PPC 关键指标基准（参考值）：
         Yields:
             文本片段 / progress 事件（供 ai_infra.sse.sse_event_stream 包装成 SSE）
         """
+        # ★ 第 204 轮：工具环路优先（LLM 用 bind_tools 自主选那 6 个广告工具）。
+        #   不可用 / 失败 ⇒ 回退下面的关键词路由（确定性、离线可跑）。
+        #   回退不是装饰：ENABLE_LLM=False / 无 API KEY / 图构建失败都要能继续服务。
+        # ★ 第 210 轮：改走**流式版**工具环路 —— 思考过程（step）实时下发，
+        #   答复文本仍按原来的时序**攒齐一次吐出**（正文行为零变化）。
+        #   `tool_chunks` 为空 = 工具路没产出任何文本 ⇒ 与原来返回 None 一样
+        #   落到下面的关键词回退链（降级链一行没动）。
+        tool_chunks: list = []
+        async for chunk in self._stream_via_tools(query, context):
+            if isinstance(chunk, dict):
+                yield chunk
+            else:
+                tool_chunks.append(chunk)
+        if tool_chunks:
+            yield progress("正在调用广告分析工具…")
+            yield "".join(tool_chunks)
+            return
+
+        # ★ 点名技能、但技能通道（工具环路）没产出 ⇒ **如实说，不落下面的
+        #   关键词短路**（第 246 轮）：那条短路不构造 system prompt，拿它的
+        #   结果顶替用户点的技能，界面上完全看不出来（静默退化）。
+        #   ★ 未点名时这一句不生效 ⇒ 下面整条降级链**一行没动**。
+        if is_skill_requested():
+            yield SKILL_CHANNEL_UNAVAILABLE
+            return
+
         intent = self._classify_intent(query)
 
         # 结构化意图：走 invoke 一次性返回（含图表数据，不适合流式）
-        # 注：ad_analysis 的 invoke 是关键词分发（无 LLM 工具化路由），
-        # 不存在重复选工具的开销，故此处保留 invoke 调用。
+        # 注：结构化数据由 REST 端点（`/ad-analysis/*`）供给前端 SmartPanel；
+        # 本 SSE 通道只服务对话体验 ⇒ 工具化路由不会挤掉面板数据。
         if intent != "general":
             yield progress(_INTENT_PROGRESS.get(intent, "正在分析广告数据…"))
             result = await self.invoke(query, context)
@@ -1300,106 +1363,3 @@ Amazon PPC 关键指标基准（参考值）：
         ])
 
         return insights
-
-    def _budget_from_rows(self, rows: List[Dict]) -> List[BudgetAllocation]:
-        """按 Campaign **真实 RoAS 排名**分配预算（确定性，零随机数）。
-
-        规则：RoAS 排名前 1/3 加码 25%、后 1/3 削减 20%、中间持平。
-        current_budget = 该 Campaign 的日均花费（近 N 天总花费 /天数）。
-        """
-        campaigns = self._campaigns_from_rows(rows)
-        if not campaigns:
-            return []
-        day_count = max(1, len({str(r.get("date") or "") for r in rows if r.get("date")}))
-        total_spend = sum(c.spend for c in campaigns) or 1.0
-        order = sorted(range(len(campaigns)), key=lambda i: campaigns[i].roas, reverse=True)
-        n = len(campaigns)
-        head = max(1, n // 3)
-        tier = {}
-        for rank, idx in enumerate(order):
-            if rank < head:
-                tier[idx] = 1.25
-            elif rank >= n - head:
-                tier[idx] = 0.8
-            else:
-                tier[idx] = 1.0
-
-        out: List[BudgetAllocation] = []
-        for i, c in enumerate(campaigns):
-            current = round(c.spend / day_count, 2)
-            factor = tier[i]
-            suggested = round(current * factor, 2)
-            if factor > 1:
-                reason = f"RoAS {c.roas:.2f} 排名靠前，加码抢量"
-            elif factor < 1:
-                reason = f"RoAS {c.roas:.2f} 偏低（ACoS {c.acos:.1f}%），削减控本"
-            else:
-                reason = f"RoAS {c.roas:.2f} 居中，维持观察"
-            out.append(BudgetAllocation(
-                campaign_name=c.campaign_name,
-                current_budget=current,
-                suggested_budget=suggested,
-                allocation_pct=round(current / total_spend * 100, 1),
-                reason=reason,
-                expected_roas=round(max(c.roas, 0.1) * factor, 2),
-            ))
-        return out
-
-    def _anomalies_from_rows(
-        self, rows: List[Dict], sensitivity: str = "medium"
-    ) -> List[AnomalyItem]:
-        """按日趋势做**确定性**异常检测（零随机数）。
-
-        方法：把记录按 `date` 分组，前一半为基期、后一半为近期的对比窗口；
-        花费突增 / 订单骤降 / CTR 下滑 / 曝光异动 任一超过阈值即报异常。
-        阈值随 sensitivity 缩放（high 更敏感）。同一份数据必然得到同一批异常。
-        """
-        by_date: Dict[str, List[Dict]] = {}
-        for r in rows:
-            d = str(r.get("date") or "")
-            if d:
-                by_date.setdefault(d, []).append(r)
-        if len(by_date) < 4:
-            return []
-
-        days = sorted(by_date)
-        half = len(days) // 2
-        older = _agg_rows([r for d in days[:half] for r in by_date[d]])
-        recent = _agg_rows([r for d in days[half:] for r in by_date[d]])
-
-        threshold = {"low": 0.60, "medium": 0.40, "high": 0.25}.get(sensitivity, 0.40)
-
-        def _dev(cur: float, base: float) -> float:
-            return ((cur - base) / base * 100.0) if base else 0.0
-
-        checks = [
-            ("spend_spike", "花费", recent["spend"], older["spend"], 1),
-            ("conversion_drop", "订单", recent["orders"], older["orders"], -1),
-            ("ctr_drop", "CTR", recent["ctr"], older["ctr"], -1),
-            ("impression_anomaly", "曝光", recent["impressions"], older["impressions"], 0),
-        ]
-        out: List[AnomalyItem] = []
-        for atype, label, cur, base, direction in checks:
-            dev = _dev(cur, base)
-            if direction == 1:
-                hit = dev >= threshold * 100
-            elif direction == -1:
-                hit = dev <= -threshold * 100
-            else:
-                hit = abs(dev) >= threshold * 100
-            if not hit:
-                continue
-            sev = "high" if abs(dev) >= 60 else ("medium" if abs(dev) >= 40 else "low")
-            out.append(AnomalyItem(
-                type=atype,
-                severity=sev,
-                campaign="账户整体",
-                metric=label,
-                current_value=round(cur, 2),
-                expected_value=round(base, 2),
-                deviation_pct=round(dev, 1),
-                detected_at=datetime.now().isoformat(),
-                possible_cause=("投放放量或竞价抬高" if dev > 0 else "竞争加剧或预算收缩"),
-                suggested_action=("复核预算上限与竞价" if dev > 0 else "检查 Listing 转化率与库存"),
-            ))
-        return out

@@ -526,6 +526,32 @@ class SpApiDataSource(AmazonDataSource):
         )
         return []
 
+    def fetch_order_tracking(self, order_id: str) -> dict:
+        """
+        按订单号查询单个订单的追踪信息（客服场景）。
+
+        数据来源：Orders API（get_order + get_order_items，见
+        platforms/amazon/sp_api/orders.py::OrdersAPI.track_order）。
+
+        字段说明：运单号 / 承运商 Orders 接口**不返回**（属 Shipping API），
+        本方法因此也不产出这两个字段 —— 宁可缺，不编造。
+
+        Returns:
+            {"found": True, ...} 或 {"found": False, "order_id": ..., "error": ...}
+        """
+        if not order_id:
+            return {"found": False, "order_id": order_id, "error": "订单号为空"}
+
+        try:
+            result = self._run(self._orders.track_order(order_id))
+        except Exception as e:
+            logger.warning("SP-API 查询订单异常 order=%s: %s", order_id, e)
+            return {"found": False, "order_id": order_id, "error": f"SP-API 调用失败: {e}"}
+
+        if not result:
+            return {"found": False, "order_id": order_id, "error": "SP-API 无返回"}
+        return result
+
     # ---------- 内部工具 ----------
 
     @staticmethod

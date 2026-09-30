@@ -105,6 +105,26 @@ def is_encrypted(stored: Optional[str]) -> bool:
     return bool(stored) and str(stored).startswith(ENC_PREFIX)
 
 
+def ensure_key_available() -> None:
+    """探测加密密钥当前是否可用（缺配置 / 格式非法 ⇒ `CredentialsKeyMissing`）。
+
+    ★★★ 为什么需要一个**独立的探测入口**（2026-09-29，第 318 轮）
+
+      连接端点的新流程是「**先验证凭据、通过后才落库**」。若只依赖
+      `encrypt_credentials()` 在落库那一刻报错，就会得到一个**顺序错误**：
+      服务端压根没配密钥（凭据永远写不进去），却仍然先拿用户的凭据去打
+      平台接口 —— 白白消耗一次网络往返；更要命的是，如果那次调用恰好返回
+      「凭据无效」，用户会去反复修改一个本来没错的东西，而**真因
+      （服务端漏配密钥）被完全掩盖**。
+
+      ⇒ 把「密钥可用」提到**联网之前**检查：配置问题立刻以 503 暴露，
+        且不对第三方发出任何请求。
+
+    ★ 本函数只做探测，**不写任何数据**、不生成密钥（见模块顶部第 2 条）。
+    """
+    _get_fernet()
+
+
 def encrypt_credentials(credentials: Dict[str, Any]) -> str:
     """
     把平台凭证 dict 加密成可直接入库的字符串。

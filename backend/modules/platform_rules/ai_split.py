@@ -24,7 +24,7 @@ from typing import Optional
 from modules.platform_rules.db_model import PlatformRuleDocRecord
 
 try:
-    from ai_infra.llm.dashscope_client import get_llm
+    from ai_infra.llm.dashscope_client import get_llm, is_llm_parse_failed
     LLM_AVAILABLE = True
 except Exception:  # pragma: no cover - 依赖缺失时降级
     LLM_AVAILABLE = False
@@ -76,13 +76,15 @@ def normalize_llm_rules(data, doc: PlatformRuleDocRecord) -> list:
     由入库时生成）。这是本模块的纯函数核心，便于单测。
 
     清洗规则：
-      - `structured_chat` 解析失败会返回 `{"raw_text": ...}` → 视为无结果（不猜）
+      - 结构化输出解析失败（判据 `is_llm_parse_failed`）→ 视为无结果（不猜）
       - 兼容 LLM 直接返回数组、或包一层 `{"rules": [...]}` / `{"items": [...]}`
       - **缺 title 或 content 的条目直接丢弃**，不补空壳（补出来的规则对用户无意义）
       - 平台一律取文档的 platform（LLM 无权改归属）
     """
     if isinstance(data, dict):
-        if "raw_text" in data:
+        # ★ 判定走唯一真源：不能写成 `"raw_text" in data` —— 那会把「LLM 合法
+        #   返回了一个含 raw_text 字段的 JSON」误判成解析失败（假阴）。
+        if is_llm_parse_failed(data):
             return []
         picked = None
         for key in ("rules", "items", "data", "result", "list"):

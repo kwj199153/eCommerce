@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -45,6 +47,20 @@ logger = get_logger(__name__)
 
 #: scp 超时（秒）。样本最大 10MB，正常内网/公网几秒内应完成。
 _SCP_TIMEOUT = 60.0
+
+#: 体检（ssh 探活）超时（秒）。
+_SSH_PROBE_TIMEOUT = 15.0
+
+#: 体检结果的**进程内**短 TTL 缓存（秒）。
+#:
+#: 为什么需要：``GET /voice-clone/config`` 每次打开面板都会调，而体检要真起
+#: ``ssh``（秒级，网络抖动时能拖到 15s）。缓存后同一配置 30s 内只探一次，
+#: 面板反复打开不再反复 ssh。
+_CHECK_TTL = 30.0
+
+#: cache key = ``(host, port, key)`` ⇒ 配置一变即失效，不需要手动清。
+_check_cache: dict[tuple, tuple[float, dict]] = {}
+_check_lock = threading.Lock()
 
 
 class MirrorError(RuntimeError):
@@ -153,16 +169,49 @@ def push_file(local_path: Path, *, remote_dir: Optional[str] = None) -> str:
     return remote_abs
 
 
-def check_connectivity() -> dict:
+def check_connectivity(*, use_cache: bool = True) -> dict:
     """自检：ssh 能否连通 + 远端目录是否可写。
 
     供 ``/voice-clone/config`` 暴露给前端做「配置体检」，
     避免用户点了「开始克隆」才发现密钥没配好。
+
+    ★ 这是**阻塞**调用（会起 ``ssh``，最长 ``_SSH_PROBE_TIMEOUT``）⇒ 在 async 上下文里
+      必须走 ``asyncio.to_thread``（见 ``router.voice_config``），否则会卡住整个事件循环。
+    ★ 结果按 ``(host, port, key)`` 做 **30s 进程内缓存**（``use_cache=False`` 可绕过）。
     """
     if not is_enabled():
+        # 未启用分支不涉及网络 ⇒ 零成本，不入缓存，永远返回最新结论。
         return {"ok": False, "enabled": False, "reason": "未配置镜像主机（VOICE_SAMPLE_MIRROR_SSH_HOST 为空）"}
 
     cfg = _cfg()
+    cache_key = (
+        (cfg.voice_sample_mirror_ssh_host or "").strip(),
+        int(cfg.voice_sample_mirror_ssh_port or 22),
+        (cfg.voice_sample_mirror_ssh_key or "").strip(),
+    )
+    if use_cache:
+        with _check_lock:
+            hit = _check_cache.get(cache_key)
+        if hit is not None and (time.monotonic() - hit[0]) < _CHECK_TTL:
+            return dict(hit[1])
+
+    result = _probe_connectivity(cfg)
+    with _check_lock:
+        _check_cache[cache_key] = (time.monotonic(), result)
+    return dict(result)
+
+
+def reset_connectivity_cache() -> None:
+    """清空体检缓存（配置变更 / 测试隔离用）。"""
+    with _check_lock:
+        _check_cache.clear()
+
+
+def _probe_connectivity(cfg) -> dict:
+    """真起一次 ``ssh`` 探活（阻塞，最长 ``_SSH_PROBE_TIMEOUT``）。
+
+    不做 ``is_enabled`` 判断、不上缓存 —— 那是 ``check_connectivity`` 的职责。
+    """
     argv = ["ssh", "-o", "StrictHostKeyChecking=accept-new", "-o", "BatchMode=yes"]
     port = int(cfg.voice_sample_mirror_ssh_port or 22)
     if port != 22:
@@ -173,9 +222,9 @@ def check_connectivity() -> dict:
     argv += [_ssh_target(), "echo ok"]
 
     try:
-        r = subprocess.run(argv, capture_output=True, timeout=15.0)
+        r = subprocess.run(argv, capture_output=True, timeout=_SSH_PROBE_TIMEOUT)
     except subprocess.TimeoutExpired:
-        return {"ok": False, "enabled": True, "reason": "ssh 连接超时（15s）"}
+        return {"ok": False, "enabled": True, "reason": f"ssh 连接超时（{_SSH_PROBE_TIMEOUT:.0f}s）"}
     except FileNotFoundError:
         return {"ok": False, "enabled": True, "reason": "本机找不到 ssh 命令"}
 

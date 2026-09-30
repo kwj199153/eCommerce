@@ -10,7 +10,8 @@
 
 设计要点：
   - 绕开 HTTP（避免演示模式 401），直接调 ORM service 层
-  - 演示环境下取「当前唯一用户」的订阅作为代表（不绑具体 user_id）
+  - ★ 第 326 轮：按**当前登录用户**（请求级 `current_user_id()`）过滤 ——
+    改前不绑 user_id、取全表最新一条，会把**别人的套餐**答成「你的」
   - 返回结构化 dict，让 LLM 用自然语言回复套餐详情
 """
 
@@ -18,12 +19,27 @@ from langchain_core.tools import StructuredTool
 from ai_infra.tools.side_effects import READ_ONLY_METADATA
 
 from core.database import get_db
+from core.observability.context import current_user_id
 from modules.billing import Subscription, SubscriptionPlan
 from sqlalchemy import select
 
 
 async def _get_my_subscription_impl() -> dict:
-    """查询当前用户的订阅套餐详情（演示模式：返回数据库中第一条订阅记录）。
+    """查询**当前登录用户**的订阅套餐详情。
+
+    ★ 第 326 轮修复：改前无 `user_id` 过滤 ——
+      `select(Subscription).order_by(created_at.desc()).limit(1)` 取的是
+      **全表最新一条**，即「任意用户的订阅」。同一句「我的套餐」，
+      REST（`billing/router.py` 的订阅端点）按 `user_id` 过滤、工具却不过滤
+      ⇒ 本仓明令禁止的「同一判定两份实现（至少一份永远测不到）」。
+
+    ★ 身份来源：`core.observability.context.current_user_id()`（全项目唯一写入点
+      = `core/auth/dependencies.get_current_user`），与
+      `modules/secretary/shop_tools.py::_resolve_current_user` 同一范式。
+      **不从工具入参取** —— 那是模型给的值，可被提示注入伪造。
+
+    ★ 取不到身份 ⇒ **fail-closed**（返回 `found=False`），**不**退回「任意一条」：
+      退回等于把「不知道你是谁」翻译成「你是别人」；不回答只是这次答不上。
 
     Returns:
         {
@@ -45,11 +61,20 @@ async def _get_my_subscription_impl() -> dict:
     """
     import json
 
+    user_id = current_user_id()
+    if not user_id:
+        # 无身份 ⇒ 不查、也不猜（见 docstring 的 fail-closed）
+        return {
+            "found": False,
+            "message": "无法确认当前登录身份，请重新登录后再查询订阅。",
+        }
+
     async for db in get_db():
-        # 演示模式：取第一条订阅（实际生产应按当前用户过滤）
+        # 归属只认服务端上下文，不认工具入参
         # plan 已配 lazy="selectin"，无需显式 eager load
         stmt = (
             select(Subscription)
+            .where(Subscription.user_id == user_id)
             .order_by(Subscription.created_at.desc())
             .limit(1)
         )

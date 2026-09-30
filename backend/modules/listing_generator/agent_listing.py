@@ -125,54 +125,8 @@ class ListingOptimizationSuggestion(BaseModel):
 
 
 # ====== System Prompt ======
-
-LISTING_GENERATOR_SYSTEM_PROMPT = """
-你是一位专业的**跨境电商 Listing 优化专家**，拥有 10 年 Amazon 运营经验，精通：
-
-## 核心能力
-
-### 1️⃣ 标题优化（Title Optimization）
-- 主关键词前置（前 3-5 个单词）
-- 品牌名 + 核心关键词 + 属性词 + 使用场景 + 兼容性
-- 字符控制：200 字符以内（硬限制），目标 150-180 字符
-- 避免 STUFFING（关键词堆砌）
-
-### 2️⃣ 五点描述（Bullet Points）
-- 每条以**大写卖点词**开头（ALL CAPS HEADER）
-- 单条控制在 500 字符以内
-- 覆盖：功能、材质、使用场景、差异化优势、售后保障
-- 情感触发：痛点共鸣、场景代入、价值承诺
-
-### 3️⃣ 产品描述（Product Description）
-- A+ Content 风格（即使不用 A+ 也按此标准）
-- 场景化叙事，而非参数罗列
-- 包含：问题引入 → 解决方案 → 产品优势 → 行动号召
-- 支持 HTML 格式（<b>、<br>、<ul><li>）
-
-### 4️⃣ 后台关键词（Search Terms）
-- 严格 ≤ 250 字节（不含空格重复）
-- 不重复标题中已有的词
-- 包含：同义词、变体、拼写变体、场景词
-- 用空格分隔，不用逗号
-
-### 5️⃣ SEO 评分体系
-- 标题：关键词覆盖率、可读性、长度合规
-- 五点：卖点独特性、情感强度、格式规范
-- 描述：内容丰富度、HTML 结构、CTA 存在
-- 关键词：字节合规、覆盖面、无重复
-
-## 工作原则
-
-1. **数据驱动**：基于竞品分析和关键词数据生成
-2. **合规优先**：严格遵守平台规则（字符限制、禁用词等）
-3. **转化导向**：每个元素都为提升 CVR 服务
-4. **差异化**：突出 USP（Unique Selling Proposition）
-5. **本地化**：地道的美式英语表达，避免中式英语
-
-## 当前平台
-
-当前聚焦 **Amazon 美国站**，输出语言为英语。
-"""
+# ★ 第 283 轮：正文已归位到 `prompts.py`（注册表键 `"listing_generator"`）。
+#   提示词要有版本与指纹才能对账，写在 agent 里既对不上也改不动。
 
 
 # ====== Amazon Listing 规则常量 ======
@@ -207,6 +161,7 @@ from ai_infra.base_agent import BaseAgent
 from ai_infra.budget import BUDGET_ROUTER
 from ai_infra.context import CONTEXT_ROUTER
 from ai_infra.intent import Route, first_match
+from ai_infra.skills import SKILL_CHANNEL_UNAVAILABLE, is_skill_requested
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
 from modules.listing_generator import prompts as _prompts  # noqa: F401
 
@@ -257,7 +212,7 @@ class ListingGeneratorAgent(BaseAgent):
         self.platform = platform
         self.adapter = get_platform_adapter(platform)
         self.agent_name = "ListingGenerator"
-        self.system_prompt = LISTING_GENERATOR_SYSTEM_PROMPT
+        self.system_prompt = self.get_prompt_template("listing_generator")
 
         # 深层分层路由：工具化路由层（bind_tools LangGraph 图）。
         # 懒加载：首次 invoke 时才构建，避免 __init__ 阶段触发
@@ -368,6 +323,15 @@ class ListingGeneratorAgent(BaseAgent):
 
         返回 None 表示路由失败，调用方回退 _process_query。
         """
+        # ★ 先确保路由层已初始化（第 272 轮修 P1-6 同族 bug）：
+        #   `invoke()` 在调本方法前先 `_get_router()`，但 `stream_chat()` 的
+        #   「点名技能」分支**直接**调本方法，`self._router` 还是 `None` ⇒
+        #   下面 `self._router.run_session` 抛 `'NoneType' object has no attribute
+        #   'run_session'`，被 except 吞成 `return None`，最终误报「技能通道不可用」。
+        #   在这里统一懒加载，两条路径共用同一份初始化。
+        router = self._get_router()
+        if router is None:
+            return None
         try:
             # 把 context 注入到 query 提示里，让 LLM 有足够上下文填参。
             # context 里的结构化数据（current_listing / title / bullets 等）
@@ -386,7 +350,7 @@ class ListingGeneratorAgent(BaseAgent):
             # ★ 2026-09-17：改走统一入口。旧键 `f"listing-{id(self)}"` 拿的是
             #   **对象内存地址** —— 进程一重启就换键，等于永远命中不到上一轮的
             #   checkpoint（现象："记忆看着有一轮、重启就没了"）。
-            state = await self._router.run_session(
+            state = await router.run_session(
                 {"messages": [HumanMessage(content=prompt)]},
                 session_id=session_id,
                 user_id=user_id,
@@ -591,6 +555,7 @@ class ListingGeneratorAgent(BaseAgent):
         category: str = "",
         features: List[str] = None,
         price: float = 0,
+        custom_prompt: Optional[str] = None,
     ) -> ListingTitle:
         """
         生成优化的 Listing 标题
@@ -628,13 +593,18 @@ class ListingGeneratorAgent(BaseAgent):
         best_title = self._select_best_title(title_candidates, main_keyword)
 
         # ====== LLM 增强：SEO 标题 ======
-        llm_title = await self._llm_generate(
-            prompt=f"""请为以下产品生成一个 Amazon Listing 标题（英文，150-180字符，不超过200）：
+        # ★ 自定义 prompt 完全替换默认指令（第 273 轮）；未传则走默认模板。
+        if custom_prompt:
+            llm_prompt = custom_prompt
+        else:
+            llm_prompt = f"""请为以下产品生成一个 Amazon Listing 标题（英文，150-180字符，不超过200）：
 - 产品名: {product_name}
 - 品牌: {brand or '未指定'}
 - 类目: {category or '通用'}
 - 核心卖点: {', '.join(features[:4]) or '无'}
-要求：主关键词前置、包含品牌+核心词+卖点+规格，自然流畅不堆砌。只输出标题文本本身。""",
+要求：主关键词前置、包含品牌+核心词+卖点+规格，自然流畅不堆砌。只输出标题文本本身。"""
+        llm_title = await self._llm_generate(
+            prompt=llm_prompt,
             max_tokens=200,
         )
         if llm_title:
@@ -678,6 +648,7 @@ class ListingGeneratorAgent(BaseAgent):
         product_name: str,
         features: List[str] = None,
         competitor_refs: List[Dict] = None,
+        custom_prompt: Optional[str] = None,
     ) -> BulletPoints:
         """
         生成五点描述（Bullet Points / Key Product Features）
@@ -720,14 +691,19 @@ class ListingGeneratorAgent(BaseAgent):
             total_chars += bullet.character_count
 
         # ====== LLM 增强：五点描述 ======
-        llm_bullets = await self._llm_generate(
-            prompt=f"""请为以下产品生成 Amazon 五点描述（Bullet Points，英文）。
+        # ★ 自定义 prompt 完全替换默认指令（第 273 轮）；未传则走默认模板。
+        if custom_prompt:
+            llm_prompt = custom_prompt
+        else:
+            llm_prompt = f"""请为以下产品生成 Amazon 五点描述（Bullet Points，英文）。
 - 产品名: {product_name}
 - 核心卖点: {', '.join(features[:5]) or '高品质、耐用、易用'}
 要求：
 1. 共 5 条，每条以「全大写短语标题: 」开头（如 "PREMIUM QUALITY: ..."）
 2. 每条内容 50-150 字符，突出差异化卖点
-3. 用 JSON 数组格式返回：["条1", "条2", "条3", "条4", "条5"]""",
+3. 用 JSON 数组格式返回：["条1", "条2", "条3", "条4", "条5"]"""
+        llm_bullets = await self._llm_generate(
+            prompt=llm_prompt,
             max_tokens=1000,
         )
         if llm_bullets:
@@ -770,6 +746,7 @@ class ListingGeneratorAgent(BaseAgent):
         product_name: str,
         features: List[str] = None,
         bullets: BulletPoints = None,
+        custom_prompt: Optional[str] = None,
     ) -> ProductDescription:
         """
         生成产品描述（Product Description）
@@ -778,8 +755,31 @@ class ListingGeneratorAgent(BaseAgent):
         - 开篇：问题引入或场景描绘
         - 中间：产品特点详解（引用五点展开）
         - 结尾：行动号召 + 品牌承诺
+
+        第 273 轮起：若传入 `custom_prompt`，则**完全替换**规则生成，
+        直接走 LLM 产出一段完整描述（纯文本 + HTML 均由 LLM 文本承载）。
         """
         features = features or []
+
+        # ★ 自定义 prompt：完全替换默认规则链，直接 LLM 生成。
+        if custom_prompt:
+            llm_desc = await self._llm_generate(
+                prompt=custom_prompt,
+                max_tokens=1200,
+            )
+            if llm_desc:
+                plain_text = llm_desc.strip()
+                # 单段承载：一个 intro 类型的 section（A+ 结构留待用户自行编排）。
+                sections = [{"type": "intro", "content": plain_text}]
+                html_content = self._generate_html_description(sections)
+                return ProductDescription(
+                    plain_text=plain_text,
+                    html_content=html_content,
+                    word_count=len(plain_text.split()),
+                    sections=sections,
+                    call_to_action="",
+                )
+            # LLM 不可用 ⇒ 回退默认规则链（安全失败方向：宁可给规则产物也不编数据）。
 
         # 构建段落
         sections = []
@@ -820,6 +820,7 @@ class ListingGeneratorAgent(BaseAgent):
         self,
         title: ListingTitle,
         category: str = "",
+        custom_prompt: Optional[str] = None,
     ) -> SearchTerms:
         """
         生成后台搜索词（Search Terms / Backend Keywords）
@@ -829,7 +830,47 @@ class ListingGeneratorAgent(BaseAgent):
         - 不包含标题中已有的词
         - 用空格分隔
         - 包含同义词、拼写变体、场景词
+
+        第 273 轮起：若传入 `custom_prompt`，则**完全替换**规则词池，
+        直接 LLM 生成（LLM 不可用时回退规则词池）。
         """
+        # ★ 自定义 prompt：完全替换默认词池，直接 LLM 生成。
+        if custom_prompt:
+            llm_terms = await self._llm_generate(
+                prompt=custom_prompt,
+                max_tokens=400,
+            )
+            if llm_terms:
+                # 期望返回逗号或空格分隔的词；做轻量清洗 + 250 字节截断。
+                import re as _re
+                raw_terms = _re.split(r"[,\n]+", llm_terms)
+                cleaned = []
+                seen = set()
+                for t in raw_terms:
+                    t = t.strip()
+                    if not t or t.lower() in seen:
+                        continue
+                    seen.add(t.lower())
+                    cleaned.append(t)
+
+                selected = []
+                total_bytes = 0
+                for term in cleaned:
+                    tb = len(term.encode("utf-8"))
+                    if total_bytes + tb + 1 <= AmazonLimits.SEARCH_TERMS_MAX_BYTES:
+                        selected.append(term)
+                        total_bytes += tb + 1
+                    else:
+                        break
+                if selected:
+                    return SearchTerms(
+                        terms=selected,
+                        total_bytes=total_bytes,
+                        is_valid=total_bytes <= AmazonLimits.SEARCH_TERMS_MAX_BYTES,
+                        optimization_notes=[],
+                    )
+            # LLM 不可用 / 解析为空 ⇒ 回退默认词池。
+
         # 已有词汇（避免重复）
         existing_words = set(title.title.lower().split())
 
@@ -1202,6 +1243,22 @@ class ListingGeneratorAgent(BaseAgent):
         Yields:
             文本片段 / progress 事件（供 ai_infra.sse.sse_event_stream 包装成 SSE）
         """
+        # ★★ 点名技能 ⇒ 走**工具化路由**（第 246 轮 P0-a 收口）：
+        #   本函数此前是本仓唯一「对话链没有工具环路」的入口 —— 它只走关键词
+        #   分发 + 一段写死的 prompt，**不构造 system prompt**；而技能正文 /
+        #   目录 / `load_skill` 工具全住在 system prompt 里 ⇒ 在补上这一跳之前，
+        #   listing 卡片点了等于没点（`invoke` 一直有这一跳，只是没接到对话链）。
+        #   ★ 未点名时下面的逻辑**逐字不变**（本轮的回归判据）。
+        if is_skill_requested():
+            yield progress("正在按指定技能执行…")
+            routed = await self._route_via_tools(query)
+            if routed is None or not str(routed.content or "").strip():
+                # 工具环路不可用（LLM 关 / 图构建失败）⇒ **不**静默降级到关键词分发
+                yield SKILL_CHANNEL_UNAVAILABLE
+                return
+            yield routed.content
+            return
+
         intent = await self._classify_intent(query)
 
         # 结构化场景不支持流式 → 退化为一次性文本

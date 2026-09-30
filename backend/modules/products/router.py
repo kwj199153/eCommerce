@@ -27,9 +27,11 @@ from datetime import datetime
 
 from sqlalchemy import select
 from core.database import async_session_factory
+from core.library_query import LibraryQueryError, count_library, query_library
 from core.tenant.middleware import get_current_shop_id
 from core.tenant.scoping import scope_condition, scoped
 from modules.products.db_model import SpuRecord, SkuRecord, ProductGroupRecord
+from modules.products.spec import PRODUCT_SPEC
 
 router = APIRouter(prefix="/api/v1", tags=["产品库"])
 
@@ -127,8 +129,9 @@ async def list_spus(shop_id: Optional[str] = Depends(get_current_shop_id)):
 async def get_spu(spu_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(SpuRecord).where(SpuRecord.id == spu_id)
-        if shop_id:
-            q = scoped(q, SpuRecord, shop_id)
+        # 无条件挂店铺作用域：缺 X-Shop-ID 时 shop_id=None ⇒ col IS NULL ⇒ 0 行，
+        # 走 404（安全失败方向），而非跨租户读。
+        q = scoped(q, SpuRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="SPU 不存在")
@@ -171,8 +174,7 @@ async def create_spu(payload: dict, shop_id: Optional[str] = Depends(get_current
 async def update_spu(spu_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(SpuRecord).where(SpuRecord.id == spu_id)
-        if shop_id:
-            q = scoped(q, SpuRecord, shop_id)
+        q = scoped(q, SpuRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="SPU 不存在")
@@ -195,8 +197,7 @@ async def update_spu(spu_id: str, payload: dict, shop_id: Optional[str] = Depend
 async def delete_spu(spu_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(SpuRecord).where(SpuRecord.id == spu_id)
-        if shop_id:
-            q = scoped(q, SpuRecord, shop_id)
+        q = scoped(q, SpuRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="SPU 不存在")
@@ -214,25 +215,44 @@ async def delete_spu(spu_id: str, shop_id: Optional[str] = Depends(get_current_s
 # ====== SKU CRUD ======
 
 @router.get("/skus")
-async def list_skus(spu_id: Optional[str] = Query(None), shop_id: Optional[str] = Depends(get_current_shop_id)):
-    if not shop_id:
-        return {"items": [], "total": 0}
-    async with async_session_factory() as session:
-        # SKU 通过 spu_id 归属 SPU，join 过滤 shop_id
-        q = scoped(select(SkuRecord).join(SpuRecord, SkuRecord.spu_id == SpuRecord.id), SpuRecord, shop_id)
-        if spu_id:
-            q = q.where(SkuRecord.spu_id == spu_id)
-        rows = (await session.execute(q)).scalars().all()
-    items = [_sku_to_dict(r) for r in rows]
-    return {"items": items, "total": len(items)}
+async def list_skus(
+    spu_id: Optional[str] = Query(None),
+    order_by: Optional[str] = Query(None),
+    limit: Optional[int] = Query(None),
+    shop_id: Optional[str] = Depends(get_current_shop_id),
+):
+    """SKU 列表（可按维度排序、分页）。
+
+    ★ 第 218 轮（P0-2）：查询本体收口到 `core.library_query`（`PRODUCT_SPEC`），
+      与工具层 `library/tools.py::_rows_to_products` **同走一个内核**。
+      改前是两份实现且已漂移：本端点不排序也不下推 limit，
+      而工具层硬编码 `created_at, id` 并把 limit 做在**内存切片**上。
+    ★ `order_by` / `limit` 是**新增的可选**参数：**不传时行为与改前逐字一致**
+      （默认 `created_at` 正序、全量返回）⇒ 前端不需要改一个字。
+    ★ `total` 口径：不传 `limit` 时 == `len(items)`（与改前一致）；
+      传了 `limit` 时是**真实总数**（改前没有 limit 参数，故不存在旧口径）。
+    """
+    try:
+        rows = await query_library(
+            PRODUCT_SPEC,
+            shop_id,
+            order_by=order_by,
+            filters={"spu_id": spu_id},
+            limit=limit,
+        )
+        total = await count_library(PRODUCT_SPEC, shop_id, filters={"spu_id": spu_id})
+    except LibraryQueryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"items": [_sku_to_dict(r[0]) for r in rows], "total": total}
 
 
 @router.get("/skus/{sku_id}")
 async def get_sku(sku_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(SkuRecord).where(SkuRecord.id == sku_id)
-        if shop_id:
-            q = scoped(q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id), SpuRecord, shop_id)
+        # 无条件挂店铺作用域：缺 X-Shop-ID 时 shop_id=None ⇒ col IS NULL ⇒ 0 行，
+        # 走 404（安全失败方向），而非跨租户读。
+        q = scoped(q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id), SpuRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="SKU 不存在")
@@ -299,8 +319,7 @@ async def create_sku(payload: dict, shop_id: Optional[str] = Depends(get_current
 async def update_sku(sku_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(SkuRecord).where(SkuRecord.id == sku_id)
-        if shop_id:
-            q = scoped(q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id), SpuRecord, shop_id)
+        q = scoped(q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id), SpuRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="SKU 不存在")
@@ -328,8 +347,7 @@ async def update_sku(sku_id: str, payload: dict, shop_id: Optional[str] = Depend
 async def delete_sku(sku_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(SkuRecord).where(SkuRecord.id == sku_id)
-        if shop_id:
-            q = scoped(q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id), SpuRecord, shop_id)
+        q = scoped(q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id), SpuRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="SKU 不存在")
@@ -343,8 +361,7 @@ async def update_sku_listing(sku_id: str, payload: dict, shop_id: Optional[str] 
     """Listing 优化工具写回：增量更新 SKU 标题/五点/A+/SEO，维护历史版本"""
     async with async_session_factory() as session:
         q = select(SkuRecord).where(SkuRecord.id == sku_id)
-        if shop_id:
-            q = scoped(q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id), SpuRecord, shop_id)
+        q = scoped(q.join(SpuRecord, SkuRecord.spu_id == SpuRecord.id), SpuRecord, shop_id)
         r = (await session.execute(q)).scalar_one_or_none()
         if not r:
             raise HTTPException(status_code=404, detail="SKU 不存在")
@@ -419,8 +436,7 @@ async def create_group(payload: dict, shop_id: Optional[str] = Depends(get_curre
 async def update_group(group_id: str, payload: dict, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(ProductGroupRecord).where(ProductGroupRecord.id == group_id)
-        if shop_id:
-            q = scoped(q, ProductGroupRecord, shop_id)
+        q = scoped(q, ProductGroupRecord, shop_id)
         g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
@@ -438,16 +454,14 @@ async def update_group(group_id: str, payload: dict, shop_id: Optional[str] = De
 async def delete_group(group_id: str, shop_id: Optional[str] = Depends(get_current_shop_id)):
     async with async_session_factory() as session:
         q = select(ProductGroupRecord).where(ProductGroupRecord.id == group_id)
-        if shop_id:
-            q = scoped(q, ProductGroupRecord, shop_id)
+        q = scoped(q, ProductGroupRecord, shop_id)
         g = (await session.execute(q)).scalar_one_or_none()
         if not g:
             raise HTTPException(status_code=404, detail="分组不存在")
         await session.delete(g)
         # 从当前店铺的 SPU 的 groups 里移除该分组 id
         spu_q = select(SpuRecord)
-        if shop_id:
-            spu_q = scoped(spu_q, SpuRecord, shop_id)
+        spu_q = scoped(spu_q, SpuRecord, shop_id)
         spus = (await session.execute(spu_q)).scalars().all()
         for p in spus:
             if p.groups and group_id in p.groups:
@@ -462,8 +476,7 @@ async def move_group(group_id: str, payload: dict, shop_id: Optional[str] = Depe
     direction = payload.get("direction") or "down"
     async with async_session_factory() as session:
         q = select(ProductGroupRecord)
-        if shop_id:
-            q = scoped(q, ProductGroupRecord, shop_id)
+        q = scoped(q, ProductGroupRecord, shop_id)
         rows = (await session.execute(
             q.order_by(ProductGroupRecord.createdAt)
         )).scalars().all()

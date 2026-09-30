@@ -162,6 +162,36 @@ class StoreRecord(Base):
     # 冗余列（避免超长 Text 主键问题之外的扩展，预留）
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # ★★★ 第 175 轮：**演示店铺**标记 —— 「这家店只给『无身份』的演示请求看」。
+    #
+    #   为什么需要它（完整因果链见迁移 d4a7b2e8c1f6）：
+    #     安全修复 4612abb 把 `filter_accessible_stores` 的匿名分支收紧成
+    #     `return []`（改前是"不过滤 ⇒ 全库返回"）。那个收紧是**对的**，
+    #     但演示档下用户本来就身无凭据 ⇒ 店铺列表恒空 ⇒ 前端
+    #     `current_shop_id` 永远写不进 localStorage ⇒ 所有业务请求不带
+    #     `X-Shop-ID` ⇒ **每个面板都是空的**（老板实测：店铺 / 选品 / 素材 /
+    #     产品 / 业务话术 / 平台规则全白）。
+    #     ⇒ 缺的不是"放宽过滤"，而是一家**能且只能被演示身份看到**的店铺。
+    #
+    #   判定只有一处（`core/auth/accounts.py::_matches`，第 177 轮起）：
+    #     · 演示身份（`user is None`）⇒ 只放行 `is_demo` 的行 —— 列表筛选、
+    #       单店判定（`can_access_store`）、`X-Shop-ID` 解析三条路径共用；
+    #     · 有身份                ⇒ 照旧按 `account_id ∈ 可见集合` 判，
+    #                              `is_demo` **不参与**。
+    #   ★ 第 175 轮的演示店铺**刻意无主**（`account_id` / `owner_id` 均为 NULL），
+    #     靠「无账户归属」兜底分支隔离（`_matches(None, None, …)` ⇒ False）。
+    #   ★★★ 第 176 轮改为「**演示账号名下的店铺**」—— 它们**有归属**（属于演示
+    #     账号），隔离由**账号边界**保证：别的账号的用户命不中它们
+    #     （`account_id ∉ 可见账户集合`）。判定分支一行未改。
+    #
+    #   ⚠️ 别把它读成"平台上有一类叫演示店的店铺"——它是一个**开关**，
+    #      行数 = 演示账号名下的店铺数（由 `modules/stores/demo.py::
+    #      ensure_demo_stores` 保证 —— 双向收敛：不属于该账号的行会被降回 False）。
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False,
+        comment="演示店铺：仅对「无身份」的演示请求可见（第 175 轮）",
+    )
+
 
 # ====== 外键目标表的 metadata 注册（★ 必须留在文件末尾）======
 #

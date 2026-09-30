@@ -12,15 +12,34 @@
 """
 
 from typing import Optional, List, Dict, Any, AsyncIterable
-from datetime import date, datetime, timedelta
+import json
 import re
+from contextvars import ContextVar
 from dataclasses import dataclass, asdict
 
 from core.logger import get_logger
-from ai_infra.sse import progress
+from ai_infra.sse import StreamDigest, progress
+# 竞品快照的读取入口由**表的所有者**提供（PLUGIN→SHARED，import 期合法）；
+# 本模块不再自己拼 SQL —— 理由见该函数 docstring（曾有第二份实现在门禁盲区里）。
+from modules.amazon_sp import load_competitor_snapshots
 
 logger = get_logger(__name__)
 
+
+#: 请求级店铺归属（第 198 轮）。
+#:
+#: ★★★ 工具层**没有** `store_id` 形参 —— 工具入参由 LLM 生成，而归属
+#:   只能由**服务端**注入（同族判据：`core.observability.context.current_user_id`）。
+#:   所以这 8 个竞品工具从本 ContextVar 取归属，写法与
+#:   `product_research` / `review_analyst` 的 `_current_shop_id` 完全一致。
+#:
+#: ★ 唯一写入点 = `_route_via_tools()`（工具环路的唯一入口）。
+#:   写入**必须发生在工具被调用之前** —— 若等 `_ensure_source()` 里再写，
+#:   第一次工具调用已经带着 `store_id=None` 跑完了，`_ensure_source` 会
+#:   直接判 `no_data`（理由「未绑定店铺上下文」），症状是「工具永远没数据」。
+_current_shop_id: ContextVar[Optional[str]] = ContextVar(
+    "competitor_intel_current_shop_id", default=None
+)
 
 # ====== 数据源接入（唯一取数点）======
 
@@ -30,31 +49,29 @@ def _days_of(time_range) -> int:
     return int(m.group(1)) if m else 30
 
 
-def _load_competitor_rows(store_id, time_range="30d", asins=None) -> List[Dict]:
-    """取本店铺的竞品快照（唯一入口，经工厂）。
+async def _load_competitor_rows(store_id, time_range="30d", asins=None) -> List[Dict]:
+    """取本店铺的竞品快照（唯一入口 → 走 `modules.amazon_sp` 的**表读取**）。
 
-    ★ 为什么必须经 `get_data_source()`：配好 SP-API 凭据后这里会自动切到真实现；
-      绕过工厂直连 Mock（模块级单例那种写法）会让「配了凭据也永远跑假数据且不报错」。
+    ★ 真源是表 `amazon_competitor_snapshots`，不是数据源工厂：
+      · 改造前走 `get_data_source(prefer="auto")`，无 SP-API 凭据时静默回退到
+        `MockAmazonDataSource` —— 每次查询**现场随机**生成 6 个竞品
+        （TP-Link / Anker / JBL…），与用户在监控池里真正盯的对象**零交集**，
+        而且同一问题问两次答案不一样，没法复盘；
+      · 现在只读表（数据由 `modules/amazon_sp/seed.py` 从监控池展开，逐日行）。
+      ★ 将来接真实 SP-API 抓取时，**只需让抓取任务写同一张表** ——
+        本函数与下游全部分析逻辑一行都不用动，这就是"保留接口"的落点。
+
+    ★ 第 172 轮收尾：查询本体已上收到 `modules.amazon_sp.load_competitor_snapshots`
+      （表的所有者）。原因见那一侧的 docstring —— 本仓曾有**两份**同名实现
+      （本模块 + `ad_analysis/agent_ad.py`），而门禁只盯住了本模块，
+      另一份在盲区里继续走 mock。现在两处共用同一个函数，**租户过滤只此一处**。
 
     ★ 拿不到 `store_id`（未选店铺）时**不猜测、不取默认店**，直接返回空列表，
       由调用方给显式空状态。
-
-    ★ `asins` 透传给数据源做过滤。注意数据源只能在**它自己的竞品集合内**过滤，
-      查不到的 ASIN 会落空 —— 这是事实，不由本层编造补上。
     """
     if not store_id:
         return []
-    from modules.amazon_sp import get_data_source
-
-    src = get_data_source(prefer="auto", seed=42)
-    d_to = date.today()
-    d_from = d_to - timedelta(days=_days_of(time_range) - 1)
-    kw = {"asins": list(asins)} if asins else {}
-    try:
-        return list(src.fetch_competitors(store_id, d_from, d_to, **kw))
-    except Exception as e:  # 数据源故障不得伪装成「无数据」
-        logger.error(f"[competitor_intel] 取竞品快照失败 store={store_id}: {e}")
-        raise
+    return await load_competitor_snapshots(store_id, days=_days_of(time_range), asins=asins)
 
 
 # 结构化意图 → 阶段进度文案（stream_chat 在耗时分析前发给前端，避免空转）
@@ -155,6 +172,7 @@ class IntruderAlert:
 # 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
 from ai_infra.base_agent import BaseAgent
 from ai_infra.intent import Route, first_match
+from ai_infra.skills import SKILL_CHANNEL_UNAVAILABLE, is_skill_requested
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
 from modules.competitor_intel import prompts as _prompts  # noqa: F401
 
@@ -190,6 +208,161 @@ class CompetitorIntelligenceAgent(BaseAgent):
         self._loaded_key: Optional[tuple] = None
         self._data_status: str = "no_data"
         self._data_reason: Optional[str] = None
+        # ★ 第 198 轮：工具化路由子层（懒加载）。**不能**在 __init__ 里
+        #   构建 —— 那会触发 `tools → service → agent_competitor` 循环导入。
+        self._router: Optional[Any] = None
+
+    # ==================== 工具化路由层（第 198 轮 · 范式 A）====================
+    #
+    # 本 Agent 此前是**范式 B**：`analyze()` → `_classify_intent()`（关键词表）
+    # → `_handle_*`（规则引擎），LLM 只在 `_llm_insights()` 里写文案。
+    # 于是 `competitor_intel_tools`（8 个）**零装配** —— 注册了、却没有任何
+    # Agent 绑定（全仓 `from ... import competitor_intel_tools` 零命中）。
+    #
+    # 第 198 轮把它接到**范式 A**（LLM 自主 bind_tools），做法与
+    # `listing_generator` / `product_research` 的 `_build_router()` 逐字同构。
+
+    def _get_router(self):
+        """懒加载工具化路由层，返回 None 表示不可用（回退关键词路由）。"""
+        if self._router is None:
+            self._router = self._build_router()
+        return self._router
+
+    def _build_router(self):
+        """构建工具化路由层（BaseAgent 实例，注入 8 个竞品工具）。
+
+        ★★★ 为什么必须**组合一个 BaseAgent**，而不能只在 `super().__init__()`
+          里多写一个 `tools=`：
+            工具只在 `BaseAgent._llm_with_tools()` 里被 `bind_tools`，而它
+            只被图节点 `_llm_call_node` 调用。本 Agent 自己的 `analyze()` 与
+            改造前的 `stream_chat()` **从不驱动那张图** ⇒ 只加 `tools=` 是
+            **装饰性接线**：注册表不再「悬空」、门禁变绿，而模型手里依旧
+            没有工具 —— 比不接更糟（把缺口藏起来）。
+        """
+        if not self.ENABLE_LLM:
+            return None
+        try:
+            from .tools import competitor_intel_tools
+
+            from ai_infra.base_agent import BaseAgent
+            from ai_infra.budget import BUDGET_ROUTER
+            from ai_infra.context import CONTEXT_ROUTER
+            from core.checkpoint import get_checkpointer
+
+            return BaseAgent(
+                # ★ 子层名字带 `_router` 后缀（同 listing / PR），技能注入边界
+                #   由 `modules.skills.agents.business_agent_name()` 归一回业务名。
+                agent_name=f"{self.agent_name}_router",
+                system_prompt=self.get_prompt_template("competitor_intel"),
+                tools=competitor_intel_tools,
+                # 路由子层是「单次决策 + 一串工具调用、用完即答」⇒ 用 ROUTER 档。
+                budget=BUDGET_ROUTER,
+                context_policy=CONTEXT_ROUTER,
+                checkpointer=get_checkpointer(),
+                # 与 secretary / listing / PR 隔离（各自的 thread_id 空间）。
+                checkpoint_ns="competitor_intel",
+            )
+        except Exception as e:  # noqa: BLE001 —— 路由层不可用时回退，不影响主流程
+            logger.warning(f"[competitor_intel] router build failed: {e}")
+            return None
+
+    async def _stream_via_tools(self, query: str,
+                                context: Optional[Dict[str, Any]] = None) -> AsyncIterable:
+        """流式工具路由：**实时**下发思考过程（step），答复文本仍一次性给出。
+
+        ★ 与 `_route_via_tools` 是**同一条决策路径**（router 的 LLM 自主选工具），
+          差别只在「过程能不能边跑边看」：
+          · `run_session` 一次性返回 state ⇒ 轨迹**事后**才拿得到，而调用方
+            只取最后一条 AIMessage ⇒ 轨迹被整段丢掉，前端只看到一个转圈
+            （这正是第 210 轮老板的原始诉求）；
+          · 这里改走 `stream_session` + `StreamDigest`：工具事件**逐条**转成
+            step 事件下发，答复按原时序**攒齐一次吐出** ——
+            即「只做加法、正文行为零变化」。
+
+        Yields:
+            step 事件（dict）/ 整段答复文本（str）；**没有产出就什么都没 yield**，
+            由调用方按空结果回退关键词路由（与 `_route_via_tools` 返回 None 同义）。
+        """
+        router = self._get_router()
+        if router is None:
+            return
+
+        # ★★★ 归属的**唯一写入点**：必须在这里（工具被调用之前）。
+        #   与非流式路径**同源** —— 换成流式却漏掉这一句，工具就拿不到
+        #   店铺归属（而漏掉不会报错，只会静默按「无店铺」取数）。
+        _current_shop_id.set((context or {}).get("store_id"))
+
+        prompt = query
+        if context:
+            try:
+                ctx_json = json.dumps(context, ensure_ascii=False, default=str)
+            except (TypeError, ValueError):
+                ctx_json = str(list(context.keys()))
+            prompt = f"{query}\n\n[上下文数据] {ctx_json[:2000]}"
+
+        from langchain_core.messages import HumanMessage
+
+        # ★ 工具人话标题走**注入**：真源在业务侧
+        #   （`modules/skills/tools_catalog.py::tool_title`，全仓唯一查询口），
+        #   而 `ai_infra` 不许依赖业务（分层硬红线）⇒ 只能把查询口传进去。
+        #   惰性 import：Agent 的**模块导入期**无需把 `modules.skills` 拉进依赖图，
+        #   只有真跑流式工具环路时才需要它。
+        # 走**包门面**（本仓条款 1：跨模块引用不得伸手进包内部）。
+        from modules.skills import tool_title
+
+        digest = StreamDigest(title_resolver=tool_title)
+        try:
+            async for ev in router.stream_session(
+                {"messages": [HumanMessage(content=prompt)]},
+            ):
+                s = digest.feed(ev)
+                if s is not None:
+                    yield s
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[competitor_intel] stream tool routing failed: {e}")
+            return
+
+        if digest.reply:
+            yield digest.reply
+
+    async def _route_via_tools(self, query: str,
+                               context: Optional[Dict] = None) -> Optional[str]:
+        """工具化路由：LLM 自主选工具执行，返回可读回复文本。
+
+        返回 None 表示不可用或失败，调用方回退关键词路由（`_classify_intent`）。
+        """
+        router = self._get_router()
+        if router is None:
+            return None
+
+        # ★★★ 归属的**唯一写入点**：必须在这里（工具被调用之前）。
+        #   `context` 由 `service.stream_chat` 用请求头解析出的 store_id 填好，
+        #   模型看不到也改不了它。
+        _current_shop_id.set((context or {}).get("store_id"))
+
+        prompt = query
+        if context:
+            try:
+                ctx_json = json.dumps(context, ensure_ascii=False, default=str)
+            except (TypeError, ValueError):
+                ctx_json = str(list(context.keys()))
+            prompt = f"{query}\n\n[上下文数据] {ctx_json[:2000]}"
+
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        try:
+            state = await router.run_session(
+                {"messages": [HumanMessage(content=prompt)]},
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[competitor_intel] tool routing failed: {e}")
+            return None
+
+        reply = ""
+        for m in state.get("messages") or []:
+            if isinstance(m, AIMessage) and m.content:
+                reply = m.content if isinstance(m.content, str) else str(m.content)
+        return reply.strip() or None
 
     async def _llm_insights(self, context: str, max_tokens: int = 800) -> Optional[str]:
         """
@@ -215,13 +388,16 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
     # ==================== 数据源装载（唯一入口）====================
 
-    def _ensure_source(self, context: Optional[Dict] = None) -> bool:
+    async def _ensure_source(self, context: Optional[Dict] = None) -> bool:
         """按「店铺 + 时间范围」把数据源快照装载进**实例**视图。
 
         True  ⇒ 本实例已有可用竞品数据，可继续分析。
         False ⇒ 应走显式空状态（`self._data_reason` 说明原因）。
 
         同一 (store_id, time_range) 重复调用不重复取数。
+
+        ★ 自第 172 轮起本方法是 **async**：取数改为读 `amazon_competitor_snapshots`
+          表（原先同步走数据源工厂）。调用方必须 await。
         """
         ctx = context or {}
         store_id = ctx.get("store_id")
@@ -231,23 +407,41 @@ class CompetitorIntelligenceAgent(BaseAgent):
         if key == self._loaded_key:
             return bool(self._competitor_db)
 
+        # ★ key 与 dict **同生共死**：进装载前把 key 一并清掉。
+        #   只重置 dict 而留着旧 key，下次**回到那个旧 key** 会命中
+        #   `key == self._loaded_key` 的短路，却对着一个**空 dict** 返回 False
+        #   （且 `_data_reason` 还是上一次别的店铺留下的）—— 实测把
+        #   `test_competitor_intel.py` 从 62 绿打成 33 红。
+        self._loaded_key = None
         self._competitor_db = {}
         self._price_history_db = {}
         self._ranking_history_db = {}
-        self._loaded_key = key
 
+        # ★★★ 第 210 轮：`_loaded_key` **只在装载成功后才写**。
+        #   此前它在**空结果/无店铺**路径上也被写入，而本方法的短路条件正是
+        #   `key == self._loaded_key` ⇒ 一次「暂无数据」的结论会被**永久**钉住：
+        #     · 本 Agent 由 `service._get_agent()` 持有，是**进程内单例**
+        #       （`service.py:59`）—— 受影响的是**整个进程**，不是这一次请求；
+        #     · 用户照空状态里的提示去「竞品监控」把 ASIN 加进池子、快照已展开，
+        #       再问一次**照样**得「暂无数据」，直到进程重启。
+        #   这正是本仓那条判据的反面：「拿不到权威清单 ≠ 清单为空」。
+        #   代价仅为：空结果路径上每次多一次廉价索引查询（该路径本就立即返回）。
         if not store_id:
             self._data_status = "no_data"
             self._data_reason = "未绑定店铺上下文（请求缺少 X-Shop-ID）"
             return False
 
-        rows = _load_competitor_rows(store_id, time_range)
+        rows = await _load_competitor_rows(store_id, time_range)
         if not rows:
             self._data_status = "no_data"
-            self._data_reason = f"店铺 {store_id} 在当前数据源中暂无竞品快照"
+            self._data_reason = (
+                f"店铺 {store_id} 的竞品监控池暂无数据 —— "
+                "请先在「竞品监控」里添加要盯的竞品 ASIN，快照会随池子展开"
+            )
             return False
 
         self._build_from_rows(rows)
+        self._loaded_key = key      # ★ 只有**成功**才记住（理由见上方 210 轮注释）
         self._data_status = "ok"
         self._data_reason = None
         return True
@@ -317,7 +511,7 @@ class CompetitorIntelligenceAgent(BaseAgent):
         intent = self._classify_intent(query)
 
         # ★ 一切能力都以真实竞品数据为前提：装载失败 ⇒ 显式空状态，不进 handler。
-        if not self._ensure_source(context):
+        if not await self._ensure_source(context):
             out = self._no_data("竞品分析")
             out["intent"] = intent
             return out
@@ -360,7 +554,7 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
     async def _monitor_competitor(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力1：竞品 Listing 监控"""
-        if not self._ensure_source(context):
+        if not await self._ensure_source(context):
             return self._no_data("竞品 Listing 监控")
         asin = self._resolve_asin(query, context)
 
@@ -425,7 +619,7 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
     async def _track_batch_asins(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力2：ASIN 批量追踪"""
-        if not self._ensure_source(context):
+        if not await self._ensure_source(context):
             return self._no_data("ASIN 批量追踪")
         asins = self._resolve_asins(query, context)
 
@@ -463,7 +657,7 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
     async def _analyze_market_share(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力3：市场份额分析"""
-        if not self._ensure_source(context):
+        if not await self._ensure_source(context):
             return self._no_data("市场份额分析")
         category = self._extract_category(query) or context.get("category") if context else "Headphones"
 
@@ -513,7 +707,7 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
     async def _analyze_pricing_strategy(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力4：定价策略分析"""
-        if not self._ensure_source(context):
+        if not await self._ensure_source(context):
             return self._no_data("定价策略分析")
         asin = self._resolve_asin(query, context)
 
@@ -583,7 +777,7 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
     async def _analyze_competitor_reviews(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力5：竞品评论深度分析"""
-        if not self._ensure_source(context):
+        if not await self._ensure_source(context):
             return self._no_data("竞品评论深度分析")
         asin = self._resolve_asin(query, context)
 
@@ -636,7 +830,7 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
     async def _analyze_buy_box(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力7：Buy Box 竞争分析"""
-        if not self._ensure_source(context):
+        if not await self._ensure_source(context):
             return self._no_data("Buy Box 竞争分析")
         asin = self._resolve_asin(query, context)
 
@@ -670,7 +864,7 @@ class CompetitorIntelligenceAgent(BaseAgent):
 
     async def _compare_competitors(self, query: str, context: Optional[Dict] = None) -> Dict:
         """能力8：多维度竞品对比"""
-        if not self._ensure_source(context):
+        if not await self._ensure_source(context):
             return self._no_data("多维度竞品对比")
         asins = self._resolve_asins(query, context)
 
@@ -744,9 +938,44 @@ class CompetitorIntelligenceAgent(BaseAgent):
         Yields:
             文本片段 / progress 事件（供 ai_infra.sse.sse_event_stream 包装成 SSE）
         """
+        # ★★★ 第 198 轮：对话通道改为「工具化路由优先」。
+        #
+        #   改造前这里是一个**永不可达的死分支**：下面写着
+        #   `if intent != "general":` … 否则走 LLM 流式 —— 而
+        #   `_classify_intent` 的兜底是 `"compare"`（`first_match(..., "compare")`
+        #   的 default），`_INTENT_ROUTES` 里**根本没有 "general"** ⇒ 该条件
+        #   恒真 ⇒ 那段 LLM 分支一次也走不到。叠加「零工具」的事实，
+        #   对话通道此前**永远只走规则引擎**。
+        #
+        #   现在：① 先试工具环路（LLM 用 bind_tools 自己选那 8 个竞品工具）；
+        #        ② 不可用 / 失败 ⇒ 回退原关键词路由（确定性、离线可跑）。
+        #   回退不是装饰：`ENABLE_LLM=False`、无 API KEY、图构建失败都要能继续服务。
+        # ★ 第 210 轮：改走**流式版**工具环路 —— 思考过程（step）实时下发，
+        #   答复文本仍按原来的时序**攒齐一次吐出**（正文行为零变化）。
+        #   `tool_chunks` 为空 = 工具路没产出任何文本 ⇒ 与原来返回 None 一样
+        #   落到下面的关键词回退链（降级链一行没动）。
+        tool_chunks: list = []
+        async for chunk in self._stream_via_tools(query, context):
+            if isinstance(chunk, dict):
+                yield chunk
+            else:
+                tool_chunks.append(chunk)
+        if tool_chunks:
+            yield progress("正在调用竞品分析工具…")
+            yield "".join(tool_chunks)
+            return
+
+        # ★ 点名技能、但技能通道（工具环路）没产出 ⇒ **如实说，不落下面的
+        #   关键词短路**（第 246 轮）：那条短路不构造 system prompt，拿它的
+        #   结果顶替用户点的技能，界面上完全看不出来（静默退化）。
+        #   ★ 未点名时这一句不生效 ⇒ 下面整条降级链**一行没动**。
+        if is_skill_requested():
+            yield SKILL_CHANNEL_UNAVAILABLE
+            return
+
         intent = self._classify_intent(query)
 
-        # 结构化意图：走 analyze 一次性返回（含结构化数据）
+        # 回退：结构化意图走 analyze 一次性返回（含结构化数据）
         if intent != "general":
             yield progress(_INTENT_PROGRESS.get(intent, "正在分析竞品数据…"))
             result = await self.analyze(query, context)
@@ -758,7 +987,7 @@ class CompetitorIntelligenceAgent(BaseAgent):
                 yield f"已生成「{intent}」分析结果，详情见右侧结构化面板。"
             return
 
-        # 对话类：走 LLM 流式
+        # 对话类：纯 LLM 流式（**无工具**，仅当工具环路不可用时才到这里）
         if not (self.ENABLE_LLM and self.llm_client):
             result = await self._general_analysis(query)
             yield result.get("message", "")

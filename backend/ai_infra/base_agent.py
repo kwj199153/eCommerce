@@ -192,6 +192,18 @@ class BaseAgent:
     DEFAULT_MODEL: str = "qwen-plus"     # 默认模型（均衡性能）
     ANALYSIS_MODEL: str = "qwen-max"     # 复杂分析任务模型
     ENABLE_LLM: bool = True              # 总开关（关闭则全部走降级）
+    #: 第一轮（"理解 + 决策"那一次模型调用）是否改用**更快**的
+    #: `config.llm_fallback_model`。默认**关**：不改任何既有 Agent 的行为，
+    #: 由业务 Agent 显式打开（今天只有店秘书）。
+    #: ★ 为什么"第一轮换快模型"是安全的（这是 P2 唯一的正确性判据）：
+    #:   ReAct 的中间轮只会说两种话 —— tool_calls（要执行）与碎话（会被
+    #:   `_digest_graph_state` 丢掉，正文只取**最后一条**有内容的 AIMessage）。
+    #:   ⇒ 任务型请求的真实答案仍由默认（强）模型产出；
+    #:   只有"无需工具、一轮就答完"的闲聊会由快模型直接给出。
+    #: ★ 为什么不按关键词判"这是不是闲聊"：那会新增**第三份**意图判定
+    #:   （本仓已有关键词短路表 + LLM 工具路由两份）。"一轮就答完"这件事
+    #:   模型自己用 tool_calls 表达，直接用它最准。
+    FAST_FIRST_ROUND: bool = False
     ENABLE_RAG: bool = False             # 是否启用 RAG（通用检索增强，业务按需开启）
     FALLBACK_TO_MOCK: bool = True        # LLM 失败时是否降级
     #: 是否启用**自主规划器**（第 148 轮 · 批 C3）。开启后基类自动装配
@@ -340,6 +352,9 @@ class BaseAgent:
         self._llm_override = llm
         self._llm_default: Optional[BaseChatModel] = None
         self._llm_resolved = False
+        #: `model_name -> BaseChatModel`（第 238 轮：第一轮备用模型的实例缓存）。
+        #: ★ key 含模型名 ⇒ 进程内单例被多请求共用也不会串味（只按名取）。
+        self._llm_by_model: dict = {}
 
         # ---- LLM 槽位 ②：DashScopeLLM（RAG / 纯文本）+ RAG 引擎（懒加载）----
         self._llm_client = None
@@ -367,7 +382,43 @@ class BaseAgent:
         # ★ 它们声明为 `LOCAL_STATE_METADATA`（只写本地 state）⇒ 免 HITL 审批，
         #   所以「追加进去」不会给用户多出一步「请批准规划」的确认。
         _planner = list(planner_tools) if self.enable_planning else []
-        self.tools = self._wrap_hitl_tools((list(tools) if tools else []) + _planner)
+
+        # ★★ 第 181 轮 · 批 B：技能**按需加载**工具（渐进披露的第二级）。
+        #
+        #   为什么由基类统一装配、不让各业务 Agent 手写进 `tools=`：
+        #   与上面 `_planner` 同一条理由 —— 技能是**跨 Agent 的基类能力**
+        #   （目录注入在 `prompt_sections`，正文加载必须配套存在）。
+        #   业务侧漏装一处的症状是「模型看得见技能目录、但永远读不到正文」——
+        #   **不报错、门禁全绿**，只是 AI 显得"没用上技能"。
+        #
+        #   ★ `build_skill_tools()` 在**未注册读取器**时返回 `[]`
+        #     ⇒ 不装这个工具。装一个永远查不到东西的工具比不装更糟：
+        #     模型会反复试、把"没配数据"误读成"工具坏了"，白烧若干轮 token。
+        #     注册点见 `modules/skills/provider.py::install()`。
+        #
+        #   ★ `agent_name` 在**构造期**绑进闭包：工具对象本身是无状态的，
+        #     它无从知道"是哪个 Agent 在调我"（`agent_name` 同理于下面的日志主语）。
+        _skill_tools: list = []
+        try:
+            from ai_infra.skills import build_skill_tools
+
+            _skill_tools = build_skill_tools(self.agent_name)
+        except Exception as exc:  # noqa: BLE001 —— 见下
+            # ★ 技能是**增益**不是门禁：装配失败不该让 Agent 起不来。
+            #   但必须留下痕迹（否则"技能没生效"会被当成"技能没数据"排查）。
+            logger.warning(
+                f"⚠️ [{self.agent_name}] 技能加载工具装配失败，本次跳过: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+        self.tools = self._wrap_hitl_tools(
+            (list(tools) if tools else []) + _planner + _skill_tools
+        )
+        if _skill_tools:
+            logger.info(
+                f"📚 [{self.agent_name}] 已装配技能按需加载工具 "
+                f"{[t.name for t in _skill_tools]}（技能目录每轮注入 system prompt）"
+            )
         if _planner:
             logger.info(
                 f"🧭 [{self.agent_name}] 已启用自主规划器 "
@@ -395,18 +446,73 @@ class BaseAgent:
 
     # ====== LLM 槽位 ①：LangChain 模型（图内核） ======
 
-    def _get_default_llm(self) -> BaseChatModel:
-        """获取默认 LLM（DashScope Qwen 兼容端点）"""
+    def _build_chat_model(self, model: str) -> BaseChatModel:
+        """按模型名构造 ChatOpenAI（DashScope 兼容端点）—— **唯一构造点**。
+
+        ★ 参数列表只能有一份：第 238 轮起要按名取实例（第一轮走更快的备用
+          模型），若各写一份，`temperature` / `max_tokens` / `timeout`
+          迟早只改一处 —— 那类漂移不报错，只是"某个模型的行为悄悄不一样了"。
+        """
         from langchain_openai import ChatOpenAI
 
         return ChatOpenAI(
-            model=config.llm_default_model,
+            model=model,
             openai_api_key=config.dashscope_api_key,
             openai_api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
             temperature=config.llm_temperature,
             max_tokens=config.llm_max_tokens,
             timeout=config.llm_timeout_seconds,
         )
+
+    def _get_default_llm(self) -> BaseChatModel:
+        """获取默认 LLM（DashScope Qwen 兼容端点）
+
+        ★ 刻意保持**零参**契约：`tests/conftest.py` 用零参 lambda 替换本方法
+          给全套测试打桩。改签名 = 底座崩，而不是"某条判据红了"。
+        """
+        return self._build_chat_model(config.llm_default_model)
+
+    def _llm_for(self, model: Optional[str] = None) -> Optional[BaseChatModel]:
+        """按模型名取实例（按名缓存）；`None` / 等于默认模型 ⇒ 走 `self.llm`。
+
+        ★ 失败**可见地回落**：拿不到备用模型就用默认模型 + 留一条 warning。
+          宁可这一轮慢一点，也不要因为"想加速"把对话彻底打不开
+          （加速手段不得变成故障源）。
+        """
+        if not model or model == config.llm_default_model:
+            return self.llm
+        cached = self._llm_by_model.get(model)
+        if cached is not None:
+            return cached
+        if not self.ENABLE_LLM:
+            return None
+        try:
+            built = self._build_chat_model(model)
+        except Exception as e:  # noqa: BLE001 —— 见 docstring
+            logger.warning(
+                f"[{self.agent_name}] 备用模型 {model} 初始化失败，本轮回落到 "
+                f"{config.llm_default_model}：{e}"
+            )
+            return self.llm
+        self._llm_by_model[model] = built
+        return built
+
+    def _first_round_model(self, messages: list) -> Optional[str]:
+        """第一轮要不要换更快的模型；不用则返回 `None`（= 走默认模型）。
+
+        判据只有两条，都在**本轮消息**上，不看 query 文本：
+          ① 本轮还没出现过 AIMessage（= 这确实是第一轮）；
+          ② 类开关 `FAST_FIRST_ROUND` + 配置开关 `llm_fast_first_round` 都开，
+             且备用模型名非空、且与默认模型不同。
+        """
+        if not (self.FAST_FIRST_ROUND and getattr(config, "llm_fast_first_round", False)):
+            return None
+        fast = (config.llm_fallback_model or "").strip()
+        if not fast or fast == config.llm_default_model:
+            return None
+        if self._iterations_in_current_turn(messages or []):
+            return None
+        return fast
 
     @property
     def llm(self) -> Optional[BaseChatModel]:
@@ -577,6 +683,26 @@ class BaseAgent:
                 model=model or self.ANALYSIS_MODEL,
                 **kwargs,
             )
+
+            # 延迟 import：与 `llm_client` property 同一风格（:547）
+            from ai_infra.llm.dashscope_client import is_llm_parse_failed
+
+            # ★ P0-8（2026-09-27）：解析失败 ≠ 调用成功。
+            #   修复前这里**无条件** `success=True`，而 `structured_chat()` 解析失败时
+            #   并不抛异常、只返回退化载荷 —— 于是下游
+            #   `if llm_result.success and isinstance(content, dict)` 恒真，
+            #   把不可用的输出当成「LLM 增强成功」写进最终答案（**假成功**）。
+            if is_llm_parse_failed(result):
+                return LLMCallResult(
+                    success=False,
+                    content=result,
+                    raw_text=json.dumps(result, ensure_ascii=False),
+                    error=(
+                        "LLM 结构化输出解析失败（"
+                        f"{result.get('reason') or 'json_decode_error'}），结果不可用"
+                    ),
+                    fallback=False,
+                )
 
             return LLMCallResult(
                 success=True,
@@ -984,6 +1110,52 @@ class BaseAgent:
         return out
 
     @staticmethod
+    def previous_turn_was_clarification(messages: list) -> bool:
+        """上一轮是不是「追问 / 澄清」—— 本判定**只有这一份实现**（第 250 轮）。
+
+        ★ 为什么需要它（一次真实漏判）：
+          工具环路的 LLM 信息不足时不会硬凑结果，它会**反问**（如「你想基于
+          哪一期？」）。老板的答案（「基于月报」）**必然包含追问里的关键词** ——
+          因为那正是被问到的词。于是各 Agent 的「关键词命中即短路」会把答案
+          当成一个**新任务**直接执行，追问就此丢失。
+          这是**结构性**的：问句与答案是同一批词，任何纯关键词判定都躲不开。
+
+        ★ 判据：上一轮**有最终回复、但一个工具都没调** ⇒ 它不是在产出结果，
+          而是在问话。反过来，只要调过工具，那一轮就是在干活（哪怕最后还补了
+          一句说明文字）⇒ 不是追问。
+
+        ★ 切轮口径与 `_iterations_in_current_turn` / `tool_activity_in_turn`
+          **完全一致**：都锚在「最后一条 `HumanMessage` 之后」。「上一轮」= 最后
+          一条 `HumanMessage` **之前**、上一条 `HumanMessage` **之后**的那一段。
+          三份口径若不一致，在多轮会话里会指向不同的两段 —— 而**不会报错**。
+
+        ★ 为什么**不**复用 `tool_activity_in_turn`：它对本轮**无工具活动**恒返回
+          `{}`，把「纯文本回复」与「什么都没有」压成同一个值；而本判定要区分的
+          恰恰是这两者 ⇒ 必须自己扫。这是刻意的不复用，不是漏掉。
+        """
+        msgs = messages or []
+        human_idx = [
+            i for i, m in enumerate(msgs)
+            if isinstance(m, HumanMessage) or m.__class__.__name__ == "HumanMessage"
+        ]
+        if not human_idx:
+            return False
+        end = human_idx[-1]
+        start = human_idx[-2] + 1 if len(human_idx) >= 2 else 0
+        has_reply = False
+        has_tool = False
+        for m in msgs[start:end]:
+            cn = m.__class__.__name__
+            if isinstance(m, AIMessage) or cn == "AIMessage":
+                if getattr(m, "content", None):
+                    has_reply = True
+                if getattr(m, "tool_calls", None):
+                    has_tool = True
+            elif isinstance(m, ToolMessage) or cn == "ToolMessage":
+                has_tool = True
+        return has_reply and not has_tool
+
+    @staticmethod
     def _carried_tokens(state: dict, *, iterations_done: int) -> int:
         """本轮**此前**已消耗的 token（0 表示本轮第一次迭代）。
 
@@ -1000,6 +1172,23 @@ class BaseAgent:
         if iterations_done <= 0:
             return 0
         return int((state.get("budget") or {}).get("spent_tokens") or 0)
+
+    def _sanitize_history_for_model(self, messages: list) -> list:
+        """历史**去污染**钩子 —— 只作用于「发给模型的副本」，默认**恒等**。
+
+        ★ 为什么要有这个钩子、而不是让子类自己抄一份 `_llm_call_node`：
+          落点必须是**这里**（trim 之后、拼 SystemMessage 之前），因为历史有两个
+          来源 —— 前端显式传的 `history`（无会话时）与 checkpointer 恢复的
+          `state["messages"]`（有会话时）。两条来源最终都汇进本节点的
+          `state["messages"]`，也只有这里能一次覆盖两条；子类另抄一份必然只覆盖
+          一条（本仓反复出现的形态：同一判定两份实现 ⇒ 至少一份永远测不到）。
+        ★ 默认恒等 ⇒ 对**所有**其它 Agent 零行为变化（门禁钉住这一条）。
+        ★ 为什么在 `trim_history()` **之后**：裁完才动手，省掉对被裁掉那部分的
+          无谓替换；且语义上"发出去的才需要干净"。
+        ★ 与 `_sanitize_tool_call_pairing` 同立场：只清洗副本，
+          **不修改 state / checkpoint**。
+        """
+        return messages
 
     def _system_prompt_with_plan(self, state: dict, *, sections: str = "") -> str:
         """本轮要发给模型的 system prompt。
@@ -1059,6 +1248,14 @@ class BaseAgent:
         #   ★ 保底保留 `keep_recent_turns` 轮 —— 否则一次裁剪就把上下文炸成空。
         #   四条不变量详见 `ai_infra/context.py`。
         clean_messages, context_report = trim_history(clean_messages, self.context_policy)
+
+        # ★★★ 第 242 轮：**历史去污染**（子类可覆写，基类默认恒等）。
+        #   为什么必须有：实测发现「在 system prompt 里注入权威事实」**不足以**
+        #   让模型改口 —— 措辞换三组全无效、把事实段挪到 user 轮才有效，换名做
+        #   阳性对照则 100% 被采纳。真因是**历史里那条现成的错误自称是一份示范**，
+        #   具体示范压过抽象规则；就算删掉自称片段，模型还会从别处把旧店名捞回来。
+        #   只有「历史里根本不存在那个旧店名」才稳定改口（见 shop_context 头注释）。
+        clean_messages = self._sanitize_history_for_model(clean_messages)
         if context_report.changed:
             logger.info(
                 f"✂️ [{self.agent_name}] 上下文裁剪：轮 {context_report.turns_total} → "
@@ -1111,7 +1308,12 @@ class BaseAgent:
             )
         ] + clean_messages
 
-        response = await self._llm_with_tools().ainvoke(messages)
+        # ★ 第 238 轮 P2：**第一轮**走更快的备用模型（闲聊场景 TTFT 与生成都更短）。
+        #   判"是不是第一轮"用的就是本轮输入口径（`clean_messages`：已剔 orphan、
+        #   已裁剪），与 `_iterations_in_current_turn` 同一份 —— 不另立口径。
+        response = await self._llm_with_tools(
+            model=self._first_round_model(clean_messages)
+        ).ainvoke(messages)
 
         # ★ 记录 Token 使用量 + 计入请求级计费计量器。
         # 原实现**只写 logger.debug、不落库**（测试之所以绿，是因为 conftest 的
@@ -1212,13 +1414,16 @@ class BaseAgent:
 
         return {"messages": [response], "budget": budget_state}
 
-    def _llm_with_tools(self) -> BaseChatModel:
+    def _llm_with_tools(self, model: Optional[str] = None) -> BaseChatModel:
         """绑定工具的 LLM。
 
         关键：必须 bind_tools，否则 LLM 永不输出 tool_calls，
         _should_continue 永远走 "respond"，工具循环形同虚设。
+
+        :param model: 指定模型名（第 238 轮 P2：第一轮走更快的备用模型）。
+            缺省 ⇒ 默认模型；缓存与回落口径见 `_llm_for`。
         """
-        llm = self.llm
+        llm = self._llm_for(model)
         if llm is None:
             raise RuntimeError(
                 f"[{self.agent_name}] 图路径需要 LangChain 模型，但当前不可用"
@@ -1410,6 +1615,43 @@ class BaseAgent:
                 "session_mode_reason": self.MEMORYLESS_REASON,
             },
         }
+
+    async def last_turn_was_clarification(
+        self, session_id: Optional[str], user_id: Optional[str] = None
+    ) -> bool:
+        """只读上一轮是不是「追问 / 澄清」（第 250 轮）。**绝不** `ainvoke`。
+
+        ★ 为什么必须是**只读**：本方法在「决定这一轮走哪条路」时被调用；若它
+          顺手推进一次图，就等于把老板这一轮的问题**先执行一遍**再执行一遍 ——
+          而两次执行写的是同一个 thread。只读性范式同 `modules/secretary/agent.py`
+          的 `current_plan()`（`tests/test_secretary_plan_read.py` 钉着
+          「只 `aget_state`、不 `ainvoke`」）。
+
+        ★ 安全失败方向是 **False（不让路）**：让路是**新增**行为，拿不到证据就
+          不能引入 ⇒ 无会话 / 无身份 / 没绑 checkpointer / 读失败，一律 False，
+          调用方行为与改造前**逐字等价**。
+
+        ★ 为什么 `self` 上可能读不到、而要用**绑了 checkpointer 的那个实例**调：
+          本仓有的 Agent（如 `review_analyst`）把会话状态寄存在一个**组合出来的
+          路由子层**上（`_build_router()` 里 new 的 `BaseAgent`），主实例自己
+          没绑 checkpointer。⇒ 调用方必须拿**真正跑图的那个实例**来问
+          （`self._router.last_turn_was_clarification(...)`），对主实例调恒得
+          False（它本来就没记忆，不是缺陷、是事实）。
+        """
+        if not session_id or not user_id:
+            return False
+        if self.checkpointer is None:
+            return False
+        graph, cfg = self.graph_for_session(session_id, user_id)
+        try:
+            snapshot = await graph.aget_state(cfg)
+        except Exception as e:  # 读失败要可观测，但不能把调用方拖崩
+            logger.warning(
+                f"🟡 [{self.agent_name}] 读上一轮状态失败 session={session_id or '-'}: {e}"
+            )
+            return False
+        values = getattr(snapshot, "values", None) or {}
+        return self.previous_turn_was_clarification(values.get("messages") or [])
 
     def _memoryless_graph(self):
         """不带 checkpointer 的图（懒构建 + 缓存）。"""

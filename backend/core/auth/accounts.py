@@ -114,8 +114,10 @@ def is_platform_admin(user: Optional[User]) -> bool:
     是否平台超管（跨全部账户）。
 
     ★ 演示模式下 `require_auth_if_enabled` 会返回 `None` —— 这里返回 False，
-      表示"没有身份"，**不是**"是超管"。调用方要自己决定 None 怎么处理
-      （业务侧的做法是：None ⇒ 跳过归属校验，保持本地演示行为不变）。
+      表示「没有身份」，**不是**「是超管」。
+      ★ 第 177 轮更正：业务侧**不再**是「None ⇒ 跳过归属校验」——
+        `_matches` / `can_access_store` 对 `user is None` 已收紧为
+        「只放行演示店铺（`is_demo=True`）」。本函数只回答「是不是超管」。
     """
     if user is None:
         return False
@@ -142,6 +144,58 @@ def store_owner_id(store) -> Optional[str]:
     return getattr(store, "owner_id", None) or None
 
 
+def store_is_demo(store) -> bool:
+    """
+    取店铺的演示标记（缺失 ⇒ `False`，**fail-closed**）。
+
+    ★ 为什么也做成访问器（与上面两个 `store_*` 同形）：本判定要同时服务 ORM 行、
+      pydantic `Store`、以及测试传入的轻量对象（`SimpleNamespace`，
+      **可能没有** `is_demo` 字段）。把「取哪个属性 + 缺了算什么」收在这一处，
+      字段缺失就**不会**成为放行真实店铺的理由。
+    """
+    return bool(getattr(store, "is_demo", False))
+
+
+# ====== 技能对象访问器（第 181 轮）======
+#
+# ★ 为什么与上面三个 `store_*` **分开**、而不是泛化成 `resource_*` 共用：
+#   `getattr(obj, "account_id")` 这个动作两边确实一样，但泛化要连带把 7 处
+#   既有的 store 调用点一起改名 —— 而它们此刻是对的。改名的风险（漏改一处
+#   即静默失效）大于收益。
+#   真正**不能**分叉的是**判定逻辑**（见下方 `_matches_skill`），
+#   访问器只是「取哪个字段、缺了算什么」的 duck-typing 约定。
+#
+# ★ 字段缺失一律 fail-closed（与 `store_*` 同口径）：
+#   缺 `is_demo`    ⇒ False（**不会**放行给演示身份）；
+#   缺 `visibility` ⇒ "account"（走正常的账户归属判定，**不会**变成人人可见）。
+
+def skill_account_id(skill) -> Optional[str]:
+    """取技能的账户归属（缺失/为空返回 None）。"""
+    return getattr(skill, "account_id", None) or None
+
+
+def skill_owner_id(skill) -> Optional[str]:
+    """取技能的创建者用户 id（`private` 可见性与过渡期兜底用）。"""
+    return getattr(skill, "owner_id", None) or None
+
+
+def skill_is_demo(skill) -> bool:
+    """取技能的演示标记（缺失 ⇒ `False`，**fail-closed**）。"""
+    return bool(getattr(skill, "is_demo", False))
+
+
+def skill_visibility(skill) -> str:
+    """取技能的可见范围（缺失 ⇒ `"account"`）。
+
+    ★ 默认 `account` 而不是 `private`：本函数服务的是**服务端已取出的行**，
+      正常路径下该字段必然存在；真缺失时按「账号内共享」处理，与数据库
+      默认值同口径。而判定**仍然要过账户集合**（`account_id in visible`），
+      所以"缺失"不会变成放行给所有账号 —— 它只是没有额外收紧。
+    """
+    value = getattr(skill, "visibility", None) or "account"
+    return str(value).strip() or "account"
+
+
 # ====== 可见账户集合 ======
 
 async def get_visible_account_ids(
@@ -165,10 +219,24 @@ async def get_visible_account_ids(
       不能等成员记录被逐个清理。
     """
     if user is None:
+        # ★★★ 第 182 轮：本分支的**可达性变了，语义没变**。
+        #
+        #   此前它同时承担两件事：① 真匿名访问；② **演示身份**（哨兵串解析成 None）。
+        #   第 182 轮把 ② 从 `None` 改成「演示账号主人」之后，演示身份不再走这里
+        #   —— 它拿到的是真 `User`，可见范围就是**那个账号自己的集合**（下面那条查询）。
+        #
+        #   ⇒ 现在只剩 ①：完全没有凭据（且 `auth_required=False`）的真匿名，
+        #     以及演示解析**三重守卫未过**时的安全降级。
+        #   ⇒ 所以「演示模式能看到什么」由**账户集合判定**回答，而不是由本分支回答。
+        #     这是刻意的：演示账号与真实账号共用同一条口径，不存在"演示版归属"。
         return frozenset()
 
     if is_platform_admin(user):
         return None  # 全部
+        # ★ 注意：演示身份**永远走不到这里** ——
+        #   `demo_identity.resolve_demo_user` 的守卫 ③ 显式拒绝超管。
+        #   若那条守卫被删，演示模式会瞬间变成「全平台的只读镜像」，
+        #   而 UI 上还写着"演示"。守卫有用例钉住（tests/test_demo_identity.py）。
 
     owned = await db.execute(
         select(Account.id).where(
@@ -202,38 +270,105 @@ async def filter_accessible_stores(
       "可见账户集合"，列表端点里对 N 家店调用 N 次就是 N 次往返。
       这里只查一次集合、再在内存里过滤。
 
-    ★★★ 守卫：**没有身份 ⇒ 没有数据**（2026-09-17 收紧；改前是 fail-open）
+    ★★★ 守卫：**没有身份 ⇒ 没有「真实」数据**（2026-09-17 收紧；第 175 轮补齐演示店铺）
 
-      改前：`user is None` ⇒ `return list(stores)`（**不过滤** ⇒ 全库返回）。
-      改后：`user is None` ⇒ `return []`。
+      三个阶段的形态 —— 每一阶段都是**收紧**，没有一次是"放宽给匿名看真实店铺"：
 
-      为什么必须收：`auth_required=False`（本地 / 演示档）下，匿名请求能拿到
+        · 更早（fail-open）：`user is None` ⇒ `return list(stores)`（全库返回）；
+        · 2026-09-17：`user is None` ⇒ `return []`（安全修复 `4612abb`）；
+        · 第 175 轮：`user is None` ⇒ **只返回 `is_demo` 的店铺**（语义补全）；
+        · 第 176 轮：本分支**一行未改**，改的是「谁被标成 `is_demo`」——
+          从「新建一家演示店铺」改为「**演示账号名下的店铺**」
+          （`modules/stores/demo.py::ensure_demo_stores`，双向收敛）。
+          语义随之从「一家孤零零的店」变成「演示账号名下那 4 家店」，
+          而判定仍然只有这一处。
+        · 第 177 轮：本分支的**判据实现**改为调 `_matches`（语义一行未变，仍是
+          「只返回 `is_demo` 行」），目的是与单店路径共用同一个内核 ——
+          见下方「第 177 轮：**统一**」。
+
+      为什么必须收第 2 步：`auth_required=False`（本地 / 演示档）下，匿名请求能拿到
       **全部真实店铺**。生产档不受影响 —— `main.py::BUSINESS_AUTH` 先用 401
       拦掉匿名，所以 `user is None` 在生产档**不可达**。但"生产不可达"不等于
       "本地安全"：`.env` 漏改一行、或拿演示配置连了真实库，就是全库裸奔。
 
-      为什么返回空列表、而不是在这里抛 401 / 403：
+      ★★ 为什么第 3 步**不是**"把第 2 步改回去"（这是本轮最容易改错的地方）：
+        `return []` 让演示档下的**产品设定**（前端 `demo-token` 不是身份，
+        `isDemoToken()` 明确判定）与**数据可见性**（无身份 ⇒ 无数据）互相掐死：
+        演示用户按设计就没有身份 ⇒ 列表恒空 ⇒ 前端 `current_shop_id` 写不进
+        localStorage ⇒ 所有业务请求不带 `X-Shop-ID` ⇒ 后端 `get_current_shop_id`
+        拿不到租户 ⇒ **每个面板都是空的**（老板实测：店铺 / 选品 / 素材 / 产品 /
+        业务话术 / 平台规则全白）。
+        ⇒ 缺的不是"放宽过滤"，而是**一个能且只能被演示身份看到的店铺**。
+          所以本轮**新增一个窄口**（`is_demo`），而不是把大口子重新打开：
+          真实店铺**仍然**对匿名不可见 —— 第 2 步的全部收益原样保留。
+
+      ★ 为什么返回演示店铺、而不是在这里抛 401 / 403：
       「放不放行」已由**上游**决定（`require_auth_if_enabled`：生产档无凭据 → 401，
       演示档无凭据 → 放行到本函数）。本函数只负责**数据可见性**，不该反向改写
-      上游的鉴权结论。上游放行 + 这里给空集 = "访问被允许，但你看不到任何店铺"。
+      上游的鉴权结论。上游放行 + 这里给演示店铺 = "访问被允许，你看到的是演示数据"。
 
-    ★ 为什么**不动** `can_access_store` / `_matches` 的同一分支：
-      那两个函数服务的是**单店**路径（详情 / 写操作 / `X-Shop-ID` 解析）。改它们
-      会让演示档下所有单店请求变成 403 —— 那是**另一档**决策（演示档整体
-      fail-closed），已作为体检报告 P1-5 单独挂账。本次只收口列表入口，
-      不顺手制造第三种语义。
-      ⇒ 已知副作用（**有意保留**）：演示档下"列表为空、单店详情仍可读"是
-        不一致的。要一致就整档一起收 —— 但那是同一处收口，见 P1-5。
+      ★ 零 DB 往返（**有意为之，且被用例守着**）：
+      本分支在 `get_visible_account_ids()` **之前**短路，只读行上的标记位，
+      不查任何表。`tests/test_account_store_hierarchy.py::
+      test_filter_accessible_stores_no_identity_gets_only_demo_stores`
+      （原名 `..._means_no_data`，第 175 轮随语义改名）用一个"任何 IO 都抛"
+      的假 session 钉住这条性质 —— 它传入的 store 是 `SimpleNamespace`
+      （**没有 `is_demo` 属性**）⇒ `getattr(..., False)` ⇒ 那些行仍被排除，
+      既有断言继续绿、语义没有被稀释；同用例另加两条断言证明窄口真的通，
+      更完整的版本（含反向注入说明）在 `tests/test_demo_store.py`。
+
+    ★★★ 第 177 轮：**统一**（老板拍板，体检报告 P1-5 结清）
+
+      第 175/176 轮只收口了**列表**入口（本函数），单店路径
+      （`can_access_store` / `_matches`）仍是 `user is None ⇒ True`，于是
+      「列表只有演示店铺、单店详情对任何 id 仍可读」是**同一件事的两份实现**——
+      两份实现必然有一份永远测不到。本轮把三者收成一处：
+
+        · 列表筛选（本函数）        → `_matches(..., store_is_demo(s))`
+        · 单店判定（`can_access_store`）→ `_matches(..., store_is_demo(store))`
+        · `X-Shop-ID` 解析（`core/tenant/middleware.py`）
+                                    → 不再「`user is None` ⇒ 直接放行」，
+                                      改由 `can_access_store` 判定
+                                      （演示店铺 200 / 真实店铺 403）
+
+      判据一句话：**演示身份只能看到演示店铺**（`is_demo=True`）——
+      列表、单店、伪造 `X-Shop-ID` 三条路径结论一致；真实店铺对演示身份
+      在三个入口**全部**不可见。真实账号的可见性与第 176 轮**完全一致**
+      （演示身份与真实身份是两个不相交的输入，互不影响）。
+
+      ★ 为什么不是「演示档整体 fail-closed（连演示店铺也挡掉）」：
+        那会把演示模式打死 —— 本轮指令明确要求「演示模式下有演示模式的店铺和
+        相关数据」，即演示店铺 + 其业务数据必须可达。本轮收紧的是
+        **非演示数据**的可见性，不是演示数据。
     """
     if user is None:
-        return []
+        # ★★★ 第 175 轮：演示身份 ⇒ **只**返回演示店铺。
+        #     第 177 轮：判据改走 `_matches`（与单店路径同一处），语义未变。
+        #
+        #   ★ 零 DB 往返（**有意为之，且被用例守着**）：本分支在
+        #     `get_visible_account_ids()` **之前**短路，只读行上的标记位。
+        #     缺 `is_demo` 字段 ⇒ `store_is_demo` 返回 False ⇒ 被排除
+        #     （**fail-closed**，字段缺失不会放行任何真实店铺）。
+        return [
+            s
+            for s in stores
+            if _matches(
+                store_account_id(s), store_owner_id(s), None, None, store_is_demo(s)
+            )
+        ]
 
     visible = await get_visible_account_ids(db, user)
     if visible is None:
         # 平台超管：全部可见。★ 与上面的空集**不可混淆** ——
-        # 空集是"什么都看不到"，None 是"什么都不限"。
+        # 空集是「什么都看不到」，None 是「什么都不限」。
         return list(stores)
-    return [s for s in stores if _matches(store_account_id(s), store_owner_id(s), visible, user)]
+    return [
+        s
+        for s in stores
+        if _matches(
+            store_account_id(s), store_owner_id(s), visible, user, store_is_demo(s)
+        )
+    ]
 
 
 # ====== 单店归属判定（两处重复判定的收敛点）======
@@ -243,11 +378,26 @@ def _matches(
     owner_id: Optional[str],
     visible: Optional[frozenset[str]],
     user: Optional[User],
+    is_demo: bool = False,
 ) -> bool:
-    """`can_access_store` 的纯函数内核（不碰 IO，便于单测穷尽分支）。"""
+    """
+    `can_access_store` 的纯函数内核（不碰 IO，便于单测穷尽分支）。
+
+    ★★★ 第 177 轮：`user is None`（演示身份）**不再无条件放行**，改为
+      「只允许演示店铺」—— 与 `filter_accessible_stores` 的演示分支
+      **同一处判定**。
+
+      此前是同一件事的两份实现：列表入口已收成「只给演示店铺」，而本内核仍
+      写着 `return True` ⇒ 单店详情 / `X-Shop-ID` 路径对**任何** id 都放行。
+      两份实现必然有一份永远测不到（体检报告 P1-5）。现在三条路径
+      （列表筛选 / 单店判定 / `X-Shop-ID` 解析）全部落到本函数。
+
+    `is_demo` 默认 `False` ⇒ 调用方忘了传就是**拒绝**（fail-closed），
+      不会因为「新入口没想起来传」而悄悄放行真实店铺。
+    """
     if user is None:
-        # 演示模式：放行。调用方负责决定是否走到这里。
-        return True
+        # 演示身份：只放行演示店铺。真实店铺一律不可见。
+        return bool(is_demo)
 
     if visible is None:
         # 平台超管
@@ -271,11 +421,20 @@ async def can_access_store(
 
     `store` 可以是 pydantic `Store` 或 ORM `StoreRecord`（任意带 `account_id`/`owner_id` 的对象）。
     """
-    if user is None or is_platform_admin(user):
+    if is_platform_admin(user):
         return True
 
+    # ★★★ 第 177 轮：演示身份（`user is None`）不再整体短路 —— 交给同一个
+    #   内核判定（`is_demo=False` ⇒ 拒绝真实店铺），与列表路径结论一致。
+    #   零 DB 往返：`get_visible_account_ids(None)` 在函数首行就返回空集。
     visible = await get_visible_account_ids(db, user)
-    return _matches(store_account_id(store), store_owner_id(store), visible, user)
+    return _matches(
+        store_account_id(store),
+        store_owner_id(store),
+        visible,
+        user,
+        store_is_demo(store),
+    )
 
 
 async def ensure_can_access_store(
@@ -292,6 +451,156 @@ async def ensure_can_access_store(
       同时不存在 / 无主 / 归属他人三种情况**响应完全一致**，不提供区分信号。
     """
     if not await can_access_store(db, user, store):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
+
+# ====== 技能归属判定（第 181 轮 · 批 B）======
+#
+# ★ 为什么与店铺判定**并列**而不是各写一套：
+#   两者共享同一个语义内核 —— 「演示身份只看演示行；有身份则按账户归属」。
+#   差别只有一处：技能多一个 `visibility == "private"` 档。
+#   所以这里**不是**抄一遍 `_matches`，而是调用它、再叠一层 private 判定；
+#   一旦哪天店铺侧的分支改了，技能侧的「账户/演示」部分自动跟着改。
+#
+# ★ `visibility` 是**真门禁**，不是装饰字段：
+#   本仓判据 —— 有字段但不参与判定 = 死重量（`AgentState.metadata` 的旧账）。
+#   `private` 的语义是「仅创建者可见」，判定落在 `owner_id == user.id`。
+#
+# ★ 演示身份的可见性（★ 第 182 轮已改为**走正常归属链**）：
+#   第 177～181 轮：`user is None` ⇒ 只放行 `is_demo=True` 的行。
+#   第 182 轮：演示身份被解析成**演示账号主人**（真 `User`），于是它走的是
+#   「`account_id in 可见集合`」——可见范围**恒等于那个账号**，不多不少。
+#   ⇒ 所以本函数**一行判定都没改**：改的是递进来的 `user` 是谁。
+#     「演示模式有自己的技能、真实账号不受影响」现在由同一句话保证：
+#     演示账号的可见集合 = {演示账号}，真实账号的可见集合 = {自己的账号}。
+#   ⇒ `user is None` 档退化为**真匿名 / 守卫降级**路径（只见 `is_demo` 行），
+#     仍是 fail-closed，仍然有用例守着。
+
+
+def _matches_skill(
+    account_id: Optional[str],
+    owner_id: Optional[str],
+    visible: Optional[frozenset[str]],
+    user: Optional[User],
+    is_demo: bool = False,
+    visibility: str = "account",
+) -> bool:
+    """技能可见性的纯函数内核（不碰 IO，便于单测穷尽分支）。
+
+    ★★ 实现**真的**复用 `_matches`（不是抄一遍）：技能与店铺的差别只有
+      「多一个 `private` 档」，所以这里叠一层私有判定后**转交**给同一个内核。
+      抄一遍会造出第二份「演示/账户」口径 —— 那正是第 177 轮 P1-5 收掉的东西。
+
+    ★ `private` 分支对 `user is None`**直接拒绝**（★ 但第 182 轮起它不再是演示身份）：
+      这里判的是「有没有**创建者**」。`user is None` 没有创建者可言，
+      「仅创建者可见」对它无从判定 ⇒ 答案是「不可见」，而**不是**落到
+      `_matches` 的 `is_demo` 窄口。
+      后者会让一行 `is_demo=True` 的 private 技能对匿名访客可见 ——
+      而那**真的会发生**：`ensure_demo_skills()` 把演示账号名下的
+      **全部**技能（含该账号成员自己设成 private 的）都标成 `is_demo=True`。
+      那等于一条后台收敛任务把「private」无声降级成「公开」——
+      本仓最警惕的那类静默失效，故显式挡掉。
+
+      ★★★ 第 182 轮的语义变化（**这条分支现在服务谁**）：
+        演示身份改由 `demo_identity.resolve_demo_user` 解析成**真 `User`**之后，
+        它拿到的是下面第三条（`owner_id == user.id`）—— 也就是说
+        「演示账号成员给自己 skill 设的 private」**对演示身份可见**。
+        这是**正确**的：演示身份**就是**那个 owner，不是"另一个人恰好看得见"。
+        ⇒ 本次一行判定都没改，改的是"演示身份递进来的 `user` 是谁"。
+        这正是把身份解析收成一个函数的收益：可见性口径不需要为演示模式开分支。
+
+      本分支现在的服务对象只剩**真匿名**（无凭据 + `auth_required=False`，
+      或演示解析三重守卫未过时的安全降级）。
+
+    ★ `visible is None`（平台超管）在私有分支里同样短路放行 ——
+      与 `_matches` 的超管口径一致（超管是平台运营身份，不是某个团队的成员）。
+    """
+    if str(visibility or "").strip() == "private":
+        # ★ 无创建者（真匿名 / 演示降级）**拿不到 private 行**（论证见本函数 docstring）。
+        #   必须挡在 `_matches` 之前：它那条分支只判 `is_demo`，
+        #   而 `is_demo` 是后台收敛出来的，不表达「是不是创建者」。
+        if user is None:
+            return False
+        if visible is None:
+            return True  # 平台超管
+        return bool(owner_id) and owner_id == user.id
+
+    # 其余全部情形（演示身份 / 账户归属 / 过渡期兜底 / 超管）交给同一个内核。
+    return _matches(account_id, owner_id, visible, user, is_demo)
+
+
+async def filter_accessible_skills(
+    db: AsyncSession,
+    user: Optional[User],
+    skills: Sequence,
+) -> List:
+    """按归属筛掉不可访问的技能（技能列表端点的唯一筛法）。
+
+    ★ 与 `filter_accessible_stores` 同构：一次查集合、内存里过滤，
+      避免"N 行 ⇒ N 次往返"。
+
+    ★ 演示分支**零 DB 往返**（与店铺侧同样被用例守着）：它在
+      `get_visible_account_ids()` 之前短路，只读行上的标记位。
+    """
+    if user is None:
+        return [
+            s
+            for s in skills
+            if _matches_skill(
+                skill_account_id(s),
+                skill_owner_id(s),
+                None,
+                None,
+                skill_is_demo(s),
+                skill_visibility(s),
+            )
+        ]
+
+    visible = await get_visible_account_ids(db, user)
+    if visible is None:
+        return list(skills)
+    return [
+        s
+        for s in skills
+        if _matches_skill(
+            skill_account_id(s),
+            skill_owner_id(s),
+            visible,
+            user,
+            skill_is_demo(s),
+            skill_visibility(s),
+        )
+    ]
+
+
+async def can_access_skill(db: AsyncSession, user: Optional[User], skill) -> bool:
+    """当前用户能否访问该技能（单条端点与 `load_skill` 的共用实现）。"""
+    if is_platform_admin(user):
+        return True
+    visible = await get_visible_account_ids(db, user)
+    return _matches_skill(
+        skill_account_id(skill),
+        skill_owner_id(skill),
+        visible,
+        user,
+        skill_is_demo(skill),
+        skill_visibility(skill),
+    )
+
+
+async def ensure_can_access_skill(
+    db: AsyncSession,
+    user: Optional[User],
+    skill,
+    *,
+    detail: str = "无权访问该技能",
+) -> None:
+    """同 `can_access_skill`，但失败直接抛 403。
+
+    ★ 统一 403 而不是 404：404 会泄露「该技能 ID 是否存在」，帮攻击者枚举。
+      「不存在」与「不属于你」在响应上**完全一致**（与店铺侧同口径）。
+    """
+    if not await can_access_skill(db, user, skill):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
 
 
@@ -326,16 +635,25 @@ def can_access_conversation(user: Optional[User], conv) -> bool:
       将来若要引入"团队共享会话"，改本函数 + 上面那个唯一入口即可，
       两处就是全部 —— 不需要新增调用点去各自判一遍。
 
-    ★ `user is None` ⇒ True 是**演示档**语义（`config.auth_required=False` 且
-      请求完全不带凭据，或带的是 `demo_mode` 下的演示哨兵），与
-      `can_access_store` 里 `user is None` 的放行是同一档。
-      生产档（`auth_required=True`）下本分支**不可达** —— 匿名请求在
-      `BUSINESS_AUTH` 就被 401 拦掉，根本到不了这里。
-      ⚠️ 演示档整体 fail-closed 是**另一项**已挂账的债（体检报告 P1-5），
-        不要在这里顺手收紧：那会把本地匿名联调一起打死，属于另一轮的议题。
+    ★★★ 第 177 轮：`user is None`（演示身份）不再**无条件**放行 —— 与店铺侧
+      同一档收紧（体检报告 P1-5 结清）。演示身份只允许访问**同样无主**的会话：
+
+        · 演示档建会话时写的就是 `owner_id=None`
+          （`modules/secretary/router.py`：`owner_id=current_user.id if
+          current_user else None`）⇒ 演示身份自己的对话历史仍然可读、可续；
+        · 真实用户的会话**有** owner ⇒ 对演示身份**不可读**（此前可读）。
+
+      ★ 为什么不是直接 `return False`（这是最容易改错的地方）：那会让演示档
+        **每一轮都新建会话**（`get_owned_conversation` 找不到旧会话就建新的），
+        历史永久丢失 —— 老板实测症状正是「对话记不住上一句」。
+        「只认无主会话」既收紧了越权面，又保住了演示体验。
+
+    生产档（`auth_required=True`）下本分支**不可达** —— 匿名请求在
+    `BUSINESS_AUTH` 就被 401 拦掉，根本到不了这里。
     """
     if user is None:
-        return True
+        # 演示身份：只允许访问**无主**会话（演示档自己建的那些）。
+        return conversation_owner_id(conv) is None
     if is_platform_admin(user):
         return True
     owner = conversation_owner_id(conv)
@@ -386,9 +704,17 @@ async def can_access_account(
     user: Optional[User],
     account_id: str,
 ) -> bool:
-    """能否访问该账户（超管短路；否则必须是 owner 或 ACTIVE 成员，且账户未停用）。"""
+    """
+    能否访问该账户（超管短路；否则必须是 owner 或 ACTIVE 成员，且账户未停用）。
+
+    ★★★ 第 177 轮：`user is None` 由「放行」改为**拒绝** —— 与
+      `require_account_permission` 同一档。演示身份不属于任何账户，
+      「能否访问某账户」的答案不可能是 True。
+    ⚠️ 实测该函数**全项目零引用**（`grep can_access_account` 仅命中定义本身），
+      属死代码；本轮只收语义、不删除（删除是独立的清理决策）。
+    """
     if user is None:
-        return True
+        return False
 
     if is_platform_admin(user):
         return True
@@ -429,8 +755,21 @@ async def require_account_permission(
       不会因为"表里查不到"而静默放行。
     """
     if user is None:
-        # 演示模式：放行，与业务侧既有行为一致
-        return None
+        # ★★★ 第 177 轮：演示身份**不再放行** —— 它不属于任何账户，
+        #   账户级能力门对它只有一个正确答案：拒绝。
+        #
+        #   修复前返回 None（放行）⇒ `POST /stores/{id}/transfer` 在演示档下
+        #   可以把一家演示店**转进任意真实账户**（目标侧门形同不存在）——
+        #   对方团队列表里会凭空多出一家 `is_demo=True` 的店，正是本轮指令
+        #   禁止的「影响其他真实账号」。
+        #
+        #   ★ 只影响这一条活口：另两处业务侧调用点在演示身份下**到不了**
+        #     （见各自的 `current_user is None` / `is not None` 守卫），
+        #     账户侧调用点的依赖本身是 fail-closed 401。
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="演示身份不属于任何团队，无法执行团队级操作",
+        )
 
     if is_platform_admin(user):
         return None

@@ -39,7 +39,7 @@ from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from core.config import config
+from core.config import PAYMENT_NOTIFY_PATH, config
 from core.middleware.client_ip import client_ip
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,18 @@ logger = logging.getLogger(__name__)
 # 放行路径：健康检查、指标采集与文档不应消耗限流额度
 #   ★ /metrics 必须放行：Prometheus 默认 15s 抓一次，若计入限流额度，
 #     单靠监控采集就能把用户的每分钟请求额度吃掉（limit=60/min 时占 25%）。
+#
+#   ★★ 支付回调路径（PAYMENT_NOTIFY_PATH）同样必须放行，理由与 /metrics 同构
+#      但后果更严重：支付宝的重试间隔是 4m / 10m / 10m / …，
+#      而这个中间件的窗口是**每分钟 60 次、按 IP 共享**。
+#      支付宝的出口 IP 是固定的少数几个，一旦撞上限流，
+#      **所有商户**的回调会一起被 429 掉 —— 而 429 在支付宝看来只是
+#      "没收到确认"，它会继续重投，我们这边却只有一条中间件的限流日志
+#      （甚至在日志级别较高时连这条都看不到）。表现是"部分用户的支付偶尔不生效"。
+#
+#   ★ 这里**不写字符串字面量**，而是引用 `PAYMENT_NOTIFY_PATH`：
+#     改回调路径时，路由挂载、URL 派生、限流豁免三处必须同时变；
+#     抄第二份字符串的那一次一定是漏改的那一次。
 DEFAULT_EXEMPT_PATHS = frozenset({
     "/health",
     "/metrics",
@@ -54,6 +66,7 @@ DEFAULT_EXEMPT_PATHS = frozenset({
     "/docs",
     "/redoc",
     "/openapi.json",
+    PAYMENT_NOTIFY_PATH,
 })
 
 

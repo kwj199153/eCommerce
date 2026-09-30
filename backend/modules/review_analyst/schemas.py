@@ -101,3 +101,52 @@ class ReviewResponse(BaseModel):
     success: bool = True
     data: ReviewReport = None  # type: ignore
     message: str = ""
+# ==================== 对话（第 166 轮 · #726 第 2 条补齐）====================
+
+class ReviewChatRequest(BaseModel):
+    """复盘对话请求。
+
+    ★ 与 `ReviewRequest` 同一口径：**没有** `store_id` 字段。
+      归属只能由 router 的 `Depends(get_current_shop_id)`（strict 版）注入 ——
+      客户端在 body 里发 `store_id` 会被 pydantic 忽略（不会 422），
+      但**物理上没有字段可落** ⇒ 结构上不可能被采纳。
+    """
+
+    query: str = Field(..., min_length=1, max_length=2000, description="老板的提问")
+    session_id: Optional[str] = Field(
+        None, max_length=128, description="会话 ID；非空则同一会话第二轮能看见第一轮"
+    )
+    context: Optional[Dict[str, Any]] = Field(
+        None, description="附加上下文（如右侧看板当前周期 days / asins）"
+    )
+
+    # ★ 点名通道（第 188 轮）：用户点名本次对话要用的技能名（可选）。
+    #   留空 ⇒ 只注入技能目录，仍由模型自己判断用哪条（渐进披露的原路径）。
+    #   ★ 归属校验不在这里：技能名由服务端在 `read_skill_text` 里按
+    #     身份 + 启用 + 对本 Agent 启用 三重过滤，请求体只负责**传递名字**。
+    skill: Optional[str] = Field(default=None, description="本次对话指定使用的技能名（可选）")
+
+
+class ReviewChatResult(BaseModel):
+    """一次复盘对话的结果。
+
+    `reply` + `display_type` 与前端既有 mock（`buildReviewReply`）的返回契约
+    **逐字一致**，因此前端把 mock 换成真调用时不需要改渲染分支；
+    `data` 是给右侧看板用的结构化报告（可为空）。
+    """
+
+    reply: str
+    display_type: str = "text"
+    data: Optional[Dict[str, Any]] = None
+    #: 是否降级/未拿到数据。★ 前端必须据此显示提示 ——
+    #: 否则「查不到」与「数据就是很差」在界面上不可区分。
+    degraded: bool = False
+    degraded_reason: str = ""
+
+
+class ReviewChatResponse(BaseModel):
+    """复盘对话响应（统一包装）。"""
+
+    success: bool = True
+    data: Optional[ReviewChatResult] = None
+    message: str = ""

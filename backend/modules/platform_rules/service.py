@@ -28,8 +28,10 @@ from typing import List, Optional
 from sqlalchemy import select
 
 from core.database import async_session_factory
+from core.library_query import count_library, query_library
 from core.tenant.scoping import scoped
 from modules.platform_rules.db_model import PlatformRuleDocRecord, PlatformRuleRecord
+from modules.platform_rules.spec import RULE_SPEC
 
 
 # ====== 字段契约（与前端 PlatformRule 严格对齐）======
@@ -183,30 +185,68 @@ def apply_doc_fields(record: PlatformRuleDocRecord, payload: dict) -> None:
 
 # ====== 规则：查询 / 写入 ======
 
-async def list_rules(shop_id: Optional[str]) -> List[dict]:
+async def list_rules(
+    shop_id: Optional[str],
+    *,
+    order_by: Optional[str] = None,
+    platform: Optional[str] = None,
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> List[dict]:
     """
-    列出该店铺的全部规则。
+    列出该店铺的规则（**唯一实现**）。
 
     空 shop_id 一律返回空列表 —— 与 candidates / monitors 一致：
     没有租户上下文时无法判断归属，返回全库数据会造成跨租户串数据。
+
+    ★ 第 218 轮（P1）：查询收口到 `core.library_query`（`RULE_SPEC`）——
+      排序白名单 / 过滤 / limit 从此只有一份实现；
+      REST（`platform_rules/router.py`）与 Agent 工具共用本函数。
+    ★ 默认排序仍是 `effective_date` 倒序（与前端 `filteredItems` 一致），逐字不变。
+    ★ 新增的 `order_by` / `platform` / `category` / `status` / `limit` 全部**可选**。
     """
-    if not shop_id:
-        return []
-    async with async_session_factory() as session:
-        rows = (await session.execute(
-            scoped(select(PlatformRuleRecord), PlatformRuleRecord, shop_id)
-            # 与前端 filteredItems 的排序一致：生效日期倒序
-            .order_by(PlatformRuleRecord.effective_date.desc())
-        )).scalars().all()
-        return [rule_to_dict(r) for r in rows]
+    rows = await query_library(
+        RULE_SPEC,
+        shop_id,
+        order_by=order_by,
+        filters={"platform": platform, "category": category, "status": status},
+        limit=limit,
+    )
+    return [rule_to_dict(row[0]) for row in rows]
+
+
+async def count_rules(
+    shop_id: Optional[str],
+    *,
+    platform: Optional[str] = None,
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+) -> int:
+    """规则**真实**条数（与 `list_rules` 同口径，两者都走内核）。"""
+    return await count_library(
+        RULE_SPEC,
+        shop_id,
+        filters={"platform": platform, "category": category, "status": status},
+    )
 
 
 async def get_rule_by_id(rule_id: str, shop_id: Optional[str] = None) -> Optional[PlatformRuleRecord]:
-    """按主键取规则（带租户校验：给了 shop_id 就必须匹配）"""
+    """按主键取规则（**无条件**按 shop_id 过滤：缺店铺 ⇒ 0 行 ⇒ None）
+
+    ★ 第 283 轮修正：原文写「给了 shop_id 就必须匹配」，把「没给 ⇒ 不过滤」
+      的一半语义藏进了默认值，于是 GET 缺 `X-Shop-ID` 时能读到任意租户的规则。
+    """
     async with async_session_factory() as session:
         q = select(PlatformRuleRecord).where(PlatformRuleRecord.id == rule_id)
-        if shop_id:
-            q = scoped(q, PlatformRuleRecord, shop_id)
+        # ★★★ 无条件挂店铺作用域（第 283 轮 P0 修复 · 读越权）
+        #   此前是 `if shop_id:` —— `get_rule_by_id`（GET）缺 `X-Shop-ID` 时
+        #   `get_current_shop_id` 返回 None（400 空值守卫**只**拦写方法，
+        #   `WRITE_METHODS` = POST/PUT/PATCH/DELETE，**不含 GET**）
+        #   ⇒ 店铺条件整个不发 ⇒ 凭 rule_id 可读**任意租户**的平台规则。
+        #   `update_rule` / `delete_rule` 缺头虽已被 400 先拦住，仍随同收敛：
+        #   同一张表的同一判定不允许存在两份实现（本仓判据）。
+        q = scoped(q, PlatformRuleRecord, shop_id)
         return (await session.execute(q)).scalar_one_or_none()
 
 
@@ -242,8 +282,14 @@ async def update_rule(rule_id: str, payload: dict, shop_id: Optional[str] = None
     """更新规则；记录不存在（或不属于该租户）返回 None"""
     async with async_session_factory() as session:
         q = select(PlatformRuleRecord).where(PlatformRuleRecord.id == rule_id)
-        if shop_id:
-            q = scoped(q, PlatformRuleRecord, shop_id)
+        # ★★★ 无条件挂店铺作用域（第 283 轮 P0 修复 · 读越权）
+        #   此前是 `if shop_id:` —— `get_rule_by_id`（GET）缺 `X-Shop-ID` 时
+        #   `get_current_shop_id` 返回 None（400 空值守卫**只**拦写方法，
+        #   `WRITE_METHODS` = POST/PUT/PATCH/DELETE，**不含 GET**）
+        #   ⇒ 店铺条件整个不发 ⇒ 凭 rule_id 可读**任意租户**的平台规则。
+        #   `update_rule` / `delete_rule` 缺头虽已被 400 先拦住，仍随同收敛：
+        #   同一张表的同一判定不允许存在两份实现（本仓判据）。
+        q = scoped(q, PlatformRuleRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return None
@@ -258,8 +304,14 @@ async def delete_rule(rule_id: str, shop_id: Optional[str] = None) -> bool:
     """删除规则；不存在（或不属于该租户）返回 False"""
     async with async_session_factory() as session:
         q = select(PlatformRuleRecord).where(PlatformRuleRecord.id == rule_id)
-        if shop_id:
-            q = scoped(q, PlatformRuleRecord, shop_id)
+        # ★★★ 无条件挂店铺作用域（第 283 轮 P0 修复 · 读越权）
+        #   此前是 `if shop_id:` —— `get_rule_by_id`（GET）缺 `X-Shop-ID` 时
+        #   `get_current_shop_id` 返回 None（400 空值守卫**只**拦写方法，
+        #   `WRITE_METHODS` = POST/PUT/PATCH/DELETE，**不含 GET**）
+        #   ⇒ 店铺条件整个不发 ⇒ 凭 rule_id 可读**任意租户**的平台规则。
+        #   `update_rule` / `delete_rule` 缺头虽已被 400 先拦住，仍随同收敛：
+        #   同一张表的同一判定不允许存在两份实现（本仓判据）。
+        q = scoped(q, PlatformRuleRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return False
@@ -285,8 +337,13 @@ async def list_docs(shop_id: Optional[str]) -> List[dict]:
 async def get_doc_by_id(doc_id: str, shop_id: Optional[str] = None) -> Optional[PlatformRuleDocRecord]:
     async with async_session_factory() as session:
         q = select(PlatformRuleDocRecord).where(PlatformRuleDocRecord.id == doc_id)
-        if shop_id:
-            q = scoped(q, PlatformRuleDocRecord, shop_id)
+        # ★★★ 无条件挂店铺作用域（第 283 轮 P0 修复 · 读越权）
+        #   此前是 `if shop_id:` —— GET 缺 `X-Shop-ID` 时 `get_current_shop_id`
+        #   返回 None：400 空值守卫**只**拦写方法（`WRITE_METHODS` =
+        #   POST/PUT/PATCH/DELETE，**不含 GET**），读路径整段跳到 `return None`。
+        #   ⇒ 店铺条件不发 ⇒ 凭 id 可读**任意租户**的文档正文（含规则源文件）。
+        #   现在 None ⇒ `shop_id IS NULL` ⇒ 0 行 ⇒ 404（安全失败方向）。
+        q = scoped(q, PlatformRuleDocRecord, shop_id)
         return (await session.execute(q)).scalar_one_or_none()
 
 
@@ -310,8 +367,9 @@ async def delete_doc(doc_id: str, shop_id: Optional[str] = None) -> bool:
     """
     async with async_session_factory() as session:
         q = select(PlatformRuleDocRecord).where(PlatformRuleDocRecord.id == doc_id)
-        if shop_id:
-            q = scoped(q, PlatformRuleDocRecord, shop_id)
+        # ★ 无条件挂作用域（同上：DELETE 缺头虽已被 400 先拦，仍随同收敛 ——
+        #   同一张表的同一判定不允许两份实现）。
+        q = scoped(q, PlatformRuleDocRecord, shop_id)
         record = (await session.execute(q)).scalar_one_or_none()
         if record is None:
             return False

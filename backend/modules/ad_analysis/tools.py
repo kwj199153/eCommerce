@@ -5,9 +5,9 @@
 通过 bind_tools 自主选择调用。
 
 设计要点（与 listing_tools.py 一致）：
-- 只包「语义明确」的细粒度方法（诊断 / 搜索词 / 出价 / 竞品 / 预算 / 异常检测），
+- 只包「语义明确」的细粒度方法（诊断 / 搜索词 / 出价 / 竞品），
   **不包** `chat` / `stream_chat` 粗粒度入口。
-- 说明：本模块 service 层 6 个方法虽底层仍走 `agent.invoke`（内部 `_classify_intent`
+- 说明：本模块 service 层 4 个方法虽底层仍走 `agent.invoke`（内部 `_classify_intent`
   会再分一次类），但每个方法都构造了**明确的固定 query**（如「请对广告账户进行
   全面诊断」），因此二次分类结果恒正确、不会与主 Agent 判断冲突——故工具层直接
   包 service 方法即可，无需照 listing 新增直调。
@@ -27,11 +27,28 @@ from .schemas import (
     SearchTermAnalysisRequest,
     BidOptimizationRequest,
     CompetitorAnalysisRequest,
-    BudgetOptimizationRequest,
-    AnomalyDetectionRequest,
 )
 
 _service = AdAnalysisService()
+
+
+def _shop_id():
+    """从请求级 ContextVar 取当前店铺（归属只能由服务端注入）。
+
+    ★ 第 204 轮修复：这 6 个工具（**「6」是第 204 轮当时的条数**——
+      第 316 轮已收敛到 4，见文件头沿革）改造前**一个都没传 `store_id`** ⇒ service 的
+      `store_id` 恒为 `None` ⇒ agent 层 `_load_ad_rows(None, ...)` 直接返回空表
+      ⇒ 工具永远回「未绑定店铺上下文（请求缺少 X-Shop-ID）」。**接上工具却永远
+      没数据**，是「接线了但没渲染」的工具层版本。
+
+    ★ 为什么不把 `store_id` 做成工具形参：归属由模型生成 = 把租户边界交给 LLM
+      （同族缺陷见 `customer_service/tools.py` 的 `create_ticket`，本轮一并修）。
+
+    ★ 延迟导入：`tools` 被 agent 的 `_build_router()` 导入，模块级反向 import
+      会形成 `agent → tools → agent` 环。
+    """
+    from .agent_ad import _current_shop_id
+    return _current_shop_id.get()
 
 
 def _dump(resp) -> str:
@@ -54,7 +71,7 @@ async def _diagnose_tool(
         include_benchmark: 是否包含行业基准对比（默认是）。
     """
     req = AdDiagnosisRequest(time_range=time_range, include_benchmark=include_benchmark)
-    resp = await _service.diagnose(req)
+    resp = await _service.diagnose(req, store_id=_shop_id())
     return _dump(resp)
 
 
@@ -75,7 +92,7 @@ async def _analyze_search_terms_tool(
     req = SearchTermAnalysisRequest(
         time_range=time_range, sort_by=sort_by, min_spend=min_spend, min_clicks=min_clicks
     )
-    resp = await _service.analyze_search_terms(req)
+    resp = await _service.analyze_search_terms(req, store_id=_shop_id())
     return _dump(resp)
 
 
@@ -92,7 +109,7 @@ async def _optimize_bids_tool(
         keywords: 指定关键词（可选，空则自动分析）。
     """
     req = BidOptimizationRequest(strategy=strategy, target_acos=target_acos, keywords=keywords)
-    resp = await _service.optimize_bids(req)
+    resp = await _service.optimize_bids(req, store_id=_shop_id())
     return _dump(resp)
 
 
@@ -111,45 +128,8 @@ async def _analyze_competitors_tool(
     req = CompetitorAnalysisRequest(
         competitor_asins=competitor_asins, auto_detect=auto_detect, time_range=time_range
     )
-    resp = await _service.analyze_competitors(req)
+    resp = await _service.analyze_competitors(req, store_id=_shop_id())
     return _dump(resp)
-
-
-async def _optimize_budget_tool(
-    total_daily_budget: Optional[float] = None,
-    target_roas: Optional[float] = None,
-    seasonality_factor: str = "normal",
-) -> str:
-    """预算分配优化：多 Campaign 智能分配预算，提升整体 ROI。
-
-    Args:
-        total_daily_budget: 总日预算（USD，可选，空则基于当前）。
-        target_roas: 目标 RoAS（可选）。
-        seasonality_factor: 季节性 low/normal/high/peak（默认 normal）。
-    """
-    req = BudgetOptimizationRequest(
-        total_daily_budget=total_daily_budget,
-        target_roas=target_roas,
-        seasonality_factor=seasonality_factor,
-    )
-    resp = await _service.optimize_budget(req)
-    return _dump(resp)
-
-
-async def _detect_anomalies_tool(
-    check_period: str = "7d",
-    sensitivity: str = "medium",
-) -> str:
-    """广告异常检测：自动检测花费突增、转化骤降等异常。
-
-    Args:
-        check_period: 检测周期 1d/7d/14d/30d（默认 7d）。
-        sensitivity: 灵敏度 low/medium/high（默认 medium）。
-    """
-    req = AnomalyDetectionRequest(check_period=check_period, sensitivity=sensitivity)
-    resp = await _service.detect_anomalies(req)
-    return _dump(resp)
-
 
 # ====== 工具注册表 ======
 
@@ -187,24 +167,6 @@ ad_analysis_tools = [
         description=(
             "竞品广告分析：分析竞争对手广告策略、展示份额、关键词重叠。"
             "当用户想分析竞品广告/对手投放/展示份额时使用。"
-        ),
-        metadata=READ_ONLY_METADATA,
-    ),
-    StructuredTool.from_function(
-        coroutine=_optimize_budget_tool,
-        name="optimize_budget",
-        description=(
-            "预算分配优化：多 Campaign 智能分配预算，提升整体 ROI。"
-            "当用户想优化预算/分配预算/调拨预算/提升 ROI 时使用。"
-        ),
-        metadata=READ_ONLY_METADATA,
-    ),
-    StructuredTool.from_function(
-        coroutine=_detect_anomalies_tool,
-        name="detect_ad_anomalies",
-        description=(
-            "广告异常检测：自动检测花费突增、转化骤降等异常。"
-            "当用户想查异常/看有没有突然变化/检测波动时使用。"
         ),
         metadata=READ_ONLY_METADATA,
     ),

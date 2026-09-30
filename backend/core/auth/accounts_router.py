@@ -513,6 +513,7 @@ async def update_member(
     account_id: str,
     member_id: str,
     data: MemberUpdateRequest,
+    request: Request,
     current_user: User = Depends(_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -574,6 +575,29 @@ async def update_member(
     target = (await db.execute(select(User).where(User.id == member.user_id))).scalar_one_or_none()
     logger.info("{} 更新了账户 {} 的成员 {}（role={}, status={}）",
                 current_user.email, account_id, member.user_id, member.role, member.status)
+    # ★ P0-5：本文件 docstring 早已声明「成员变更属审计范畴」，但此前只有
+    #   `logger.info` —— 那不是可查询的记录（问不出"这个账户这个月被改了几次"）。
+    #   ★ 函数内 import：core 内部避免新增 import 期环（audit 读口反向依赖 auth）。
+    from core.audit import ACTION_MEMBER_UPDATE, TARGET_MEMBER, record_audit
+
+    await record_audit(
+        action=ACTION_MEMBER_UPDATE,
+        actor=current_user,
+        target_type=TARGET_MEMBER,
+        target_id=member_id,
+        summary=(
+            f"修改成员：账户 {account_id} 的 {member.user_id}"
+            f"（role={member.role}, status={member.status}）"
+        ),
+        detail={
+            "account_id": account_id,
+            "member_id": member_id,
+            "user_id": member.user_id,
+            "role": member.role,
+            "status": member.status,
+        },
+        request=request,
+    )
     return {"member": _member_to_dict(member, target)}
 
 
@@ -581,6 +605,7 @@ async def update_member(
 async def remove_member(
     account_id: str,
     member_id: str,
+    request: Request,
     current_user: User = Depends(_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -615,6 +640,22 @@ async def remove_member(
     await db.commit()
 
     logger.info("{} 从账户 {} 移除了成员 {}", current_user.email, account_id, member.user_id)
+    # ★ P0-5：权限**回收**同样要留痕（软删的理由本就是"要查得回来"）。
+    from core.audit import ACTION_MEMBER_REMOVE, TARGET_MEMBER, record_audit
+
+    await record_audit(
+        action=ACTION_MEMBER_REMOVE,
+        actor=current_user,
+        target_type=TARGET_MEMBER,
+        target_id=member_id,
+        summary=f"移除成员：账户 {account_id} 的 {member.user_id}",
+        detail={
+            "account_id": account_id,
+            "member_id": member_id,
+            "user_id": member.user_id,
+        },
+        request=request,
+    )
     return {
         "message": "成员已移除",
         "member_id": member_id,

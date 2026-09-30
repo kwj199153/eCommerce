@@ -130,12 +130,24 @@ SIDE_EFFECT_METADATA: dict = {SIDE_EFFECT_METADATA_KEY: True}
 #:   （真数 `create_candidate` 调用次数那一类）形成「静态 + 运行时」双证据。
 WRITE_VERB_PREFIXES: tuple[str, ...] = (
     "create_",
+    # 第 205 轮新增：候选生命周期里两个写库动作的名字动词。
+    # ★ 为什么必须补进来：本元组是**独立第二判据** —— 即使有人把
+    #   `approve_candidate` 的 metadata 手工改成 READ_ONLY_METADATA
+    #   （第一判据只看声明，会被绕过），名字以写动词开头这条也会立刻转红。
+    #   名字不在覆盖范围里 ⇒ 那个工具就少了一道防线。
+    "approve_",
+    "review_",
     "save_",
     "update_",
     "delete_",
     "insert_",
     "upsert_",
     "persist_",
+    # 第 287 轮新增：差评处置的写入动词（`propose_review_disposition` 会往
+    #   `review_dispositions` 落一行）。★ 为什么必须补：本元组是**独立第二判据**
+    #   —— 名字不在覆盖范围里，那个写库工具就少了一道防线（只剩声明那一道，
+    #   而声明是可以被手工改坏的）。
+    "propose_",
     "write_",
     "publish_",
     "send_",

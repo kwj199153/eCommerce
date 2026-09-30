@@ -152,11 +152,16 @@ class OrdersAPI:
                     f"{i['quantity']}x {i['title'] or i['asin']} (${i['price']:.2f})"
                     for i in detail["items"][:5]
                 ],
-                "shipping_to": (
-                    f"{detail['shipping_address']['city']}, "
-                    f"{detail['shipping_address']['state_or_region']}"
-                    if detail.get("shipping_address") else "N/A"
-                ),
+                # ★ 客服侧要按商品/金额回复用户，把明细原样带出去
+                #   （detail 已查过一次，不额外打 API）
+                "items": detail["items"],
+                "order_total": detail["order_total"],
+                # ★ 历史 bug：这里原先直接取 address["state_or_region"]，
+                #   而 get_order_detail() 构这个字典用的键名是 "state"
+                #   ⇒ 任何带收货地址的订单都抛 KeyError，被下方 except 吞成
+                #   found=False（症状是「订单查不到」，不是「代码错了」）。
+                #   于是这条「真实订单路径」从来没成功跑过一次。
+                "shipping_to": self._format_shipping_to(detail.get("shipping_address")),
                 "is_prime": detail["is_prime"],
                 "estimated_delivery": self._estimate_delivery(current_status, detail["purchase_date"]),
             }
@@ -215,6 +220,19 @@ class OrdersAPI:
         }
 
     # ====== 内部工具方法 ======
+
+    @staticmethod
+    def _format_shipping_to(address: Optional[Dict[str, Any]]) -> str:
+        """
+        把收货地址渲染成「城市, 州/省」一行。
+
+        缺字段自动降级（不会产出 "None, " 这种残串）。
+        """
+        if not address:
+            return "N/A"
+        parts = [address.get("city"), address.get("state")]
+        joined = ", ".join(str(p) for p in parts if p)
+        return joined or "N/A"
 
     @staticmethod
     def _estimate_delivery(status: str, purchase_date: Optional[str]) -> Optional[str]:

@@ -14,7 +14,7 @@ import os
 import time
 import json
 import hashlib
-from typing import Any, Optional, AsyncIterable, Dict, List, Union
+from typing import Any, Optional, AsyncIterable, Dict, List, Tuple, Union
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -25,7 +25,17 @@ from core.metering.llm_meter import record_llm_usage
 # ★ P0-1（2026-09-16）：指标写入。本文件是**所有 Agent 的 LLM 唯一出口**
 #   （base_agent.py / rag/hybrid_engine.py 都经 get_llm() 拿到 DashScopeLLM），
 #   所以在这里埋点 = 一处覆盖全部调用方，业务模块一行都不用改。
-from core.observability.metrics import LLM_CALLS, LLM_TOKENS
+from core.observability.metrics import LLM_CALLS, LLM_OUTPUT_INVALID, LLM_TOKENS
+# ★ 第 283 轮 A 档：提示词规格（版本 / 指纹 / 变量契约）。
+#   放在 `ai_infra.llm.prompt_spec`，与注册表同包 —— 机制层不认业务内容。
+from .prompt_spec import (
+    PromptSpec,
+    PromptSpecError,
+    PromptVariableMissing,
+    RenderedPrompt,
+    extract_required_vars,
+    render_prompt,
+)
 # ★ P0-3（2026-09-16）：重试策略收敛到 core/resilience.py（唯一真源）。
 #   修复前本文件自己抄了一套 _call_with_retry，而**同一个文件的 chat_stream
 #   完全没有任何重试** —— 策略知识没有落点，同一个文件里都能不一致。
@@ -182,6 +192,17 @@ class LLMResponse:
     finish_reason: str = ""
     raw_response: Optional[Dict] = None
 
+    @property
+    def truncated(self) -> bool:
+        """输出是否因触达 `max_tokens` 被服务端截断。
+
+        ★ 为什么必须显式判定：`finish_reason` 本轮之前是**只写不读**的死字段
+          （全仓 0 个消费点）。截断的 JSON 一定解析失败，但若不先识别截断，
+          症状会退化成「偶发解析失败」——归因方向直接跑偏（会去查提示词、
+          查模型抽风，而不是查 `max_tokens` 配得太小）。
+        """
+        return self.finish_reason == FINISH_REASON_TRUNCATED
+
 
 @dataclass
 class UsageStats:
@@ -192,32 +213,117 @@ class UsageStats:
     errors: int = 0
 
 
+# ====== 输出校验：结构化解析失败的**相异**标记（★ P0-8，2026-09-27）======
+# ★ 为什么不能沿用 `{"raw_text": ...}` 这个退化形态：
+#   ① 它与「LLM 合法返回一个含 `raw_text` 字段的 JSON」**同形**。调用方只能靠
+#      `"raw_text" in data` 猜 ⇒ LLM 真产出该键时被误判为失败（假阴）。
+#   ② 更危险的反方向：解析失败也照样返回 dict，于是下游
+#      `if isinstance(result, dict): enhanced = True` 恒真 ⇒ **失败被当成成功**
+#      （`product_research/agent_product_research.py` 的蓝海 LLM 增强就是这个形状）。
+#   ⇒ 失败标记必须是**业务不可能产出**的键名 + 显式布尔，且判定入口全仓只有一处。
+LLM_PARSE_FAILED_KEY = "__llm_parse_failed__"
+# 触达 max_tokens 时服务端返回的 finish_reason（OpenAI 兼容口径）
+FINISH_REASON_TRUNCATED = "length"
+
+
+def is_llm_parse_failed(data: object) -> bool:
+    """唯一判定入口：`structured_chat()` 的返回是否表示「解析失败，结果不可用」。
+
+    ★ 调用方**禁止**自己写 `if "raw_text" in data` —— 那是同一判定的第二份实现，
+      且会把合法的 `raw_text` 字段误判成失败。
+    """
+    return isinstance(data, dict) and data.get(LLM_PARSE_FAILED_KEY) is True
+
+
+def _llm_parse_failed_result(
+    text: str,
+    *,
+    model: Optional[str],
+    reason: str,
+    truncated: bool = False,
+) -> Dict:
+    """构造「结构化输出不可用」的**相异**载荷，并计入指标。
+
+    返回形态::
+
+        {"__llm_parse_failed__": True, "raw_text": ..., "reason": ..., "truncated": ...}
+
+    ★ 保留 `raw_text` 只为排障时能看到原文；它**不再是**判定依据。
+    """
+    LLM_OUTPUT_INVALID.inc(model=model or "unknown", reason=reason)
+    logger.warning(
+        f"LLM 结构化输出不可用: reason={reason} truncated={truncated} "
+        f"model={model} chars={len(text)}"
+    )
+    return {
+        LLM_PARSE_FAILED_KEY: True,
+        "raw_text": text,
+        "reason": reason,
+        "truncated": truncated,
+    }
+
+
 # ====== Prompt 模板注册表（基础设施层只放**机制**，不放**内容**）======
 # ★ 原先这里硬编码了 6 份业务提示词（选品 / Listing / 广告 / 客服 / 竞品 / AIGC），
 #   等于把业务语义放在 `ai_infra`。现已下移到各业务模块的 `prompts.py`，
 #   由它们在 **import 时**调用 `register_prompt_template()` 注册。
 #   本模块只提供：注册表 + 读写接口（业务内容见 `modules/*/prompts.py`）。
-PROMPT_TEMPLATES: Dict[str, str] = {}
+PROMPT_TEMPLATES: Dict[str, PromptSpec] = {}
 
 
-def register_prompt_template(name: str, template: str) -> None:
-    """注册一个 Prompt 模板（供业务模块在 import 时调用）。
+def register_prompt_template(
+    name: str,
+    template: str,
+    *,
+    version: str = "1",
+    required_vars: Optional[Tuple[str, ...]] = None,
+) -> PromptSpec:
+    """注册一份 Prompt **规格**（供业务模块在 import 时调用）。
+
+    ★ 重名**直接拒绝**（第 283 轮 A 档 —— 与 `ai_infra.prompt_sections` 判据统一）：
+      修复前这里是 `PROMPT_TEMPLATES[name] = template`：两个模块撞名时，
+      后注册的会**静默覆盖**先注册的，两边都不报错，症状是「A 的提示词不再生效」，
+      没有任何一处日志或测试会红。而隔壁 `register_prompt_section()` 早就 raise 了
+      —— **同一个「重名该怎么办」的判定，本仓曾有两份相反的答案**。
 
     Args:
         name: 模板键（如 ``"customer_service"``）
-        template: 模板正文（可含 ``{var}`` 占位符）
+        template: 模板正文（可含 ``{var}`` 占位符；JSON 示例里的花括号不受影响）
+        version: 语义版本（人写，表达「这次是语义升级」）
+        required_vars: 变量契约；不传则按正文反解（详见 `PromptSpec`）
+
+    Returns:
+        落库的 `PromptSpec`（调用方可立刻拿到 fingerprint）
     """
-    if not name or not template:
-        raise ValueError("register_prompt_template: name / template 均不能为空")
-    PROMPT_TEMPLATES[name] = template
+    key = str(name or "").strip()
+    if not key:
+        raise ValueError("register_prompt_template: name 不能为空")
+    if not template or not template.strip():
+        raise ValueError(f"register_prompt_template: 模板 {key!r} 正文为空")
+    if key in PROMPT_TEMPLATES:
+        existing = PROMPT_TEMPLATES[key]
+        raise ValueError(
+            f"Prompt 模板名 {key!r} 已被注册（v{existing.version} / "
+            f"{existing.fingerprint}）—— 重名会静默覆盖先注册的，所以这里直接拒绝。"
+            f"请换一个名字，或把两处归到同一份模板。"
+        )
+    spec = PromptSpec(
+        name=key, content=template, version=version, required_vars=required_vars
+    )
+    PROMPT_TEMPLATES[key] = spec
+    logger.debug(
+        f"prompt template registered: {key} v{spec.version} "
+        f"{spec.fingerprint} vars={sorted(spec.required_vars or ())}"
+    )
+    return spec
 
 
-def get_prompt_template(name: str, **kwargs) -> str:
-    """按名取模板并填充占位符。
+def get_prompt_spec(name: str) -> PromptSpec:
+    """按名取**规格**（不渲染）。
 
-    ★ 未注册时**抛 KeyError**，不再返回空串。
-      返回空串会让调用方拿着**空 system prompt** 去请求 LLM —— 不报错、不降级，
-      症状是「回答风格突变 / 答非所问」，属静默失效。
+    ★ 未注册时抛 `KeyError`，不再返回空串。返回空串会让调用方拿着
+      **空 system prompt** 去请求 LLM —— 不报错、不降级，症状是
+      「回答风格突变 / 答非所问」，属静默失效。
       触发原因通常是：业务模块的 `prompts.py` 没被 import（注册未发生）。
     """
     if name not in PROMPT_TEMPLATES:
@@ -225,14 +331,31 @@ def get_prompt_template(name: str, **kwargs) -> str:
             f"Prompt 模板 {name!r} 未注册。业务提示词在各业务模块的 `prompts.py`，"
             f"需 import 该模块以触发注册。当前已注册: {sorted(PROMPT_TEMPLATES)}"
         )
-    template = PROMPT_TEMPLATES[name]
-    if kwargs:
-        try:
-            return template.format(**kwargs)
-        except KeyError as e:
-            # 保留原语义：变量缺失只告警并返回未填充模板（不因少一个变量就整段失败）
-            logger.warning(f"Missing template variable: {e}")
-    return template
+    return PROMPT_TEMPLATES[name]
+
+
+def registered_prompts() -> Tuple[str, ...]:
+    """已注册的模板名（**有序**，顺序 = 注册顺序）。
+
+    ★ 返回元组而不是那个 dict：调用方拿到 dict 就能绕过 `register_*` 往里塞东西，
+      于是「重名拒绝」形同虚设（同族判据见 `prompt_sections.registered_sections`）。
+    """
+    return tuple(PROMPT_TEMPLATES)
+
+
+def get_prompt_template(name: str, **kwargs) -> RenderedPrompt:
+    """按名取模板并渲染，返回 `RenderedPrompt`（**它就是一个 `str`**）。
+
+    ★ 返回类型做成 `str` 子类，是为了让全仓 12 处
+      `system_prompt=self.get_prompt_template("aigc_media")` **零改动**：
+      它们不需要版本信息，不该为了「可观测」被迫改签名。
+      需要排障的地方顺手读 `.version` / `.fingerprint` 即可。
+
+    ★ 缺变量**抛 `PromptVariableMissing`**（`KeyError` 子类），不再
+      「告警 + 把未填充的 ``{market}`` 原样发给模型」—— 那样做是静默失效：
+      不报错、不降级，只是模型偶尔读到一句「你是一位专注于 {market} 市场的分析师」。
+    """
+    return get_prompt_spec(name).render(**kwargs)
 
 
 
@@ -362,6 +485,9 @@ class DashScopeLLM:
         full_content = ""
         stream_usage: Dict = {}
         start_time = time.time()
+        # ★ P0-8：流式路径此前**完全不读** finish_reason，输出被截断时上层无从得知。
+        #   这里只收集最后一个非空值（服务端只在最后一个内容 chunk 给）。
+        stream_finish_reason = ""
 
         try:
             # ★ P0-3：只重试"建立连接"这一步（拿到响应头之前）。
@@ -392,6 +518,9 @@ class DashScopeLLM:
                             choices = chunk.get("choices") or []
                             if not choices:
                                 continue
+                            _fr = choices[0].get("finish_reason") or ""
+                            if _fr:
+                                stream_finish_reason = _fr
                             delta = choices[0].get("delta") or {}
                             content = delta.get("content", "")
                             if content:
@@ -412,6 +541,15 @@ class DashScopeLLM:
         # 记录统计
         latency = (time.time() - start_time) * 1000
         logger.info(f"Stream completed: {len(full_content)} chars, {latency:.0f}ms")
+
+        # ★ P0-8：流式输出被截断必须显式可见（原先 finish_reason 根本没被读过，
+        #   症状是「回答说到一半就没了」，会被当成模型抽风而不是 max_tokens 太小）
+        if stream_finish_reason == FINISH_REASON_TRUNCATED:
+            LLM_OUTPUT_INVALID.inc(model=model, reason="truncated")
+            logger.warning(
+                f"LLM stream truncated by max_tokens: model={model} "
+                f"chars={len(full_content)} finish_reason={stream_finish_reason}"
+            )
 
         # 计量：优先用服务端 usage，缺失则按字符数估算
         if stream_usage:
@@ -468,19 +606,34 @@ class DashScopeLLM:
         response = await self.chat(full_prompt, **kwargs)
 
         if output_format == "json":
+            # 提取 JSON（处理可能的 ```json ... ``` 包裹）
+            text = response.content.strip()
+            if text.startswith("```"):
+                # ★ 找不到闭合标记时**用原文继续试解析**，而不是让 `split()[1]`
+                #   抛 IndexError 冒到上层 —— 那会被记成「LLM 调用失败」，
+                #   归因方向从「输出格式问题」错成「服务不可用」。
+                body = text.split("\n", 1)[1] if "\n" in text else ""
+                head, sep, _tail = body.rpartition("```")
+                if sep and head.strip():
+                    text = head
             try:
-                # 提取 JSON（处理可能的 markdown 包裹）
-                text = response.content.strip()
-                if text.startswith("```"):
-                    text = text.split("\n", 1)[1].rsplit("```", 1)[0]
                 return json.loads(text)
             except json.JSONDecodeError:
-                logger.warning(f"Failed to parse JSON from LLM response")
-                return {"raw_text": response.content}
+                # ★ 相异结构：带 `__llm_parse_failed__` 标记，业务不可能产出同名键。
+                #   截断与「纯格式错」分开计 reason —— 前者要调 max_tokens，
+                #   后者要改提示词，混在一起会让两类问题都修不对。
+                return _llm_parse_failed_result(
+                    response.content,
+                    model=response.model,
+                    reason=(
+                        "truncated" if response.truncated else "json_decode_error"
+                    ),
+                    truncated=response.truncated,
+                )
 
         return response.content
 
-    def get_prompt_template(self, name: str, **kwargs) -> str:
+    def get_prompt_template(self, name: str, **kwargs) -> RenderedPrompt:
         """获取并填充 Prompt 模板。
 
         ★ 委托给模块级 `get_prompt_template()`，保证「缺键 → KeyError」的语义

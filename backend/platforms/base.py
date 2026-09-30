@@ -213,19 +213,6 @@ class PlatformAdapter(ABC):
         """
         pass
 
-    @abstractmethod
-    async def get_bsr_rank(self, product_id: str) -> Optional[int]:
-        """
-        获取 Best Seller Rank
-
-        Args:
-            product_id: 产品ID
-
-        Returns:
-            BSR排名，无数据返回 None
-        """
-        pass
-
     async def match_products(self, keyword: str, limit: int = 5) -> List[dict]:
         """
         关键词 → 具体商品（把「方向」落到「可入库的货」）。

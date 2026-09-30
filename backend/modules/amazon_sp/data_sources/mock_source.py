@@ -30,6 +30,12 @@ from typing import Optional
 
 from .base import AmazonDataSource
 
+# ★ 跨包引用走对方门面（`modules/trade/__init__`），不要直接 import 内部模块：
+#   直接引 db_model / demo_script 会让「文件搬家」变成全仓搜索。
+from modules.trade import (
+    SOURCE_MOCK_SEED, build_demo_order_payloads, build_demo_review_payloads,
+)
+
 
 # ============================================================
 # 卖家配置（可按需修改为从配置文件/数据库读取）
@@ -160,8 +166,21 @@ class MockAmazonDataSource(AmazonDataSource):
     - 随机种子可固定（方便测试复现）
     """
 
-    def __init__(self, seed: Optional[int] = None):
+    def __init__(self, seed: Optional[int] = None, sku_resolver=None,
+                 now: Optional[datetime] = None):
         self._rng = random.Random(seed)
+        #: ★ 订单/评论落在哪个 SKU 上：seed 灌演示数据时传一个按店铺产品库
+        #:   取真 SKU 的回调；不传则用平台侧兜底命名（见 demo_script）。
+        self._sku_resolver = sku_resolver
+        #: ★★ 演示剧本的**时间基准**。为什么必须可注入而不是现场取 utcnow()：
+        #:    剧本里的日期是「N 天前」，基准每动一次，落库行的 purchase_at /
+        #:    review_at 就整体漂移一次 —— 后果有两个，且都不报错：
+        #:      · 「近 7 天上升 40%」这类窗口统计会随同步时间漂移；
+        #:      · 测试钉不住绝对值，只能断言「大概这几天」= 等于没断言。
+        #:    不传 => 用当下（同步任务要的就是最新）；传了 => 完全可复现。
+        # ★ 基准在**实例创建时**定死，而不是每次调用现取：
+        #   一次同步 = 一个实例 = 一个基准，订单与评论才不会差几毫秒。
+        self._demo_now = now or datetime.utcnow()
         self._config = SELLER_CONFIG
         self._products = OWN_PRODUCTS
         self._competitors = COMPETITOR_PRODUCTS
@@ -567,6 +586,49 @@ class MockAmazonDataSource(AmazonDataSource):
                     "created_at": datetime.now(),
                 })
         return records
+
+    # ---- 订单域：批量拉取（供 modules/trade/sync.py 落库）----
+
+    def fetch_orders(
+        self, shop_id: str,
+        date_from: Optional[date] = None, date_to: Optional[date] = None,
+        limit: int = 200,
+    ) -> dict:
+        """Mock 订单批量拉取。
+
+        ★ `supported: True` —— Mock **确实**能提供订单（它是演示数据的上游）；
+          但 `source` 声明为 `SOURCE_MOCK_SEED`：**它自己承认自己是假数据**。
+          不加这个标记就会产生一个很隐蔽的错：接入 Mock 之后系统看起来
+          「已经接上平台了」，界面不再提示「以下结论基于演示数据」，
+          而底下跑的其实还是编的。
+        """
+        orders = build_demo_order_payloads(now=self._demo_now,
+                                           sku_resolver=self._sku_resolver)
+        if date_from is not None:
+            d0 = date_from.isoformat()
+            orders = [o for o in orders if (o.get("purchase_at") or "") >= d0]
+        if date_to is not None:
+            d1 = (date_to.isoformat() + "T23:59:59")
+            orders = [o for o in orders if (o.get("purchase_at") or "") <= d1]
+        return {"supported": True, "source": SOURCE_MOCK_SEED,
+                "orders": orders[:limit], "reason": ""}
+
+    def fetch_customer_reviews(
+        self, shop_id: str,
+        date_from: Optional[date] = None, date_to: Optional[date] = None,
+        limit: int = 200,
+    ) -> dict:
+        """Mock 买家评论批量拉取（与 fetch_orders 同源的同一份剧本）。"""
+        reviews = build_demo_review_payloads(now=self._demo_now,
+                                             sku_resolver=self._sku_resolver)
+        if date_from is not None:
+            d0 = date_from.isoformat()
+            reviews = [r for r in reviews if (r.get("review_at") or "") >= d0]
+        if date_to is not None:
+            d1 = (date_to.isoformat() + "T23:59:59")
+            reviews = [r for r in reviews if (r.get("review_at") or "") <= d1]
+        return {"supported": True, "source": SOURCE_MOCK_SEED,
+                "reviews": reviews[:limit], "reason": ""}
 
     # ---- 内部工具方法 ----
 

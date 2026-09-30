@@ -8,6 +8,11 @@ from typing import List, Optional, Any, Dict
 from datetime import datetime
 from pydantic import BaseModel, Field
 
+# ★ 「本次请求的作用对象」的形状定义在机制层（`ai_infra/context_target.py`）。
+#   第 298 轮起四条链路（选品 / Listing / AIGC / 客服）共用同一个形状 ——
+#   各写一份的下场是「少一个字段」的那一份不报任何错，只是静默拿不到对象。
+from ai_infra.context_target import ContextTargetPayload
+
 
 # ====== 请求模型 ======
 
@@ -17,6 +22,27 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = Field(None, description="会话 ID（多轮对话）")
     context: Optional[Dict[str, Any]] = Field(None, description="附加上下文")
     customer_id: Optional[str] = Field(None, description="客户 ID")
+
+    # ★ 点名通道（第 188 轮）：用户点名本次对话要用的技能名（可选）。
+    #   留空 ⇒ 只注入技能目录，仍由模型自己判断用哪条（渐进披露的原路径）。
+    #   ★ 归属校验不在这里：技能名由服务端在 `read_skill_text` 里按
+    #     身份 + 启用 + 对本 Agent 启用 三重过滤，请求体只负责**传递名字**。
+    skill: Optional[str] = Field(default=None, description="本次对话指定使用的技能名（可选）")
+
+    # ★ 本次请求的「作用对象」（第 298 轮）。与 `skill` 是**一对**：
+    #   `skill` 说「这次用哪条技能」，它说「这次冲着哪个对象来的」。
+    #   本 Agent 的差评应对链路此前只能靠 `get_customer_review_context(review_id)`
+    #   拿对象，而 `review_id` 只能从**用户消息文本或会话历史**里来 ——
+    #   用户已经在台账里点开了某条差评、进对话只说「帮我处理这条」时，
+    #   模型只能从历史里挑一条顶上（第 250 轮那个洞在客服线上的同一形状）。
+    #   ★ 传 `null` 与**不传**含义不同（明确没有 vs 客户端未参与），
+    #     判别由 `model_fields_set` 承担，本字段故意不给默认值。
+    #   ★ 本 Agent **只注入、不拒答**（与选品不同）：FAQ 检索 / 情感分析 /
+    #     订单追踪类技能本来就不针对具体差评，挂 fail-closed 会把一次正常
+    #     提问变成一句拒答（误伤）。
+    context_target: Optional[ContextTargetPayload] = Field(
+        default=None, description="本次请求的作用对象（三态：字段不出现 / null / {...}）"
+    )
 
 
 class FAQSearchRequest(BaseModel):

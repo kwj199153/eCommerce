@@ -10,14 +10,13 @@ from core.metering.usage_tracker import meter_agent_chat
 from typing import Optional, List
 
 from ai_infra.sse import sse_event_stream
+from ai_infra.skills import bind_requested_skill
 
 from .schemas import (
     AdDiagnosisRequest,
     SearchTermAnalysisRequest,
     BidOptimizationRequest,
     CompetitorAnalysisRequest,
-    BudgetOptimizationRequest,
-    AnomalyDetectionRequest,
     AdChatRequest,
     ApiResponse,
     ErrorResponse,
@@ -47,8 +46,6 @@ async def diagnose(
         return ApiResponse(success=True, message="诊断完成", data=result.model_dump())
     except NoDataError as e:
         return ApiResponse(success=False, message=e.reason, data=e.payload)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/search-terms", summary="搜索词效果分析")
@@ -69,8 +66,6 @@ async def analyze_search_terms(
         return ApiResponse(success=True, message="分析完成", data=result.model_dump())
     except NoDataError as e:
         return ApiResponse(success=False, message=e.reason, data=e.payload)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/bid-optimize", summary="出价优化建议")
@@ -92,8 +87,6 @@ async def optimize_bids(
         return ApiResponse(success=True, message="出价建议生成完成", data=result.model_dump())
     except NoDataError as e:
         return ApiResponse(success=False, message=e.reason, data=e.payload)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/competitors", summary="竞品广告分析")
@@ -114,54 +107,6 @@ async def analyze_competitors(
         return ApiResponse(success=True, message="竞品分析完成", data=result.model_dump())
     except NoDataError as e:
         return ApiResponse(success=False, message=e.reason, data=e.payload)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/budget", summary="预算分配优化")
-async def optimize_budget(
-    request: BudgetOptimizationRequest,
-    store_id: Optional[str] = Depends(get_current_shop_id),
-):
-    """
-    优化多 Campaign 预算分配
-
-    - 基于历史 ROI 的智能分配
-    - 各 Campaign 建议预算及理由
-    - 预期改善效果量化
-    - 风险评估与实施建议
-    """
-    try:
-        result = await AdAnalysisService.optimize_budget(request, store_id=store_id)
-        return ApiResponse(success=True, message="预算方案生成完成", data=result.model_dump())
-    except NoDataError as e:
-        return ApiResponse(success=False, message=e.reason, data=e.payload)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/anomalies", summary="广告异常检测")
-async def detect_anomalies(
-    request: AnomalyDetectionRequest,
-    store_id: Optional[str] = Depends(get_current_shop_id),
-):
-    """
-    检测广告数据异常情况
-
-    - 花费突增预警
-    - 转化率骤降检测
-    - 展示量异常识别
-    - CTR 异常波动告警
-    - 可能原因分析与建议操作
-    """
-    try:
-        result = await AdAnalysisService.detect_anomalies(request, store_id=store_id)
-        return ApiResponse(success=True, message="异常检测完成", data=result.model_dump())
-    except NoDataError as e:
-        return ApiResponse(success=False, message=e.reason, data=e.payload)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post("/chat", summary="自然语言对话")
 async def chat(
@@ -177,23 +122,22 @@ async def chat(
     - "看看搜索词报告" → 搜索词分析
     - "给我一些出价建议" → 出价优化
     - "分析竞品" → 竞品监控
-    - "优化预算" → 预算分配
-    - "有没有异常" → 异常检测
     """
-    try:
+    # ★ 点名通道（第 188 轮）：本次对话若指定了技能名，把它置进
+    #   调用链上下文，由 `skills_selected` 段落把该技能正文注入
+    #   system prompt（与 `load_skill` 共用同一个解析实现）。
+    async with bind_requested_skill(request.skill):
         result = await AdAnalysisService.chat(request, store_id=store_id)
-        return ApiResponse(
-            success=True,
-            message="OK",
-            data={
-                "reply": result.reply,
-                "data": result.data,
-                "display_type": result.display_type,
-                "suggestions": result.suggestions,
-            }
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return ApiResponse(
+        success=True,
+        message="OK",
+        data={
+            "reply": result.reply,
+            "data": result.data,
+            "display_type": result.display_type,
+            "suggestions": result.suggestions,
+        }
+    )
 
 
 @router.post("/chat/stream", summary="自然语言对话（SSE 流式）")
@@ -207,8 +151,11 @@ async def chat_stream(
 
     async def _wrapped():
         try:
-            async for event in sse_event_stream(AdAnalysisService.stream_chat(request.message, store_id)):
-                yield event
+            # ★ 写入点必须在**生成器体内**：包在返回 StreamingResponse
+            #   的外层，`async with` 会在生成器被第一次迭代之前就退出 ⇒ 等于没设。
+            async with bind_requested_skill(request.skill):
+                async for event in sse_event_stream(AdAnalysisService.stream_chat(request.message, store_id)):
+                    yield event
         except Exception as e:
             yield f"event: error\ndata: {_json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
 
@@ -233,12 +180,3 @@ async def quick_diagnose(
     request = AdDiagnosisRequest(time_range=time_range)
     return await diagnose(request, store_id)
 
-
-@router.get("/quick/anomalies", summary="快速异常检测（GET）")
-async def quick_anomalies(
-    period: str = Query(default="7d", description="检测周期"),
-    store_id: Optional[str] = Depends(get_current_shop_id),
-):
-    """快捷异常检测"""
-    request = AnomalyDetectionRequest(check_period=period)
-    return await detect_anomalies(request, store_id)

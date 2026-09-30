@@ -19,6 +19,7 @@ DELETE /api/v1/voice-clone           - 删除音色（同时释放远端配额�
 
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
@@ -294,7 +295,9 @@ async def voice_config():
 
     # 公网回源体检：提前告诉前端「配好了没」，别等用户点了「开始克隆」才报错
     public_base = (config.public_base_url or "").strip()
-    mirror_check = mirror.check_connectivity()
+    # ★ 体检要起 ssh（秒级，网络抖动时最长 15s）⇒ 放线程池，**别阻塞事件循环**。
+    #   mirror 侧另有 30s TTL 缓存，面板反复打开只会真探一次。
+    mirror_check = await asyncio.to_thread(mirror.check_connectivity)
     if public_base:
         if mirror_check["enabled"] and not mirror_check["ok"]:
             # 配了镜像但连不通 → 大概率拉不到文件

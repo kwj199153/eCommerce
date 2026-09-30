@@ -43,30 +43,17 @@ class CompetitorAnalysisRequest(BaseModel):
     time_range: str = Field(default="30d", description="分析时间范围")
 
 
-class BudgetOptimizationRequest(BaseModel):
-    """预算优化请求"""
-    total_daily_budget: Optional[float] = Field(default=None, description="总日预算（空则基于当前）")
-    target_roas: Optional[float] = Field(default=None, description="目标 RoAS")
-    min_campaign_budget: float = Field(default=20, description="单 Campaign 最小预算")
-    seasonality_factor: str = Field(default="normal", description="季节性: low/normal/high/peak")
-
-
-class AnomalyDetectionRequest(BaseModel):
-    """异常检测请求"""
-    check_period: str = Field(default="7d", description="检测周期: 1d/7d/14d/30d")
-    sensitivity: str = Field(default="medium", description="灵敏度: low/medium/high")
-    alert_thresholds: Optional[Dict[str, float]] = Field(
-        default=None,
-        description="自定义阈值: {spend_spike_pct, conversion_drop_pct, ctr_drop_pct}"
-    )
-    notify: bool = Field(default=False, description="是否发送通知")
-
-
 class AdChatRequest(BaseModel):
     """广告对话请求（自然语言入口）"""
     message: str = Field(..., description="用户问题")
     context_id: Optional[str] = Field(default=None, description="上下文 ID（多轮对话）")
     stream: bool = Field(default=False, description="是否流式输出")
+
+    # ★ 点名通道（第 188 轮）：用户点名本次对话要用的技能名（可选）。
+    #   留空 ⇒ 只注入技能目录，仍由模型自己判断用哪条（渐进披露的原路径）。
+    #   ★ 归属校验不在这里：技能名由服务端在 `read_skill_text` 里按
+    #     身份 + 启用 + 对本 Agent 启用 三重过滤，请求体只负责**传递名字**。
+    skill: Optional[str] = Field(default=None, description="本次对话指定使用的技能名（可选）")
 
 
 # ====== 响应模型 ======
@@ -125,6 +112,11 @@ class DiagnosisResponse(BaseModel):
     campaigns: List[CampaignHealthItem]
     top_issues: List[Dict[str, Any]]
     recommendations: List[str]
+    # ★ 按日期的花费/销售序列（`{labels, spend, sales}`）。
+    #   为什么加：前端看板有一张趋势图，此前只能读本地硬编码数组。
+    #   为什么是默认空：`SpApiDataSource` 拿不到按天拆分时会把整段活动
+    #   写在 `date_to` 当天（已明示、不做随机插值）⇒ 短序列是真实情况。
+    daily_trend: Dict[str, List[Any]] = Field(default_factory=dict)
 
 
 # ====== 搜索词响应 ======
@@ -203,50 +195,6 @@ class CompetitorResponse(BaseModel):
     market_position: str
     actionable_insights: List[str]
 
-
-# ====== 预算优化响应 ======
-
-class BudgetAllocationItem(BaseModel):
-    """预算分配项"""
-    campaign_name: str
-    current_budget: float
-    suggested_budget: float
-    allocation_pct: float
-    reason: str
-    expected_roas: float
-
-
-class BudgetOptimizationResponse(BaseModel):
-    """预算优化响应"""
-    total_current_budget: float
-    total_suggested_budget: float
-    allocations: List[BudgetAllocationItem]
-    projected_improvement: Dict[str, float]
-    risk_assessment: str
-
-
-# ====== 异常检测响应 ======
-
-class AnomalyItemResponse(BaseModel):
-    """异常项响应"""
-    type: str
-    severity: str
-    campaign: str
-    metric: str
-    current_value: float
-    expected_value: float
-    deviation_pct: float
-    detected_at: str
-    possible_cause: str
-    suggested_action: str
-
-
-class AnomalyResponse(BaseModel):
-    """异常检测响应"""
-    check_period: str
-    anomalies: List[AnomalyItemResponse]
-    summary: str
-    alert_count: int
 
 
 # ====== 对话响应 ======

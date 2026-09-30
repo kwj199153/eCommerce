@@ -34,7 +34,31 @@ from core.auth.accounts import (
 )
 # ★★★ P1-a 的加密通道（`api_credentials` 的**唯一**写入点）。
 #   绕过它给该列赋明文 = 重新引入 P1-a 已修的缺陷（见 core/security/credentials.py）。
-from core.security.credentials import CredentialsKeyMissing, encrypt_credentials
+from core.security.credentials import (
+    CredentialsDecryptError,
+    CredentialsKeyMissing,
+    CredentialsNotEncryptedError,
+    decrypt_credentials,
+    encrypt_credentials,
+    ensure_key_available,
+)
+# ★★★ 第 318 轮：平台连接层（把凭据收上来，并**真的去平台验一次**）。
+#   导入面刻意很窄：本包顶层只 import 契约与注册表，**平台连接器是取用时才导入**
+#   （`registry.get_connector()` 内部走 importlib）—— 于是「前端一进页面就读表单
+#   schema」不会把整条 Amazon 依赖链（→ core.config 等）拉起来。
+from modules.stores.connect import (
+    CredentialsIncomplete,
+    PlatformConnector,
+    PlatformSchemaList,
+    StoreConnectResult,
+    StoreConnectSpec,
+    UnknownPlatform,
+    VerifyReport,
+    VerifyResult,
+    VerifyStatus,
+    get_connector,
+    list_schemas,
+)
 from core.profit_engine import (
     calculate_profit, ProfitCalculationRequest, ProfitCalculationResult,
     get_fee_template, get_platform_type_from_key, get_currency_for_marketplace,
@@ -55,6 +79,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from core.database import async_session_factory, get_db
 from core.stores import StoreRecord, SHOP_ORDER_BY
+# ★ P0-5（第 327 轮）通用审计：店铺的接入/断开/转移/删除四类写操作统一留痕。
+#   顶层 import 无环顾虑 —— 本文件属 modules 层，core 是单向依赖的下游。
+from core.audit import (
+    ACTION_STORE_CONNECT,
+    ACTION_STORE_DELETE,
+    ACTION_STORE_DISCONNECT,
+    ACTION_STORE_TRANSFER,
+    STATUS_FAILURE,
+    STATUS_SUCCESS,
+    TARGET_STORE,
+    record_audit,
+)
 
 
 async def load_stores_into_memory() -> int:
@@ -94,6 +130,7 @@ def _store_to_record(store: Store) -> StoreRecord:
         sync_status=store.sync_status.value if hasattr(store.sync_status, "value") else str(store.sync_status),
         last_sync_at=store.last_sync_at,
         has_credentials=store.has_credentials,
+        is_demo=store.is_demo,
         created_at=store.created_at,
         updated_at=store.updated_at,
     )
@@ -130,6 +167,7 @@ def _record_to_store(r: StoreRecord) -> Store:
         sync_status=sync_status,
         last_sync_at=r.last_sync_at,
         has_credentials=r.has_credentials,
+        is_demo=r.is_demo,
         created_at=r.created_at,
         updated_at=r.updated_at,
     )
@@ -217,6 +255,48 @@ async def _save_store_credentials(
             .values(api_credentials=encrypted, updated_at=datetime.utcnow())
         )
         await session.commit()
+
+
+# ====== 平台连接层的接入点（第 318 轮）======
+
+def _resolve_connector(platform: str) -> PlatformConnector:
+    """把店铺平台（`amazon_us` / `shopee_my` ...）解析成对应连接器。
+
+    Raises:
+        UnknownPlatform: 平台未登记（脏数据 / 新平台忘了登记）
+
+    ★ 为什么抽成模块级函数，而不是在端点里直接调 `get_connector()`：
+      「连到外部平台」是本端点唯一的**外部依赖**。留一个可替换的接缝，
+      用例才能注入受控的验证结果（不联网、不打第三方接口）。
+      否则想断言「连接成功」就只有真拿一组凭据去请求 Amazon 一条路 ——
+      这种用例既慢又不可复现，最后的结局一定是被注释掉。
+      （判据：每条「成功路径」都必须能在**离线**条件下被断言。）
+    """
+    return get_connector(platform)
+
+
+async def _load_store_credentials(store_id: str) -> Optional[Dict[str, Any]]:
+    """读回该店铺**解密后**的凭证（仅供服务端内部使用）。
+
+    ★ 返回值**绝不能**出现在任何响应体里 —— 掩码回显走
+      `connector.masked_echo()`，它只挑非敏感字段。
+
+    Raises:
+        CredentialsKeyMissing: 未配置密钥（本部署还不能读写凭证）
+        CredentialsNotEncryptedError / CredentialsDecryptError:
+            存量值不是本模块写下的密文，或密钥换过导致解不开。
+            **显式上抛，不静默当成「没配过」** —— 后者会让用户以为没配过而重填，
+            用一个新值覆盖掉可能还能救回来的密文。
+    """
+    async with async_session_factory() as session:
+        stored = (
+            await session.execute(
+                select(StoreRecord.api_credentials).where(StoreRecord.id == store_id)
+            )
+        ).scalar()
+    if not stored:
+        return None
+    return decrypt_credentials(stored)
 
 
 router = APIRouter(prefix="/api/v1/stores", tags=["stores"])
@@ -471,6 +551,11 @@ async def list_stores(
     #   （owner/admin/member/viewer）**全开** —— 能被筛进「可见账户集合」的人
     #   必然有 `account.read`，判定恒真。列表只展示店铺字段，不泄露凭证
     #   （pydantic `Store` 里没有 `api_credentials`）。
+    # ★ 第 175 轮：`current_user is None`（演示档）**不再**等于空列表 ——
+    #   它返回 `is_demo` 的那一家。判定在真源内部，本端点不复制口径
+    #   （本项目吃过亏：同一判定两份实现 ⇒ 至少一份永远测不到）。
+    #   改造前这里恒返回空 ⇒ 前端拿不到任何店铺 ⇒ 全站面板皆空，
+    #   而根因藏在 core/auth/accounts.py 里（见迁移 d4a7b2e8c1f6）。
     stores = await filter_accessible_stores(db, current_user, stores)
 
     if status:
@@ -479,6 +564,83 @@ async def list_stores(
         stores = [s for s in stores if s.platform == platform]
 
     return StoreListResponse(stores=stores, total=len(stores))
+
+
+# ====== 平台连接：表单规格下发（第 318 轮）======
+#
+# ★★ 路由顺序（不是风格问题，是正确性问题）：
+#   `/connect/schema` 必须注册在 `/{store_id}` **之前**。它现在多一段路径
+#   （`/stores/connect/schema` 两段 vs `/stores/{store_id}` 一段）所以不冲突，
+#   但 FastAPI 是**按注册顺序**匹配的 —— 将来若有人加一个 `/stores/{store_id}/xxx`
+#   或合并路径，先注册的具体路径永远赢。这条顺序零成本，所以照做。
+
+@router.get("/connect/schema", response_model=PlatformSchemaList)
+async def list_connect_schemas(
+    current_user=Depends(require_auth_if_enabled),
+):
+    """下发**全部平台**的连接表单规格。
+
+    ★ 这是「不要每个平台写一套」的落点：前端不认识 `amazon` / `shopee` 这些
+      名字，只认识 `PlatformSchema` 这个结构 —— 加平台 = 后端加几条声明，
+      前端零改动（同一个弹窗组件吃下全部平台）。
+
+    ★ 为什么不做权限过滤：它只是**字段规格**（要填哪些框、哪些是密码、
+      去哪拿），既不含任何店铺数据，也不含任何凭据。
+    """
+    return PlatformSchemaList(schemas=list_schemas())
+
+
+@router.get("/{store_id}/connect/schema", response_model=StoreConnectSpec)
+async def get_store_connect_schema(
+    store_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_auth_if_enabled),
+):
+    """单店的连接规格 + **掩码**回显（用户重开弹窗时用）。
+
+    ★ 权限走**读**门（`permission=None`），不是 `store.write`。
+      理由：本响应里没有任何明文 —— 敏感字段一律 `••••••`，其余
+      （client_id / shop_id / region 之类）都是平台侧的**公开标识符**，
+      而且正是用户自己在表单上填过的。用写门会让 `viewer` 一打开弹窗就 403，
+      连「这家店配没配过」都看不到；真要改配置时，`POST .../connect`
+      仍有 `store.write` 把关。
+    """
+    store = _get_store(store_id)
+    await _ensure_store_access(db, store, current_user)
+
+    try:
+        connector = _resolve_connector(store.platform)
+    except UnknownPlatform as exc:
+        # 平台未登记 ⇒ 表单渲染不出来，也不能假装「对方还没配」。
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        stored = await _load_store_credentials(store_id)
+    except CredentialsKeyMissing as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except (CredentialsNotEncryptedError, CredentialsDecryptError) as exc:
+        # ★ 500 而不是「200 + 空回显」：这是**服务端数据状态**问题
+        #   （存量明文 / 密钥换过），不是用户输入问题。若静默回成「什么都没配」，
+        #   用户会重填一遍并覆盖掉那串其实还能救回来的密文。
+        raise HTTPException(
+            status_code=500,
+            detail=f"该店铺的凭据存储异常，无法回显配置：{exc}",
+        ) from exc
+
+    echo = connector.masked_echo(stored)
+    return StoreConnectSpec(
+        spec=connector.schema(),
+        configured=echo["configured"],
+        values=echo["values"],
+        any_configured=echo["any_configured"],
+        connection_status=(
+            store.connection_status.value
+            if hasattr(store.connection_status, "value")
+            else str(store.connection_status)
+        ),
+        is_connected=store.is_connected,
+        has_credentials=store.has_credentials,
+    )
 
 
 @router.get("/{store_id}", response_model=StoreDetailResponse)
@@ -606,6 +768,7 @@ async def update_store(
 async def transfer_store(
     store_id: str,
     data: StoreTransfer,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_auth_if_enabled),
 ):
@@ -644,16 +807,29 @@ async def transfer_store(
     if store_account_id(store) == data.account_id:
         return store  # 幂等：已经在目标账户下
 
+    # ★ P0-5：转移前先记下**源账户** —— 只记目标账户等于丢掉"从哪儿搬来的"
+    #   这一半信息，而"谁把我的店搬走了"恰恰是最需要回答的那一问。
+    prev_account_id = store_account_id(store)
     store.account_id = data.account_id
     store.updated_at = datetime.utcnow()
     _store_db[store_id] = store
     await _upsert_store_db(store)  # 持久化到 PG
+    await record_audit(
+        action=ACTION_STORE_TRANSFER,
+        actor=current_user,
+        target_type=TARGET_STORE,
+        target_id=store_id,
+        summary=f"转移店铺归属：{store_id} → 账户 {data.account_id}",
+        detail={"from_account_id": prev_account_id, "to_account_id": data.account_id},
+        request=request,
+    )
     return store
 
 
 @router.delete("/{store_id}")
 async def delete_store(
     store_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_auth_if_enabled),
 ):
@@ -681,6 +857,19 @@ async def delete_store(
     try:
         await _delete_store_db(store_id)  # 先删权威存储
     except IntegrityError as exc:
+        # ★ P0-5：**被拒的删除也要留痕**。审计问的是"谁试过"，而"尝试删店被
+        #   拦下"是最该被看见的一类痕迹 —— 成功的删除有界面反馈，失败尝试
+        #   往往只显示给操作者本人，别处查不到。（record_audit 不自抛，
+        #   不会掩盖这里的原始异常。）
+        await record_audit(
+            action=ACTION_STORE_DELETE,
+            actor=current_user,
+            status=STATUS_FAILURE,
+            target_type=TARGET_STORE,
+            target_id=store_id,
+            summary=f"删除店铺被拒（仍有关联业务数据）：{store_id}",
+            request=request,
+        )
         raise HTTPException(
             status_code=409,
             detail=(
@@ -690,65 +879,182 @@ async def delete_store(
         ) from exc
 
     _store_db.pop(store_id, None)  # 成功后才清内存缓存
+    await record_audit(
+        action=ACTION_STORE_DELETE,
+        actor=current_user,
+        target_type=TARGET_STORE,
+        target_id=store_id,
+        summary=f"删除店铺：{store_id}",
+        request=request,
+    )
     return {"message": "店铺已删除", "store_id": store_id}
 
 
 # ====== 平台连接接口 ======
 
-@router.post("/{store_id}/connect")
+@router.post("/{store_id}/connect", response_model=StoreConnectResult)
 async def connect_store_platform(
     store_id: str,
+    request: Request,
     credentials: Dict[str, Any] = None,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_auth_if_enabled),
 ):
-    """连接平台 API（保存加密凭证）
+    """连接平台：**先真验证、通过后才落库并标记「已连接」**。
 
-    ★★★ P1-c（2026-09-16）：本端点此前**收下 `credentials` 后直接丢弃** ——
-      只把 `has_credentials` 置 True。也就是说：
-        - P1-a 那一轮做的加密通道，挂在一个**没人调用**的账户侧实体
-          （`POST /api/v1/shops/{id}/connect`，生产 0 调用点）上；
-        - 而前端真正在用的这条路径，「已连接」是个**空承诺**：库里没有任何凭证，
-          日志里也没有任何提示。真接入 SP-API 时才会以「连接正常但调不通」爆出来。
-      现在凭证由 `_save_store_credentials()` 走 Fernet 加密落进
-      `stores_store.api_credentials`（`enc:v1:` 前缀）。
+    ★ 请求体形态：**扁平的凭据 dict**（不是 `{"credentials": {...}}`）——
+      与前端既有契约一致：`post('/stores/${id}/connect', credentials)`。
 
-    ★ 顺序很重要：**先加密落库、成功后才把 `has_credentials` 置 True**。
-      反过来的话，缺密钥（`CredentialsKeyMissing`）时库里没有凭证、
-      标志却是 True ⇒ 界面显示「已连接」，实际空转。
+    ★★★ 执行顺序（每一步都在堵一个已知的坑，顺序本身就是契约）
+
+      ① 存在性 404 / 归属 + 能力门 403 —— 与其它店铺端点同一套守卫
+      ② `normalize`  白名单 + 去空白 + 去成对引号
+      ③ `require`    复核必填（**在联网之前**）⇒ 缺项 400 + 中文标签
+      ④ **密钥可用性**（`ensure_key_available`，**仍在联网之前**）⇒ 未配密钥 503
+         ★ 若把它挪到「落库那一刻」才检查，就会出现一个**顺序错误**：
+           服务端压根没配密钥（凭据永远写不进去），却仍然先拿用户凭据去打平台，
+           而一旦那次调用恰好回「凭据无效」，用户会去反复修改一个没写错的东西，
+           **真因（服务端漏配密钥）被完全掩盖**。
+      ⑤ 真验证（`connector.verify`）
+      ⑥ 按验证结果分流：
+         - `INVALID`     ⇒ **400，且不落库、不改状态**。凭据被平台明确拒绝时
+                            存下来只会制造「看起来配好了、实际取不到数」的假象。
+         - `UNREACHABLE` ⇒ 200，落库，**但不标记已验证**。凭据好坏未知 ——
+                            不能因为网络抖一下就判用户的凭据是错的。
+         - `UNSUPPORTED` ⇒ 200，落库，**但不标记已验证**（本平台还没接校验）。
+         - `OK`          ⇒ 200，落库，标记 `CONNECTED`。
+      ⑦ 落库凭证（入参值 + 连接器产出的刷新值）→ **才**写 `has_credentials`
+         与连接状态（顺序铁律：先加密落库、成功后才置位）。
+
+    ★★★ 连接状态**只由本次验证结果决定**：`OK` ⇒ `CONNECTED`，其余任何结果 ⇒
+      不保留 `CONNECTED`。因为「已连接」这个标记的含义是
+      「**库里这一组**凭据已通过平台校验」，而此刻库里刚被写入一组
+      **未通过校验**的新凭据 —— 继续挂着 `CONNECTED`，就是把旧的验证结论
+      安到新凭据头上（同「三态压两态＝静默洗白」）。
+      `EXPIRED` / `ERROR` 两个历史值不由本端点产生：它们描述的是**运行期取数**
+      失败，属于同步链路的职责。
+
+    ★ 为什么非要真验证（而不是只落库）：改造前这里是「收下 `credentials` 后直接
+      **丢弃**，只把 `has_credentials` 置 True」——「已连接」是一个**空承诺**。
+      用户看到绿灯、以为接上了，直到真去拉数据才以「连接正常但调不通」爆出来，
+      且日志里没有任何提示。**验证凭据对不对，是连接这件事本身的一部分。**
     """
-    store = _get_store(store_id)
+    store = _get_store(store_id)  # 不存在 → 404
     # 连接平台 = 写店铺配置（并落库凭证）⇒ 需 store.write，viewer 403
     await _ensure_store_access(db, store, current_user, permission="store.write")
 
-    if credentials:
-        try:
-            # TODO: 实际验证凭证有效性（调平台鉴权接口），MVP 阶段仅安全落库
-            await _save_store_credentials(store_id, credentials)
-        except CredentialsKeyMissing as exc:
-            # 缺密钥 = 服务端配置问题，且**原因可读、修法明确**（见异常文案）。
-            # 用 503 而非 500：这是「服务暂时不可完成该请求」，不是代码缺陷。
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    # ①② 解析连接器（平台未登记 ⇒ 400，不是 500）
+    try:
+        connector = _resolve_connector(store.platform)
+    except UnknownPlatform as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # ②③ 收敛输入 + 复核必填 —— 都在联网之前
+    try:
+        values = connector.normalize(credentials)
+        connector.require(values)
+    except CredentialsIncomplete as exc:
+        # 缺项绝不放行去联网：否则「少填了一个」会被平台回成「签名错误」，
+        # 用户去改一个本来填对了的字段。
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # ④ 密钥可用性 —— 必须在联网之前（理由见 docstring）
+    try:
+        ensure_key_available()
+    except CredentialsKeyMissing as exc:
+        # 缺密钥 = 服务端配置问题，原因可读、修法明确；用 503 而非 500。
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    # ⑤ 真验证。连接器约定**不抛异常**；真抛了按 UNREACHABLE 兜底 ——
+    #    「校验过程自己出错」绝不能退化成「凭据无效」。
+    try:
+        result = await connector.verify(values)
+    except Exception as exc:  # 校验层的任何意外都不应让端点 500
+        result = VerifyResult(
+            status=VerifyStatus.UNREACHABLE,
+            message=(
+                f"校验过程异常（{type(exc).__name__}: {exc}）。"
+                "凭据好坏未知，请检查网络 / 代理后重试。"
+            ),
+        )
+
+    # ⑥ 分流一：被平台明确拒绝 ⇒ **不落库、不改状态**
+    if result.status is VerifyStatus.INVALID:
+        # ★ P0-5：**未通过的凭据尝试**要留痕 —— 它是"有人在试这家店的凭据"
+        #   的唯一信号。⚠️ detail 只放平台与校验结论，**绝不放凭据本身**
+        #   （审计表的读面最广，不能成为泄露点）。
+        await record_audit(
+            action=ACTION_STORE_CONNECT,
+            actor=current_user,
+            status=STATUS_FAILURE,
+            target_type=TARGET_STORE,
+            target_id=store_id,
+            summary=f"连接店铺被平台拒绝：{store_id}（{store.platform}）",
+            detail={"platform": store.platform, "verify_status": result.status.value},
+            request=request,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": result.message,
+                "status": result.status.value,
+                "checks": [c.model_dump() for c in result.checks],
+            },
+        )
+
+    # ⑦ 落库：入参值 + **连接器产出的刷新值**（如 Shopee 换到的新 token）。
+    #    刷新值只认连接器写的，不合并请求体 —— 否则客户端能凭请求体改写落库凭据。
+    payload = dict(values)
+    payload.update(result.refreshed or {})
+    try:
+        await _save_store_credentials(store_id, payload)
+    except CredentialsKeyMissing as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     # 更新内存缓存（★ 只改内存对象，凭证不进内存 —— pydantic Store 无该字段）
-    store.connection_status = ConnectionStatus.CONNECTED
     store.has_credentials = True
+    store.connection_status = (
+        ConnectionStatus.CONNECTED if result.ok else ConnectionStatus.DISCONNECTED
+    )
     store.updated_at = datetime.utcnow()
     _store_db[store_id] = store
     # 持久化非凭证字段（本函数刻意不碰 api_credentials，避免把密文清掉）
     await _upsert_store_db(store)
 
-    return {
-        "message": f"已连接到 {store.platform}",
-        "store_id": store_id,
-        "connection_status": "connected",
-        "credentials_saved": bool(credentials),
-    }
+    # ★ P0-5：只记"谁在什么时候给哪个店换了凭据"+ 校验结论，
+    #   **绝不记凭据内容**（理由同上）。
+    await record_audit(
+        action=ACTION_STORE_CONNECT,
+        actor=current_user,
+        status=STATUS_SUCCESS if result.ok else STATUS_FAILURE,
+        target_type=TARGET_STORE,
+        target_id=store_id,
+        summary=f"连接店铺：{store_id}（{store.platform}）",
+        detail={"platform": store.platform, "verify_status": result.status.value},
+        request=request,
+    )
+
+    return StoreConnectResult(
+        store_id=store_id,
+        platform=store.platform,
+        family=connector.platform,
+        message=result.message,
+        # ★ 用 VerifyReport 而不是 result 本身：后者带 refreshed（新令牌明文）。
+        verify=VerifyReport.from_result(result),
+        connection_status=(
+            store.connection_status.value
+            if hasattr(store.connection_status, "value")
+            else str(store.connection_status)
+        ),
+        is_connected=store.is_connected,
+        has_credentials=store.has_credentials,
+    )
 
 
 @router.post("/{store_id}/disconnect")
 async def disconnect_store_platform(
     store_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_auth_if_enabled),
 ):
@@ -769,6 +1075,17 @@ async def disconnect_store_platform(
     store.updated_at = datetime.utcnow()
     _store_db[store_id] = store
     await _upsert_store_db(store)  # 持久化到 PG
+
+    # ★ P0-5：断开 = 撤销授权。必须留痕 —— "谁把这家店的接入断掉了"
+    #   是排障的第一步（数据突然拉不到时，先看是不是有人撤了授权）。
+    await record_audit(
+        action=ACTION_STORE_DISCONNECT,
+        actor=current_user,
+        target_type=TARGET_STORE,
+        target_id=store_id,
+        summary=f"断开店铺连接（已清除凭据）：{store_id}",
+        request=request,
+    )
 
     return {"message": "已断开连接", "store_id": store_id}
 

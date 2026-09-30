@@ -3,7 +3,18 @@
 # 说明：本清单以「代码里真实 import 的包」为准，已剔除历史遗留的未使用依赖。
 
 # ---------- Web 框架 ----------
-fastapi>=0.104.0
+# ★ 第 247 轮：加**版本上界**（原先只有下界 = 引爆器）。
+#   0.141 改了两处**静默型**的库行为，本仓因此一次爆出 12 条红，且**全部**无报错：
+#     ① `include_router()` 不再把子路由摊平进 `app.routes`，改为追加惰性容器
+#        `_IncludedRouter` ⇒ 一切「`for r in app.routes: r.path`」的路由盘点门禁
+#        读到**空**（实测 198 条业务端点一条都数不到；含鉴权覆盖体检脚本，
+#        它甚至在「什么都没扫到」的情况下退出码 0）。
+#     ② yield 依赖的 teardown 移到了响应发送**之后** ⇒ 依赖里 `add_task`
+#        注册的后台任务**永远不执行** ⇒ 计费静默不记账（HTTP 一切正常）。
+#   代码侧已按 0.141 修正（`scripts/route_inventory.py` + `meter_agent_chat`），
+#   上界的作用是：**下一次跨 minor 升级必须显式做**，而不是被一条
+#   `pip install -U` 顺手带上去，再在下一轮回归里以「一堆门禁集体失明」的形态炸出来。
+fastapi>=0.104.0,<0.142
 uvicorn[standard]>=0.24.0
 pydantic>=2.5.0
 pydantic-settings>=2.0
@@ -14,6 +25,14 @@ httpx>=0.25.0          # DashScope / SP-API HTTP 调用
 langchain-core         # LangChain 核心
 langgraph              # LangGraph 工作流引擎
 
+# ★ 记忆持久化（checkpoint）：core/checkpoint.py 与 ai_infra/base_agent.py 都是**顶层** import
+#   `langgraph.checkpoint.postgres.aio.AsyncPostgresSaver`。缺它时连 `alembic` 都会 ModuleNotFound
+#   （env.py 的 register_all_models() 会拉起整棵业务依赖树），症状与迁移毫无关系，极易误判。
+langgraph-checkpoint-postgres>=3.0
+# ★ AsyncPostgresSaver 硬依赖 psycopg3；且必须带 [binary]：只装 psycopg 会报
+#   `ImportError: no pq wrapper available`（没有任何 libpq 实现）。
+psycopg[binary]>=3.1
+
 # ---------- RAG 向量检索 ----------
 numpy>=1.26.0          # 向量计算
 scikit-learn>=1.3.0    # TF-IDF / 余弦相似度
@@ -21,6 +40,14 @@ jieba>=0.42.1          # 中文分词
 
 # ---------- 认证 & 安全 ----------
 python-jose[cryptography]>=3.3.0  # JWT 编解码
+# ---------- 支付（支付宝）----------
+# ★ 为什么用 qrcode 而不是 alipay-sdk-python：
+#   支付宝签名只要 RSA2（SHA256withRSA），而 `cryptography`（python-jose 的传递依赖）
+#   已经够用 ⇒ 自己实现 sign/verify 只需 ~60 行，省掉一个 SDK 及其全部传递依赖。
+#   真正省不掉的是「把 qr_code 字符串画成二维码」这一步：QR 编码要 Reed-Solomon
+#   纠错 + 掩码选优，手写 200+ 行且极易出现「能扫出来但内容错」的静默缺陷。
+#   `qrcode` 是纯 Python、无运行时依赖（SVG 输出路径**不**需要 pillow）。
+qrcode>=7.4           # 支付宝当面付：qr_code 字符串 → SVG 二维码
 bcrypt>=4.1            # 密码哈希（直接调用 bcrypt，不经 passlib）
 # 注意：不再依赖 passlib。passlib 1.7.4 读取 bcrypt>=4.1 已移除的
 #       bcrypt.__about__.__version__ 会导致注册/登录 500。

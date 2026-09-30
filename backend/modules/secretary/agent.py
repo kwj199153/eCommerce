@@ -22,55 +22,56 @@ from ai_infra.base_agent import BaseAgent
 from ai_infra.budget import BUDGET_INTERACTIVE
 from ai_infra.context import CONTEXT_INTERACTIVE
 from ai_infra.plan import TODOS_STATE_KEY, plan_summary
+from ai_infra.sse import ToolTrace, preview, progress
 from modules.secretary import intent_shortcut
+from modules.library import build_library_tools
 from modules.secretary.navigation_tools import navigation_tools
 from modules.secretary.subscription_tools import subscription_tools
 from modules.secretary.product_tools import build_product_tools
+from modules.secretary.shop_context import (
+    ShopContext,
+    render_shop_banner,
+    render_shop_fact,
+    sanitize_history,
+)
 from modules.secretary.shop_tools import build_shop_tools
+# ★ 第 283 轮：提示词正文归位到 `modules/secretary/prompts.py`（键 `"secretary"`）。
+#   这里保留 re-export：既有用例从 `modules.secretary.agent` 取这个名字。
+from modules.secretary.prompts import SECRETARY_SYSTEM_PROMPT  # noqa: F401
+from ai_infra.llm import get_prompt_template
 
-SECRETARY_SYSTEM_PROMPT = """你是「店管家 AI」的店秘书，一个跨境电商运营助手。
 
-你的职责：**只做「路由调度 + 系统操作」，不做业务实现**。
+def _fact_of(shop_context: Optional[ShopContext]) -> str:
+    """从店铺上下文里取「要注入的事实段」（纯函数，空 ctx ⇒ 空串）。
 
-你是全局入口，负责把老板的一句话翻译成「切到哪个专职 Agent」或「打开哪个界面 / 改哪个系统状态」。业务的专业实现（生成 listing、做图、算利润、广告分析、竞品监控、经营复盘、客服问答）**一律交给对应的专职 Agent**，你只负责把老板「送」到那里，不要自己动手生成业务结果。
+    ★ 渲染口径收在 `shop_context.render_shop_fact`（唯一真源），这里只做
+      「对象 → 那一段文本」的适配。调用方拿到的是**包裹**而不是裸字符串，
+      所以不存在"传了事实却忘了传去污染名单"的半修状态。
+    """
+    return render_shop_fact(shop_context.brief if shop_context else None)
 
-可用的工具分三类：
 
-【路由工具】
-- switch_agent：把老板切换到某个专职 Agent 的对话页（老板要「做专业的事」时用它）。**带 query 参数**：若老板带着明确诉求来，把老板原话填进 query，子 Agent 切换过去后会**自动接着执行**；只有纯「去 XX 页面」才留空。
-- handoff_to_agent：老板提出专业生成类需求（生图/视频脚本/A+内容等）但关键信息不足时，把对话交接给专职 Agent，让它逐项追问补齐后执行
-- select_product：选中产品库里的某个产品作为「工作商品」（切 Agent 前的前置动作）
+def _banner_of(shop_context: Optional[ShopContext]) -> str:
+    """从店铺上下文里取「回复开头的当前店铺标注」（空 ctx ⇒ 空串）。
 
-【系统/店铺/UI 工具】
-- open_view：打开资料库 / 看板（产品库、选品库、竞品监控等）
-- open_account_menu：打开账户菜单项（设置 / 记忆与进化 / 订阅与计费 / 退出登录）——账户类跳转的统一网关
-- set_theme：切换界面主题（浅色 / 深色 / 跟随系统）
-- switch_shop：切换当前工作的店铺（数据源）
-- get_my_subscription：查询当前账号的订阅套餐详情（套餐名/状态/价格/周期/特性）
+    ★ 与 `_fact_of` 同为"对象 → 文本"的适配层，渲染口径都收在 `shop_context`。
+    """
+    return render_shop_banner(shop_context.brief if shop_context else None)
 
-规则：
-1. 老板要「做专业的事」（改 listing、做图、写视频脚本、找蓝海、算利润、广告分析、竞品监控、经营复盘、客服问答）→ 调 switch_agent 切到对应专职 Agent。你**不负责**生成这些业务结果。
-   **关键**：老板几乎总是带着具体诉求来的（如「比较好卖的品类有哪些」「帮我找厨房用品的蓝海机会」「优化下我的标题」），此时**必须把老板原话填进 query 参数**，子 Agent 会自动接着干活，不要切完就停、让老板再打一遍。只有老板单纯说「去选品页 / 打开选品分析师」这类纯导航时才留空 query。
-2. 老板要「看某个库 / 看板」→ 调 open_view。
-3. 老板要「打开账户相关功能」（设置、记忆、订阅、退出登录）→ 调 open_account_menu 并选对应 target。
-4. 老板要「改界面主题」→ 调 set_theme；「换店铺」→ 调 switch_shop；「选产品」→ 调 select_product。
-5. 老板问「订阅/套餐/账单/续费」→ 调 get_my_subscription 查询后直接回答；若返回 found=false，直接说「当前未订阅」并建议去订阅页面。
-6. 【重要】关键信息不足时（如生图缺材质/造型/视角/是否需要 logo/产品细节，≥2 个核心参数缺失），按**先问后交**的顺序处理：
-   · **先**调 ask_clarification，在当前会话里把问题显式问出来（能枚举候选答案就带上 options，让老板点选而不是手打）—— 这是首选动作，**不要**自己猜默认值硬凑；
-   · **只有**当诉求确实属于某个专职 Agent 的领域、且需要它的上下文继续推进时，才调 handoff_to_agent 交接。
-   （★ 第 145 轮 批 B3 的改动：此前这里只写「不足就交接」，于是「问一句」这件事**只存在于提示词里**、没有任何工具承载；模型不遵守时无信号，表现为"硬凑"或"默默换人"。现在提问是一个真工具，可被选择、可被测试。）
-7. 与工具无关的闲聊，礼貌回应即可，不要强行调用工具。
-8. 一次只做最贴合意图的一件事，不要多调无关工具。
 
-各专职 Agent 与触发场景对应：
-- 「找蓝海/选品/利润测算」→ product-research（选品分析师）
-- 「竞品/对手/竞争分析」→ competitor-intel（竞品监控员）
-- 「做图/视频/素材/A+内容」→ aigc-media（AIGC 媒体生成器）
-- 「改文案/标题/五点/描述/关键词」→ listing-generator（Listing 优化师）
-- 「广告/ACOS/出价/投放」→ ad-analysis（广告分析师）
-- 「客服/工单/售后/买家」→ customer-service（智能客服）
-- 「复盘/周报/月报/经营大盘/业绩/报表」→ review-analyst（运营复盘师）
-"""
+def _with_shop_fact(base_prompt: str, shop_fact: str) -> str:
+    """把「本轮店铺上下文」段**追加**在业务提示词之后（空 ⇒ 原样返回）。
+
+    ★ 收敛成一个函数是为了让门禁只认这一处形态：事实必须以**追加**方式进入
+      system prompt。若写成 `base + shop_fact` 直接拼，空串也会多出两个换行，
+      `tests/test_secretary_agent.py` 那条
+      `assert agent.system_prompt == SECRETARY_SYSTEM_PROMPT`（它守的正是
+      「没绑定店铺时提示词一个字都不许变」）会因此转红。
+    ★ 同理**不能**替换掉 `SECRETARY_SYSTEM_PROMPT`：替换会把规则 1–8 整段
+      悄悄删掉，而且没有任何一处会报错。
+    """
+    text = (shop_fact or "").strip()
+    return f"{base_prompt}\n\n{text}" if text else base_prompt
 
 
 class SecretaryAgent(BaseAgent):
@@ -94,14 +95,57 @@ class SecretaryAgent(BaseAgent):
     #: 审批**，不会给老板多出「请批准规划」的确认步骤。
     ENABLE_PLANNING = True
 
-    def __init__(self, llm=None, shop_id: Optional[str] = None, checkpointer=None, **kwargs):
+    #: ★ 第 238 轮 P2：第一轮（"理解 + 决策"）走更快的 `config.llm_fallback_model`。
+    #:
+    #: 老板原话：「闲聊分流到更快的模型 / 收紧 max_tokens 缩短时长，不解决空窗」。
+    #: 选在店秘书开，是因为它**同时**是高频入口与最长的等待方（实测闲聊 11.4s）。
+    #: ★ 不影响任务质量：见 `BaseAgent.FAST_FIRST_ROUND` 的判据段 ——
+    #:   任务型请求的正文来自**最后一条** AIMessage，那一轮一定是默认强模型。
+    #: ★ 想关掉：把 `config.llm_fast_first_round` 置 False（无需改代码）。
+    FAST_FIRST_ROUND = True
+
+    def __init__(
+        self,
+        llm=None,
+        shop_id: Optional[str] = None,
+        checkpointer=None,
+        shop_context: Optional[ShopContext] = None,
+        **kwargs,
+    ):
+        """构造店秘书。
+
+        Args:
+            shop_id: 当前店铺 ID（供 select_product / 资料库只读工具按店铺绑定）。
+            shop_context: **本轮店铺上下文**（服务端构造，唯一入口
+                `modules.secretary.shop_context.build_shop_context`）—— 它同时带着
+                ① 要注入 system prompt 的事实段、② 要从历史里抹掉的其它店铺名。
+                为 `None` ⇒ 两件事都不做，`system_prompt` 与
+                `SECRETARY_SYSTEM_PROMPT` **逐字相同**（既有用例钉住）。
+        """
         # 产品选择工具按店铺动态构建（shop_id 为空时返回空标记，由前端提示）
         product_tools = build_product_tools(shop_id)
         shop_tools = build_shop_tools()
+        # ★ 第 205 轮：资料库只读工具（选品库 / 产品库）。
+        #   本 Agent 是**按请求重建**的（模块级 `_agent` 不含店铺绑定），
+        #   所以能在构造期就拿到**已校验**的 shop_id —— 这正是 `shop_id=`
+        #   这条注入通道存在的理由（选品分析师那侧走 `resolve=`，
+        #   因为它的路由子层是会被缓存的，见 `modules/library/tools.py`）。
+        library_tools = build_library_tools(shop_id=shop_id)
+
+        # ★ 第 242 轮下半：**历史去污染**用的其它店铺名（见 `_sanitize_history_for_model`）。
+        #   从同一个包裹里取 ⇒ 与事实段**同生共死**，不会出现"注入了事实但没抹历史"。
+        self._shop_foreign_names: tuple = tuple(
+            shop_context.foreign_names if shop_context else ()
+        )
         super().__init__(
             agent_name="secretary",
-            system_prompt=SECRETARY_SYSTEM_PROMPT,
-            tools=navigation_tools + subscription_tools + product_tools + shop_tools,
+            # ★ 第 242 轮：把「当前店铺」权威事实**追加**在业务提示词之后。
+            #   为什么必须有：修复前模型只能从**对话历史**里取店名，于是切店后
+            #   仍写「当前店铺（虾皮1）」（实测事故：数据已经是亚马逊1 的、
+            #   自称还是虾皮1；见 `modules/secretary/shop_context.py` 头注释）。
+            system_prompt=_with_shop_fact(get_prompt_template("secretary"), _fact_of(shop_context)),
+            tools=navigation_tools + subscription_tools + product_tools + shop_tools
+            + library_tools,
             llm=llm,
             # ★ 第 145 轮 批 C5：裸数字 `max_iterations=6` → 具名档位。
             #   此前没有任何地方解释「为什么是 6」；现在它是「多轮对话型
@@ -117,6 +161,20 @@ class SecretaryAgent(BaseAgent):
             **kwargs,
         )
 
+    def _sanitize_history_for_model(self, messages: list) -> list:
+        """覆写基类钩子：把**发给模型的历史副本**里的其它店铺名抹掉。
+
+        ★ 为什么这一半不可省（第 242 轮实测）：只注入事实时，模型仍照抄历史里
+          那条现成的错误自称 —— 三组措辞全无效；把历史里的旧店名换成占位符，
+          它就把占位符当店名抄下来。只有"历史里不存在旧店名"才稳定改口，
+          而**只抹历史不注入**又会让它干脆不提店名（信息缺失）。
+        ★ 名单为空（没绑店铺 / 只有一家店）⇒ 原样返回：零开销，且保证
+          "没绑店铺时一切不变"这条既有判据继续成立。
+        """
+        if not self._shop_foreign_names:
+            return messages
+        return sanitize_history(messages, self._shop_foreign_names)
+
 
 # 单例（不含店铺绑定；店铺相关工具按请求动态重建）
 _agent: Optional[SecretaryAgent] = None
@@ -129,13 +187,23 @@ _agent: Optional[SecretaryAgent] = None
 TRUNCATED_NOTICE = "（提示：本轮回答因预算限制被截断，结果可能不完整。）\n\n"
 
 
-def get_secretary_agent(shop_id: Optional[str] = None) -> SecretaryAgent:
+def get_secretary_agent(
+    shop_id: Optional[str] = None,
+    shop_context: Optional[ShopContext] = None,
+) -> SecretaryAgent:
     """获取店秘书实例。
 
     因为 select_product 工具需要按店铺绑定 shop_id，而单例无法感知每个请求的
     店铺上下文，所以：
     - shop_id 为空：返回共享单例（工具集不含产品选择，或含空 shop 的产品工具）
     - shop_id 非空：每次新建实例（开销可接受，agent 初始化很轻）
+
+    Args:
+        shop_id: 当前店铺 ID（**已由依赖层校验**，见
+            `core.tenant.middleware.get_current_shop_id*`）。
+        shop_context: 本轮店铺上下文（见 `modules.secretary.shop_context`）。
+            ★ 只在 `shop_id` 非空这条分支上有意义 —— 没有店铺就没有店铺上下文，
+              单例（`shop_id` 为空时那条路）刻意不携带任何店铺绑定。
 
     决策层 C：优先尝试绑定全局 checkpointer（跨轮持久化）；若未初始化（如
     测试环境 / DB 未连），退化为无 checkpointer 的内存态，不抛错。
@@ -144,84 +212,92 @@ def get_secretary_agent(shop_id: Optional[str] = None) -> SecretaryAgent:
     from core.checkpoint import get_checkpointer
     cp = get_checkpointer()
     if shop_id is None:
+        # ★ 没有店铺就没有店铺上下文（单例刻意不携带任何店铺绑定）。
         if _agent is None:
             _agent = SecretaryAgent(checkpointer=cp)
         return _agent
-    return SecretaryAgent(shop_id=shop_id, checkpointer=cp)
+    return SecretaryAgent(shop_id=shop_id, checkpointer=cp, shop_context=shop_context)
 
 
-async def route(
+# --------------------------------------------------------------------------- #
+# 图调用的**共用口径**（`route` 非流式 / `route_stream` 流式都走这里）
+# --------------------------------------------------------------------------- #
+#
+# ★ 为什么必须共用：这两条路之间的差别**只该有一个** —— 「过程能不能边跑边看」。
+#   若「怎么拼输入」与「怎么读结果」各抄一份，两条路的正文 / 动作 / 计划必然
+#   缓慢漂移，而且**没有任何红灯**（本仓反复出现的形态：同一判定两份实现
+#   ⇒ 至少一份永远测不到）。所以下面这几个函数是唯一真源。
+
+
+def _shortcut_result(shortcut: dict) -> dict:
+    """短路命中时的结果 dict —— 两条路共用（保证产出**同构**）。"""
+    return {
+        "reply": intent_shortcut.build_reply(shortcut),
+        "actions": [shortcut],
+        "action": shortcut,
+        "tool_calls": intent_shortcut.to_tool_calls(shortcut),
+        "route_mode": "shortcut",
+        "shortcut_rule": shortcut.get("action", ""),
+    }
+
+
+def _log_shortcut(
+    result: dict,
+    started: float,
     query: str,
-    shop_id: Optional[str] = None,
-    history: Optional[list[dict]] = None,
-    session_id: Optional[str] = None,
-    user_id: Optional[str] = None,
-) -> dict:
-    """一次路由调用，返回结构化结果。
+    shop_id: Optional[str],
+    session_id: Optional[str],
+) -> None:
+    """短路路径的日志 —— 两条路共用（否则同一次请求在两条路上的读数口径不同）。"""
+    logger.info(
+        f"[secretary] 决策层B 短路命中 rule={result.get('shortcut_rule')} "
+        f"shop={shop_id or '-'} session={session_id or '-'} "
+        f"cost={(time.perf_counter() - started) * 1000:.1f}ms query={query[:40]!r}"
+    )
 
-    直接执行图并捕获消息流，从中提取：
-    - reply：最终 LLM 回复文本
-    - actions：有序的动作列表（switch_agent / navigate / select_product），
-      前端按顺序依次 dispatch（例如「先选产品，再切 Agent」）
-    - action：向后兼容，取 actions 里最后一个（单动作场景等价）
-    - tool_calls：本次实际调用的工具名列表
 
-    Args:
-        query: 用户当前这一句话。
-        shop_id: 当前店铺 ID（供 select_product 等按店铺过滤）。
-        history: 本会话的历史消息（[{role, content}]，role ∈ user/assistant），
-            用于让 LLM 感知多轮上下文（如「再切换」能理解上一轮在说主题）。
-            历史里**不应**包含当前 query（前端取的是「当前消息之前」的最近 N 条）。
-        session_id: 会话 ID。与 `user_id` **同时**非空时才作为 checkpointer
-            的 thread_id，实现跨轮持久化（决策层 C）；同时优先于前端显式传的
-            history。
-        user_id: **服务端身份**（`current_user.id`），不接受任何自报字段。
-            与会话同样必需 —— 只有会话没有身份时，两个用户撞上同一个
-            session_id 就会共享记忆（见 `BaseAgent.graph_for_session`）。
+def _log_llm_turn(
+    result: dict,
+    started: float,
+    query: str,
+    shop_id: Optional[str],
+    session_id: Optional[str],
+) -> None:
+    """LLM 兜底路径的日志 —— 两条路共用。"""
+    logger.info(
+        f"[secretary] 决策层B LLM 兜底 shop={shop_id or '-'} "
+        f"session={session_id or '-'} "
+        f"cost={(time.perf_counter() - started) * 1000:.1f}ms "
+        f"tools={result.get('tool_calls') or '-'} "
+        f"actions={len(result.get('actions') or [])} query={query[:40]!r}"
+    )
 
-    Returns:
-        {"reply": str, "actions": [dict], "action": dict|None, "tool_calls": [str],
-         "route_mode": "shortcut"|"llm", "shortcut_rule": str}
+
+def _input_messages(
+    query: str,
+    history: Optional[list],
+    agent: "SecretaryAgent",
+    session_id: Optional[str],
+    user_id: Optional[str],
+) -> list:
+    """拼本轮输入消息 —— 历史口径的**唯一实现**。
+
+    - 有 checkpointer（会话 + 身份 + 图确实绑了 cp）：只传当前 query，
+      历史由 checkpointer 自动恢复
+    - 否则：手动拼 history（决策层 A 的会话级记忆）
+
+    ★ 2026-09-17：thread_id 的生成 + 「没有会话怎么办」收进 `BaseAgent` 唯一实现
+      （`graph_for_session()` / `resolve_thread_id()`）。改前这里有两个隐患：
+        ① 无 session_id 时仍把 `"secretary-default"` 填进 config，而本图是**绑了
+           checkpointer 的** ⇒ 所有无会话请求（含匿名）共用同一段消息历史，
+           互相看得见对方说过什么（跨用户串记忆，且不报任何错）。
+        ② 那个默认值是**全进程共享的常量**，不是"每个人一个"。
+      `graph_for_session(None, None)` 改为返回**不带 checkpointer 的图 +
+      空 config** ⇒ 没有会话就真的不留记忆（原则同 accounts：没有身份 ⇒
+      没有数据）。
+    ★ 第 131 轮再补一条：**有会话还不够，必须有身份** —— thread_id 里
+      不带 `user_id` 时，两个用户拿到同一个 session_id 就会共享记忆。
     """
-    started = time.perf_counter()
-
-    # ===== 决策层 B：意图预判短路 =====
-    # 高置信度的「纯导航 / 纯系统操作」直接产出动作，**跳过整次 LLM 调用**。
-    # 判据在 intent_shortcut 里是「否定优先」：只要疑似复合意图就放行给 LLM。
-    shortcut = intent_shortcut.match(query)
-    if shortcut is not None:
-        elapsed_ms = (time.perf_counter() - started) * 1000
-        logger.info(
-            f"[secretary] 决策层B 短路命中 rule={shortcut.get('action')} "
-            f"shop={shop_id or '-'} session={session_id or '-'} "
-            f"cost={elapsed_ms:.1f}ms query={query[:40]!r}"
-        )
-        return {
-            "reply": intent_shortcut.build_reply(shortcut),
-            "actions": [shortcut],
-            "action": shortcut,
-            "tool_calls": intent_shortcut.to_tool_calls(shortcut),
-            "route_mode": "shortcut",
-            "shortcut_rule": shortcut.get("action", ""),
-        }
-
-    agent = get_secretary_agent(shop_id)
-
-    # 决策层 C：session_id 作为 checkpointer 的 thread_id，实现跨轮持久化。
-    # 关键语义：checkpointer 会自动把同一 thread_id 的历史消息注入上下文，
-    # 因此有 session_id 时**不应再手动拼 history**（否则历史重复两份）。
-    #
-    # ★ 2026-09-17：thread_id 的生成 + 「没有会话怎么办」收进 BaseAgent 唯一实现
-    #   （`graph_for_session()` / `resolve_thread_id()`）。改前这里有两个隐患：
-    #     ① 无 session_id 时仍把 `"secretary-default"` 填进 config，而本图是**绑了
-    #        checkpointer 的** ⇒ 所有无会话请求（含匿名）共用同一段消息历史，
-    #        互相看得见对方说过什么（跨用户串记忆，且不报任何错）。
-    #     ② 那个默认值是**全进程共享的常量**，不是"每个人一个"。
-    #   `graph_for_session(None, None)` 改为返回**不带 checkpointer 的图 +
-    #   空 config** ⇒ 没有会话就真的不留记忆（原则同 accounts：没有身份 ⇒
-    #   没有数据）。
-    #     ③ 第 131 轮再补一条：**有会话还不够，必须有身份** —— thread_id 里
-    #        不带 user_id 时，两个用户拿到同一个 session_id 就会共享记忆。
     use_checkpoint = (
         bool(session_id) and bool(user_id) and agent.checkpointer is not None
     )
@@ -241,10 +317,21 @@ async def route(
             else:
                 messages.append(HumanMessage(content=content))
     messages.append(HumanMessage(content=query))
+    return messages
 
-    _graph, _cfg = agent.graph_for_session(session_id, user_id)
-    state = await _graph.ainvoke({"messages": messages}, config=_cfg)
 
+def _digest_graph_state(state: dict, *, banner: str = "") -> dict:
+    """把**图最终状态**读成面向调用方的结果 dict —— **唯一取口**。
+
+    ★ `route()`（非流式）与 `route_stream()`（流式）都调它。这不是洁癖：
+      「流式版正文与非流式**逐字相同**」是本轮改动的回归判据，而它只有在
+      两边读同一份状态、走同一段提取逻辑时才可能成立。
+
+    ★★ 第 242 轮：`banner`（服务端渲染的「当前店铺」标注）也在这里拼 ——
+      正因为这里是**唯一取口**，两条路才能自动同源。若让两条路各自拼一次，
+      同一句话在流式与非流式下就会漂移（本仓判据：同一判定两份实现 ⇒
+      至少一份永远测不到）。
+    """
     messages = state.get("messages", [])
 
     # 只提取「本轮新增」的消息：定位最后一条 HumanMessage（= 本轮输入），其后的即为本轮产出。
@@ -310,18 +397,14 @@ async def route(
                 if text.strip():
                     reply = text
 
-    elapsed_ms = (time.perf_counter() - started) * 1000
-    logger.info(
-        f"[secretary] 决策层B LLM 兜底 shop={shop_id or '-'} "
-        f"session={session_id or '-'} cost={elapsed_ms:.1f}ms "
-        f"tools={tool_calls or '-'} actions={len(actions)} query={query[:40]!r}"
-    )
-
     # ★ 第 148 轮 批 C3：把子任务计划透出给调用方（前端按 `plan.items` 展示进度）。
     #   从 `state` 读、**不**从 messages 里解析：计划不在消息序列里 ——
     #   这正是它能跨上下文压缩存活的原因，所以只能从图状态取。
     #   ★ 只在真有计划时才带上这个键：恒返回 `{"total": 0}` 会让消费方分不清
     #   「这个 Agent 没开启规划」与「开启了但这一轮还没规划」。
+    #   ★★ 这个「有才带、没有就不带」的形态是**前端三态语义的前提**
+    #     （`stores/chat.ts::setPlan`：`undefined` ⇒ 保留旧值）。
+    #     改成恒发 `null` 会让短路路径**误清**老板的计划条。
     _plan = plan_summary(state.get(TODOS_STATE_KEY) or [])
     result: dict = {
         "reply": reply,
@@ -349,8 +432,230 @@ async def route(
         result["truncated_reason"] = (_structured.get("budget") or {}).get("reason")
         result["reply"] = TRUNCATED_NOTICE + reply
 
+    # ★★★ 第 242 轮：服务端的「当前店铺」标注 —— **不过 LLM**，切店后必然跟随。
+    #   为什么不让模型自称：实测四连（禁令文本被回显 / 模板句式让它从老板原话里
+    #   挑名字 / 不要求就干脆不写）证明那条通道在措辞层面不可稳定。
+    #   为什么拼在这：这里是正文**唯一取口**，两条路一并覆盖。
+    #   空 reply 不拼（否则会出现一条只有标注、没有内容的回复）。
+    if banner and result.get("reply"):
+        result["reply"] = banner + result["reply"]
+
     return result
 
+
+def _meta_event(result: dict, session_id: Optional[str]) -> dict:
+    """结构化字段的**唯一出口**（`event: meta`）。
+
+    ★ 为什么整份 `result` 原样下发、而不是逐字段挑：挑就会漏，而漏一个
+      **不报错** —— 只是前端少一种能力（少个动作 / 计划不落库 / 会话不持久化）。
+      `result` 的键本身就是「本轮到底产出了什么」的权威描述，例如 `plan`
+      只在真有计划时才在（见 `_digest_graph_state` 的注释）。
+    """
+    return {"event": "meta", "data": {**result, "session_id": session_id}}
+
+
+async def route(
+    query: str,
+    shop_id: Optional[str] = None,
+    history: Optional[list[dict]] = None,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    shop_context: Optional[ShopContext] = None,
+) -> dict:
+    """一次路由调用，返回结构化结果。
+
+    直接执行图并捕获消息流，从中提取：
+    - reply：最终 LLM 回复文本
+    - actions：有序的动作列表（switch_agent / navigate / select_product），
+      前端按顺序依次 dispatch（例如「先选产品，再切 Agent」）
+    - action：向后兼容，取 actions 里最后一个（单动作场景等价）
+    - tool_calls：本次实际调用的工具名列表
+
+    Args:
+        query: 用户当前这一句话。
+        shop_id: 当前店铺 ID（供 select_product 等按店铺过滤）。
+        shop_context: **本轮店铺上下文**（服务端构造；`None` = 不注入、不抹历史）。
+            ★ 为什么由调用方传进来、而不在本函数里取：本函数是**同步签名**、
+              拿不到 DB 会话。真源与构造口径收在 `modules.secretary.shop_context`。
+        history: 本会话的历史消息（[{role, content}]，role ∈ user/assistant），
+            用于让 LLM 感知多轮上下文（如「再切换」能理解上一轮在说主题）。
+            历史里**不应**包含当前 query（前端取的是「当前消息之前」的最近 N 条）。
+        session_id: 会话 ID。与 `user_id` **同时**非空时才作为 checkpointer
+            的 thread_id，实现跨轮持久化（决策层 C）；同时优先于前端显式传的
+            history。
+        user_id: **服务端身份**（`current_user.id`），不接受任何自报字段。
+            与会话同样必需 —— 只有会话没有身份时，两个用户撞上同一个
+            session_id 就会共享记忆（见 `BaseAgent.graph_for_session`）。
+
+    Returns:
+        {"reply": str, "actions": [dict], "action": dict|None, "tool_calls": [str],
+         "route_mode": "shortcut"|"llm", "shortcut_rule": str}
+    """
+    started = time.perf_counter()
+
+    # ===== 决策层 B：意图预判短路 =====
+    # 高置信度的「纯导航 / 纯系统操作」直接产出动作，**跳过整次 LLM 调用**。
+    # 判据在 intent_shortcut 里是「否定优先」：只要疑似复合意图就放行给 LLM。
+    shortcut = intent_shortcut.match(query)
+    if shortcut is not None:
+        result = _shortcut_result(shortcut)
+        _log_shortcut(result, started, query, shop_id, session_id)
+        return result
+
+    agent = get_secretary_agent(shop_id, shop_context=shop_context)
+
+    # 决策层 C：会话 / 身份的语义（thread_id 怎么算、「没有会话怎么办」）
+    # 收在 `BaseAgent.graph_for_session` / `resolve_thread_id` 里，拼输入消息的
+    # 口径收在 `_input_messages` —— 两者都是唯一实现，流式路径走同一份。
+    messages = _input_messages(query, history, agent, session_id, user_id)
+
+    _graph, _cfg = agent.graph_for_session(session_id, user_id)
+    state = await _graph.ainvoke({"messages": messages}, config=_cfg)
+
+    result = _digest_graph_state(state, banner=_banner_of(shop_context))
+    _log_llm_turn(result, started, query, shop_id, session_id)
+    return result
+
+
+async def route_stream(
+    query: str,
+    shop_id: Optional[str] = None,
+    history: Optional[list[dict]] = None,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    shop_context: Optional[ShopContext] = None,
+):
+    """`route()` 的**流式版**：过程实时可见，正文与结构化字段与 `route()` 同源。
+
+    ★ 与非流式的差别**只有一个**：过程能不能边跑边看。它由四件事保证，
+      缺任何一条就退化成「转圈几秒 → 直接出结果」（= 老板第 212 / 238 轮
+      抱怨的同一个现状）：
+
+        ① 工具调用**逐条**下发成 `event: step`（`ToolTrace` 翻译 `astream_events`）；
+        ② **模型 token 实时下发成 `event: preview`**（第 238 轮）—— 治的是
+           「一个工具都没调、纯生成也要十几秒」那段**零输出**：工具轨迹再好，
+           没工具可看时面板必然是空的，屏上唯一能显示的就是正在生成的 token。
+           ⚠️ 它是**预览**：不进 `done`、不落库，随时会被后一段或最终正文替换；
+        ③ 正文在图跑完后吐出，且与 `route()` **逐字同源** —— 两边都调
+           `_digest_graph_state`（唯一取口），而不是靠"看起来一样"；
+           ★ ②③ 是**两个级别**的东西：前端先拿 ② 上屏，再用 ③ 整段收口 ——
+           这就是"不动正文唯一取口"的具体含义；
+        ④ 结构化字段（actions / plan / session_id / route_mode / truncated）
+           走 `event: meta` 一次性下发，前端据此切 Agent、落计划、存会话。
+
+    ★ 为什么**没有**直接用 `StreamDigest`：它把「取工具轨迹」与「取最终答复」
+      捆在同一趟遍历里，而本 Agent 的答复**必须从图状态读** —— `actions`
+      （来自 ToolMessage）、`plan`（来自 `state["todos"]`）、`truncated`
+      （来自 `state["structured_response"]`）与 `reply` 是同一次"读状态"的
+      四个产物。若这里改用 `digest.reply`，本 Agent 就有了**两条**答复取法，
+      而它们在「被预算截断」这一档上给出的文本不同（`route()` 会给 reply 拼
+      `TRUNCATED_NOTICE` 前缀）⇒ 同一个 Agent 的两条链路正文不一样。
+      所以这里只用 `ToolTrace`（`StreamDigest` 内部用的正是它），
+      答复一律走 `_digest_graph_state`。
+
+    Yields:
+        dict —— 结构化事件（`progress` / `preview` / `step` / `meta`），交给
+        `sse_event_stream` 按 `event` 字段分发；
+        str —— **正文**（本 Agent 只有一段，即整条答复）。★ `preview` 不是正文。
+    """
+    started = time.perf_counter()
+
+    # ===== 决策层 B：意图预判短路（与非流式**同一张表**、同一个判据） =====
+    shortcut = intent_shortcut.match(query)
+    if shortcut is not None:
+        # 短路路径**不跑图** ⇒ 本来就没有过程可发。保持这个形态是有意的：
+        # 「省掉整次 LLM 调用」正是它存在的全部价值 —— 为了"有过程"去跑一次
+        # 假图，等于把加速器拆掉。
+        result = _shortcut_result(shortcut)
+        _log_shortcut(result, started, query, shop_id, session_id)
+        yield result["reply"]
+        yield _meta_event(result, session_id)
+        return
+
+    agent = get_secretary_agent(shop_id, shop_context=shop_context)
+    messages = _input_messages(query, history, agent, session_id, user_id)
+
+    # ★ 第一秒的反馈：图里要先跑 LLM 再跑工具，期间一个字节都不发就是"转圈"。
+    #   注意它与 `step` 的分工（见 `ai_infra/sse.py::step`）：`progress` 是
+    #   **会被覆盖**的单行提示，`step` 才是逐条追加、可折叠回看的轨迹。
+    # ★ 第 238 轮 P1：把这段等待**分开报**（成本极低，但如实）。
+    #   实测（238k：真 uvicorn + 真 HTTP 流式）：0.11s 出本条 → 3.20s 出首帧 token
+    #   → 11.40s 结束。两段等待**性质不同** —— 这一段是"解析会话 + 组装
+    #   system prompt"（我们自己的活），下一段是"模型首 token 延迟 TTFT"（对端的活）。
+    #   一句笼统的「正在理解你的意图…」把两段混成一句，用户无从判断是卡住了
+    #   还是在思考；而这两段的处置方式完全不同（前者查我们、后者换模型）。
+    yield progress("正在准备上下文…")
+
+    # ★ 工具人话标题走**注入**（与第 211 轮那 5 家同形）：真源在业务侧
+    #   `modules/skills/tools_catalog.py::tool_title`，而 `ai_infra` 不许依赖
+    #   业务（分层硬红线）⇒ 只能把查询口传进去。惰性 import：Agent 的
+    #   **模块导入期**无需把 `modules.skills` 拉进依赖图。
+    # 走**包门面**（本仓条款 1：跨模块引用不得伸手进包内部）。
+    from modules.skills import tool_title
+
+    # ★★ 第 238 轮：把 `on_chat_model_stream`（模型 token 增量）实时下发给前端，
+    #    治「十几秒零输出」。形态是 `event: preview`（**预览**，不是正文）——
+    #    为什么不能直接发 `delta`：本 Agent 的权威正文**必须**走
+    #    `_digest_graph_state`（唯一取口），把 token 也发成 `delta` 会让 `done`
+    #    与落库都变成「预览 + 正文」拼两遍。对照表见 `ai_infra/sse.py::preview`。
+    #
+    #    为什么用 `pending` 队列中转：`ToolTrace.feed` 是**同步**方法，它的回调
+    #    不能 `yield`（同步函数没有 yield 口）。所以回调只入队，回到下面这个
+    #    异步循环里再吐；每喂一条事件就排空一次 ⇒ 预览与触发它的事件**同序**
+    #    到达前端（顺序乱了会看到"先出正文、再补预览"）。
+    pending: list[dict] = []
+
+    #: 第一轮模型调用的进度只报一次（见下面的 `on_chat_model_start` 分支）
+    announced_first_call = False
+
+    def _on_model_stream(text: str, segment: str) -> None:
+        #: `segment` = 本次模型调用的 `run_id`，前端据此**换段即清零**
+        #: （ReAct 中间轮那句"我先查一下…"不该留在屏上）。
+        pending.append(preview(text, segment=segment))
+
+    trace = ToolTrace(title_resolver=tool_title, on_model_stream=_on_model_stream)
+
+    final_state: dict = {}
+    # ★ 走 `stream_session`（而不是自己拼 `astream_events` 循环）：它顺带把
+    #   **墙钟预算**也套上（同 `run_session`）—— 自己拼会静默漏掉预算，
+    #   而漏掉不报错，只是"超时保护"悄悄消失。
+    async for ev in agent.stream_session(
+        {"messages": messages}, session_id=session_id, user_id=user_id
+    ):
+        # ★ 第 238 轮 P1：**模型开始被调用**时再报一条进度。
+        #   它覆盖的正是最长的那段"静默"（实测 ≈3s 的 TTFT，比前一段长一个
+        #   数量级）—— 在此之前屏上只有一句「正在准备上下文…」，而那已经
+        #   不成立了：上下文早准备好了，此刻在等对端。
+        #   ★ 只在**第一次**调用时报：ReAct 后续轮次由 `event: step` 的
+        #     running 态覆盖（"正在调用工具"），再报一次只会让 tip 反复闪。
+        #   ★ 接线点不是猜的：238d 实测真图会发 `on_chat_model_start`
+        #     （闲聊场景 1 条）。
+        if (ev or {}).get("event") == "on_chat_model_start" and not announced_first_call:
+            announced_first_call = True
+            yield progress("正在向模型提问…")
+
+        s = trace.feed(ev)
+
+        # 预览增量（来自 `on_chat_model_stream`）：先排空队列，再吐 step。
+        # 两者**互斥**（同一条事件不可能既是 token 又是工具调用），顺序只影响可读性。
+        while pending:
+            yield pending.pop(0)         # → event: preview（实时）
+
+        if s is not None:
+            yield s                      # → event: step（实时）
+
+        # 根图的 `on_chain_end` 排在所有子事件之后 ⇒ 最后写进来的是整张图的
+        # **最终 state**（子节点的中间态会被它覆盖）。这与 `StreamDigest.feed`
+        # 取答复用的是同一个判据。
+        if (ev or {}).get("event") == "on_chain_end":
+            out = (ev.get("data") or {}).get("output")
+            if isinstance(out, dict) and out.get("messages"):
+                final_state = out
+
+    result = _digest_graph_state(final_state, banner=_banner_of(shop_context))
+    _log_llm_turn(result, started, query, shop_id, session_id)
+    yield result["reply"]
+    yield _meta_event(result, session_id)
 
 async def current_plan(
     session_id: Optional[str],

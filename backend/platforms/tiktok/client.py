@@ -52,7 +52,3 @@ class TikTokAdapter(PlatformAdapter):
 
     async def get_reviews(self, product_id: str, page: int = 1, rating_filter: Optional[int] = None) -> List[ReviewData]:
         raise NotImplementedError("TikTok 适配器尚未实现，请在 Phase 5+ 开发")
-
-    async def get_bsr_rank(self, product_id: str) -> Optional[int]:
-        # TikTok 使用 "热销排名" 而非 BSR
-        return None

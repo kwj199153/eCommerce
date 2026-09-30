@@ -19,9 +19,9 @@
 
 from __future__ import annotations
 
-import random
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
 from core.logger import get_logger
 
@@ -257,7 +257,7 @@ async def generate_assets(
             failed.append({"type": asset_type, "type_label": ASSET_TYPES[asset_type]["label"], "error": f"转存失败（临时链接 24h 后失效）：{exc}"})
 
         assets.append({
-            "id": f"asset_{stamp}_{idx}_{random.randint(100, 999)}",
+            "id": f"asset_{stamp}_{idx}_{uuid4().hex[:6]}",
             "type": asset_type,
             "type_label": ASSET_TYPES[asset_type]["label"],
             "desc": desc,

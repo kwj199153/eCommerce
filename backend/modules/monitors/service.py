@@ -14,8 +14,10 @@ from typing import Optional
 from sqlalchemy import select
 
 from core.database import async_session_factory
+from core.library_query import count_library, query_library
 from core.tenant.scoping import scoped
 from modules.monitors.db_model import MonitorRecord
+from modules.monitors.spec import MONITOR_SPEC
 from modules.monitors.snapshot import build_time_series, derive_baseline
 
 
@@ -68,6 +70,47 @@ def make_monitor_id(asin: str, shop_id: Optional[str]) -> str:
 
 
 # ====== ORM → dict ======
+
+async def list_monitors(
+    shop_id: Optional[str],
+    *,
+    order_by: Optional[str] = None,
+    stock_status: Optional[str] = None,
+    marketplace: Optional[str] = None,
+    limit: Optional[int] = None,
+):
+    """监控池列表（**唯一实现**）—— REST 与 Agent 工具共用。
+
+    ★ 第 218 轮（P1）：改前「读监控池」只有 `monitors/router.py::list_monitors`
+      一处**内联实现**（handler 体里直接拼 `select`），Agent 侧够不着、也无从复用。
+      现在收口到这里，由本函数调 `core.library_query` 内核。
+
+    ★ 默认排序 = 改前 REST 的 `order_by(MonitorRecord.created_at.desc())`，
+      逐字不变（前端文案「新增的排在前面」）。
+    """
+    rows = await query_library(
+        MONITOR_SPEC,
+        shop_id,
+        order_by=order_by,
+        filters={"stock_status": stock_status, "marketplace": marketplace},
+        limit=limit,
+    )
+    return [row[0] for row in rows]
+
+
+async def count_monitors(
+    shop_id: Optional[str],
+    *,
+    stock_status: Optional[str] = None,
+    marketplace: Optional[str] = None,
+) -> int:
+    """监控池**真实**条数（与 `list_monitors` 同口径，两者都走内核）。"""
+    return await count_library(
+        MONITOR_SPEC,
+        shop_id,
+        filters={"stock_status": stock_status, "marketplace": marketplace},
+    )
+
 
 def record_to_dict(r: MonitorRecord) -> dict:
     """ORM → dict（字段名与前端 MonitorPoolRecord 一一对齐）"""
@@ -208,15 +251,10 @@ async def monitor_exists(asin: str, shop_id: Optional[str]) -> bool:
     return row is not None
 
 
-async def get_monitor_by_id(monitor_id: str, shop_id: Optional[str] = None) -> Optional[MonitorRecord]:
-    """按主键取记录（带租户校验：给了 shop_id 就必须匹配）"""
-    async with async_session_factory() as session:
-        q = select(MonitorRecord).where(MonitorRecord.id == monitor_id)
-        if shop_id:
-            q = scoped(q, MonitorRecord, shop_id)
-        return (await session.execute(q)).scalar_one_or_none()
-
-
+# ★ 第 283 轮删除：这里原有一个 `get_monitor_by_id`（条件式 `if shop_id:` 版）。
+#   它**零调用点**（`modules/monitors/router.py::get_monitor` 自己写了无条件版），
+#   也不在 `__all__` 里 —— 同一判定有两份实现，被门禁守住的那份是无条件的，
+#   这份没人测的实现留着只有一种作用：将来被人用起来时把越权原样复活。
 async def upsert_monitor(payload: dict, shop_id: Optional[str] = None) -> dict:
     """
     入池：**唯一写入口**。同店铺同 ASIN 已存在则合并字段（不新增行）。

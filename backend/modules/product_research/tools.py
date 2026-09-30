@@ -5,20 +5,32 @@
 通过 bind_tools 自主选择调用。
 
 设计要点（与 listing_tools.py 一致）：
-- 只包「语义明确」的细粒度方法（蓝海挖掘 / 利润计算 / 痛点分析 / 竞品对比），
+- 只包「语义明确」的细粒度方法（蓝海挖掘 / 利润计算 / 痛点分析 / 竞品对比 / 选品大盘），
   **不包** `chat` / `stream_chat` 这类粗粒度入口（交给 agent 内部 _classify_intent
   关键词表再判断一次，会与主 Agent 的 LLM 判断冲突）。
 - 参数用扁平字段（照 listing 范式），工具函数内自构造 Pydantic request。
 - 工具层只做「调用 service + 序列化」，不碰 agent 本体。
+  ★ 第 200 轮：`save_candidate` 此前直调 `_service.agent._save_candidate`，
+  是这条约定的唯一例外（按 service 层盘点会漏掉它）；现已改走
+  `_service.save_candidate`。
 """
 
 import json
 from typing import List, Optional
 
+from core.library_query import LibraryQueryError, count_library, query_library
+
 from langchain_core.tools import StructuredTool
 from ai_infra.tools.side_effects import READ_ONLY_METADATA, SIDE_EFFECT_METADATA
+from modules.candidates import (
+    approve_candidate as _approve_candidate,
+    get_candidate as _get_candidate,
+    review_candidate as _review_candidate,
+)
+from modules.library import build_library_tools
 
 from .service import product_research_service
+from .spec import MARKET_SNAPSHOT_SPEC
 from .schemas import (
     BlueOceanRequest,
     ProfitAnalysisRequest,
@@ -187,26 +199,282 @@ async def _save_candidate_tool(
     #     「请先在界面左上角选一个店铺，再说一次…」——用户明明选过店铺，
     #     这是一句**归因错误的假拒绝**（让人去查一个不存在的问题）。
     #     实测（`_r131_a2_savecand_probe.py`）：`shop_id=probe-shop-A` 已绑定，
-    #     工具路径仍被拒、`create_candidate` 零调用；而 Agent 自带的
-    #     `_tool_save_candidate`（读双 ContextVar）同场次正常落库。
+    #     工具路径仍被拒、`create_candidate` 零调用；而当时 Agent 自带的
+    #     `_tool_save_candidate`（同样读双 ContextVar）同场次正常落库。
+    #     ★ 第 200 轮：那个 Agent 内部旧工具已删（整簇零调用），本工具成了
+    #     **唯一**写入口，并改走 `_service.save_candidate` ——
+    #     5 个工具的形状至此统一为「工具 → service → agent」。
     from .agent_product_research import _current_context_id, _current_shop_id
 
-    return _dump(await _service.agent._save_candidate(
+    return _dump(await _service.save_candidate(
         query,
         context_id=_current_context_id.get(),
         shop_id=_current_shop_id.get(),
     ))
 
 
-# ====== 工具注册表 ======
+# ====== 候选生命周期（第 205 轮接线）======
+#
+# ★ 为什么这三条落在本模块：消费者只有选品分析师（`ProductResearcher`），
+#   而实现住在 SHARED 层的 `modules.candidates.service`。
+#   PLUGIN → SHARED 是分层表允许的方向；反过来（把工具塞进 `candidates`）
+#   会让 SHARED 层反过来知道 Agent 的存在，方向就倒了。
+# ★ 归属一律走 `_resolve_shop_id()`（与 `library_tools` 同一条 ContextVar 通道）：
+#   工具入参由 LLM 生成，**塞不进** shop_id。缺归属时工具**硬拒绝**，
+#   绝不「拿个默认店铺兜底」—— 那会让候选落进**不属于任何人**的店铺，
+#   比拒做危险得多（本仓既有守卫 `_write_candidates` 同此语义）。
+# ★ 三条里 `review_candidate` / `approve_candidate` 会写库 ⇒ 声明
+#   `SIDE_EFFECT_METADATA`，由 `BaseAgent._wrap_hitl_tools()` 按副作用
+#   **自动**包进人工审批（业务侧不手写名单）。
 
+_NO_SHOP_HINT = (
+    "没有拿到店铺归属，这个动作我不做。"
+    "请先在界面左上角选一个店铺，再说一次。"
+)
+
+
+async def _get_candidate_tool(candidate_id: str) -> str:
+    """查看某个候选选品的完整详情（评审前核对用）。
+
+    Args:
+        candidate_id: 候选 ID（从 list_candidates 的结果里取）。
+    """
+    shop_id = _resolve_shop_id()
+    if not shop_id:
+        return _NO_SHOP_HINT
+    item = await _get_candidate(candidate_id, shop_id)
+    if item is None:
+        # ★「不存在」与「不属于你」同一文案：否则可拿 id 逐个试探，
+        #   把「存在但不是我的」与「不存在」区分开 ⇒ 可枚举别人的候选。
+        return f"没找到这个候选（id={candidate_id}），也可能它不属于当前店铺。"
+    return _dump(item)
+
+
+async def _review_candidate_tool(
+    candidate_id: str,
+    review_status: str,
+    review_notes: str = "",
+) -> str:
+    """给候选选品打评审结论（淘汰 / 转评审中 / 退回待评审）。
+
+    Args:
+        candidate_id: 候选 ID。
+        review_status: 只能是 pending / under_review / approved / rejected。
+            ★ 「通过并推进产品库」不要用本条 —— 那要走 `approve_candidate`，
+              它才会真的在产品库建 SPU 草稿。
+        review_notes: 评审理由（可选，建议写上为什么）。
+    """
+    shop_id = _resolve_shop_id()
+    if not shop_id:
+        return _NO_SHOP_HINT
+    item = await _review_candidate(
+        candidate_id,
+        shop_id,
+        review_status=review_status,
+        review_notes=review_notes,
+    )
+    if item is None:
+        return f"没找到这个候选（id={candidate_id}），也可能它不属于当前店铺。"
+    return _dump({"type": "candidate_reviewed", "candidate": item})
+
+
+async def _approve_candidate_tool(candidate_id: str) -> str:
+    """评审通过：把候选**正式推进自有产品库**（建一条待完善 Listing 的 SPU 草稿）。
+
+    ★ 这是「候选 → 产品库」的**唯一通道**。候选本身会保留并标记 approved，
+      作为不可覆盖的原始评估基线 ⇒ 这条**不会**删掉任何东西。
+
+    Args:
+        candidate_id: 候选 ID。先用 list_candidates / get_candidate 确认是哪一个，
+            不要凭印象猜 id。
+    """
+    shop_id = _resolve_shop_id()
+    if not shop_id:
+        return _NO_SHOP_HINT
+    result = await _approve_candidate(candidate_id, shop_id)
+    if result is None:
+        return f"没找到这个候选（id={candidate_id}），也可能它不属于当前店铺。"
+    return _dump({"type": "candidate_approved", **result})
+
+
+def _resolve_shop_id() -> Optional[str]:
+    """本 Agent 的**请求级**归属（唯一写入点 = `ProductResearchAgent._bind_context`）。
+
+    ★ 为什么用**函数内**延迟 import：`agent_product_research` 在 `_build_router()`
+      里 `from .tools import product_research_tools` —— 顶层互相 import 会成环。
+      本仓既有做法同 `_save_candidate_tool`（同文件上方）。
+    ★ 为什么不能用构造期绑定：路由子层是**懒加载并被缓存**的
+      （`_get_router()` 缓存 `self._router`），而 `product_research_service`
+      还是模块级单例 —— 构造期绑定会把**第一个请求**的店铺粘住。
+    """
+    from .agent_product_research import _current_shop_id
+
+    return _current_shop_id.get()
+
+
+# ====== 选品大盘（市场洞察快照）只读工具（第 325 轮接线）======
+#
+# 老板原话（第 324 → 325 轮）：
+#   「他不是有选品大盘吗 为什么会回答不出来这个问题」
+#   「让 agent 可以读数据库，**解耦前端界面大盘**。用户不可能只问我这一个问题
+#     蓝海分，也可能其他大盘相关问题。」
+#
+# ★ 改前这条数据**只有一条消费通道**：前端 `MarketInsightConfig.vue` 经
+#   `GET /product-research/market-insight/treemap` 读。Agent 侧**一个工具都没有**
+#   ⇒ 「现在哪个品类蓝海分最高」必然答不出来，还会被关键词短路拉去挖蓝海
+#   （「品类」在 `blue_ocean` 关键词表里 ⇒ 命中即 `return`，LLM 一行都不执行）。
+#
+# ★ 为什么**不**登记成 `build_library_tools()` 的第 7 个库（三条理由）：
+#   ① 语义：那 6 个是「资料库」—— 用户在侧边栏能看到、能增删的**自有资产**；
+#      而选品大盘是**类目级市场快照**（站点 × 类目 × 日期），不属于谁的资产；
+#   ② 分层：`modules/library` 是 SHARED，把 `MARKET_SNAPSHOT_SPEC`（PLUGIN）
+#      收进它的库清单常量 = SHARED 顶层枚举 PLUGIN 的符号 ⇒ 要给分层门禁开豁免，
+#      而豁免会连带放松真正的边界（`tests/test_module_layering.py`）；
+#   ③ 语域：**通用名单**生成的那句 description 答不了「蓝海分最高的是哪个品类」——
+#      那句话必须点明「读的是**类目级大盘**」以及与 `analyze_blue_ocean`
+#      （返回**商品级**候选）的分工，否则模型会在两条工具之间选错。
+#
+# ★ 与前端端点**共用同一份真源** `MARKET_SNAPSHOT_SPEC`：
+#   REST 端点走 `service.get_market_insight_treemap`（投影成 treemap 节点），
+#   本工具走 `core.library_query` 内核（投影成紧凑记录 + **真实** `total`）。
+#   **投影不同是有意的**（内核 docstring：「不做投影 —— 投影是每库特有的语义，
+#   由调用方负责」），但「查哪张表 / 怎么去重 / 能按什么排 / 能按什么筛」只有
+#   spec 一份 ⇒ 面板上的数字与对话里的数字必然一致。
+#   （前端 treemap 不消费数组顺序 ⇒ 两处排序口径归一化对界面不可见。）
+
+#: 出参字段（面向**模型**的投影：少而准；`is_demo` 不逐条给，提成顶层标志）。
+_MARKET_SNAPSHOT_FIELDS = (
+    "site", "category_name", "category_path", "snapshot_date",
+    "blue_ocean_score", "search_volume", "search_growth",
+    "price_min", "price_max", "price_median", "price_trend",
+    "listing_count", "seller_count", "new_seller_count",
+)
+
+#: 大盘「空」的两种含义必须**分开说** —— 处置完全不同（同族论证见 `_NO_SHOP_HINT`）：
+#: 「没选店铺」该去选店铺，「选品大盘真没数据」该去接数据源。
+_MARKET_INSIGHT_EMPTY_HINT = (
+    "当前店铺的选品大盘里没有任何类目快照（店铺归属已确认，是**真的没数据**，"
+    "不是没选店铺）。可以接入第三方类目数据源，或切到演示账号看示例。"
+)
+
+#: 单次最多返回条数（与 `modules/library/tools.py::MAX_ITEMS` 同值）。
+_MAX_MARKET_ITEMS = 50
+
+
+def _invalid_argument(reason: str) -> str:
+    """**参数非法**出参：与「读不到」分开。
+
+    ★ 为什么必须分开：`read_failed` 的处置是「读不到，别指望了」，而参数非法的
+      处置是「**换个值再试一次**」。两者共用一个 `type` ⇒ 模型会把
+      「你 order_by 写错了」转述成「选品大盘坏了」，老板就去查一个不存在的问题
+      （归因错方向 —— 第 216 轮 ③ 的教训）。
+    ★ `type` 字面量 `invalid_argument` 与 `modules/library/tools.py::_invalid`
+      **逐字一致**：模型只认这一个词。两处一致性由
+      `tests/test_market_insight_tool.py` 钉住（跨模块比对，不靠注释承诺）。
+    """
+    return json.dumps({"type": "invalid_argument", "error": reason}, ensure_ascii=False)
+
+
+def _market_sort_hint() -> str:
+    """把 spec 的排序白名单渲染成给模型看的一句话。"""
+    return " / ".join(MARKET_SNAPSHOT_SPEC.sort_keys)
+
+
+def _market_filter_hint() -> str:
+    """把 spec 的过滤维度 + **值域**渲染成给模型看的一句话。
+
+    ★ 白名单 / 值域**从 spec 取**，不在本文件再抄一份字面量 —— 抄一份必然与
+      内核真正校验的那份漂移（第 216 轮实测过代价：合法值只写在 docstring 里、
+      `args_schema` 无 `enum` ⇒ 传错值静默回空列表，与「真的没有」长得一样）。
+    """
+    parts = []
+    for key in MARKET_SNAPSHOT_SPEC.filter_keys:
+        values = getattr(MARKET_SNAPSHOT_SPEC.filters.get(key), "values", None)
+        parts.append(
+            f"{key}（{' / '.join(values)}）" if values else f"{key}（自由文本，精确匹配）"
+        )
+    return "、".join(parts)
+
+
+def _snapshot_item(r) -> dict:
+    """一行快照 → 出参记录（`name` 与前端 treemap 用**同一兜底口径**）。"""
+    item = {k: getattr(r, k, None) for k in _MARKET_SNAPSHOT_FIELDS}
+    item["name"] = r.category_name or (r.category_path or "").split("/")[-1]
+    return item
+
+
+async def _query_market_insight_tool(
+    order_by: Optional[str] = None,
+    limit: int = 10,
+    site: Optional[str] = None,
+    price_trend: Optional[str] = None,
+    category_path: Optional[str] = None,
+) -> str:
+    """读**选品大盘**（市场洞察快照）：类目级的蓝海机会 / 需求 / 竞争 / 价格数据。
+
+    ★ 本工具回答「**哪些类目**值得做 / 哪个类目最热 / 竞争最松 / 价格带如何」，
+      数据来自**已入库的类目快照**（站点 × 类目），**不是**现挖的候选商品 ——
+      要「挖出一批可入库的候选商品」用 `analyze_blue_ocean`。
+
+    ★ 归属一律走 `_resolve_shop_id()`（与候选生命周期三条工具同一条 ContextVar
+      通道）：工具入参由 LLM 生成，**塞不进** shop_id。缺归属时**硬拒绝**，
+      绝不「拿个默认店铺兜底」（那会读到**不属于任何人**的数据）。
+      并且「没选店铺」与「大盘确实没数据」**两种空必须分开说**。
+
+    Args:
+        order_by: 排序维度（可选值见工具 description，由 spec 渲染）。
+        limit: 返回前几条（默认 10，上限 50）。做「最高 / 前几名」排行时由它定格。
+        site: 只看某个站点（可选值由 spec 渲染）。
+        price_trend: 只看某个价格趋势（可选值由 spec 渲染）。
+        category_path: 类目路径，**必须完整精确匹配**（例如
+            `home_kitchen/home_decor/lighting`）。本工具**不支持模糊匹配** ——
+            不确定路径时**先不要传这个参数**，把列表取回来自己挑，或先问用户。
+    """
+    sid = _resolve_shop_id()
+    if not sid:
+        return _NO_SHOP_HINT
+    filters = {"site": site, "price_trend": price_trend, "category_path": category_path}
+    try:
+        n = max(1, min(int(limit or 10), _MAX_MARKET_ITEMS))
+        rows = await query_library(
+            MARKET_SNAPSHOT_SPEC, sid, order_by=order_by, filters=filters, limit=n
+        )
+        total = await count_library(MARKET_SNAPSHOT_SPEC, sid, filters=filters)
+    except LibraryQueryError as e:
+        return _invalid_argument(str(e))
+    except (TypeError, ValueError) as e:
+        return _invalid_argument(f"参数类型不对：{e}")
+
+    items = [_snapshot_item(row[0]) for row in rows]
+    payload = {
+        "type": "market_insight",
+        "total": total,
+        "returned": len(items),
+        "order_by": order_by or MARKET_SNAPSHOT_SPEC.default_sort,
+        "filters": {k: v for k, v in filters.items() if v},
+        # ★ 演示数据如实标注：不让 mock 快照冒充真实第三方数据（同 REST 的 degraded）。
+        "degraded": any(bool(getattr(row[0], "is_demo", False)) for row in rows),
+        "items": items,
+    }
+    if not items:
+        payload["note"] = _MARKET_INSIGHT_EMPTY_HINT
+    return _dump(payload)
+
+
+# ====== 工具注册表 ======
+#
+# ★ 第 205 轮：尾部追加**跨 Agent 共用**的资料库只读工具（`list_candidates` /
+#   `list_products`）。它们与店秘书手里的是**同一个实现**
+#   （`modules/library/tools.py`，SHARED 层）——
+#   若各家各写一份，就是「同一判定两份实现 ⇒ 至少一份永远测不到」。
 product_research_tools = [
     StructuredTool.from_function(
         coroutine=_analyze_blue_ocean_tool,
         name="analyze_blue_ocean",
         description=(
             "蓝海品类挖掘：按低竞争 + 有需求 + 有利润的标准筛选候选商品，返回蓝海评分排序列表。"
-            "当用户想找蓝海机会/选品/挖掘蓝海品类/看有没有竞争小又赚钱的品类时使用。"
+            "当用户想找蓝海机会/挖掘蓝海品类/看某个品类值不值得做/"
+            "看有没有竞争小又赚钱的品类时使用。"
         ),
         metadata=READ_ONLY_METADATA,
     ),
@@ -250,4 +518,53 @@ product_research_tools = [
         ),
         metadata=SIDE_EFFECT_METADATA,
     ),
-]
+    StructuredTool.from_function(
+        coroutine=_get_candidate_tool,
+        name="get_candidate",
+        description=(
+            "查看某个候选选品的完整详情（ASIN/售价/评分/评审状态/备注等）。"
+            "当用户想细看某个候选/这个品到底怎么样/把它的情况调出来时使用。"
+            "先用 list_candidates 拿到候选，再用本工具看详情。"
+        ),
+        metadata=READ_ONLY_METADATA,
+    ),
+    StructuredTool.from_function(
+        coroutine=_review_candidate_tool,
+        name="review_candidate",
+        description=(
+            "给候选选品打评审结论：淘汰 / 转评审中 / 退回待评审。"
+            "当用户说这个品不要了/淘汰掉/先挂起来再评审时使用。"
+            "★「通过并推进产品库」要用 approve_candidate，不要用本工具。"
+        ),
+        metadata=SIDE_EFFECT_METADATA,
+    ),
+    StructuredTool.from_function(
+        coroutine=_approve_candidate_tool,
+        name="approve_candidate",
+        description=(
+            "评审通过：把候选选品正式推进自有产品库（建一条待完善 Listing 的 SPU 草稿），"
+            "候选保留为已通过基线。"
+            "当用户说通过/录取/就定这个了/推进产品库/准备上架物料时使用。"
+            "★ 这是候选进产品库的唯一通道，会改库。"
+        ),
+        metadata=SIDE_EFFECT_METADATA,
+    ),
+    StructuredTool.from_function(
+        coroutine=_query_market_insight_tool,
+        name="query_market_insight",
+        description=(
+            "读**选品大盘**（类目级市场洞察快照）：回答「哪些类目值得做 / 哪个类目"
+            "蓝海分最高 / 哪个类目需求最旺 / 哪个类目竞争最松 / 类目价格带如何」"
+            "这类**类目层面**的问题。"
+            f"可按 {_market_sort_hint()} 排序（不传则按 "
+            f"{MARKET_SNAPSHOT_SPEC.default_sort}）；"
+            f"可按 {_market_filter_hint()} 过滤。"
+            "★ 与 analyze_blue_ocean 的分工：本工具读**已入库的类目大盘数据**"
+            "（蓝海评分 / 搜索量 / 卖家数 / 价格带…）；analyze_blue_ocean 是"
+            "**现挖一批可入库的候选商品**。问「哪个品类蓝海分最高」用本工具。"
+            "★ category_path 必须**完整精确匹配**、不支持模糊匹配："
+            "不确定路径就先别传这个参数，把类目列表取回来自己挑。"
+        ),
+        metadata=READ_ONLY_METADATA,
+    ),
+] + build_library_tools(resolve=_resolve_shop_id)

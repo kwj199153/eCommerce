@@ -21,3 +21,9 @@ htmlcov/
 # 工具缓存
 .ruff_cache/
 .mypy_cache/
+
+# pytest 自定义 basetemp（第 238 轮新增）
+# ★ 为什么必须忽略：沙箱/CI 下跑 pytest 要给 `--basetemp=`（否则 atexit 清
+#   `%TEMP%/pytest-of-*/garbage-*` 会撞批量删除守卫，且**跑完之后**才抛 ⇒
+#   表现为"跑完了但没结果"）。给了自定义目录就落在仓库里，不忽略会淹掉 `git status`。
+.pytest-tmp*/

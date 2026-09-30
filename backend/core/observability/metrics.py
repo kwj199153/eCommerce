@@ -240,6 +240,16 @@ LLM_TOKENS = _Counter(
     "LLM token 消耗（按模型与方向）",
     ("model", "direction"),
 )
+# ★ P0-8（2026-09-27）：LLM 结构化输出**不可用**的次数。
+#   与 `llm_calls_total{status}` 的分工：后者记「这次 HTTP 调用成没成」，
+#   前者记「调用成了，但吐出来的东西能不能用」—— 这两件事在告警上完全不同：
+#   前者是可用性故障，后者是**静默的正确性故障**（不报错、不降级，只给错数据）。
+#   reason ∈ {"json_decode_error", "truncated"}。
+LLM_OUTPUT_INVALID = _Counter(
+    "llm_output_invalid_total",
+    "LLM 结构化输出不可用次数（按模型与原因）",
+    ("model", "reason"),
+)
 AIGC_TASKS = _Counter(
     "aigc_tasks_total",
     "AIGC 生成任务数（按类型与结果）",
@@ -284,6 +294,67 @@ MEMORY_DISTILL_RUNS = _Counter(
     ("status",),
 )
 
+# --- 通用审计（P0-5）---
+# ★ 为什么审计已有日志还要独立指标：`record_audit()` 的失败是**旁路失败** ——
+#   业务照常返回 200，只有审计悄悄没了。这种东西只出现在日志里时没人会看；
+#   做成指标才能被 Prometheus 抓成告警（见 observability/alert_rules.yml::
+#   AuditWriteFailing）。这是「安全能力静默失效」的典型形态，必须有独立出口。
+AUDIT_RECORDS = _Counter(
+    "audit_records_total",
+    "审计写入成功数（按动作与结果）",
+    ("action", "status"),
+)
+AUDIT_WRITE_ERRORS = _Counter(
+    "audit_write_errors_total",
+    "审计写入失败数（按动作）—— 业务不受影响，但该条痕迹已丢失",
+    ("action",),
+)
+
+# --- 审计保留期清理（第 328 轮）---
+# ★ 为什么后台清理也必须有指标：定时任务的失效**默认是静默的** ——
+#   beat 没跑 / 任务名写错 / 任务体是空壳，现象全都表现为「审计表只增不减」，
+#   而这件事在接口、访问日志、错误日志里**一个影子都没有**。
+#   日志会被滚动覆盖，指标不会 ⇒ 两个出口都要有（跑没跑成 + 回收了多少）。
+AUDIT_PURGE_RUNS = _Counter(
+    "audit_purge_runs_total",
+    "审计保留期清理执行次数（按结局：ok / failed）",
+    ("status",),
+)
+# ★ 为什么删除行数要单独一个指标，而不是塞进上面的 status 标签：
+#   `runs{status}` 只答「跑没跑成」，答不了「回收了多少」——
+#   而"保留期到底有没有在生效"只能靠删除行数判断
+#   （长期恒为 0 ⇒ 保留期设得过大，或这张表压根没在增长）。
+#   ★ 用 Counter 而不是 Gauge：单次删除量本身无意义（逐日波动大），
+#     要看的是它的**累计斜率**（≈ 表的真实增长速率上界）。
+AUDIT_PURGE_DELETED = _Counter(
+    "audit_purge_deleted_rows_total",
+    "审计保留期清理累计删除的行数",
+    (),
+)
+
+# --- 身份域保留期清理（第 331 轮）---
+# ★ 为什么该有指标，而不只是「日志里有一行」：这两张表的失效**没有任何别的影子** ——
+#   `login_attempts` 每次登录写一行、`email_tokens` 每点一次「重发验证邮件」写一行，
+#   而清理这件事在接口、访问日志、错误日志里都不出现。日志会被滚动覆盖，指标不会。
+#   ★ 与审计那组**逐字同款**，因为失效形态相同：beat 没起 / 任务名两处写法不一致
+#     / 任务体是空壳 —— 三种都表现为「表只增不减，且一条日志都没有」。
+IDENTITY_PURGE_RUNS = _Counter(
+    "identity_purge_runs_total",
+    "身份域保留期清理执行次数（按结局：ok / failed）",
+    ("status",),
+)
+# ★ 为什么这一条**带 `table` 标签**（而审计那条不带）：本任务一次跑**两张表**的清理，
+#   两边的写入速率差三个数量级（`login_attempts` 每登录一行 / `email_tokens` 只在
+#   验证与重置时一行）。合成一个数字之后，"到底是谁在涨"就问不出来了 ——
+#   而那个答案才是保留期有没有配错的唯一线索。
+#   ★ 标签值取自 `Model.__tablename__`（不是手写字面量）：表名只有一个真源，
+#     改名时这里不会静默失配（同 `retention.py` 用 ORM `delete()` 的理由）。
+IDENTITY_PURGE_DELETED = _Counter(
+    "identity_purge_deleted_rows_total",
+    "身份域保留期清理累计删除的行数（按表：login_attempts / email_tokens）",
+    ("table",),
+)
+
 # 对外暴露的顺序（/metrics 输出顺序稳定，便于 diff）
 _REGISTRY = (
     HTTP_REQUESTS,
@@ -291,11 +362,18 @@ _REGISTRY = (
     HTTP_IN_FLIGHT,
     LLM_CALLS,
     LLM_TOKENS,
+    LLM_OUTPUT_INVALID,
     AIGC_TASKS,
     AIGC_TASK_DURATION,
     QUOTA_REJECTIONS,
     CELERY_TASK_RESULTS,
     MEMORY_DISTILL_RUNS,
+    AUDIT_RECORDS,
+    AUDIT_WRITE_ERRORS,
+    AUDIT_PURGE_RUNS,
+    AUDIT_PURGE_DELETED,
+    IDENTITY_PURGE_RUNS,
+    IDENTITY_PURGE_DELETED,
     DEPENDENCY_UP,
 )
 

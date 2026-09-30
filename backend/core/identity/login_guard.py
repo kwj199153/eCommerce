@@ -37,11 +37,13 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import config
 from core.identity.auth_models import LoginAttempt
 from core.identity.models import User
+from core.identity.retention import login_attempt_cutoff
 
 logger = logging.getLogger(__name__)
 
@@ -164,12 +166,19 @@ async def purge_old_attempts(db: AsyncSession, retention_days: Optional[int] = N
 
     为什么需要：这是一张**每次登录都写一行**的表，且失败尝试可能被脚本刷。
     不清理会稳定增长（它只在风控排查时才有价值，不需要永久保留）。
-    """
-    from sqlalchemy import text
 
-    days = int(retention_days or config.login_attempt_retention_days)
-    cutoff = datetime.utcnow() - timedelta(days=max(1, days))
-    res = await db.execute(
-        text("DELETE FROM login_attempts WHERE created_at < :cutoff"), {"cutoff": cutoff}
-    )
-    return res.rowcount or 0
+    ★ 只**删**、不 commit：事务边界留给调用方（同 `core/audit/retention.py`）。
+      调用方是 `core/identity/tasks.py::_purge_once`，它把两张表的清理放进
+      **同一个事务**再一起提交 —— 否则会出现"一半提交了、一半回滚了"。
+
+    ★ 保留期算法住在 `core/identity/retention.py`：两张表**共用一份**钳位实现。
+      改前这里是 `retention_days or config...` + `max(1, days)`，与
+      `purge_spent_tokens` 里那份**语义不完全一致**（详见该模块 docstring）。
+
+    ★ 用 ORM 的 `delete(LoginAttempt)` 而不是裸 SQL 字符串：表名只有一个真源
+      （`LoginAttempt.__tablename__`），改名时这里不会**静默**失配
+      —— 裸 SQL 写错表名的现象是"删了 0 行"，与"没有过期行"长得一模一样。
+    """
+    cutoff = login_attempt_cutoff(retention_days)
+    res = await db.execute(delete(LoginAttempt).where(LoginAttempt.created_at < cutoff))
+    return int(res.rowcount or 0)

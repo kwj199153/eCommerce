@@ -16,6 +16,7 @@
 多店铺灌入必须给 id 追加店铺后缀，否则第二个店铺会主键冲突。
 """
 
+from typing import Sequence
 from sqlalchemy import select, func
 from core.database import async_session_factory
 from modules.products.db_model import SpuRecord, SkuRecord
@@ -355,25 +356,59 @@ SEED_PRODUCTS = [
 ]
 
 
-async def seed_products_if_empty() -> int:
+async def seed_products_if_empty(*, only_for_shop_ids: Sequence[str] = ()) -> int:
     """
     首次启动时，若 spus 表为空，**为每个已存在的店铺**预置种子数据（SPU + SKU 分表）。
 
     Returns:
         实际写入的 SPU 条数（表非空、或无店铺可归属时返回 0）。
+    ★★★ `only_for_shop_ids`（第 175 轮新增）：**只给点名店铺补灌**，绕过全表守卫
+    ★★ 当前状态（第 176 轮）：**启动流程不再自动调用它**。第 175 轮的演示店铺是
+       「新建一家空店」，必须补灌；第 176 轮的演示店铺是「演示账号名下那 4 家本来
+       就有数据的店」，自动补灌只会把 `SEED_*` 里的 `https://picsum.photos/...`
+       随机图灌进原本干净的店铺（实测：虾皮1/2、亚马逊2 各多出 3~7 行，图片与商品
+       完全无关 —— 正是老板抱怨的「图与商品不对应」）。
+       参数保留，供将来「给指定店铺补灌」使用。
+    ----------------------------------------------------------------------
+    本函数原本的守卫是「**全表**非空 ⇒ 整个函数不执行」。它保证了幂等，但也意味着
+    **任何在此之后新建的店铺，一份种子数据都拿不到** —— 演示店铺
+    （`is_demo=true`，见 `modules/stores/demo.py`）正是这种情况：它由
+    第 175 轮那家演示店铺当时是「**按需新建**」出来的，而那时本表早就非空。
+    （第 176 轮起演示店铺改为「演示账号名下那 4 家**本来就有数据**的店」，
+      启动流程已**不再**自动调用本参数 —— 见下文 `only_for_shop_ids` 段。）
+
+    传这个参数就跳过全表守卫，改为**按店铺判空**：已有数据的店铺不动（幂等），
+    点名的空店铺灌一份。不传时行为与改造前**逐字一致** ——
+    `tests/test_seed_shop_ids.py::test_seed_is_idempotent_when_table_not_empty`
+    断言"表非空 ⇒ 返回 0"，那条契约不能被稀释（它连的是开发库，表恒非空）。
+
+    ★ 只灌**真实存在于 stores 表**的店铺（`s in known`）：调用方传错 id 时
+      静默跳过，而不是造出一批永久孤儿数据。
     """
     async with async_session_factory() as session:
-        count = (await session.execute(select(func.count()).select_from(SpuRecord))).scalar_one()
-        if count > 0:
-            return 0
-
         # 取真实店铺 id；一个都没有则跳过（无租户上下文，灌了也查不到）
         shop_ids = (await session.execute(select(StoreRecord.id))).scalars().all()
         if not shop_ids:
             return 0
 
+        if only_for_shop_ids:
+            # ---- 只给点名店铺补灌（第 175 轮：演示店铺走这条通道）----
+            already = set((await session.execute(
+                select(SpuRecord.shop_id).distinct()
+            )).scalars().all())
+            known = set(shop_ids)
+            targets = [s for s in only_for_shop_ids if s in known and s not in already]
+        else:
+            # ---- 默认：全表非空即跳过（与改造前**逐字一致**）----
+            existing = (await session.execute(
+                select(func.count()).select_from(SpuRecord)
+            )).scalar_one()
+            if existing > 0:
+                return 0
+            targets = list(shop_ids)
+
         total = 0
-        for shop_id in shop_ids:
+        for shop_id in targets:
             for data in SEED_PRODUCTS:
                 # spus / skus 都是 id 单主键（无 (shop_id, asin) 唯一约束），
                 # 多店铺灌入必须给 id 追加店铺后缀，否则第二个店铺会主键冲突。

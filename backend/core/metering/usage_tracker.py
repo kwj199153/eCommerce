@@ -14,6 +14,7 @@ from sqlalchemy import select, update
 
 from core.database import get_db, get_async_session
 from core.config import config
+from core.auth.demo_identity import is_demo_request
 from core.auth.dependencies import require_auth_if_enabled
 from core.metering.llm_meter import reset_meter, snapshot
 from core.identity.models import User
@@ -276,12 +277,29 @@ async def check_api_quota(
             ...
 
     行为：
-      - 演示模式（auth_required=False）：不计量，直接放行
-      - 生产模式：校验额度，不足 429；通过后扣减 1 次 API 调用
+      - 完全匿名（`current_user is None`）：不计量，直接放行
+      - **演示身份**（`demo-token` 且 `DEMO_MODE=true`）：放行，且**不计量**
+      - 其余真账号（含普通免费用户）：校验额度，不足 429；通过后扣减 1 次
     """
     current_user = await require_auth_if_enabled(request, db)
     if current_user is None:
         return None
+
+    if is_demo_request(request):
+        # ★★★ 第 220 轮（老板拍板「演示身份免配额」）：演示账号没有付费订阅，
+        #   其额度**恒为 0**，照常 check_quota 会把整条演示链路堵死 —— 而
+        #   本仓 `main.py` 的 API_QUOTA 段落此前明确承诺「本地演示零影响」；
+        #   第 182 轮把演示哨兵解析成**真 User** 之后，那句承诺就成了空话
+        #   （实测形态：免费版 api_calls_used=100/limit=100 ⇒ 一律 429，
+        #    选品分析师因此只能落到前端兜底文案）。
+        #
+        #   ★ 豁免的判据是「凭据形态」而**不是「这个人是谁」**：唯一真源是
+        #     `demo_identity.is_demo_request`（同时被 `dependencies.py` 消费）。
+        #     真账号 —— 包括用真实密码登录的账号 —— 一律照常拦截，所以这
+        #     **不是**一条能靠改前端绕过的旁路（哨兵串只在 DEMO_MODE=true 生效，
+        #     生产由 `config._enforce_production_safety` 启动期硬拦）。
+        logger.debug("演示身份 ⇒ 跳过 API 额度检查（demo_mode=%s）", config.demo_mode)
+        return current_user
 
     allowed, reason = await UsageTracker.check_quota(
         db=db, user_id=current_user.id, usage_type=UsageType.API_CALL,
@@ -342,6 +360,39 @@ async def meter_agent_chat(
     ✅ 附带收益：结算在后台任务里再 snapshot()，可覆盖 SSE 流式接口
        （流式 LLM 调用发生在响应输出阶段，晚于依赖收尾）。
 
+    ★★★ 第 247 轮修正（框架升级 0.141 改了 teardown 的执行时机）：
+       **注册后台任务必须在 `yield` 之前**。
+       原写法把 `background_tasks.add_task(_settle_usage)` 放在 `yield` **之后**
+       （即依赖的 teardown 段）。而 0.141 的路由包装器长这样：
+
+           async with AsyncExitStack() as request_stack:     # ← 依赖 teardown 挂这个
+               scope["fastapi_inner_astack"] = request_stack
+               async with AsyncExitStack() as function_stack:
+                   response = await f(request)
+               await response(scope, receive, send)          # ← 后台任务在这里面跑完
+               # request_stack 到这一行之后才 close
+
+       `get_request_handler` 传给 `solve_dependencies` 的正是 `request_stack`
+       ⇒ yield 依赖的 teardown **晚于**响应发送，而后台任务在响应发送过程中
+       就已派发并执行完毕 ⇒ teardown 里 `add_task` 注册得太晚，
+       **那些任务永远不会被执行**。
+       实测症状（静默、最难查的一类）：HTTP 响应一切正常，但
+       `subscriptions.agent_chats_used` / `llm_tokens_used` 一点也没动
+       —— 平台白送 LLM 成本，账上看不见。
+
+       ⇒ 改到 `yield` **之前**注册。这个位置在**两种时序下都成立**：
+         · 0.141+  （teardown 晚于响应）✅ 注册发生在响应装配之前；
+         · 0.106~0.140（teardown 早于响应）✅ `add_task` 本来就与 teardown 无关。
+       ⇒ 「422 不扣费 / 端点抛异常不扣费」两条语义**不变**：兜住它们的不是
+         teardown 时机，而是「没有 Response 就没有 background」——
+         422 由 `return JSONResponse(status_code=422)` 早返回（不带 background），
+         端点抛异常则根本没有 Response 被造出来（异常处理层另造响应，不带我们的
+         background_tasks）。
+
+       ★ 为什么不改成「teardown 里直接 await 结算」：那样 422 与端点异常
+         都会走到 teardown ⇒ **失败请求也会被计费**，正好废掉
+         `test_failed_request_not_charged`。BackgroundTasks 是必需的。
+
     用法（路由级批量挂载）：
         app.include_router(xxx_router, dependencies=[Depends(meter_agent_chat)])
 
@@ -350,39 +401,50 @@ async def meter_agent_chat(
         async def chat(_=Depends(meter_agent_chat), ...):
 
     行为：
-      - 演示模式（auth_required=False）：不计量（但仍开启计量器，便于本地观察）
-      - 生产模式：按额度拦截 + 计量
+      - 完全匿名（`current_user is None`）：不计量（但仍开启计量器，便于本地观察）
+      - **演示身份**：**不卡次数**，但 LLM 真实消耗**照记**（见下）
+      - 其余真账号：按额度拦截 + 计量
     """
     current_user = await require_auth_if_enabled(request, db)
 
     if current_user is None:
-        # 演示模式：不计量
+        # 完全匿名：不计量
         reset_meter()
         yield None
         return
 
-    allowed, reason = await UsageTracker.check_quota(
-        db=db, user_id=current_user.id, usage_type=UsageType.AGENT_CHAT,
-    )
-    if not allowed:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=reason or "Agent 对话次数已达上限",
+    # ★★★ 第 220 轮（老板拍板「演示身份免配额」），两条**刻意分开**处理：
+    #   · 「不卡次数」—— 演示账号额度恒 0，`check_quota` 会把演示对话整个堵死；
+    #   · 「LLM 成本照记」—— 演示对话**真的在花第三方的钱**，只是不该由
+    #     「模拟一个付费用户」来表达。次数是**产品策略**（可豁免），
+    #     成本是**平台账本**（不能失明）。
+    #   判据唯一真源 = `demo_identity.is_demo_request`（不是「这个人是谁」）。
+    demo_identity = is_demo_request(request)
+
+    if not demo_identity:
+        allowed, reason = await UsageTracker.check_quota(
+            db=db, user_id=current_user.id, usage_type=UsageType.AGENT_CHAT,
         )
+        if not allowed:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=reason or "Agent 对话次数已达上限",
+            )
 
     user_id = current_user.id
     reset_meter()
-    try:
-        yield current_user
-    except Exception:
-        # 端点抛异常：不挂后台任务 → 不计费
-        raise
 
     async def _settle_usage() -> None:
-        """响应发送完成后结算：计次数 + 落 LLM 消耗（独立会话）"""
+        """响应发送完成后结算：计次数 + 落 LLM 消耗（独立会话）
+
+        ★ 读的是**执行时**的 `snapshot()`（不是注册时的值）—— 所以流式端点在
+          响应输出阶段产生的 LLM 消耗同样被覆盖。
+        """
         try:
             async with get_async_session() as session:
-                await UsageTracker.record_usage(session, user_id, UsageType.AGENT_CHAT)
+                if not demo_identity:
+                    # 演示身份跳过「次数」结算；下面那段 LLM 消耗**照记**。
+                    await UsageTracker.record_usage(session, user_id, UsageType.AGENT_CHAT)
 
                 meter = snapshot()
                 if not meter.is_empty:
@@ -393,7 +455,12 @@ async def meter_agent_chat(
         except Exception as exc:  # noqa: BLE001 — 计费失败不得影响已发出的响应
             logger.warning("Agent 对话计费结算失败 user=%s: %s", user_id, exc)
 
+    # ★★★ 注册必须在 `yield` **之前** —— 放在 yield 之后就是 teardown 里，
+    #   而 0.141 的 teardown 晚于响应发送 ⇒ 那些任务永远不会被执行（静默不记账）。
+    #   完整论证见本函数 docstring 的「第 247 轮修正」小节。
     background_tasks.add_task(_settle_usage)
+
+    yield current_user
 
 
 async def check_agent_chat_quota(
@@ -408,6 +475,12 @@ async def check_agent_chat_quota(
     current_user = await require_auth_if_enabled(request, db)
     if current_user is None:
         return None
+
+    if is_demo_request(request):
+        # ★ 第 220 轮：与 `check_api_quota` / `meter_agent_chat` 同一豁免判据
+        #   （唯一真源 `demo_identity.is_demo_request`）；真账号照常按额度拦截。
+        logger.debug("演示身份 ⇒ 跳过 Agent 对话额度检查")
+        return current_user
 
     allowed, reason = await UsageTracker.check_quota(
         db=db, user_id=current_user.id, usage_type=UsageType.AGENT_CHAT,

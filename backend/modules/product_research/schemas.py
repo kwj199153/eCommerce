@@ -8,6 +8,12 @@ from typing import List, Optional, Any, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field
 
+# ★ 「本次请求的作用对象」的**形状**定义在机制层（`ai_infra/context_target.py`），
+#   本模块只是取用 —— 第 257 轮起三条、第 298 轮起四条链路下发该字段
+#   （选品 / Listing / AIGC / 客服），
+#   形状若各写一份，"少一个字段"的那一份不会报任何错，只是静默拿不到对象。
+from ai_infra.context_target import ContextTargetPayload  # noqa: F401 —— 供本模块与旧调用方取用
+
 
 # ====== 请求模型 ======
 
@@ -66,6 +72,23 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="用户消息")
     context_id: Optional[str] = Field(None, description="会话上下文 ID")
     stream: bool = Field(default=False, description="是否流式返回")
+
+    # ★ 点名通道（第 188 轮）：用户点名本次对话要用的技能名（可选）。
+    #   留空 ⇒ 只注入技能目录，仍由模型自己判断用哪条（渐进披露的原路径）。
+    #   ★ 归属校验不在这里：技能名由服务端在 `read_skill_text` 里按
+    #     身份 + 启用 + 对本 Agent 启用 三重过滤，请求体只负责**传递名字**。
+    skill: Optional[str] = Field(default=None, description="本次对话指定使用的技能名（可选）")
+
+    # ★ 本次请求的「作用对象」（第 251 轮）。与 `skill` 是**一对**：
+    #   `skill` 说「这次用哪条技能」，它说「这次冲着哪个对象来的」。
+    #   缺了它，技能里那些"针对某个候选"的步骤就没有真源，模型只能从
+    #   对话历史里猜 —— 那正是第 250 轮那个洞。
+    #   ★ 传 `null` 与**不传**含义不同（明确没有 vs 客户端未参与），
+    #     判别由 `model_fields_set` 承担，本字段故意不给默认值。
+    context_target: Optional[ContextTargetPayload] = Field(
+        default=None,
+        description="本次请求的作用对象；传 null 表示本次明确没有对象",
+    )
 
 
 # ====== 响应模型 ======
@@ -223,3 +246,35 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.now)
+
+
+# ====== 选品市场洞察大盘云图（第 305 轮 · 蓝海挖掘大盘云图）======
+
+class MarketInsightTreemapNode(BaseModel):
+    """Treemap 单个节点（叶子 = 一个类目快照）"""
+    name: str  # 类目名（末级）
+    value: float  # 面积权重（搜索热度 / 蓝海评分归一化）
+    category_path: str  # 完整类目路径
+    site: str  # 站点
+    # 六大维度（打平，前端 hover 展示）
+    listing_count: int
+    price_min: float
+    price_max: float
+    price_median: float
+    seller_count: int
+    search_volume: int
+    new_seller_count: int
+    search_growth: float
+    price_trend: str
+    blue_ocean_score: int
+    snapshot_date: str
+
+
+class MarketInsightTreemapResponse(BaseModel):
+    """市场洞察 Treemap 响应"""
+    nodes: List[MarketInsightTreemapNode]
+    total_categories: int
+    # ★ 数据真源标记：演示账号（mock 快照）为 True，真实账号（无数据）为 False
+    degraded: bool  # True = 数据是演示 mock，非真实第三方数据
+    source: str  # mock_seed / third_party / empty
+    message: str

@@ -33,7 +33,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import text, update
+from sqlalchemy import delete, or_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import config
@@ -44,6 +44,7 @@ from core.identity.mailer import (
     MailSendFailed,
     get_mailer,
 )
+from core.identity.retention import email_token_cutoff
 
 logger = logging.getLogger(__name__)
 
@@ -243,19 +244,40 @@ async def send_reset_email(to_email: str, raw: str) -> None:
 
 # ====== 清理 ======
 
-async def purge_spent_tokens(db: AsyncSession, older_than_days: int = 7) -> int:
+async def purge_spent_tokens(db: AsyncSession, older_than_days: Optional[int] = None) -> int:
     """
-    清掉已消费/已过期超过 N 天的 token 行。
+    清掉**已消费 / 已过期**且超过保留期的 token 行，返回实际删除的行数。
 
     为什么需要：每点一次「重发验证邮件」就多一行，长期不清理会稳定增长
     （它没有任何业务价值了：used_at 非空或已过期 ⇒ 永远不会再被消费）。
+
+    ★ 条件是**两段相与**，缺一不可，且方向都不能反：
+        ① `(used_at IS NOT NULL OR expires_at < now)`
+           —— 只删"已经作废"的行。★ 少了这一段就会删掉**尚未被消费**的 token
+              ⇒ 用户点邮件里的链接会莫名失败，而且从库里查不出原因。
+        ② `created_at < cutoff`
+           —— 且要够老。★ 少了这一段，刚被作废的行会立刻消失，
+              于是"用户为什么点了重发"这条线索也一起没了。
+
+    ★ `older_than_days` 默认是 **None**（= 取 `config.email_token_retention_days`）：
+      改前此处写死 `= 7`，而同一件事的另外两张表都是配置项 ——
+      形态不一致本身就是缺陷，详见 `core/identity/retention.py` 的 docstring。
+
+    ★ 只**删**、不 commit：事务边界留给调用方
+      （`core/identity/tasks.py::_purge_once` 把两张表的清理放进同一事务提交）。
+
+    ★ 用 ORM 的 `delete(EmailToken)` 而不是裸 SQL 字符串：表名只有一个真源
+      （`EmailToken.__tablename__`），改名时这里不会**静默**失配 ——
+      裸 SQL 写错表名的现象是"删了 0 行"，与"没有过期行"长得一模一样。
     """
-    cutoff = datetime.utcnow() - timedelta(days=max(1, older_than_days))
+    # ★ now 与 cutoff 取**同一个时刻**（改前是两次独立的 utcnow()）：
+    #   两个时刻不同会让"刚过期"的行在两段条件里得到不一致的判断。
+    now = datetime.utcnow()
+    cutoff = email_token_cutoff(older_than_days, now=now)
     res = await db.execute(
-        text(
-            "DELETE FROM email_tokens"
-            " WHERE (used_at IS NOT NULL OR expires_at < :now) AND created_at < :cutoff"
-        ),
-        {"now": datetime.utcnow(), "cutoff": cutoff},
+        delete(EmailToken).where(
+            or_(EmailToken.used_at.isnot(None), EmailToken.expires_at < now),
+            EmailToken.created_at < cutoff,
+        )
     )
-    return res.rowcount or 0
+    return int(res.rowcount or 0)

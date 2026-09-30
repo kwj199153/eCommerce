@@ -12,10 +12,13 @@ AIGC 媒体生成 Agent (Phase 7)
 8. 视频脚本生成 - 短视频、产品展示
 """
 
+import hashlib
+import json
 import re
 import random
 import math
 from dataclasses import dataclass, field, asdict
+from uuid import uuid4
 from typing import List, Dict, Optional, Any, AsyncIterable
 from datetime import datetime, timedelta
 from enum import Enum
@@ -23,6 +26,29 @@ from enum import Enum
 from core.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _stable_pick(options: List[str], key: str) -> str:
+    """从模板池里**确定性地**挑一条 —— 同一 key 永远得到同一条。
+
+    ★ 为什么不用 ``random.choice``：本仓存在大量「随机挑一条写好的文案」的写法，
+      它们产出的**不是编造数据**（模板本身是合法文案），真正的毛病是
+      「同一输入两次调用结果不同」——既让回归测试没法断言（同一夹具两次结果不同），
+      也被 ``tests/test_no_random_in_production.py`` 的 random 棘轮计入存量台账。
+      改用 ``md5(key)`` 取模 ⇒ 不同商品/品牌仍拿到不同文案（观感上的多样性保留），
+      但同一输入稳定复现 ⇒ 可测、可复现。
+
+    Args:
+        options: 候选文案池
+        key: 定位用的业务键（如 ``f"{brand}::{product}"``）—— 决定选中哪一条
+
+    Returns:
+        选中的文案；``options`` 为空时返回空串
+    """
+    if not options:
+        return ""
+    digest = hashlib.md5(key.encode("utf-8")).hexdigest()
+    return options[int(digest[:8], 16) % len(options)]
 
 
 # ============================================================
@@ -214,8 +240,12 @@ class VideoScript:
 # 继承它即同时获得「LangChain 图内核」与「DashScopeLLM 原语」两套 LLM 槽位。
 from ai_infra.base_agent import BaseAgent
 from ai_infra.intent import Route, first_match
+from ai_infra.skills import SKILL_CHANNEL_UNAVAILABLE, is_skill_requested
+
+# 第 210 轮：思考过程（工具轨迹）的消化器。
+from ai_infra.sse import StreamDigest
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
-from modules.aigc_media import prompts as _prompts  # noqa: F401
+from modules.aigc_media import prompts as _prompts  # noqa: F401  —— 触发提示词注册
 
 
 class AIGCMediaAgent(BaseAgent):
@@ -244,6 +274,9 @@ class AIGCMediaAgent(BaseAgent):
 
         self.agent_name = "AIGC 媒体生成器"
         self.version = "2.0.0"  # 升级版本号
+        # ★ 第 204 轮：工具化路由子层（懒加载）。**不能**在 __init__ 里构建 ——
+        #   那会触发 `tools → service → agent_aigc` 循环导入。
+        self._router: Optional[Any] = None
 
         # 图片风格库
         self.image_styles = {
@@ -325,6 +358,151 @@ class AIGCMediaAgent(BaseAgent):
             }
         }
 
+    # ==================== 工具化路由（第 204 轮）====================
+    #
+    # 本 Agent 此前是**范式 B**：`invoke()` / `stream_chat()` → `_classify_intent()`
+    # （关键词表）→ `_handle_*` 规则引擎；LLM 只出现在写文案的辅助方法里。
+    # 于是 `aigc_tools`（9 个）**零装配** —— 注册了、却没有任何 Agent
+    # 绑定它（全仓 `from .tools import aigc_tools` 零命中）。
+    #
+    # 现在接到**范式 A**（LLM 自主 bind_tools），做法与
+    # `competitor_intel` / `listing_generator` / `product_research` 的
+    # `_build_router()` 逐字同构。
+
+    def _get_router(self):
+        """懒加载工具化路由层，返回 None 表示不可用（回退关键词路由）。"""
+        if self._router is None:
+            self._router = self._build_router()
+        return self._router
+
+    def _build_router(self):
+        """构建工具化路由层（BaseAgent 实例，注入 9 个AIGC工具）。
+
+        ★★★ 为什么必须**组合一个 BaseAgent**，而不能只在 `super().__init__()`
+          里多写一个 `tools=`：
+            工具只在 `BaseAgent._llm_with_tools()` 里被 `bind_tools`，而它
+            只被图节点 `_llm_call_node` 调用。本 Agent 自己的 `invoke()` /
+            `stream_chat()` **从不驱动那张图** ⇒ 只加 `tools=` 是**装饰性接线**：
+            注册表不再「悬空」、门禁变绿，而模型手里依旧没有工具 ——
+            比不接更糟（把缺口藏起来）。
+        """
+        if not self.ENABLE_LLM:
+            return None
+        try:
+            from .tools import aigc_tools
+
+            from ai_infra.base_agent import BaseAgent
+            from ai_infra.budget import BUDGET_ROUTER
+            from ai_infra.context import CONTEXT_ROUTER
+            from core.checkpoint import get_checkpointer
+
+            return BaseAgent(
+                # ★ 子层名字带 `_router` 后缀（同 competitor / listing / PR），
+                #   技能注入边界由 `modules.skills.agents.business_agent_name()` 归一回业务名。
+                agent_name=f"{self.agent_name}_router",
+                system_prompt=self.get_prompt_template("aigc_media"),
+                tools=aigc_tools,
+                # 路由子层是「单次决策 + 一串工具调用、用完即答」⇒ 用 ROUTER 档。
+                budget=BUDGET_ROUTER,
+                context_policy=CONTEXT_ROUTER,
+                checkpointer=get_checkpointer(),
+                checkpoint_ns="aigc_media",
+            )
+        except Exception as e:  # noqa: BLE001 —— 路由层不可用时回退，不影响主流程
+            logger.warning(f"[aigc_media] router build failed: {e}")
+            return None
+
+    async def _stream_via_tools(self, query: str,
+                                context: Optional[Dict[str, Any]] = None) -> AsyncIterable:
+        """流式工具路由：**实时**下发思考过程（step），答复文本仍一次性给出。
+
+        ★ 与 `_route_via_tools` 是**同一条决策路径**（router 的 LLM 自主选工具），
+          差别只在「过程能不能边跑边看」：
+          · `run_session` 一次性返回 state ⇒ 轨迹**事后**才拿得到，而调用方
+            只取最后一条 AIMessage ⇒ 轨迹被整段丢掉，前端只看到一个转圈
+            （这正是第 210 轮老板的原始诉求）；
+          · 这里改走 `stream_session` + `StreamDigest`：工具事件**逐条**转成
+            step 事件下发，答复按原时序**攒齐一次吐出** ——
+            即「只做加法、正文行为零变化」。
+
+        Yields:
+            step 事件（dict）/ 整段答复文本（str）；**没有产出就什么都没 yield**，
+            由调用方按空结果回退关键词路由（与 `_route_via_tools` 返回 None 同义）。
+        """
+        router = self._get_router()
+        if router is None:
+            return
+
+        # 注：本 Agent 的工具均无租户归属 ⇒ 不需要 `_current_shop_id`
+        #     （与非流式路径 `_route_via_tools` 的注释一致）。
+
+        prompt = query
+        if context:
+            try:
+                ctx_json = json.dumps(context, ensure_ascii=False, default=str)
+            except (TypeError, ValueError):
+                ctx_json = str(list(context.keys()))
+            prompt = f"{query}\n\n[上下文数据] {ctx_json[:2000]}"
+
+        from langchain_core.messages import HumanMessage
+
+        # ★ 工具人话标题走**注入**：真源在业务侧
+        #   （`modules/skills/tools_catalog.py::tool_title`，全仓唯一查询口），
+        #   而 `ai_infra` 不许依赖业务（分层硬红线）⇒ 只能把查询口传进去。
+        #   惰性 import：Agent 的**模块导入期**无需把 `modules.skills` 拉进依赖图，
+        #   只有真跑流式工具环路时才需要它。
+        # 走**包门面**（本仓条款 1：跨模块引用不得伸手进包内部）。
+        from modules.skills import tool_title
+
+        digest = StreamDigest(title_resolver=tool_title)
+        try:
+            async for ev in router.stream_session(
+                {"messages": [HumanMessage(content=prompt)]},
+            ):
+                s = digest.feed(ev)
+                if s is not None:
+                    yield s
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[aigc_media] stream tool routing failed: {e}")
+            return
+
+        if digest.reply:
+            yield digest.reply
+
+    async def _route_via_tools(self, query: str,
+                               context: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """工具化路由：LLM 自主选工具执行，返回可读回复文本。
+
+        返回 None 表示不可用或失败，调用方回退关键词路由（`_classify_intent`）。
+        """
+        router = self._get_router()
+        if router is None:
+            return None
+
+        prompt = query
+        if context:
+            try:
+                ctx_json = json.dumps(context, ensure_ascii=False, default=str)
+            except (TypeError, ValueError):
+                ctx_json = str(list(context.keys()))
+            prompt = f"{query}\n\n[上下文数据] {ctx_json[:2000]}"
+
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        try:
+            state = await router.run_session(
+                {"messages": [HumanMessage(content=prompt)]},
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[aigc_media] tool routing failed: {e}")
+            return None
+
+        reply = ""
+        for m in state.get("messages") or []:
+            if isinstance(m, AIMessage) and m.content:
+                reply = m.content if isinstance(m.content, str) else str(m.content)
+        return reply.strip() or None
+
     async def _llm_generate_text(
         self,
         prompt: str,
@@ -363,20 +541,8 @@ class AIGCMediaAgent(BaseAgent):
         "pt": "葡萄牙语", "ar": "阿拉伯语", "nl": "荷兰语",
     }
 
-    # 划词翻译的 system prompt：只出译文，不许解释
-    _SELECTION_TRANSLATE_SYSTEM = (
-        "你是资深跨境电商翻译，服务对象是正在看海外商品页的中国卖家。\n"
-        "任务：把用户选中的文本翻译成目标语言。\n"
-        "硬性规则：\n"
-        "1. 只输出译文本身。不要解释、不要加引号、不要 Markdown、不要「译文：」之类前缀。\n"
-        "2. 品牌名、型号、ASIN/SKU、规格数字与单位、URL、邮箱原样保留。\n"
-        "3. 若原文是商品标题：不要当普通句子润色，保持「品牌 + 品类 + 关键规格 + 卖点」的信息密度，"
-        "按目标语言电商标题习惯组织语序；不要添加原文没有的营销词（如「爆款」「热销」）。\n"
-        "4. 若原文是五点描述：逐条对应翻译，保持条数一致。\n"
-        "5. 专业术语按中国电商惯例（例：Noise Cancelling → 主动降噪；Waterproof → 防水；"
-        "Skin-friendly → 亲肤；Adjustable → 可调节）。\n"
-        "6. 原文若是片段或含明显截断，按片段直译，不要补全、不要猜测后续内容。"
-    )
+    # SELECTION_TRANSLATE_SYSTEM 的正文已归位到 `prompts.py`（注册表键 `"aigc_selection_translate"`）
+    # ★ 第 283 轮：提示词带版本与指纹后才可对账。
 
     @classmethod
     def _detect_lang(cls, text: str) -> str:
@@ -434,7 +600,7 @@ class AIGCMediaAgent(BaseAgent):
                 f"上下文：{context}\n\n"
                 f"原文：\n{text}"
             ),
-            system_prompt=self._SELECTION_TRANSLATE_SYSTEM,
+            system_prompt=self.get_prompt_template("aigc_selection_translate"),
             max_tokens=800,
             temperature=0.2,
         )
@@ -465,19 +631,8 @@ class AIGCMediaAgent(BaseAgent):
             },
         }
 
-    # 提示词增强的 system prompt：补维度，但严禁编造业务事实
-    _ENHANCE_PROMPT_SYSTEM = (
-        """你是跨境电商 SaaS「店管家」的提示词工程师。
-用户会在对话框里写一句口语化的需求，你要把它改写成一段更清晰、更可执行的提示词。
-
-硬性规则：
-1. 只输出改写后的提示词本身。不要解释、不要加引号、不要 Markdown 代码块、不要「改写后：」这类前缀。
-2. 严禁编造用户没有提供的业务事实：具体 ASIN、店铺名、商品名、数字、日期、竞品品牌一律不许凭空补。缺什么就用「（请补充：…）」标出，让用户自己填。
-3. 用户原话里的所有具体信息（平台、类目、数量、时间范围、指标、币种）必须一个不丢。
-4. 补齐三个维度：任务目标 / 约束条件 / 期望的输出形式。原话已明确的维度就沿用，不要画蛇添足。
-5. 长度控制在原文的 1.5~3 倍。原话已经写得很完整时，只做轻度润色。
-6. 输出语言与用户输入一致：中文进中文出，英文进英文出。"""
-    )
+    # ENHANCE_PROMPT_SYSTEM 的正文已归位到 `prompts.py`（注册表键 `"aigc_enhance_prompt"`）
+    # ★ 第 283 轮：提示词带版本与指纹后才可对账。
 
     # 增强结果常见的「前缀」写法（兜底剥掉；`_clean_translation` 只认译文类前缀）
     _ENHANCE_PREFIXES = (
@@ -512,7 +667,7 @@ class AIGCMediaAgent(BaseAgent):
 
 用户原始输入：
 {draft}""",
-            system_prompt=self._ENHANCE_PROMPT_SYSTEM,
+            system_prompt=self.get_prompt_template("aigc_enhance_prompt"),
             max_tokens=800,
             temperature=0.4,
         )
@@ -566,7 +721,7 @@ class AIGCMediaAgent(BaseAgent):
         prompt = self._build_image_prompt(request, style_config)
 
         # 生成图片元信息
-        image_id = f"IMG_{datetime.now().strftime('%Y%m%d%H%M%S')}_{random.randint(1000,9999)}"
+        image_id = f"IMG_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:6]}"
 
         # 根据图片类型生成不同的说明
         type_specific_content = self._get_type_specific_content(image_type, request)
@@ -593,7 +748,7 @@ class AIGCMediaAgent(BaseAgent):
                 "model": "stable-diffusion-xl",
                 "steps": 50,
                 "cfg_scale": 7.5,
-                "seed": random.randint(1, 99999)
+                "seed": uuid4().int % 99999 + 1
             },
             "note": "当前为模拟模式，接入真实图片生成服务后返回实际图片URL"
         }
@@ -773,6 +928,10 @@ class AIGCMediaAgent(BaseAgent):
         """
         分析主图质量
 
+        ⚠️ 本方法当前是**模拟实现**：视觉评分（5 个子维度）与 CTR 预测均为随机生成，
+        不代表对 image_url 的真实测量；A/B 变体的 CTR 也由随机系数放大而来。
+        其中**合规子块**已单独收紧为「待人工核查」——不再随机产出通过/不通过结论。
+
         Args:
             image_url: 图片 URL 或路径
             product_category: 产品类目
@@ -780,7 +939,7 @@ class AIGCMediaAgent(BaseAgent):
         Returns:
             主图分析结果
         """
-        # 模拟视觉分析结果
+        # 模拟视觉分析结果（⚠️ 见 docstring：mock，不是对 image_url 的真实测量）
         scores = {
             "visual_appeal": round(random.uniform(60, 95), 1),
             "clarity": round(random.uniform(65, 98), 1),
@@ -796,28 +955,28 @@ class AIGCMediaAgent(BaseAgent):
         ctr_adjustment = (overall - 70) * 0.005
         ctr_prediction = max(0.1, min(0.8, ctr_base + ctr_adjustment + random.uniform(-0.05, 0.05)))
 
-        # 合规检查
-        compliance_issues = []
-        passed_checks = []
-
+        # 合规子块 —— ⚠️ 未接入自动判定能力，**不产出通过/不通过结论**
+        # （与 check_compliance() 同一口径；这里只列出「人工要核查什么」，
+        #   不再用 random.choice 掷骰子决定某条规则过没过）
         checks = [
-            ("white_background", "纯白背景", random.choice([True, True, True, False])),
-            ("no_watermark", "无水印文字", random.choice([True, True, False])),
-            ("product_dominant", "产品占比>85%", random.choice([True, True, True, False])),
-            ("high_resolution", "高分辨率", random.choice([True, True, True, True, False])),
-            ("no_accessories", "无多余配件", random.choice([True, True, False]))
+            ("white_background", "纯白背景", "critical", "主图必须使用纯白背景 (RGB 255,255,255)"),
+            ("no_watermark", "无水印文字", "critical", "主图不能包含任何文字或水印"),
+            ("product_dominant", "产品占比>85%", "warning", "产品应占据画面85%以上空间"),
+            ("high_resolution", "高分辨率", "warning", "建议最低 1000x1000 像素以启用缩放"),
+            ("no_accessories", "无多余配件", "warning", "主图不应包含配件，除非是套装"),
         ]
-
-        for check_id, check_name, passed in checks:
-            if passed:
-                passed_checks.append(check_name)
-            else:
-                severity = "critical" if check_id in ["white_background", "no_watermark"] else "warning"
-                compliance_issues.append({
-                    "check": check_name,
-                    "severity": severity,
-                    "suggestion": f"建议：{check_name}需要优化"
-                })
+        compliance_issues: List[Dict[str, Any]] = []   # 未做自动判定 ⇒ 不产出「发现问题」
+        passed_checks: List[str] = []                  # 未做自动判定 ⇒ 不产出「已通过结论」
+        compliance_check = {
+            "status": "manual_review_required",
+            "score": 0.0,                              # 占位，不代表 0 分
+            "passed": passed_checks,
+            "issues": compliance_issues,
+            "checklist": [
+                f"[{cid}] {name}｜{sev}｜{criterion}"
+                for cid, name, sev, criterion in checks
+            ],
+        }
 
         # 改进建议
         suggestions = []
@@ -827,8 +986,8 @@ class AIGCMediaAgent(BaseAgent):
             suggestions.append("🎨 提升色彩：调整饱和度和对比度，使产品更突出")
         if scores["clarity"] < 80:
             suggestions.append("🔍 提高清晰度：使用更高分辨率的原图")
-        if not any(c["check"] == "纯白背景" for c in compliance_issues):
-            suggestions.append("⚪ 确保背景为纯白色 (RGB 255,255,255)")
+        # 合规项未做判定 ⇒ 白底始终作为待人工确认项提示（而非「没发现问题才提示」）
+        suggestions.append("⚪ 待人工确认：背景是否为纯白色 (RGB 255,255,255)")
         if ctr_prediction < 0.35:
             suggestions.append("👀 提升点击率：增加产品细节特写或使用场景元素")
 
@@ -855,11 +1014,7 @@ class AIGCMediaAgent(BaseAgent):
             overall_score=round(overall, 1),
             ctr_prediction=round(ctr_prediction, 3),
             visual_appeal=scores,
-            compliance_check={
-                "score": len(passed_checks) / len(checks) * 100,
-                "passed": passed_checks,
-                "issues": compliance_issues
-            },
+            compliance_check=compliance_check,
             improvement_suggestions=suggestions,
             ab_test_variants=ab_variants
         )
@@ -870,7 +1025,8 @@ class AIGCMediaAgent(BaseAgent):
         brand: str,
         features: List[str],
         specifications: Optional[Dict[str, str]] = None,
-        target_audience: str = ""
+        target_audience: str = "",
+        product_asin: str = ""
     ) -> APlusContent:
         """
         生成 A+ / EBC 内容
@@ -881,6 +1037,7 @@ class AIGCMediaAgent(BaseAgent):
             features: 产品特性列表
             specifications: 规格参数
             target_audience: 目标受众
+            product_asin: 产品 ASIN（可选；留空则响应里 product_asin 为空串 —— 服务端不再编造 ASIN）
 
         Returns:
             A+ 内容模块集合
@@ -950,7 +1107,7 @@ class AIGCMediaAgent(BaseAgent):
         avg_read_speed = 3  # 字符/秒（中文约3字/秒，英文更快）
 
         return APlusContent(
-            product_asin=f"B0{random.randint(10000000, 99999999)}",
+            product_asin=product_asin,
             brand_name=brand,
             modules=modules,
             total_modules=len(modules),
@@ -971,7 +1128,7 @@ class AIGCMediaAgent(BaseAgent):
             f"从概念到成品，{brand} 始终坚持创新与品质并重。这款 {product} 是我们对完美的最新诠释。",
             f"{brand} —— 您值得信赖的选择。这款 {product} 凝聚了我们多年的行业经验和技术积累。"
         ]
-        return random.choice(templates)
+        return _stable_pick(templates, f"{brand}::{product}")
 
     def _generate_comparison_table(self, features: List[str]) -> str:
         """生成对比表格内容"""
@@ -1014,7 +1171,7 @@ class AIGCMediaAgent(BaseAgent):
             f"适合{audience or '各类用户'}的多种使用场景，{product} 是您日常生活的好伙伴。",
             f"从早晨到夜晚，{product} 陪伴您的每一刻。"
         ]
-        return random.choice(scenarios)
+        return _stable_pick(scenarios, f"{product}::{audience or ''}")
 
     async def generate_brand_story(
         self,
@@ -1118,11 +1275,11 @@ class AIGCMediaAgent(BaseAgent):
 
         return BrandStory(
             brand_name=brand_name,
-            brand_positioning=random.choice(positioning_options),
-            brand_mission=random.choice(mission_templates),
+            brand_positioning=_stable_pick(positioning_options, brand_name),
+            brand_mission=_stable_pick(mission_templates, brand_name),
             brand_values=default_values,
             origin_story=founding_story,
-            unique_selling_proposition=random.choice(usp_options),
+            unique_selling_proposition=_stable_pick(usp_options, brand_name),
             tagline_options=tagline_options,
             about_brand_text=about_text,
             storytelling_angles=storytelling_angles
@@ -1176,12 +1333,25 @@ class AIGCMediaAgent(BaseAgent):
             translated = llm_translated
 
         # 关键词 inclusion
+        # ★ 修复：此前 position 用 random.random() 掷骰子（与译文内容完全无关，
+        #   且同一输入每次结果不同）。改为**真检测**：在译文里找关键词的实际落点，
+        #   前三行视为标题区；译文里根本没有该关键词时如实返回 "absent"，
+        #   不再假装它出现在某个位置。（前端目前不消费本字段，加值是安全的。）
         keyword_inclusion = []
         if keywords:
+            haystack = (translated or "").lower()
+            head = "\n".join(haystack.split("\n")[:3])
             for kw in keywords[:5]:
+                needle = kw.lower()
+                if needle not in haystack:
+                    position = "absent"
+                elif needle in head:
+                    position = "title"
+                else:
+                    position = "body"
                 keyword_inclusion.append({
                     "keyword": kw,
-                    "position": "title" if random.random() > 0.3 else "body"
+                    "position": position
                 })
 
         # 文化注意事项
@@ -1302,67 +1472,58 @@ class AIGCMediaAgent(BaseAgent):
         category: str = ""
     ) -> ComplianceReport:
         """
-        检查图片合规性
+        图片合规检查 —— 输出**待人工核查清单**
+
+        ⚠️ 本模块**没有接入任何图片合规自动判定能力**（收得到 image_url 却从不读图），
+        因此本方法**不产出「通过 / 警告 / 不通过」结论**，而是显式返回待人工核查状态：
+
+        - overall_status = "manual_review_required"
+        - issues = [] / passed_checks = []  —— 一项也没检查过，**不是「全部通过」**
+        - score = 0.0 —— **纯占位，不代表 0 分**；判断状态请只认 overall_status
+        - recommendations —— 该平台该逐条走一遍的核查清单（来自 self.compliance_rules，
+          含每条规则的严重级别与判定口径），人工核查据此逐项确认
+
+        历史实现（已删除）用 random.random() < pass_rate 为每条规则随机掷骰子，
+        同一张图每次调用结论都不同 —— 那是**编造一份看起来很专业的合规报告**，
+        比「没有这个功能」危险得多（用户会据此直接把素材发上架）。
+        回归判据见 backend/tests/test_aigc_compliance_failclosed.py。
 
         Args:
-            image_url: 图片 URL
+            image_url: 图片 URL（本方法不读取它，仅记入日志以便追溯）
             platform: 目标平台
             category: 产品类目
 
         Returns:
-            合规报告
+            合规报告（overall_status == "manual_review_required"）
         """
         rules = self.compliance_rules.get(platform, self.compliance_rules["amazon"])
-        all_issues = []
-        all_passed = []
 
-        # 检查各类规则
+        checklist = []
         for rule_type, rule_list in rules.items():
             for rule_name, severity, description in rule_list:
-                # 模拟检查结果（随机通过/失败）
-                pass_rate = 0.85 if severity == "pass" else (0.6 if severity == "warning" else 0.75)
-                passed = random.random() < pass_rate
+                checklist.append(f"[{rule_type}] {rule_name}｜{severity}｜{description}")
 
-                if passed:
-                    all_passed.append(f"[{rule_type}] {rule_name}")
-                else:
-                    all_issues.append(ComplianceIssue(
-                        issue_type=rule_type,
-                        severity=severity,
-                        description=description,
-                        suggestion=f"请确保：{description}",
-                        affected_area=rule_name
-                    ))
+        logger.warning(
+            "合规检查未接入自动判定能力，返回待人工核查（不产出通过/不通过结论）"
+            f" image_url={image_url} platform={platform} category={category or '-'}"
+        )
 
-        # 计算总分
-        total_checks = len(all_passed) + len(all_issues)
-        score = (len(all_passed) / total_checks) * 100 if total_checks > 0 else 0
-
-        # 总体状态
-        critical_count = sum(1 for i in all_issues if i.severity == "critical")
-        if critical_count > 0:
-            status = "fail"
-        elif len(all_issues) > 2:
-            status = "warning"
-        else:
-            status = "pass"
-
-        # 优化建议
         recommendations = [
+            "⚠️ 本次未做自动合规判定（该能力未接入）：以下为人工核查清单，请逐项确认后再发布",
+            *[f"待核查 {item}" for item in checklist],
             "定期更新合规知识，关注平台政策变化",
             "建立内部审核清单，发布前逐项检查",
             "保存所有素材的版权授权文件",
-            "关注竞品违规案例，引以为戒"
         ]
 
         if category.lower() in ["supplement", "beauty", "medical"]:
             recommendations.append("特别注意：该类目有额外的合规要求，请查阅具体规定")
 
         return ComplianceReport(
-            overall_status=status,
-            score=round(score, 1),
-            issues=all_issues,
-            passed_checks=all_passed,
+            overall_status="manual_review_required",
+            score=0.0,
+            issues=[],
+            passed_checks=[],
             recommendations=recommendations
         )
 
@@ -1575,7 +1736,7 @@ class AIGCMediaAgent(BaseAgent):
             f"😱 不敢相信...这效果！",
             f"💰 花小钱办大事！"
         ]
-        return random.choice(hooks)
+        return _stable_pick(hooks, product)
 
     def _generate_hook_voiceover(self, product: str) -> str:
         """生成开场配音"""
@@ -1584,7 +1745,7 @@ class AIGCMediaAgent(BaseAgent):
             f"今天要给大家安利一个我最近发现的宝藏——{product}",
             f"用了这么多产品，终于找到一个真正好用的 {product}！"
         ]
-        return random.choice(voiceovers)
+        return _stable_pick(voiceovers, product)
 
     # ============================================================
     # Intent 分类（用于聊天路由）
@@ -1599,6 +1760,32 @@ class AIGCMediaAgent(BaseAgent):
         Yields:
             文本片段（供 ai_infra.sse.sse_event_stream 包装成 SSE）
         """
+        # ★ 第 204 轮：工具环路优先（LLM 用 bind_tools 自主选那 9 个 AIGC 工具）。
+        #   不可用 / 失败 ⇒ 回退下面的引导文本 / LLM 流式。
+        #   注：9 个 AIGC 工具均无租户归属（service 只收 request），
+        #   故本 Agent 不需要 `_current_shop_id`。
+        # ★ 第 210 轮：改走**流式版**工具环路 —— 思考过程（step）实时下发，
+        #   答复文本仍按原来的时序**攒齐一次吐出**（正文行为零变化）。
+        #   `tool_chunks` 为空 = 工具路没产出任何文本 ⇒ 与原来返回 None 一样
+        #   落到下面的关键词回退链（降级链一行没动）。
+        tool_chunks: list = []
+        async for chunk in self._stream_via_tools(query):
+            if isinstance(chunk, dict):
+                yield chunk
+            else:
+                tool_chunks.append(chunk)
+        if tool_chunks:
+            yield "".join(tool_chunks)
+            return
+
+        # ★ 点名技能、但技能通道（工具环路）没产出 ⇒ **如实说，不落下面的
+        #   关键词短路**（第 246 轮）：那条短路不构造 system prompt，拿它的
+        #   结果顶替用户点的技能，界面上完全看不出来（静默退化）。
+        #   ★ 未点名时这一句不生效 ⇒ 下面整条降级链**一行没动**。
+        if is_skill_requested():
+            yield SKILL_CHANNEL_UNAVAILABLE
+            return
+
         intent = self.classify_intent(query)
 
         # 具体工具意图：返回引导文本（一次性）

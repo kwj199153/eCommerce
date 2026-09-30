@@ -7,6 +7,12 @@
      其它 `modules/*` 取用**的名字全集（新增出口必须同步扩它）。
   3. `__all__` 里的名字**不得是子模块**（防「re-export 一个模块」把门禁架空）。
 
+★ 第 218 轮扩出口（1 个）：`PRODUCT_SPEC` —— 产品库的**声明式查询元数据**。
+  改前 REST `list_skus` 与工具层 `_rows_to_products` **各写一份查询且已漂移**
+  （REST 不排序不下推、工具层硬编码排序 + 内存切片），本仓那条「同一能力一份实现」
+  的门禁只覆盖「不同 Agent 手里的同名工具」，覆盖不到 REST vs 工具
+  ⇒ 两份一直并存。现在两者共用 `PRODUCT_SPEC`（详见 `spec.py` docstring）。
+
   4. 门面可以 re-export 子模块里的名字（下面两行都是）。但**代价要说清**：
      `import modules.products` 会**连带执行 `router.py`** —— 因为 `spu_to_dict`
      这个纯函数目前住在那里（`modules/candidates/router.py:218` 是它的唯一
@@ -19,5 +25,6 @@
 """
 from modules.products.db_model import SkuRecord, SpuRecord
 from modules.products.router import spu_to_dict
+from modules.products.spec import PRODUCT_SPEC
 
-__all__ = ["SkuRecord", "SpuRecord", "spu_to_dict"]
+__all__ = ["SkuRecord", "SpuRecord", "PRODUCT_SPEC", "spu_to_dict"]

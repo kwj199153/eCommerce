@@ -1,14 +1,21 @@
 """
 竞品情报监控模块 → 主 Agent 工具注册表
 
-把 CompetitorIntelService 的细粒度能力包装成 langchain 工具，供店秘书（主 Agent）
+把 CompetitorIntelService 的细粒度能力包装成 langchain 工具，供竞品监控员
+（`CompetitorIntelligenceAgent._build_router()`，第 198 轮从范式 B 迁到范式 A）
 通过 bind_tools 自主选择调用。
 
+★ 第 207 轮退役 5 条工具（老板裁决）：`monitor_competitor` / `track_batch_asins` /
+  `analyze_market_share` / `detect_intruders` / `analyze_buy_box`。
+  **只退役工具包装，不动实现** —— `agent_competitor.py` 的 8 个能力方法与
+  `router.py` 的 8 个端点**全部保留**，`/competitor/analyze` 的关键词路由照旧可达。
+  退役的唯一后果：**模型自主选工具**时少这 5 个选项。
+  （`detect_intruders` 是空壳 —— 唯一 return 是 `status="unsupported"` ⇒ 零能力损失。）
+
 设计要点（与 product_research/tools.py 一致）：
-- 只包「语义明确」的 8 个细粒度能力（监控 / 批量追踪 / 市场份额 / 定价 / 评论 /
-  入侵者检测 / Buy Box / 对比），**不包** `general_analysis` / `stream_chat` 这类
-  粗粒度入口（交给 agent 内部 _classify_intent 关键词表再判断一次，会与主 Agent
-  的 LLM 判断冲突）。
+- 只包「语义明确」的 3 个细粒度能力（定价 / 评论 / 多维度对比），**不包**
+  `general_analysis` / `stream_chat` 这类粗粒度入口（交给 agent 内部
+  _classify_intent 关键词表再判断一次，会与主 Agent 的 LLM 判断冲突）。
 - 参数用扁平字段（照 listing 范式），工具函数内自构造 Pydantic request。
 - 工具层只做「调用 service + 序列化」，不碰 agent 本体。
 """
@@ -21,18 +28,31 @@ from ai_infra.tools.side_effects import READ_ONLY_METADATA
 
 from .service import CompetitorIntelService
 from .schemas import (
-    CompetitorMonitorRequest,
-    BatchTrackRequest,
-    MarketShareRequest,
     PricingAnalysisRequest,
     ReviewAnalysisRequest,
-    IntruderDetectionRequest,
-    BuyBoxAnalysisRequest,
     CompetitorCompareRequest,
 )
 
 # 单例 service（与 router 同源）
 _service = CompetitorIntelService()
+
+
+def _shop_id() -> Optional[str]:
+    """工具可见的店铺归属（★★★ **服务端上下文注入，不是 LLM 入参**）。
+
+    ★ 第 198 轮修复：竞品工具改造前**一个都没传 `store_id`** ⇒
+      `CompetitorIntelService` 收到 `None` ⇒ `_ensure_source()` 直接判
+      `no_data`（理由「未绑定店铺上下文（请求缺少 X-Shop-ID）」）
+      ⇒ 工具**永远拿不到数据**。
+      这个缺陷此前完全不可见，正因为注册表悬空、没有任何 Agent 装配它们
+      —— 「接上工具」这一步才把它暴露出来（先接线、再谈效果的意义所在）。
+
+    ★ 为什么不把 `store_id` 做成工具形参：归属由模型生成就等于把租户边界
+      交给模型（同族判据：归属只能服务端注入）。
+    """
+    from .agent_competitor import _current_shop_id
+
+    return _current_shop_id.get()
 
 
 def _dump(resp) -> str:
@@ -42,51 +62,6 @@ def _dump(resp) -> str:
     if hasattr(resp, "model_dump"):
         return json.dumps(resp.model_dump(), ensure_ascii=False, default=str)
     return str(resp)
-
-
-async def _monitor_competitor_tool(
-    asin: Optional[str] = None,
-    days: int = 30,
-) -> str:
-    """竞品 Listing 监控：追踪竞品的价格、排名、评论数、库存状态变化。
-
-    Args:
-        asin: 竞品 ASIN（可选，为空返回所有竞品监控概览）。
-        days: 分析时间范围（7-90 天，默认 30）。
-    """
-    req = CompetitorMonitorRequest(asin=asin, days=days)
-    resp = await _service.monitor_competitor(req)
-    return _dump(resp)
-
-
-async def _track_batch_asins_tool(
-    asins: list[str],
-    include_history: bool = True,
-) -> str:
-    """ASIN 批量追踪：批量对比多个竞品的关键指标（价格/BSR/评论/评分/综合得分）。
-
-    Args:
-        asins: ASIN 列表（1-20 个，必填）。
-        include_history: 是否包含历史趋势数据（默认 True）。
-    """
-    req = BatchTrackRequest(asins=asins, include_history=include_history)
-    resp = await _service.track_batch_asins(req)
-    return _dump(resp)
-
-
-async def _analyze_market_share_tool(
-    category: str,
-    estimate_method: str = "bsr_based",
-) -> str:
-    """市场份额分析：基于 BSR 排名估算各品牌市场份额和竞争格局。
-
-    Args:
-        category: 产品类目（必填，如 Headphones / Home Kitchen）。
-        estimate_method: 估算方法（bsr_based / revenue_based，默认 bsr_based）。
-    """
-    req = MarketShareRequest(category=category, estimate_method=estimate_method)
-    resp = await _service.analyze_market_share(req)
-    return _dump(resp)
 
 
 async def _analyze_pricing_strategy_tool(
@@ -106,7 +81,7 @@ async def _analyze_pricing_strategy_tool(
         compare_asins=compare_asins,
         analysis_depth=analysis_depth,
     )
-    resp = await _service.analyze_pricing_strategy(req)
+    resp = await _service.analyze_pricing_strategy(req, store_id=_shop_id())
     return _dump(resp)
 
 
@@ -123,43 +98,7 @@ async def _analyze_competitor_reviews_tool(
         sample_size: 评论采样数（10-1000，默认 100）。
     """
     req = ReviewAnalysisRequest(asin=asin, aspects=aspects, sample_size=sample_size)
-    resp = await _service.analyze_competitor_reviews(req)
-    return _dump(resp)
-
-
-async def _detect_intruders_tool(
-    category: str,
-    lookback_days: int = 30,
-    min_reviews_threshold: int = 50,
-) -> str:
-    """入侵者检测：发现近期进入市场的新卖家/新产品，评估威胁等级。
-
-    Args:
-        category: 监控类目（必填）。
-        lookback_days: 回溯天数（7-90，默认 30）。
-        min_reviews_threshold: 新卖家最低评论阈值（默认 50）。
-    """
-    req = IntruderDetectionRequest(
-        category=category,
-        lookback_days=lookback_days,
-        min_reviews_threshold=min_reviews_threshold,
-    )
-    resp = await _service.detect_intruders(req)
-    return _dump(resp)
-
-
-async def _analyze_buy_box_tool(
-    asin: Optional[str] = None,
-    marketplace: str = "US",
-) -> str:
-    """Buy Box 竞争分析：分析 Buy Box 竞争格局、价格竞争力、赢取建议。
-
-    Args:
-        asin: 目标 ASIN（可选，为空分析所有竞品）。
-        marketplace: 站点（US / UK / DE / JP，默认 US）。
-    """
-    req = BuyBoxAnalysisRequest(asin=asin, marketplace=marketplace)
-    resp = await _service.analyze_buy_box(req)
+    resp = await _service.analyze_competitor_reviews(req, store_id=_shop_id())
     return _dump(resp)
 
 
@@ -177,40 +116,13 @@ async def _compare_competitors_tool(
         asins=asins,
         dimensions=dimensions or ["price", "rating", "reviews", "bsr", "value"],
     )
-    resp = await _service.compare_competitors(req)
+    resp = await _service.compare_competitors(req, store_id=_shop_id())
     return _dump(resp)
 
 
 # ====== 工具注册表 ======
 
 competitor_intel_tools = [
-    StructuredTool.from_function(
-        coroutine=_monitor_competitor_tool,
-        name="monitor_competitor",
-        description=(
-            "竞品 Listing 监控：追踪竞品的价格、排名、评论数、库存状态变化。"
-            "当用户想监控竞品/看竞品价格排名变化/跟踪某个 ASIN 时使用。"
-        ),
-        metadata=READ_ONLY_METADATA,
-    ),
-    StructuredTool.from_function(
-        coroutine=_track_batch_asins_tool,
-        name="track_batch_asins",
-        description=(
-            "ASIN 批量追踪：批量对比多个竞品的关键指标（价格/BSR/评论/评分/综合得分）。"
-            "当用户想批量对比多个竞品/追踪一批 ASIN 时使用。"
-        ),
-        metadata=READ_ONLY_METADATA,
-    ),
-    StructuredTool.from_function(
-        coroutine=_analyze_market_share_tool,
-        name="analyze_market_share",
-        description=(
-            "市场份额分析：基于 BSR 排名估算各品牌市场份额和竞争格局（CR4/HHI）。"
-            "当用户想看市场份额/市场格局/类目竞争集中度时使用。"
-        ),
-        metadata=READ_ONLY_METADATA,
-    ),
     StructuredTool.from_function(
         coroutine=_analyze_pricing_strategy_tool,
         name="analyze_pricing_strategy",
@@ -226,24 +138,6 @@ competitor_intel_tools = [
         description=(
             "竞品评论深度分析：挖掘竞品评论中的优劣势、用户痛点、差异化机会。"
             "当用户想分析竞品评论/看竞品口碑/找差异化机会时使用。"
-        ),
-        metadata=READ_ONLY_METADATA,
-    ),
-    StructuredTool.from_function(
-        coroutine=_detect_intruders_tool,
-        name="detect_intruders",
-        description=(
-            "入侵者检测：发现近期进入市场的新卖家/新产品，评估威胁等级并给出应对策略。"
-            "当用户想看新进入的竞争者/入侵者/新卖家威胁时使用。"
-        ),
-        metadata=READ_ONLY_METADATA,
-    ),
-    StructuredTool.from_function(
-        coroutine=_analyze_buy_box_tool,
-        name="analyze_buy_box",
-        description=(
-            "Buy Box 竞争分析：分析 Buy Box 竞争格局、价格竞争力、赢取建议。"
-            "当用户想分析 Buy Box/购物车竞争/价格竞争力时使用。"
         ),
         metadata=READ_ONLY_METADATA,
     ),

@@ -7,6 +7,11 @@ Listing 生成优化模块 - 数据模型定义
 from typing import List, Optional, Any
 from pydantic import BaseModel, Field
 
+# ★ 「本次请求的作用对象」的形状定义在机制层（`ai_infra/context_target.py`）。
+#   第 257 轮起三条、第 298 轮起四条（+ 客服）共用同一个形状 ——
+#   各写一份的下场是"少一个字段"的那一份不报任何错，只是静默拿不到对象。
+from ai_infra.context_target import ContextTargetPayload
+
 
 # ====== 请求模型 ======
 
@@ -48,6 +53,8 @@ class TitleOptimizationRequest(BaseModel):
     current_title: str = Field(..., description="当前标题", min_length=5)
     product_name: Optional[str] = Field(None, description="产品名称（辅助理解）")
     main_keyword: Optional[str] = Field(None, description="主关键词")
+    # ★ 自定义生成指令（第 273 轮）：存在则**完全替换**默认生成 prompt。
+    custom_prompt: Optional[str] = Field(None, description="自定义生成指令，存在则完全替换默认 prompt")
 
 
 class BulletPointsRequest(BaseModel):
@@ -55,6 +62,8 @@ class BulletPointsRequest(BaseModel):
     product_name: str = Field(..., description="产品名称")
     features: Optional[List[str]] = Field(None, description="产品特性")
     tone: Optional[str] = Field("professional", description="语调：professional/friendly/luxury")
+    # ★ 自定义生成指令（第 273 轮）：存在则**完全替换**默认生成 prompt。
+    custom_prompt: Optional[str] = Field(None, description="自定义生成指令，存在则完全替换默认 prompt")
 
 
 class DescriptionRequest(BaseModel):
@@ -63,6 +72,16 @@ class DescriptionRequest(BaseModel):
     features: Optional[List[str]] = Field(None, description="产品特性")
     include_html: bool = Field(True, description="是否包含 HTML 格式")
     style: Optional[str] = Field("storytelling", description="风格：storytelling/technical/benefit-driven")
+    # ★ 自定义生成指令（第 273 轮）：存在则**完全替换**默认生成 prompt。
+    custom_prompt: Optional[str] = Field(None, description="自定义生成指令，存在则完全替换默认 prompt")
+
+
+class KeywordRequest(BaseModel):
+    """生成后台搜索词请求（第 273 轮从裸标量形参改为 Pydantic 模型）"""
+    title: str = Field(..., description="当前标题", min_length=1)
+    category: str = Field("", description="产品类目")
+    # ★ 自定义生成指令（第 273 轮）：存在则**完全替换**默认生成 prompt。
+    custom_prompt: Optional[str] = Field(None, description="自定义生成指令，存在则完全替换默认 prompt")
 
 
 class SEOAnalysisRequest(BaseModel):
@@ -88,6 +107,24 @@ class ListingChatRequest(BaseModel):
     context: Optional[dict] = Field(None, description="上下文信息（可选）")
     session_id: Optional[str] = Field(
         None, description="会话 ID（非空 ⇒ 服务端多轮记忆；空 ⇒ 不留记忆）"
+    )
+
+    # ★ 点名通道（第 188 轮）：用户点名本次对话要用的技能名（可选）。
+    #   留空 ⇒ 只注入技能目录，仍由模型自己判断用哪条（渐进披露的原路径）。
+    #   ★ 归属校验不在这里：技能名由服务端在 `read_skill_text` 里按
+    #     身份 + 启用 + 对本 Agent 启用 三重过滤，请求体只负责**传递名字**。
+    skill: Optional[str] = Field(default=None, description="本次对话指定使用的技能名（可选）")
+
+    # ★ 本次请求的「作用对象」（第 257 轮）。与 `skill` 是**一对**：
+    #   `skill` 说「这次用哪条技能」，它说「这次冲着哪个对象来的」。
+    #   本 Agent 的对话链路此前靠 `_extract_product_info(query, …)` 从**用户消息
+    #   文本**里抽品名 —— 用户在顶部【载入产品】选好了商品、然后只说「帮我优化标题」
+    #   时，模型只能猜（而猜错的结论打在别的品上，看不出任何异常）。
+    #   ★ 传 `null` 与**不传**含义不同（明确没有 vs 客户端未参与），
+    #     判别由 `model_fields_set` 承担，本字段故意不给默认值。
+    context_target: Optional[ContextTargetPayload] = Field(
+        default=None,
+        description="本次请求的作用对象；传 null 表示本次明确没有对象",
     )
 
 

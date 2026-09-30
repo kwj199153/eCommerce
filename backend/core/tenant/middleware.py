@@ -247,9 +247,20 @@ async def _resolve_current_shop_id(
     #   ⇒ 真实登录的用户在这里也拿到 None ⇒ **下面的归属校验被整段跳过**，
     #   改一下 `X-Shop-ID` 即可读写任意店铺的业务数据（2026-09-15 修的 BOLA
     #   在演示模式下原样回归）。本次与 dependencies 侧一并修掉。
+    #
+    #   ★★★ 第 177 轮：`None` 的**出口**也一并收掉了 —— 此前 `None` ⇒
+    #   `return shop_id`（整段跳过归属校验），演示档下仍是「改个 `X-Shop-ID`
+    #   就能读写任意店铺」。现在 `None` 也继续往下走 `can_access_store`。
     current_user = await require_auth_if_enabled(request, db)
-    if current_user is None:
-        return shop_id
+
+    # ★★★ 第 177 轮：删掉「`user is None` ⇒ 直接放行」这一档。
+    #
+    #   演示身份（无凭据 / `demo-token`）此前在这里**整段跳过归属校验**，
+    #   于是「列表紧、单店松」—— 伪造 `X-Shop-ID` 即可读写任意店铺的业务数据。
+    #   现在演示身份也走下面的 `can_access_store`：
+    #     演示店铺（`is_demo=True`）⇒ 200；真实店铺 ⇒ 403。
+    #   与列表路径同一处判定（`core/auth/accounts.py::_matches`）。
+
 
     # ③ 授权（这东西归不归你）—— 修复前缺失的就是这一段
     #

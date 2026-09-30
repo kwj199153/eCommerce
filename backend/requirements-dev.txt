@@ -27,3 +27,7 @@ pip-audit>=2.7        # 依赖漏洞扫描（查 OSV / PyPI 安全公告）
 # ---------- 覆盖率 ----------
 coverage[toml]>=7.6   # 覆盖率内核（[toml] extra 才能读 pyproject 的 [tool.coverage]）
 pytest-cov>=5.0       # pytest 集成（CI 用 --cov 出报告，并用 fail_under 当门禁）
+
+# ---------- 卡死护栏 ----------
+pytest-timeout>=2.3   # 单条用例墙钟上限（pytest.ini 的 timeout = 120）
+                      # ★ 没有它，「卡住」= 无限等：第 243 轮实测卡在收尾 15 min 只能人工 kill

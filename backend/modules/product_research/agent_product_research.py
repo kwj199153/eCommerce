@@ -36,7 +36,7 @@ from platforms.base import (
     ReviewData,
     CompetitorAnalysis,
 )
-from ai_infra.sse import progress
+from ai_infra.sse import ToolTrace, progress
 
 from core.logger import get_logger
 
@@ -55,6 +55,7 @@ from ai_infra.context import CONTEXT_ROUTER
 #   它不认识数据库；落库那一半在 `modules/conversation`，两者在这里接起来。
 from ai_infra.session_state import SessionStateRegistry
 from ai_infra.intent import Route, first_match
+from ai_infra.skills import SKILL_CHANNEL_UNAVAILABLE, is_skill_requested
 # 业务提示词（原在 ai_infra/llm/dashscope_client.py）；import 即向基础设施层注册
 from modules.product_research import prompts as _prompts  # noqa: F401
 # 第 145 轮批 C1：会话级状态的**持久化出口** —— 走 conversation 门面
@@ -132,58 +133,65 @@ class ResearchReport(BaseModel):
 
 
 # ====== System Prompt ======
-
-PRODUCT_RESEARCH_SYSTEM_PROMPT = """
-你是一位专业的**跨境电商选品分析师**，拥有 8 年 Amazon 运营经验，擅长：
-
-## 核心能力
-
-### 1️⃣ 蓝海品类挖掘
-- 通过关键词数据分析发现高搜索量、低竞争的细分市场
-- 识别新兴趋势和季节性机会
-- 评估市场容量和进入门槛
-
-### 2️⃣ 竞品深度分析
-- 拆解竞品的 Listing 质量、价格策略、用户反馈
-- 提取差评中的共性痛点和未满足需求
-- 发现差异化切入点和市场空白
-
-### 3️⃣ 利润与风险评估
-- 精确计算 FBA 费用、广告成本、净利润
-- 评估供应链风险和资金周转周期
-- 判断侵权风险和合规要求
-
-## 工作原则
-
-1. **数据驱动**：所有结论必须有数据支撑，不凭感觉
-2. **结构化输出**：用表格、列表、评分等方式清晰呈现
-3. **可执行建议**：给出具体的行动项，而非空泛的建议
-4. **风险提示**：主动指出潜在风险和避坑要点
-5. **诚实客观**：不确定的信息标注 confidence: low
-
-## 输出格式
-
-根据用户问题类型，选择合适的输出格式：
-- **蓝海分析**：表格 + 机会评分 + 推荐理由
-- **利润计算**：明细表 + ROI + 盈亏平衡点
-- **痛点分析**：痛点云图 + 改进方向 + 市场空白
-- **竞品对比**：雷达图数据 + 优劣势列表
-- **综合报告**：完整的研究报告结构
-
-## 当前平台
-
-当前聚焦 **Amazon 美国站**，使用美元计价。
-"""
+# ★ 第 283 轮：正文已归位到 `prompts.py`（注册表键 `"product_research_system"`）。
+#   注意与 `"product_research"` 是**两份**：前者是 Agent 的固定人设，
+#   后者带 `{market}` 变量，供具体子任务按需取用。
 
 
 # 结构化意图 → 阶段进度文案（stream_chat 在耗时分析前发给前端，避免空转）
 _INTENT_PROGRESS = {
     "blue_ocean": "正在挖掘蓝海品类数据…",
+    "query_candidates": "正在清点候选库…",
     "profit": "正在测算利润空间…",
     "pain_points": "正在分析用户痛点…",
     "competitor": "正在对比竞品数据…",
     "save_candidate": "正在写入选品库…",
+    "market_insight": "正在读取选品大盘…",
 }
+
+#: 「候选存量清点」意图标签（**唯一真源**）。
+#:
+#: ★ 为什么单独命名而不是散落字面量：这个标签要在三处出现 —— 产出
+#:   （`_classify_intent`）、消费（`invoke` / `_stream_chat_impl`）、门禁（断言）。
+#:   写三遍字面量 ⇒ 改一处漏两处；本仓既有教训正是
+#:   「同一判定两份实现 ⇒ 至少一份永远测不到」。
+QUERY_CANDIDATES_INTENT = "query_candidates"
+
+#: 「选品大盘读口」意图标签（**唯一真源**，第 325 轮）。
+#:
+#: ★ 与 `QUERY_CANDIDATES_INTENT` 同款同因：这个标签要在三处出现 ——
+#:   产出（`_classify_intent`）、消费（`invoke` / `_stream_chat_impl`）、
+#:   门禁（断言）。写三遍字面量 ⇒ 改一处漏两处。
+#:
+#: ★ 老板的原始投诉（第 324 轮截图）：「现在哪个品类蓝海分最高」→ Agent 答
+#:   「未识别出具体类目，已按全类目高潜方向扫描，发现 8 个蓝海方向」+ 8 条候选
+#:   商品 —— **它去挖蓝海了，压根没读大盘**（`market_snapshots` 里就存着蓝海评分）。
+#:
+#: ★ 为什么要一个标签而不是直接落 `general`：`general` 也能进工具路由（最终结果
+#:   一样），但要的是**可观测** —— 老板问这句时，日志与进度文案里必须看得见
+#:   「在读数」而不是「在挖矿」。标签是这条判定**唯一**的落点。
+MARKET_INSIGHT_INTENT = "market_insight"
+
+#: 命中即**短路**的意图（关键词层直接执行业务方法，LLM 不参与）。
+#:
+#: ★ 两个入口（`invoke` / `_stream_chat_impl`）**共用这一份名单**。
+#:   改前 `invoke` 写的是 `if intent != "general"`、`_stream_chat_impl` 写的是
+#:   一份显式元组 —— 同一规则两种表达，加一个新标签必然漂移
+#:   （漂移后果：同一句话走流式开挖、走非流式清点，本仓 `_APPROVAL_GATED_INTENTS`
+#:   的注释里记着同一类事故）。
+#: ★ `save_candidate`（有副作用 ⇒ 必须经 HITL 审批）与 `query_candidates`
+#:   （读库问题 ⇒ 必须交工具路由）**刻意不在其中**。
+INTENT_SHORTCUTS = ("blue_ocean", "profit", "pain_points", "competitor")
+
+#: 「**不短路**、但要给一句进度文案」的意图（两个入口共用，第 325 轮收拢）。
+#:
+#: ★ 与 `INTENT_SHORTCUTS` 同样只允许**一份表达**：改前 `_stream_chat_impl` 里
+#:   写的是 `if intent == QUERY_CANDIDATES_INTENT:`（单个标签的散装判断），
+#:   再加一个大盘标签就得复制第二行 —— 那正是「同一规则两份表达」的入口
+#:   （漂移后果：同一句话走流式与大屏提示不同）。
+#: ★ 这两个标签的共同点：**都是读库问题** ⇒ 不短路（交给工具路由的 LLM 决定
+#:   调哪个工具、怎么筛），但都要先让老板看到「在读数」。
+PROGRESS_ONLY_INTENTS = (QUERY_CANDIDATES_INTENT, MARKET_INSIGHT_INTENT)
 
 # 当前会话 ID（ContextVar）。
 #
@@ -297,7 +305,7 @@ class ProductResearchAgent(BaseAgent):
         self.platform = platform
         self.adapter = get_platform_adapter(platform)
         self.agent_name = "ProductResearcher"
-        self.system_prompt = PRODUCT_RESEARCH_SYSTEM_PROMPT
+        self.system_prompt = self.get_prompt_template("product_research_system")
 
         # 深层分层路由：工具化路由层（懒加载，避免 tools→service→agent 循环导入）
         self._router = None
@@ -530,14 +538,27 @@ class ProductResearchAgent(BaseAgent):
                 )
 
         # 2. 关键词表优先
-        intent = await self._classify_intent(query)
+        # ★★ 点名技能 ⇒ **禁用关键词短路**（第 246 轮）：下面两条短路
+        #   （`_APPROVAL_GATED_INTENTS` / `INTENT_SHORTCUTS`）都不构造
+        #   system prompt，而技能正文 / 目录 / `load_skill` 工具全住在 system
+        #   prompt 里（`BaseAgent` 的图注入）⇒ 短路 = 用户点的技能一次都
+        #   渲染不到。让路给第 3 步的工具路由（那条路真的构造 prompt）。
+        #   ★ `general` 三条短路都不命中（门禁钉住这个前提）⇒ 等于「不短路」；
+        #     未点名时行为逐字不变。
+        intent = "general" if is_skill_requested() else await self._classify_intent(query)
         # ★★★ 第 131 轮：**有副作用的意图必须走带 HITL 审批的工具路径**，
         #   不能由关键词表直写 —— 否则「说一句入库」是零审批直写，
         #   而「LLM 判为入库」要审批（同一操作两套规矩）。详见
         #   `_route_gated_intent` 的 docstring。
         if intent in self._APPROVAL_GATED_INTENTS:
             return await self._route_gated_intent(query, context_id, user_id, shop_id)
-        if intent != "general":
+        # ★★ 第 223 轮：判据由 `!= "general"` 换成**共用名单** `INTENT_SHORTCUTS`。
+        #   改前两条入口各写一份（这里 `!= "general"`、`_stream_chat_impl` 一份
+        #   显式元组）⇒ 新加一个标签必然漂移：同一句话走流式开挖、走非流式清点。
+        #   现在 `query_candidates`（清点）与 `general` 一样**落到第 3 步的工具
+        #   路由**（LLM 调 `list_candidates`），而不是被送进 `_process_query` 做
+        #   业务短路。
+        if intent in INTENT_SHORTCUTS:
             return await self._process_query(query, context_id, intent, shop_id)
 
         # 3. 未命中 → 工具路由兜底（关键词表从「唯一门」降为「加速器」）
@@ -548,6 +569,10 @@ class ProductResearchAgent(BaseAgent):
                 return result
 
         # 4. 最后兜底
+        #   ★ 点名技能、但技能通道（工具环路）不可用 ⇒ 如实说，**不回关键词表
+        #     兜底**：那会拿一份"别的东西"顶替用户点的技能，而界面上看不出来。
+        if is_skill_requested():
+            return AgentResponse(content=SKILL_CHANNEL_UNAVAILABLE, display_type="text")
         return await self._process_query(query, context_id, "general")
 
     def _get_router(self):
@@ -557,7 +582,7 @@ class ProductResearchAgent(BaseAgent):
         return self._router
 
     def _build_router(self):
-        """构建工具化路由层（BaseAgent 实例，注入 4 个工具）。"""
+        """构建工具化路由层（BaseAgent 实例，注入 `product_research_tools` 全部工具）。"""
         if not (self.ENABLE_LLM):
             return None
         try:
@@ -584,11 +609,12 @@ class ProductResearchAgent(BaseAgent):
                 # ★★★ 第 131 轮：`save_candidate` 是全仓**唯一**「有外部副作用
                 #   （真写 PG：`candidates/service.create_candidate`）+ 真被生产
                 #   代码装配」的 agent 工具 ⇒ 它是 HITL 的首选、也是唯一目标。
-                #   （全仓 8 个工具注册表：`track_batch_asins` 只读内存 mock，
+                #   （全仓 8 个工具注册表里，写库的只有它 —— 其余全是只读；
                 #    `create_ticket` 所在注册表的生产装配点数是 0（悬空）——
                 #    ★ 第 143 轮 A4 起 `create_ticket` 已**真落库**（cs_tickets 表），
                 #    所以它落选的理由是「注册表悬空」而**不是**「零副作用」，
-                #    两者不要混为一谈。见 probe `out-r131-a2-toolmatrix.txt`。）
+                #    两者不要混为一谈。见 probe `out-r131-a2-toolmatrix.txt`。
+                #    ★ 第 207 轮：原举例 `track_batch_asins` 已退役，改为不举例。）
                 #   为什么必须有上面那两行：`interrupt()` 在**没有 checkpointer 的
                 #   图上直接抛**，不是「降级为不审批」⇒ HITL 与 checkpointer 是
                 #   **同一个前提**。`checkpoint_ns` 再把本 Agent 的会话与
@@ -598,8 +624,9 @@ class ProductResearchAgent(BaseAgent):
                 #   审批名单从此由 `ai_infra.tools.side_effects` 的副作用策略
                 #   自动推导（见 `BaseAgent._wrap_hitl_tools`）—— 本文件的
                 #   职责是「装配哪张注册表」，不是「哪个工具危险」。
-                #   行为不变：`product_research_tools` 5 个工具里只有
-                #   `save_candidate` 不在只读豁免名单内 ⇒ 推导结果仍是
+                #   行为不变：`product_research_tools` 里只有 `save_candidate`
+                #   不在只读豁免名单内（第 325 轮新增的 `query_market_insight`
+                #   声明的是 `READ_ONLY_METADATA`）⇒ 推导结果仍是
                 #   `{"save_candidate"}`（由 `test_hitl_wiring.py` 钉住）。
                 #   为什么必须删而不是留：留着就等于留了**第二份真源**，
                 #   而两份真源迟早会漂移 —— 那时「策略表里是 A、Agent 里是 B」
@@ -1068,6 +1095,17 @@ class ProductResearchAgent(BaseAgent):
         tool_name = ""
         tool_output = None
         replied = False
+        #: 工具事件 → 步骤事件的有状态翻译器（见 `ai_infra.sse.ToolTrace`）。
+        #: 一次 `_stream_via_tools` 调用 = 一条轨迹，故建在函数内而非 self 上。
+        # ★ 工具人话标题走**注入**：真源在业务侧
+        #   （`modules/skills/tools_catalog.py::tool_title`，全仓唯一查询口），
+        #   而 `ai_infra` 不许依赖业务（分层硬红线）⇒ 只能把查询口传进去。
+        #   惰性 import：Agent 的**模块导入期**无需把 `modules.skills` 拉进依赖图，
+        #   只有真跑流式工具环路时才需要它。
+        # 走**包门面**（本仓条款 1：跨模块引用不得伸手进包内部）。
+        from modules.skills import tool_title
+
+        trace = ToolTrace(title_resolver=tool_title)
 
         if router is not None:
             try:
@@ -1088,6 +1126,18 @@ class ProductResearchAgent(BaseAgent):
                         tool_name = ev.get("name") or tool_name
                     elif et == "on_tool_end":
                         tool_output = ev.get("data", {}).get("output")
+
+                    # ★ 第 210 轮：把工具轨迹**实时**下发（「思考过程」的原料）。
+                    #   此前的流式路径**已经在消费** on_tool_start / on_tool_end，
+                    #   但只用来解析最终结果 —— 拿到手的过程信息被整段丢掉，
+                    #   前端于是只看到一个转圈。
+                    #   ★ 这一句刻意放在 if/elif 链**之外**：`feed()` 是**有状态**的
+                    #     （start 记时刻、end 算耗时），同一事件只能喂一次。
+                    #     塞进某个分支里，下次想在另一分支复用就会变成两次喂、
+                    #     耗时被算成 0。
+                    trace_step = trace.feed(ev)
+                    if trace_step is not None:
+                        yield trace_step
             except Exception as e:
                 logger.warning(f"[product_research] stream tool routing failed: {e}")
 
@@ -1161,38 +1211,6 @@ class ProductResearchAgent(BaseAgent):
             result = await self._general_chat(query)
             yield result.get("response", "")
 
-    async def stream(self, query: str, context_id: str = None) -> AsyncIterable[dict]:
-        """
-        流式调用 Agent（复杂任务，支持进度推送）
-
-        Yields:
-            进度事件：{type: "thinking"|"tool_call"|"result", data: ...}
-        """
-        yield {"type": "thinking", "data": f"正在分析: {query}"}
-
-        # 1. 意图识别
-        intent = await self._classify_intent(query)
-        yield {"type": "progress", "data": f"已识别意图: {intent}"}
-
-        # 2. 执行对应工具
-        if intent == "blue_ocean":
-            yield {"type": "tool_call", "data": "正在挖掘蓝海品类..."}
-            result = await self._analyze_blue_ocean(query)
-        elif intent == "profit":
-            yield {"type": "tool_call", "data": "正在计算利润..."}
-            result = await self._analyze_profit(query)
-        elif intent == "pain_points":
-            yield {"type": "tool_call", "data": "正在分析用户痛点..."}
-            result = await self._analyze_pain_points(query)
-        elif intent == "competitor":
-            yield {"type": "tool_call", "data": "正在对比竞品..."}
-            result = await self._analyze_competitors(query)
-        else:
-            # 通用对话
-            result = await self._general_chat(query)
-
-        yield {"type": "result", "data": result}
-
     # ====== 意图分类 ======
 
     #: 意图路由表（**策略数据**留业务模块；控制流见 `ai_infra.intent.first_match`）。
@@ -1201,18 +1219,37 @@ class ProductResearchAgent(BaseAgent):
     #:   关键词；顺序一换，「帮我进入选品库」会被判成 blue_ocean、把挖掘重跑一遍。
     #: ★ 「入库」这类**口语说法**必须留在关键词里：漏它 = 最高频的表达判成 general，
     #:   商品名于是被裸丢给 LLM 闲聊（实测编出一大段套话）。
-    #: ★ `"FBA"` / `"ROI"` 含大写字母 ⇒ 在小写归一后的查询里命不中；这是收敛前
-    #:   就存在的现象，本轮**原样保留**（改它等于改线上判定结果）。
+    #: ★ 第 223 轮**裸词体检**：63 个词逐个过了一遍，动了 4 处，逐条记明理由 ——
+    #:   ① 删 `blue_ocean` 的裸「选品」= **本轮 bug 的病根**。「选品」在本产品里
+    #:      的领域义是**候选选品这个存量对象**（「有多少选品」「列一下我的选品」），
+    #:      却排在 `blue_ocean` 里；`save_candidate` 组一个裸「选品」都没有
+    #:      ⇒ 清点问句在第一组零命中、被第二组吞掉，直接开挖（老板看到的是
+    #:      8 个蓝海候选 + 「要入库直接说把第 1 个加进选品库」）。
+    #:   ② 删 `blue_ocean` 的裸「机会」—— 泛名词（「我这个品还有机会吗」）。
+    #:      代价不对称：删掉后「有什么机会」落**工具路由**、由 LLM 调
+    #:      `analyze_blue_ocean` 仍答对；留着则同类误判**没有任何补救路径**
+    #:      （短路发生在 LLM 被调用之前）。
+    #:   ③ 删 `pain_points` 的裸「问题」—— 全表最宽的万能名词（实测
+    #:      「我的店铺有什么问题」被判成痛点分析 ⇒ 反问要 ASIN）。本组
+    #:      「痛点 / 差评 / 不满意 / 抱怨」四个区分性词已足够。
+    #:   ④ `"FBA"` / `"ROI"` → 小写。**这是一处有意的行为变更**，不是顺手改：
+    #:      查询串在 `first_match` 里被 `lower()` ⇒ 含大写的关键词**永不命中**
+    #:      （实测「fba 费用怎么算」判成 general）。收敛期刻意原样保留过，本轮
+    #:      体检把它定性为**声明承诺型假门禁**（写了词、从不生效）⇒ 修。
+    #:      受影响面**仅一种**：含 fba / roi 的问句由 general 变 profit。
+    #:   ★ 未动的裸词（品类 / 评论 / 入库 / 利润 / 对比…）逐条登记在
+    #:     `tests/test_product_research_intent_inventory.py` 的处置表里 ——
+    #:     新增裸词必须在表里同步登记，否则门禁报红。
     _INTENT_ROUTES = (
         Route("save_candidate", ("选品库", "候选库", "候选池", "入库",
                                  "加入候选", "加入选品", "添加到选品", "加到选品",
                                  "保存到选品", "存入选品", "加进选品", "存进选品")),
-        Route("blue_ocean", ("蓝海", "机会", "选品", "挖掘", "品类", "趋势", "什么好卖",
+        Route("blue_ocean", ("蓝海", "挖掘", "品类", "趋势", "什么好卖",
                              "好卖", "好销", "热销", "热门", "爆款", "比较火", "很火",
                              "火爆", "有市场", "值得做", "潜力", "好做", "能做吗",
                              "有前途", "冷门")),
-        Route("profit", ("利润", "费用", "FBA", "成本", "ROI", "售价", "定价", "赚钱")),
-        Route("pain_points", ("痛点", "差评", "评论", "问题", "不满意", "抱怨")),
+        Route("profit", ("利润", "费用", "fba", "成本", "roi", "售价", "定价", "赚钱")),
+        Route("pain_points", ("痛点", "差评", "评论", "不满意", "抱怨")),
         # ★ 绝不能收裸 "比较"：中文里 "比较" 绝大多数是**副词**（比较好卖 / 比较火），
         #   只有带被比较对象时才是「对比」语义。收裸 "比较" 会让
         #   「现在有哪些比较火的产品」被判成竞品对比（实测 bug）。
@@ -1225,13 +1262,96 @@ class ProductResearchAgent(BaseAgent):
         """分类用户意图（兜底 `general`；控制流见 `ai_infra.intent.first_match`）。
 
         Returns:
-            blue_ocean / profit / pain_points / competitor / save_candidate / general
+            blue_ocean / profit / pain_points / competitor / save_candidate /
+            query_candidates / general
         """
         # ★ 非关键词的**前置信号**：「≥2 个 ASIN」比关键词可靠，优先判定。
         #   它不属于「关键词路由」这一机制，因此留在业务侧、在机制**之前**执行。
         if len(self._extract_multiple_asins(query)) >= 2:
             return "competitor"
+        # ★ 第二条前置信号：候选存量清点（与上一条同款形态 —— 都不是关键词命中，
+        #   而是**看句子形态**就能定的判定）。排在 `first_match` **之前**是关键：
+        #   收进 `_INTENT_ROUTES` 会排在 `save_candidate` 之后而永远轮不到
+        #   （「选品库里现在有多少条」里含「选品库」）。
+        # ★ 第三条前置信号：选品大盘问句（第 325 轮 —— 老板「现在哪个品类蓝海分
+        #   最高」被「品类」吞去挖蓝海了）。与上两条同款形态：看句子里的
+        #   **量纲 + 诉求**就能定，不靠关键词命中。排在 `first_match` **之前**是关键：
+        #   「品类」在 `blue_ocean` 组里，排到后面就永远轮不到它。
+        if self._is_market_insight_query(query):
+            return MARKET_INSIGHT_INTENT
+        if self._is_candidate_query(query):
+            return QUERY_CANDIDATES_INTENT
         return first_match(query, self._INTENT_ROUTES, "general")
+
+    #: 「候选存量清点」前置判定的**左门**：指向「候选选品库这个对象」的词。
+    #: ★ 只收**对象词**，不收指向挖掘方向的词（品类 / 趋势 / 热门…）——
+    #:   后者是真蓝海问句的载体（「有什么冷门品类」「比较火的品类有哪些」）。
+    _CANDIDATE_QUERY_DOMAIN = ("选品", "候选")
+
+    #: 「候选存量清点」前置判定的**右门**：表达「清点 / 列举」诉求的词。
+    _CANDIDATE_QUERY_COUNT = ("多少", "几个", "几条", "几件", "几款",
+                              "有哪些", "列表", "列一下", "列下", "列出来", "列出",
+                              "看看", "看下", "查看", "都有啥", "都有什么",
+                              "统计", "盘点", "清点", "总共", "一共")
+
+    def _is_candidate_query(self, query: str) -> bool:
+        """是不是「候选存量清点」问句（**与门**：域对象词 AND 清点诉求词）。
+
+        ★ 为什么必须**两条同时成立**：只按「选品 / 候选」判，会把
+          「帮我选个男装品类的机会」也吞掉（既有门禁
+          `test_pure_discovery_still_routes_to_blue_ocean` 钉死了它应为 blue_ocean）；
+          只按「多少 / 有哪些」判，会把「现在有哪些比较火的产品」吞掉
+          （`test_adverb_bijiao_is_not_competitor` 的用例）。
+        ★ 为什么命中后**不短路**：这不是一个独立的业务分析动作，而是一个
+          **读库问题** —— 交工具路由由 LLM 调 `list_candidates` 作答
+          （能答「按评审状态筛」「销量前 3」这类关键词表答不了的问法）。
+          关键词表在这里只承担「别把它送进 `_process_query`」这一个作用。
+        ★ 为什么**不新增第二份读库实现**：`list_candidates` 已是跨 Agent 共用的
+          唯一实现（`modules/library/tools.py` → `modules.candidates.service`），
+          且已返回**真实** `total` ⇒ 本判定只做路由，不碰数据。
+        """
+        q = (query or "").lower()
+        domain_hit = any(w in q for w in self._CANDIDATE_QUERY_DOMAIN)
+        count_hit = any(w in q for w in self._CANDIDATE_QUERY_COUNT)
+        return domain_hit and count_hit
+
+    #: 选品大盘前置判定的**左门**：大盘**量纲词**（= 面板上真有数据的那些列）。
+    #: ★ 只收「类目级大盘才有的量纲」。**不**试图区分「这个产品的搜索量」这种
+    #:   同词不同对象的问法 —— 那不是本判定的职责（LLM 会判），而且误判的代价
+    #:   只是换个标签：`MARKET_INSIGHT_INTENT` **不在** `INTENT_SHORTCUTS` 里，
+    #:   两个入口都落到同一条工具路由（唯一可观察差异是流式多一句进度文案）。
+    _MARKET_INSIGHT_METRICS = (
+        "蓝海评分", "蓝海分", "蓝海得分",
+        "搜索量", "搜索热度", "搜索增长",
+        "价格带", "价格中位数", "价格趋势",
+        "卖家数", "新卖家数", "竞争度",
+    )
+
+    #: 右门：**排行 / 清点诉求**词。左边给量纲、右边给动作，缺一不可
+    #: （同 `_CANDIDATE_QUERY_*` 的与门形态与理由）。
+    _MARKET_INSIGHT_RANK = (
+        "最高", "最低", "最多", "最少", "最大", "最小", "最强",
+        "排名", "排行", "前几", "top",
+        "哪个", "哪些", "有没有", "是什么",
+        "多少", "几个", "几条",
+    )
+
+    def _is_market_insight_query(self, query: str) -> bool:
+        """是不是「读选品大盘」问句（**与门**：量纲词 AND 排行/清点诉求词）。
+
+        ★ 这条判定**不是**「识别大盘问句」（那是 LLM 的活），它只干一件事：
+          **不让关键词短路把大盘问句吞掉**。因此它可以写得很窄 —— 没被它拦下的
+          大盘问句落 `general` ⇒ **仍然**进工具路由 ⇒ LLM 照样能调
+          `query_market_insight`（第 325 轮新增）。
+          代价不对称因此成立：漏判 = 与现状相同；误判 = 也只是换个标签。
+        ★ 与 `_CANDIDATE_QUERY_*` 同款：这两组词**不进** `BARE_WORD_VERDICTS`
+          —— 它们不是「关键词路由」，而是**与门的一半**，单独一个词永不命中
+          （裸词处置表管的是「一个词就能把问句抢走」的那一类）。
+        """
+        q = (query or "").lower()
+        metric_hit = any(w in q for w in self._MARKET_INSIGHT_METRICS)
+        rank_hit = any(w in q for w in self._MARKET_INSIGHT_RANK)
+        return metric_hit and rank_hit
 
     # ====== 核心分析方法 ======
 
@@ -1778,7 +1898,11 @@ class ProductResearchAgent(BaseAgent):
             }
 
         # ② 用户在说别的事（含其他结构化意图）→ 放弃 pending，回到常规分类
-        if await self._classify_intent(q) != "general":
+        # ★★ 点名技能同样算「在说别的事」（第 246 轮）：不拦的话，用户点了卡
+        #   片之后恰好被追问过入库槽位时，这句话会被**当成槽位答案吃掉** ——
+        #   点名通道根本没机会跑。判定复用机制层唯一真源（自带短路 ⇒ 点名时
+        #   连分类都不必做）。
+        if is_skill_requested() or await self._classify_intent(q) != "general":
             session.pop("pending_save", None)
             return None
 
@@ -1834,10 +1958,18 @@ class ProductResearchAgent(BaseAgent):
         shop_id: Optional[str] = None,
     ) -> dict:
         """
-        真正写库：判重 + 批量。
+        真正写库：批量 + **把判重交给写入口**。
 
         与面板走**同一个写入口**（`candidates/service.create_candidate`），
-        所以字段默认值与前端按钮完全一致。
+        所以字段默认值与前端按钮完全一致 —— 判重也走同一个入口
+        （`on_duplicate="skip"`），本层**不再自己查一遍**。
+
+        ★ 第 216 轮：此前判重是**在本层手写**的（`candidate_exists` 先查、再
+          `create_candidate`），而自称「唯一写入口」的 `create_candidate` 内部
+          不判重、REST `POST /api/v1/candidates` 完全无判重
+          ⇒ 判重成了**孤儿**：只有对话这条路在判，前端手动录入那条路继续
+          累积重复行（实测库里 `B0CXXXX009` 三条）。这是「同一判定两份实现」
+          的反面 —— **一份实现挂错了地方**。现在收口在写入口。
 
         ★★★ `shop_id` 必须**显式传入**（P0 安全修复 2026-09-16，BOLA）
             修复前这里直读 `core.tenant.middleware.tenant_context.shop_id`
@@ -1854,7 +1986,7 @@ class ProductResearchAgent(BaseAgent):
           外键 → 500 且把 SQLAlchemy 报错与约束名吐给客户端（见 shop_id 空值
           守卫那段修复），而且归因文案会变成"数据库不可用"，误导排查方向。
         """
-        from modules.candidates import candidate_exists, create_candidate
+        from modules.candidates import create_candidate
 
         shop_id = (shop_id or "").strip() or None
         if shop_id is None:
@@ -1871,21 +2003,29 @@ class ProductResearchAgent(BaseAgent):
         failed: List[str] = []
         for p in targets:
             payload = self._candidate_payload_from_product(p)
-            # 判重：同一店铺下同 ASIN 已存在就不再写。否则反复说「加进选品库」
-            # 会累积多条同商品记录，评审时无法分辨哪条是最新评估。
+            # 判重**不在这一层做了**（第 216 轮收口进写入口）：
+            # `on_duplicate="skip"` ⇒ 同店同 ASIN 已存在则不插入、
+            # 返回值里 `deduped=True`，本层据此把它归到 skipped。
+            # 否则「Agent 判重、REST 不判重」= 同一判定一份实现挂在错地方。
+            #
+            # ★ 判重查询失败**不再吞掉**（改前那份 try/except 是静默退化）：
+            #   判重坏掉以后重复行会悄悄重新长出来，且没有任何可观测信号。
+            #   现在失败会被下面的 `except` 归到 `failed` —— 老板看得见。
             try:
-                if await candidate_exists(payload["asin"], shop_id):
-                    skipped.append(
-                        f"{(payload['title'] or '未命名')[:28]}（{payload['asin'] or '—'}）"
-                    )
-                    continue
-            except Exception as e:  # noqa: BLE001 —— 判重失败不阻断写入
-                logger.warning(f"[product_research] dedupe check failed for {payload['asin']}: {e}")
-            try:
-                saved.append(await create_candidate(payload, shop_id=shop_id))
+                created = await create_candidate(
+                    payload, shop_id=shop_id, on_duplicate="skip"
+                )
             except Exception as e:
                 logger.warning(f"[product_research] save_candidate failed for {payload['asin']}: {e}")
                 failed.append(payload["asin"] or "未知 ASIN")
+                continue
+            if created.get("deduped"):
+                # 已存在 ⇒ 回的是库里那条（不是本次 payload），只报「未重复写入」
+                skipped.append(
+                    f"{(payload['title'] or '未命名')[:28]}（{payload['asin'] or '—'}）"
+                )
+            else:
+                saved.append(created)
 
         if not saved and not skipped:
             return {
@@ -1938,7 +2078,10 @@ class ProductResearchAgent(BaseAgent):
           4. 纯指代（「这个品」「刚才那个」）→ 本会话上一次蓝海结果的 Top 1
         解析不到 / 必填凑不齐 → 追问，**绝不写半成品或空壳**。
 
-        另有**同店铺同 ASIN 判重**（在 `_write_candidates` 里）：已在库中则不重复写入。
+        另有**同店铺同 ASIN 判重**：已收口在**写入口**
+        `candidates/service.create_candidate`（`on_duplicate="skip"`）——
+        本层不再自己查一遍，否则「对话这条路判重、REST 那条不判重」
+        就是同一判定一份实现挂在错地方。已在库中则不重复写入。
         """
         last_products: List[dict] = self._last_products(context_id)
 
@@ -2079,7 +2222,11 @@ class ProductResearchAgent(BaseAgent):
                 return
 
         # 2. 关键词表命中结构化意图 → 直接执行
-        intent = await self._classify_intent(query)
+        # ★★ 点名技能 ⇒ **禁用关键词短路**（第 246 轮，与非流式**同一判据**）：
+        #   短路分支不构造 system prompt，技能正文一次都渲染不到。
+        #   ★ `general` 不命中 `_APPROVAL_GATED_INTENTS` / `INTENT_SHORTCUTS` /
+        #     `QUERY_CANDIDATES_INTENT` ⇒ 与「清点类」一样一路落到尾部工具路由。
+        intent = "general" if is_skill_requested() else await self._classify_intent(query)
         # ★★★ 第 131 轮：`save_candidate` **故意**从下面这个元组里拿掉 ——
         #   它是有副作用的写操作，必须经带 HITL 审批的工具路径执行。
         #   留在这里就等于「流式下说『入库』零审批直写」（旁路），
@@ -2091,7 +2238,15 @@ class ProductResearchAgent(BaseAgent):
             ):
                 yield chunk
             return
-        if intent in ("blue_ocean", "profit", "pain_points", "competitor"):
+        # ★ 这批意图**不短路**：一路落到函数尾部的工具路由（与 `general` 同一条
+        #   路），这里只补一句进度文案 —— 让老板知道「在读数」而不是「在挖矿」。
+        #   （改前「现在有多少选品了」被判成 blue_ocean，于是先报
+        #   「正在挖掘蓝海品类数据…」再直接开挖 —— 截图里那条；
+        #   第 325 轮的「现在哪个品类蓝海分最高」是同一条病 ⇒ 共用一份名单。）
+        if intent in PROGRESS_ONLY_INTENTS:
+            yield progress(_INTENT_PROGRESS.get(intent, "正在分析…"))
+        # ★ 与 `invoke` 共用 `INTENT_SHORTCUTS`（同一规则只允许一份表达）。
+        if intent in INTENT_SHORTCUTS:
             yield progress(_INTENT_PROGRESS.get(intent, "正在分析…"))
             result = await self._process_query(query, context_id, intent, shop_id)
             yield result.content
@@ -2119,60 +2274,15 @@ class ProductResearchAgent(BaseAgent):
             return
 
         # 3/4. 未命中关键词表 → 与非流式同一条 LLM 工具路由（内部已含闲聊兜底）
+        produced_text = False
         async for chunk in self._stream_via_tools(query, context_id, user_id):
+            if isinstance(chunk, str) and chunk.strip():
+                produced_text = True
             yield chunk
-
-    # ====== 工具函数（供 LLM 调用）======
-
-    async def _tool_search_blue_ocean(self, category: str) -> List[BlueOceanOpportunity]:
-        """工具：搜索蓝海品类（category 留空 = 全类目扫描）"""
-        scope = f"{category.strip()}类的" if (category or "").strip() else ""
-        result = await self._analyze_blue_ocean(f"帮我找{scope}蓝海机会")
-        return [BlueOceanOpportunity(**opp) for opp in result["opportunities"]]
-
-    async def _tool_analyze_profit(self, asin: str, cost_price: float = None) -> ProfitAnalysis:
-        """工具：分析 SKU 利润"""
-        query = f"分析 {asin} 的利润"
-        if cost_price:
-            query += f"，采购成本 ${cost_price}"
-        result = await self._analyze_profit(query)
-        return ProfitAnalysis(**result["analysis"])
-
-    async def _tool_extract_pain_points(self, asin: str) -> PainPointAnalysis:
-        """工具：提取产品痛点"""
-        result = await self._analyze_pain_points(f"分析 {asin} 的用户痛点")
-        return PainPointAnalysis(**result["analysis"])
-
-    async def _tool_compare_competitors(self, asins: List[str]) -> List[CompetitorAnalysis]:
-        """工具：对比竞品"""
-        result = await self._analyze_competitors(f"对比这些产品: {', '.join(asins)}")
-        return [CompetitorAnalysis(**c) for c in result["competitors"]]
-
-    async def _tool_get_keyword_data(self, keyword: str) -> KeywordData:
-        """工具：获取关键词数据"""
-        return await self.adapter.get_keyword_data(keyword)
-
-    async def _tool_search_products(self, query: str) -> List[ProductData]:
-        """工具：搜索产品"""
-        return await self.adapter.search_products(query)
-
-    async def _tool_save_candidate(self, asin: str, source_keyword: str = "") -> dict:
-        """
-        工具：把商品写入候选选品库。
-
-        只接受**明确的 ASIN**——LLM 无法可靠地指代「上一轮结果里的第几个」，
-        与其让它猜，不如强制它先拿到 ASIN（它可以先调 analyze_blue_ocean 取到）。
-        """
-        query = f"把 {asin} 加入选品库"
-        if source_keyword:
-            query += f"，来源机会词 {source_keyword}"
-        # 会话 ID 与店铺 ID 都从 ContextVar 取回（工具入参由 LLM 生成，塞不进去）。
-        # 两者都由 `_bind_context()` 在**入口处**用已校验的值写入。
-        return await self._save_candidate(
-            query,
-            context_id=_current_context_id.get(),
-            shop_id=_current_shop_id.get(),
-        )
+        # ★ 点名技能、但技能通道没产出任何正文 ⇒ 如实说（不让关键词表顶上）。
+        #   ★ 未点名时这一句不生效 ⇒ 上面那圈只是多记一个布尔，行为不变。
+        if is_skill_requested() and not produced_text:
+            yield SKILL_CHANNEL_UNAVAILABLE
 
     # ====== 内部辅助方法 ======
 
@@ -2316,9 +2426,23 @@ class ProductResearchAgent(BaseAgent):
 
     @staticmethod
     def _extract_multiple_asins(query: str) -> List[str]:
-        """提取多个 ASIN"""
+        """提取多个 ASIN（**去重**，保持首次出现顺序）。
+
+        ★ 去重不是性能优化，是**语义修正**：「多个 ASIN」指的是多个**不同**的商品。
+          Amazon 商品链接里同一个 ASIN 常出现 3 次（`/dp/<ASIN>`、`pd_rd_i=<ASIN>`、
+          `ref_=..._<ASIN>`），不去重则「把这个链接加进选品库」会被判成
+          「给了 3 个 ASIN 要对比」（`>=2 => competitor`，实测确定性复现）。
+        ★ 收口在**唯一真源**这里：4 个消费点（意图判定 / 竞品对比 / 待补槽位 /
+          入库目标解析）同时受益 —— 只修 `_classify_intent` 会让其余三处继续按
+          重复计数，属于「同一判定两份实现」。
+        """
         import re
-        return [a.upper() for a in re.findall(_ASIN_RE, query)]
+        out: List[str] = []
+        for a in re.findall(_ASIN_RE, query):
+            up = a.upper()
+            if up not in out:
+                out.append(up)
+        return out
 
     # 中文数字（用于解析「第一个 / 第 2 个」这类序数指代）
     _CN_NUM = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
@@ -2392,6 +2516,11 @@ class ProductResearchAgent(BaseAgent):
 
         `intent` 由调用方传入时跳过重复分类 —— `invoke`/`stream_chat` 已经判过一次，
         再判一次纯属浪费；而且两条路径必须落在**同一个** intent 上。
+
+        ★ `query_candidates`（候选存量清点）**不进**这张表：清点是一个读库问题，
+          由工具路由交给 LLM 调 `list_candidates` 作答。这里加一个 query 分支
+          等于把「怎么答」也钉死在关键词层（本轮 bug 的病根正是「答法被钉死」）。
+          真被传进来时它落到 `else` 的闲聊分支 —— 属于调用方错误，非正常路径。
         """
         if intent is None:
             intent = await self._classify_intent(query)

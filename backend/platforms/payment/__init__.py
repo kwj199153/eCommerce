@@ -16,8 +16,12 @@
 """
 
 from platforms.payment.gateway import (
+    PENDING_PAYMENT_TTL_MINUTES,
+    SETTLEMENT_ASYNC,
+    SETTLEMENT_IMMEDIATE,
     ChargeIntent,
     ChargeResult,
+    GatewayConfigError,
     InvoiceDraft,
     MockGateway,
     PaymentGateway,
@@ -32,5 +36,16 @@ __all__ = [
     "ChargeIntent",
     "ChargeResult",
     "InvoiceDraft",
+    "GatewayConfigError",
+    "SETTLEMENT_ASYNC",
+    "SETTLEMENT_IMMEDIATE",
+    "PENDING_PAYMENT_TTL_MINUTES",
     "get_gateway",
 ]
+
+# ★ `AlipayGateway` / `AlipaySignatureError` **刻意不在这里导出**：
+#   它们住在 `platforms/payment/alipay.py`，且该模块 import 本包的 gateway 模块。
+#   在这里顶层再 import 一次，等于把那条懒加载打开的环重新接上
+#   （见 gateway.py::_load_alipay_gateway 的论证）。
+#   需要它们的调用方请直接 `from platforms.payment.alipay import ...`，
+#   那条路径本身就会先执行本文件、再加载 alipay，顺序是确定的。

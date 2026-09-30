@@ -55,7 +55,3 @@ class ShopifyAdapter(PlatformAdapter):
     async def get_reviews(self, product_id: str, page: int = 1, rating_filter: Optional[int] = None) -> List[ReviewData]:
         # Shopify 使用第三方评论应用（如 YotPo、Judge.me）
         raise NotImplementedError("Shopify 适配器尚未实现，请在 Phase 5+ 开发")
-
-    async def get_bsr_rank(self, product_id: str) -> Optional[int]:
-        # 独立站无 BSR 概念
-        return None
