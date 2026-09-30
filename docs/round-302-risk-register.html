@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>风险识别的「语域错配」修正式（第 302 / 303 轮 · 已落地）</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2328; --ink2: #57606a;
+    --line: #d8dee4; --accent: #0b6bcb; --good: #1a7f37; --warn: #9a6700; --bad: #b42318;
+    --chip: #eef2f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d; --card: #1f2229; --ink: #e6e8eb; --ink2: #9aa4b2;
+      --line: #333a45; --accent: #6cb2ff; --good: #57d38c; --warn: #e0b341; --bad: #ff7b72;
+      --chip: #262b33;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 20px 60px; background: var(--bg); color: var(--ink);
+    font: 15px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 6px; letter-spacing: .2px; }
+  .sub { color: var(--ink2); font-size: 13.5px; margin-bottom: 22px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px; margin: 0 0 18px;
+  }
+  h2 { font-size: 16px; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 14px; margin: 16px 0 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--chip); font-weight: 600; white-space: nowrap; }
+  code { background: var(--chip); padding: 1px 5px; border-radius: 4px; font-size: 12.5px;
+         font-family: ui-monospace, Consolas, monospace; }
+  pre { background: var(--chip); border-radius: 8px; padding: 12px 14px; overflow-x: auto;
+        font: 12.5px/1.6 ui-monospace, Consolas, monospace; margin: 8px 0 0; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .g { color: var(--good); font-weight: 600; }
+  .w { color: var(--warn); font-weight: 600; }
+  .b { color: var(--bad); font-weight: 600; }
+  .rec { border-left: 4px solid var(--good); }
+  .q { border-left: 4px solid var(--accent); }
+  .note { border-left: 4px solid var(--warn); }
+  ul { margin: 6px 0 0; padding-left: 20px; }
+  li { margin: 3px 0; }
+  .foot { color: var(--ink2); font-size: 12.5px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>风险识别的「语域错配」—— 修正式</h1>
+  <div class="sub">
+    第 302 轮提出问题 · 第 303 轮执行 <b>B（含 A）</b> ·
+    状态：<b class="g">已落地并实测</b>（C 档拆分会话功能不动）
+  </div>
+
+  <div class="card rec">
+    <h2>一句话结论</h2>
+    <p style="margin:0 0 8px">
+      旧的 <b>P/R/F1 = 1.00 是自证</b>：正类是对话语域、负类是评论语域，模型只要学会
+      「看见对卖家喊话就判风险」就能满分。换成真评论语域后立刻跌到
+      <b class="w">F1 = 0.985</b> —— 这个跌幅本身就是证据。
+    </p>
+    <p style="margin:0" class="foot">
+      ⚠️ 新旧两列数字<b>不能比大小</b>：样本整套重写了，分母从（正 12 / 负 8）变成（正 33 / 负 39）。
+    </p>
+  </div>
+
+  <div class="card q">
+    <h2>老板的原话</h2>
+    <pre>现在发现一个问题，目前我们做的是差评台账和处理，但是我看了目前的风险识别和
+具体的内容（内容好像是买家的对话内容并非评论），风险识别更像是在买家和卖家
+对话过程中的风险：威胁索赔投诉？
+
+B（含 A）</pre>
+  </div>
+
+  <div class="card">
+    <h2>一、诊断：比「像」还要硬</h2>
+    <table>
+      <thead><tr><th></th><th>正类（r1~r4）</th><th>负类（r5 / none）</th></tr></thead>
+      <tbody>
+        <tr>
+          <th>旧样本语域</th>
+          <td><b>对话体</b>：第二人称祈使，在对卖家喊话<br><code>Either you replace the unit this week or…</code></td>
+          <td><b>评论体</b>：第三人称体验陈述<br><code>the blue is much darker than the listing image</code></td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="margin:10px 0 0">
+      「第二人称 / 祈使句」这两个<b>形式特征</b>把正负类完美分开 ⇒ 评测失去意义，且连带三处损伤：
+    </p>
+    <ul>
+      <li><b>r1 定义自相矛盾</b>：原定义「以<b>公开差评</b>为筹码要挟卖家」—— 这条文本<b>本身就是</b>那条已发出的差评，谈不上「威胁要发」。</li>
+      <li><b>评测自证</b>（满分不代表能力）。</li>
+      <li><b>业务动作对不上</b>：差评台账的动作是归因 → 回复 → 结案；这套话术描述的其实是<b>会话处置</b>。</li>
+    </ul>
+    <p style="margin:10px 0 0" class="foot">
+      数据源反查也已做：本仓<b>不存在</b>买家↔卖家私信数据（<code>conversations</code> 是店秘书↔卖家、
+      <code>cs_tickets</code> 0 行、SP-API 数据源无 Buyer-Seller Messaging）⇒ C 档即使想做也无处取数。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>二、落地清单</h2>
+    <table>
+      <thead><tr><th>子任务</th><th>改动</th><th>文件</th></tr></thead>
+      <tbody>
+        <tr>
+          <th>A + #1102</th>
+          <td>r1~r5 分类学改写为评论语域可判形态；<b>两套提示词（单条 / 批量）同步改</b></td>
+          <td><code>backend/modules/trade/prompts.py</code></td>
+        </tr>
+        <tr>
+          <th>#1103</th>
+          <td>演示集 12 正 / 7 负、评测集 48+24=<b>72 条</b>（正 33 / 负 39）全部重写为评论语域，每条显式声明 <code>register</code></td>
+          <td><code>demo_script.py</code><br><code>scripts/data/r299_risk_eval_{set,holdout}.json</code></td>
+        </tr>
+        <tr>
+          <th>#1104</th>
+          <td>语域一致性门禁 <b>9 条</b> + 反向注入 <b class="g">5/5</b></td>
+          <td><code>backend/tests/test_trade_risk_register.py</code></td>
+        </tr>
+        <tr>
+          <th>#1105</th>
+          <td>前端文案正名（不再写死类别中文名）+ 门禁 <b>R19/R20</b></td>
+          <td><code>ReviewDeskConfig.vue</code><br><code>frontend/scripts/check-review-risk-view.cjs</code>（20/20）</td>
+        </tr>
+        <tr>
+          <th>#1106</th>
+          <td>重跑同一口径评测（m11~m14）</td>
+          <td>读数见下</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>r1 的新定义（删掉的正是那半句）</h3>
+    <pre>r1 加码要挟：以<b>进一步升级</b>为筹码要卖家给说法 —— 追加证据 / 修改并顶起这条差评
+/ 社交扩散 / 号召他人别买 / 法律途径。
+★ 这条差评本身已经公开发布，<b>它自己不是筹码</b>；算筹码的是<b>尚未发生的升级动作</b>。</pre>
+    <p style="margin:8px 0 0" class="foot">
+      配套在两套提示词里加了「旁白」提示：评价是写给别人看的第三人称陈述，其中的施压常以
+      旁白出现（<code>卖家一直不答复，再拖下去我只能申请平台介入退款</code>），
+      <b>不得</b>因为它不是第二人称、没有 @ 卖家就判无风险。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>三、实测读数（同一脚本 <code>probe_r300_semantic_recall.py</code>）</h2>
+    <table>
+      <thead>
+        <tr><th>读数</th><th>旧样本（对话语域）</th><th>新样本（评论语域，72 条）</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>m11 只用规则通道</th>
+          <td class="num">P 1.000 / R 0.636 / F1 0.778</td>
+          <td class="num">P 1.000 / R <b>0.939</b> / F1 0.969</td>
+        </tr>
+        <tr>
+          <th>m12 分层（规则 + 批量语义）</th>
+          <td class="num b">1.00 / 1.00 / 1.00（自证）</td>
+          <td class="num">0.971 / 1.000 / <b class="w">0.985</b></td>
+        </tr>
+        <tr>
+          <th>m13 规则未命中子集上的批量语义</th>
+          <td class="num">1.00 / 1.00 / 1.00</td>
+          <td class="num">0.667 / 1.000 / 0.800</td>
+        </tr>
+        <tr>
+          <th>m14 逐条对照（同子集）</th>
+          <td class="num">87.8 s</td>
+          <td class="num">66.0 s（批量 2.91 s ⇒ <b>22.6×</b>）</td>
+        </tr>
+      </tbody>
+    </table>
+    <ul>
+      <li>m12 的 1 个误报（P23）在逐条通道判 <code>clean</code> ⇒ 是<b>批量通道的偏差</b>，不是语义口径错。</li>
+      <li>批量 vs 逐条 decision 不一致 11/41 条，<b>全部</b>是 <code>unknown → clean</code> 的单向差异
+        （提示词形态效应，已记在 docstring，<b>不钉门禁</b>：依赖模型行为，离线钉不住）。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>四、门禁（都过了反向注入）</h2>
+    <h3>后端 <code>test_trade_risk_register.py</code>（9 条）</h3>
+    <table>
+      <thead><tr><th>判据</th><th>钉住什么</th></tr></thead>
+      <tbody>
+        <tr><th>每条样本必须 <code>register == "review"</code></th>
+            <td>默认 = 语域这件事没人负责，第 302 轮正是这么混进来的</td></tr>
+        <tr><th>两套提示词语域段在位 + 不含已判废旧措辞</th>
+            <td>自相矛盾的定义（<code>威胁差评</code> / <code>以公开差评为筹码</code>）不许复活</td></tr>
+        <tr><th>两套提示词语域段 / r1~r5 分类学<b>逐字同步</b></th>
+            <td>只改一边 = 两条通道给出不同答案且没人报错</td></tr>
+        <tr><th>会话体代理<b>不可分离</b>；占比差 ≤ 35pp（实测最大 25pp）</th>
+            <td>形式特征不得自带标签</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:10px 0 0">
+      反向注入 <b class="g">5/5</b> 命中预期用例：把正类全部改回对话体 / 删语域声明 /
+      复活旧 r1 / 删语域段 / 只改一边分类学。
+    </p>
+
+    <h3>前端 <code>check-review-risk-view.cjs</code>（20/20）</h3>
+    <p style="margin:0">
+      新增 <b>R19</b>：面板文案不得写死类别中文名 —— 词表从后端
+      <code>risk_scan.CATEGORY_LABELS</code> <b>读</b>，不在门禁里抄第三份
+      （抄一份 = 第三个同名实现）。<b>R20</b> 反向自检。
+      注入「把四个名字写回面板说明」实测 R19 转红。
+    </p>
+  </div>
+
+  <div class="card note">
+    <h2>五、遗留如实写</h2>
+    <ul>
+      <li><b>C 档（拆分会话风险）没做</b>，也不该现在做：数据源不存在，做了就是空壳。</li>
+      <li>本轮所有文件改动<b>尚未提交</b>（<code>git status</code> 有改动）。</li>
+      <li>记忆热区余量剩 <b class="w">57 B</b>（该结算了）；<code>_pending/</code> 20 份积压未动。</li>
+    </ul>
+  </div>
+
+  <div class="sub">生成：docs/round-302-risk-register.md 的同源 HTML · 第 303 轮</div>
+</div>
+</body>
+</html>

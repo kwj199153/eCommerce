@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>风险识别耗时 · 分层方案（第 300 轮 · 已落地）</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2328; --ink2: #57606a;
+    --line: #d8dee4; --accent: #0b6bcb; --good: #1a7f37; --warn: #9a6700; --bad: #b42318;
+    --chip: #eef2f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d; --card: #1f2229; --ink: #e6e8eb; --ink2: #9aa4b2;
+      --line: #333a45; --accent: #6cb2ff; --good: #57d38c; --warn: #e0b341; --bad: #ff7b72;
+      --chip: #262b33;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 20px 60px; background: var(--bg); color: var(--ink);
+    font: 15px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 6px; letter-spacing: .2px; }
+  .sub { color: var(--ink2); font-size: 13.5px; margin-bottom: 22px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px; margin: 0 0 18px;
+  }
+  h2 { font-size: 16px; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 14px; margin: 16px 0 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--chip); font-weight: 600; white-space: nowrap; }
+  code { background: var(--chip); padding: 1px 5px; border-radius: 4px; font-size: 12.5px;
+         font-family: ui-monospace, Consolas, monospace; }
+  pre { background: var(--chip); border-radius: 8px; padding: 12px 14px; overflow-x: auto;
+        font: 12.5px/1.6 ui-monospace, Consolas, monospace; margin: 8px 0 0; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .big { font-size: 17px; font-weight: 700; }
+  .g { color: var(--good); font-weight: 600; }
+  .w { color: var(--warn); font-weight: 600; }
+  .b { color: var(--bad); font-weight: 600; }
+  .rec { border-left: 4px solid var(--good); }
+  .q { border-left: 4px solid var(--accent); }
+  .note { border-left: 4px solid var(--warn); }
+  ul { margin: 6px 0 0; padding-left: 20px; }
+  li { margin: 3px 0; }
+  .tag { display: inline-block; background: var(--chip); border-radius: 999px;
+         padding: 1px 9px; font-size: 12px; color: var(--ink2); margin-left: 6px; }
+  .foot { color: var(--ink2); font-size: 12.5px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>风险识别耗时 —— 分层方案</h1>
+  <div class="sub">
+    第 300 轮 · 回应「仅 20 条评论就要风险识别非常久，不符合实际」 ·
+    状态：<b class="g">A + C + D 已落地并实测</b>（B 后台异步本轮不做）
+  </div>
+
+  <div class="card rec">
+    <h2>一句话结论</h2>
+    <p style="margin:0 0 8px">
+      慢的不是「条数」，是 <b>逐条串行调用模型</b>、且每次都让模型<b>把理由写出来</b>。
+      落地三件事之后：<b>默认浅层（2.9 ms）</b>，按需深扫
+      <b class="g">19 条 1.18 s（对照真机 43.4 s ⇒ 36.7×）</b>，
+      判定质量 <b>P/R/F1 = 1.00</b>。
+    </p>
+    <table>
+      <thead><tr><th>档</th><th>20 条耗时</th><th>模型成本</th></tr></thead>
+      <tbody>
+        <tr><td>浅层（规则，<b>默认</b>）</td><td class="num big g">2.9 ms</td><td>0</td></tr>
+        <tr><td>深层（分层 + 批量）<b>实测</b></td><td class="num big g">1.18 ~ 1.44 s</td><td>1 次/包（最多 2 包）</td></tr>
+        <tr><td>第 299 轮现状（逐条串行）</td><td class="num big b">43.4 s</td><td>20 次</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card q">
+    <h2>一、老板那一问的判决：选 D 会重犯旧错吗？</h2>
+    <p style="margin:0 0 8px">
+      问：「选 D 的话会犯你之前说的以前犯过的错吗？」<br />
+      答：<b class="b">宽泛版会，收紧版不会。</b>
+      判决探针 <code>decide_d_safety.py</code>（7 样本 × 4 种 LLM 出口 = 28 格）：
+    </p>
+<pre>D-宽泛（rule.categories 非空即跳过）  改变 decision：3 格
+  T_EMOTION llm=unknown    unknown -> clean
+  T_EMOTION llm=hit_r3     risk    -> clean   ← 漏报
+  T_EMOTION llm=hit_r3r4   risk    -> clean   ← 漏报
+D-收紧（rule.risk_categories 非空才跳过）  改变 decision：0 格</pre>
+    <p style="margin:8px 0 0">
+      <b>机制级理由</b>：<code>fuse()</code> 在命中四类时<b>提前 return</b>、压根不读 LLM 的
+      decision ⇒ 四类命中时「不送语义」是<b>无操作</b>；而<b>只命中 r5（高情绪）</b>时规则判
+      <code>CLEAN</code>、<code>fuse()</code> <b>要</b>读 LLM 的结论 ⇒ 把它也短路掉就是
+      <b>让下游通道零参与</b>，与第 246 轮「关键词短路抢在技能注入之前 <code>return</code>」同构。
+    </p>
+    <p style="margin:8px 0 0">
+      ⇒ <b>硬约束</b>：短路条件必须是 <code>rule.risk_categories</code>，不许写成
+      <code>rule.categories</code>。已用 AST 门禁 + 反向注入双重钉死。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>二、分层三步（<code>service.scan_reviews_risk</code> 的 deep 分支）</h2>
+<pre>① 规则通道 <b>全量</b>先跑（0.15 ms/条）→ 它同时决定「谁不用送语义」
+② rule.risk_categories 非空 ⇒ <b>不再送语义</b>（D）
+③ 其余条目 <b>打包成一次批量语义调用</b>（C），按序号回填</pre>
+    <p style="margin:10px 0 0">
+      <b>批量协议</b>（压缩输出的三态<b>必须齐</b>）：
+    </p>
+<pre>输入： [{"n": 1, "text": "..."}]            ← 用<b>序号</b>不用 review id（模型复述长 id 会错）
+输出： {"1": "", "2": "?", "3": "r2:high|原文逐字片段"}
+
+  ""  ⇒ clean     （模型明确判无风险）
+  "?" ⇒ unknown   （模型拿不准 —— 与 clean <b>方向相反</b>，不可合并）
+  "cat:level|证据" ⇒ 命中；证据必须能回到原文</pre>
+    <ul>
+      <li><b>缺项 / 解析失败 / 调用异常 ⇒ 一律 <code>unknown</code></b>（fail-closed），绝不猜 <code>clean</code>。</li>
+      <li><code>max_tokens</code> <b>逐次</b>随条数放大 —— <code>get_llm()</code> 按模型名缓存单例，建实例后再传参数无效（会静默截断）。</li>
+      <li>拆包上限 10（换<b>失败半径</b>，不为省钱），多包<b>并发</b>发。</li>
+      <li>兼容模型常见的 4 种返回形态 —— 只认一种会把「格式不合我意」记成「模型判不出来」。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>三、质量实测（72 条评测集，非演示集）</h2>
+    <p style="margin:0 0 8px">
+      演示集（19 条）的 12 条正类<b>全被规则命中</b> ⇒ 走分层后它们不进语义通道，
+      「端到端 1.00」只由规则背书。<b>只有</b> <code>r299_risk_eval_set.json</code> +
+      <code>holdout</code>（含 12 条「只有语义能救」的正类）才检验得到语义通道。
+    </p>
+    <table>
+      <thead><tr><th>量</th><th>P / R / F1</th><th>耗时</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>只用规则通道</td>
+          <td class="num w">1.00 / 0.636 / 0.778</td><td class="num">~3 ms</td>
+          <td><b>漏 12 条</b>（无字面证据的绕弯表达）</td>
+        </tr>
+        <tr>
+          <td><b>分层（规则 + 批量语义）</b></td>
+          <td class="num big g">1.00 / 1.00 / 1.00</td><td class="num">6.1 s</td>
+          <td>51 条未命中送语义，6 包</td>
+        </tr>
+        <tr>
+          <td>规则未命中子集（51 条）上的批量语义</td>
+          <td class="num big g">1.00 / 1.00 / 1.00</td><td class="num">—</td>
+          <td>12/12 正类全抓到、<b>0 误报</b></td>
+        </tr>
+        <tr>
+          <td>同一子集用<b>逐条</b>参照实现</td>
+          <td class="num g">1.00 / 1.00 / 1.00</td><td class="num b">87.8 s</td>
+          <td>⇒ 批量 <b>14.8×</b> 且质量不降</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card note">
+    <h2>四、已知口径差异（如实记在案）</h2>
+    <h3>4.1 批量版用 <code>clean</code> 的地方，逐条版常给 <code>unknown</code></h3>
+    <p style="margin:0">
+      51 条送语义的样本里 <b>14 条 decision 不一致</b>，全是
+      <code>逐条=unknown → 批量=clean</code>，<b>没有一条是「批量漏掉 risk」</b>；两轮稳定复现。
+      例（gold 全为 <code>none</code>，批量判 clean 是<b>正确</b>方向）：
+      <code>Colour is darker than the photos ... Not a deal breaker</code>、
+      <code>Seal gave up after a month ... everything else still works</code>。
+    </p>
+    <p style="margin:6px 0 0">
+      ⇒ <b>影响</b>：界面上的「未定论 N」会<b>变小</b>。这是<b>提示词形态效应</b>（逐条版更容易说
+      「拿不准」），不是判定能力变化。好处是人工复核队列变短；代价是
+      <b>「未定论」这个数字不能跨版本比较</b>。已写进 <code>scan_llm_batch</code> 的 docstring ——
+      它依赖模型行为，离线门禁钉不住，只能靠读数留痕。
+    </p>
+    <h3>4.2 复测中发现的两条误报 → 两条提示词同补陷阱规则</h3>
+    <p style="margin:0">
+      批量版在 <code>You have to escalate this to tier 2 support</code>（给别人的建议）与
+      <code>I filed a warranty claim ... they sent a new lid</code>（已解决的过去时叙述）上误报。
+      两条提示词<b>同时</b>补上这两条反例（只补一边 = 同一判定两份口径）后：
+    </p>
+    <table style="margin-top:8px">
+      <thead><tr><th>未命中子集</th><th>补之前</th><th>补之后</th></tr></thead>
+      <tbody>
+        <tr><td>P / R / F1（误报数）</td>
+            <td class="num w">0.857 / 1.00 / 0.923（2）</td>
+            <td class="num big g">1.00 / 1.00 / 1.00（0）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>五、为什么不选 B（后台异步）</h2>
+    <p style="margin:0">
+      B 不降总耗时、只改观感，但需要任务态存储 + 轮询。分层之后总耗时已降到约 1.2 s ——
+      <b>等 1 秒</b>不值得引入一套任务状态机。保留为「条数上调到几百条时」的候选。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>六、门禁与反向注入（每条守卫都证明过「能转红」）</h2>
+    <table>
+      <thead><tr><th>侧</th><th>注入条数</th><th>结果</th><th>覆盖的关键不变量</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>后端</td><td class="num">11</td><td class="num g"><b>11/11 通过</b></td>
+          <td>D 短路条件 / 三态不压两态 / 缺项 fail-closed / 不得逐条调语义 / 默认浅层 /
+              拆包顺序 / 分层读数 / 证据落地 / 包数唯一实现 / 等级兜底表 / 唯一语义入口</td>
+        </tr>
+        <tr>
+          <td>前端</td><td class="num">4</td><td class="num g"><b>4/4 通过</b></td>
+          <td>R16 读数必须被消费 / R17 调用点必须显式传 <code>deep</code> /
+              R12 超时按「真实全局值 ×3」判</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="foot">
+      脚本：<code>.workbuddy/probes/r300_risk_layers/inject_r300_layers.py</code> ·
+      <code>inject_r300_frontend.py</code>
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>七、遗留项</h2>
+    <ul>
+      <li>真实数据上的「规则未命中占比」p：评测集上 51/72 ≈ 71%。p 越大，越接近批量全量的 6.1 s。</li>
+      <li><code>RISK_SCAN_BATCH_CHUNK = 10</code> 是拍的（失败半径 vs 固定开销的折中）；deep 上限 20 ⇒ 最多 2 包。</li>
+      <li>「该不该默认深扫」在变便宜之后可以重新讨论 —— 但本轮<b>不改</b>：A 档口径已用门禁钉住。</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

@@ -152,10 +152,45 @@
 |---|---|---|
 | A1 挂工具 | `ad_analysis` / `aigc_media` / `competitor_intel` / `customer_service` / `review_analyst` 的 agent | 照 `product_research._build_router()` 范式加工具路由子层（绑 checkpointer + `checkpoint_ns`） |
 | A2 切伪数据 | 各 `service.py` | 改为读真实数据源（`platforms/*/client.py`）；拿不到 ⇒ **空状态 + 显式原因**，删掉 `_generate_*` |
-| A3 补模块 | `modules/review_analyst/` | 补 `agent.py` + `router.py` + `prompts.py`（现在只有 service/tools/schemas） |
-| A4 门禁改正 | `scripts/check-tool-reality.cjs` | 把「真调用」判据从「发了请求」升级为「**返回非 mock 标记**」，并加一条 `random` 出现在生产 agent 里即失败的门禁 |
+| A3 补模块 | `modules/review_analyst/` | ✅ **第 166 轮（#726 第 2 条）完成**：`router.py`（A4 已补）+ `agent.py` + `prompts.py` 三件齐。★ 补的过程发现缺口比文档写的更大：它此前还是**全仓唯一没有 chat 端点**的业务模块（7/8 有），且 6 个工具全仓零装配 |
+| A4 门禁改正 | `scripts/check-tool-reality.cjs` ＋ `backend/tests/test_no_random_in_production.py` | ① 把「真调用」判据从「发了请求」升级为「**返回非 mock 标记**」→ ✅ **第 166 轮完成**（`check-tool-reality.cjs` 新增断言 D：**真跑**执行器 + 喂空响应，必须「显式失败」；详见下方「口径修正 · ②」）；② `random` 出现在生产 agent 里即失败 → ✅ **已落地**（第 165 轮新建 AST 棘轮门禁） |
 
 **验收**：每个 Agent 能对同一句话产出一条可追溯到数据源的结果；`random.*` 在生产 agent 中计数 = 0。
+
+★ **口径修正（第 166 轮）**：上面那个「= 0」是**终点**，不是门禁判据。若直接把「计数必须为 0」
+写成门禁，存量（建门禁时现测 **40 处 / 4 文件**）会让它一上线就红 —— 结果只能被 skip，等于没有门禁。
+
+实际落地为**棘轮**：`backend/tests/test_no_random_in_production.py` 让计数**只减不增**，并配三件套：
+白名单（上限 2 项、按 `(文件, 函数)` 精确匹配、每项必须写明理由）、逐文件基线快照、
+冻结上限表（防「CI 红了就顺手把基线调大」）。进度：**40 处 / 4 文件 → 25 处 / 2 文件 → 目标 0**。
+逐项归属与处置方式见任务 #723。
+
+★ **口径修正 ②（第 166 轮 · #732）**：「返回非 mock 标记」这句话本身还不够 —— 真正要防的是
+**fail-closed 端点照样返回 200**。后端的订单查询 / 合规检查 / 广告诊断在拿不到真数据时已改成
+「明确说查不到」（第 164~165 轮 #727/#728），但 **HTTP 状态码仍是 200** ⇒
+旧判据「发了请求就算真」判不出差异：**「诚实地报告查不到」与「真链路可用」在它眼里长得一模一样**。
+
+落地形态**不是再加一条静态断言**，而是**真跑**：`check-tool-reality.cjs` 用 devDependency
+`typescript` 的 `ts.transpileModule` + `vm` 沙箱（**零新依赖**）加载执行器，把 `@/api/*`
+一律桩成「HTTP 200 + 空信封」，断言必须**抛可执行的错**，或返回**带显式失败信号**的对象
+（`success:false` / `found:false` / `degraded:true` / `error` 非空）。
+
+实测抓出 **4 个静默空壳**并已修：
+
+| 执行器 | 空响应下的旧行为 | 危害 |
+|---|---|---|
+| `executeAdDiagnosis` | 返回 `{type, params}`，无任何失败信号 | 结果卡渲染成「诊断完成、无任何指标」 |
+| `executeBulletGen` | 返回 `{bullets:[], total_characters:0}` | 渲染成「五点描述：0 条」 |
+| `executeSEOAudit` | 返回全 0（`overall_score: 0` + 空 checklist） | 与「真的考了 0 分」不可区分（**全 0 兜底**） |
+| `executeStaticAssetGen` | `degraded:true`，但原因写成「**任务仍在后台执行（已等待约 4 分钟）**」 | **归因错方向**：没有任务号 = 提交就没成功，用户会去「我的任务」里找一个不存在的编号 |
+
+★ 判据 D-2 的设计教训：首版用**关键词匹配**（文案里含「后台/稍后/任务编号」即视为「声称有任务」），
+结果被自己的修复文案误伤 —— 新文案写着「（后端**未返回**任务编号）」。
+**文案会说反话**，判定必须只看**结构化字段**（出现 `pending_job_id` / `job_status` 才算声明有任务在挂）。
+
+配套三条元判据（防判据自己腐烂）：**正向对照**（合成的静默空壳必须被判红）、
+**清单对账**（`LIVE_CASES` 与 `MUST_BE_REAL` 一一对应，防新钉死者漏判）、
+**依赖缺失不得静默跳过**。反向注入 **8/8 全 HIT**（`target_hit=8 / miss=0`，还原 zero drift）。
 
 ### 批 B · HITL 从「一处接线」到「策略化」
 
@@ -332,5 +367,49 @@ v2 已修，并把判据加深到**全链路 3 跳**（工具 → service/agent 
 | A3 | **注册真能力**：把 `aigc_media` 的 `generate_assets_service`（真出图）注册成工具；改掉 `generate_product_image` 的误导性 desc | A.2 |
 | A4 | **补缺件**：`review_analyst` 补 `router.py`（前端 6 张卡在等）；`customer_service` 的 `create_ticket` 落库 | A.2 |
 
+#### A.5.1 丢弃项的承接安排
+
+A.4 查出的「多余」**不进批 A 的挂载清单**，但必须有承接人 ——
+否则「先不挂」会静默变成「永远不处理」，而这类静默遗漏正是本文档第 2.1 节骂过的病。
+
+| # | 丢弃项 | 为什么不进批 A 挂载清单 | 承接安排 | 状态（第 166 轮核实） |
+|---|---|---|---|---|
+| 1 | `compare_competitors` 在 `competitor_intel_tools` 与 `product_research_tools` 下**重名** | 同名工具挂到同一 Agent 会冲突，「32 个无脑全挂」不可行 | 先去重（合并或改名），再决定归属 | ✅ **已消除**：现全仓仅存 `competitor_intel/tools.py:252` 一处（任务 #687） |
+| 2 | `diagnose_ad_account` / `detect_ad_anomalies` ↔ `review_analyst.ad_review` **语义重叠** | 同读广告数据；两个入口并存会让 LLM 路由摇摆 | 语义合并评审，保留一个权威入口 | ⏳ **评审后保留**：两者读的粒度不同（账户级 vs 复盘级），代码上都在；真实缺口是**都没接数据源**，由 A2 承接 |
+| 3 | `analyze_ad_competitors` ↔ `competitor_intel` 全家**语义重叠** | 同上 | 保留 `competitor_intel` 侧作为权威入口 | ⏳ 同上，由 A2 承接 |
+| 4 | `optimize_bids` / `optimize_budget` / `analyze_search_terms`（`ad_analysis` **真正独有**的 3 个） | **不丢弃** —— 它们是 `ad_analysis` 的唯一净增量 | A2 接数据源后保留 | ⏳ 由 A2「接数据源」承接（任务 #723） |
+
 **结论一句话**：32 个工具**没有一个是空的、也没有一个是「无用」的**（每个都有 docstring、参数说明、测试引用）；
 真正的问题是**它们背后的数据管道只被 1/7 的模块接上**——而那条管道（真 SP-API 客户端 + 可切换工厂 + 8 张落库表）**早已建好**。
+
+---
+
+## ★ 口径修正 ③（第 166 轮 · #726 第 2 条）：review_analyst 补件
+
+### 为什么「补 3 个文件」这件事值得单列一节
+
+§五 A3 原来只写「补 `agent.py` + `router.py` + `prompts.py`」，看起来像补作业。
+实测后发现缺口比文档写的大三档：
+
+| 维度 | 实测 | 结论 |
+|---|---|---|
+| `prompts.py` | 8 个业务模块里 **7 个有**，只 `review_analyst` 没有 | 它没有任何地方承载「这个 Agent 该怎么说话」 |
+| agent 模块 | 同上，7/8 | 6 个工具**零装配**（悬空），handoff 目标背后空着 |
+| chat 端点 | **7/8 有**，只它没有 | 前端只能靠 `mock/reviewDashboard` 的 mock 分支兜着 |
+
+三档叠起来才是真问题：**前端在等、工具在悬空、店秘书的 handoff 目标空着**。
+★ 第 167 轮（#725）现状更新：上表第三行（chat 端点 7/8）**已补齐** —— `POST /review/chat` 已上线，且前端那条 mock 分支已换成真调用、`mock/reviewDashboard.ts` 已删除（由 `check-mock-retirement.cjs` 钉住）。上表保留为 #726 开题时的实测记录。
+
+### 补件时做掉的两件「不做就白补」的事
+
+1. **`store_id` 从「LLM 可见入参」改成「服务端 ContextVar 注入」**。
+   原形态 `store_id: str` 是必填形参 —— 那是「客户端可控」的同一个坑，
+   只是换成 LLM 来填（它编出来的值可能正好是**别人的店铺**，
+   比「忘传落到 1 号店」更难发现：看起来一切正常）。
+   ★ 这个改动**顶红了旧判据** `test_tools_store_id_has_no_default`
+   （它钉的是「必须有 store_id 形参、且无默认值」）——
+   正是「**门禁是墓志铭**」：需求变了，旧断言从资产变成负资产。
+   处理方式是**改写并保留其精神**（升级为「入参里不许出现 store_id」），
+   并把这段转折写进用例 docstring，而不是删掉了事。
+2. **缺归属硬拒绝**，不兜默认店铺。Mock 数据源对任意 store_id 返回同一批数据
+   ⇒ 兜默认值等于给出一份「看起来正常、其实不知属于谁」的报表。
