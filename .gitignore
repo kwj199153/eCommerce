@@ -46,10 +46,14 @@ logs/
 # ====== Environment ======
 .env
 .env.local
+# Prometheus 抓 /metrics 用的 Bearer 令牌（内容 = METRICS_TOKEN 的值，绝不入库）
+observability/metrics_token
 
 # ====== Database ======
 *.db
 *.sqlite3
+# 数据库备份产物（含**全量业务数据**，绝不入库；由 backend/scripts/backup_db.py 生成）
+backups/
 
 # ====== Uploads ======
 uploads/
@@ -78,3 +82,10 @@ script-r*.py
 # ====== AI 临时截图 ======
 .shot*.png
 .shots/
+
+# ====== 轮次探针 / junit 留痕产物（不入库）======
+.pytest_tmp_*/
+.pytest-tmp-*/
+out-junit-*.xml
+out-probe-*.txt
+.junit-*.xml

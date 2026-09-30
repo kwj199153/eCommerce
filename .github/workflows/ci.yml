@@ -33,6 +33,10 @@
 #      存在却从未执行。现改 `check-*.*` + 覆盖率自证 + 文件名统一连字符；
 #    - 覆盖率 / 安全扫描：**已接入**（见 backend job 的覆盖率步骤与 security job）；
 #      npm audit 暂以 critical 为线，2 项 high 是已知待办（理由写在 security job 里）。
+#    - CD 资产门禁：**已接入**（assets job 的 `CD 资产门禁` 步骤，第 333 轮）。
+#      CD 的三份资产（.github/workflows/cd.yml / scripts/deploy/remote_deploy.sh /
+#      docker-compose.yml 的 image 插值）之间的一致性没人替你检查，
+#      且失配形态全是静默失效（行尾 CRLF、镜像名对不上、回滚被删、数据面进 up 列表）。
 # ============================================================
 
 name: CI
@@ -349,6 +353,27 @@ jobs:
             exit 1
           fi
           echo "OK 敏感文件未被跟踪"
+
+      - name: 安装 Python（CD 资产门禁用）
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: CD 资产门禁
+        # ★ 为什么 CD 资产需要专门一道门禁（而不是"看着没问题就行"）：
+        #   CD 的三份资产分居三个文件 —— workflow / 部署脚本 / compose 的镜像插值 ——
+        #   它们之间的**一致性**没有任何编译器或测试会替你检查。四类静默失效：
+        #     · 脚本被写成 CRLF  → 远端 `bash -s` 报 $'\r': command not found，
+        #                          而本地 Git Bash 的 `bash -n` 照样通过（本地绿、远端红）；
+        #     · 镜像名两边改歪    → 构建推 A、compose 拉 B ⇒ 部署拉不到镜像；
+        #     · 回滚/健康检查被删 → 部署"看似成功"，出事时无法恢复；
+        #     · 数据面进 up 列表  → 每次发版都 recreate 数据库（中断连接且无法回滚）。
+        #   判据形态：cd.yml 走 YAML 解析、shell 能力用行首定义形态、
+        #   镜像名用**集合相等**对账 —— 都不靠 grep 字符串包含（会被注释骗过）。
+        #   已通过 8 类反向注入自检：.workbuddy/probes/r333_cd_gate_injection.py
+        run: |
+          python -m pip install --quiet pyyaml
+          python scripts/check-cd-assets.py
 
   # ================= 安全扫描 =================
   security:

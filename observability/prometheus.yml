@@ -1,0 +1,61 @@
+# ============================================================
+#  Prometheus —— 店管家 AI 抓取配置（P0-3）
+# ------------------------------------------------------------
+#  ★ 本文件有两个指标出口，**缺一不可**：
+#      · job storekeeper-api     -> backend:8000/metrics
+#      · job storekeeper-worker  -> worker:9100/metrics
+#    为什么必须都抓：`aigc_tasks_total` 与 `celery_task_results_total`
+#    只在 **worker 进程**里自增（任务就是在那儿跑的）。只抓 8000 的话，
+#    这两个指标永远是 0，基于它们的告警看起来"很健康"——
+#    这正是最坏的一种告警：它永远不响。
+#
+#  ★ 关于鉴权：生产环境 `METRICS_TOKEN` 是**必填**（core/config.py 在
+#    environment=production 时若不设会拒绝启动），所以这里用
+#    `authorization.credentials_file` 从文件读令牌，避免把令牌写进本文件。
+#      本地调试（未设 METRICS_TOKEN）时删掉两处 authorization 段即可。
+#
+#  ★ targets 用 compose 服务名（backend / worker）——前提是 Prometheus 与
+#    它们同处 storekeeper 网络（见 docker-compose.yml 的 monitoring profile）。
+#    若 Prometheus 跑在宿主机（非容器），把 targets 改成：
+#        - targets: ["127.0.0.1:8000"]     # api
+#        - targets: ["127.0.0.1:9100"]     # worker
+#    （这两个端口在 compose 里都只绑回环，宿主机直连是可以的）
+# ============================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    service: storekeeper
+
+rule_files:
+  - /etc/prometheus/alert_rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # ---------------- API 进程 ----------------
+  - job_name: storekeeper-api
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/metrics_token
+    static_configs:
+      - targets: ["backend:8000"]
+        labels:
+          instance_role: api
+
+  # ---------------- Worker 进程 ----------------
+  # ★ 这个 job 不能省：任务类指标只在这里增长。
+  - job_name: storekeeper-worker
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/metrics_token
+    static_configs:
+      - targets: ["worker:9100"]
+        labels:
+          instance_role: worker

@@ -1,0 +1,261 @@
+# ============================================================
+#  CD：构建镜像 → 推送 GHCR → SSH 部署（健康检查 + 失败整组回滚）
+# ------------------------------------------------------------
+#  为什么有这份文件（它补的是 P0-10「无 CD」）：
+#    ci.yml 已经把「代码是否可信」证明到位了（后端测试 / 前端构建 /
+#    部署资产 / 安全扫描），但**从绿到上线之间没有任何流水线** ——
+#    发布靠「某人在服务器上 docker compose up -d --build」，于是：
+#      ①线上跑的到底是哪个 commit 无人能答；
+#      ②回滚靠记忆；
+#      ③构建发生在一台没有 CI 背书的机器上（依赖/环境漂移）。
+#
+#  触发方式：
+#    · 推 tag（v*）        → 视为发版：构建 + 部署到生产
+#    · workflow_dispatch   → 手动指定 tag 重新部署（回滚到某个版本也走这条路）
+#
+#  ★ 为什么用 GHCR 而不是 Docker Hub：
+#    用内置 GITHUB_TOKEN 即可推送，**零额外密钥**（不用建 PAT、
+#    不用配 DOCKERHUB_TOKEN）。permissions.packages: write 就是全部授权。
+#
+#  ★★ 为什么 secrets 没配时**不报错**（这是刻意的，不是偷懒）：
+#    这份 workflow 一合并进 main，就会在所有 tag 上运行。若「没配机密就红」：
+#      ①本仓库现在的状态会被自己的 CD 判红（无意义的常红）；
+#      ②更糟 —— 会有人为了「让它变绿」而写出一个假装部署过的假步骤。
+#    所以缺机密时**显式跳过 + 打 notice**，绝不假装部署过。
+#
+#  ★★ 部署是「先拉齐、后切服务」的**两段式**（另见 scripts/deploy/remote_deploy.sh）：
+#    任一步失败 ⇒ 用 .cd_images 记的「上一次成功的 ref + 镜像」**整组**回滚，
+#    而不是只把镜像换回去。理由：compose 文件本身也随版本演进，
+#    只回镜像会得到「新 compose + 旧镜像」的半成品组合，比不回滚更难查。
+#
+#  ⚠️ 首次部署**不由本流水线负责**：服务器上要先有人 git clone + 配 backend/.env
+#     + 跑一次 `docker compose up -d --build`（数据卷与 .env 不在流水线管辖范围）。
+#     本流水线只负责「已经有跑着的环境」之上的版本更新。
+# ============================================================
+
+name: CD
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要构建并部署的 git tag（例如 v1.0.0）"
+        required: true
+        type: string
+
+# 同一个 ref 的重复部署串行化；**不取消进行中的部署** ——
+# 取消一个已经改了服务器状态的部署会留下半成品，比排队更危险。
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  # tag 推送时 github.ref_name = "v1.2.0"；
+  # 手动触发时以 inputs.tag 为准（inputs 为空则回退到 ref_name）。
+  DEPLOY_REF: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  # ================= 构建并推送镜像 =================
+  build:
+    name: 构建镜像（${{ matrix.name }}）
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write      # 推 GHCR 必需
+    strategy:
+      # 一个镜像坏了也让另一个跑完 —— 否则日志里看不到「到底哪个坏了」
+      fail-fast: false
+      matrix:
+        include:
+          # ★ 只构建 2 个镜像：postgres / redis / prometheus / alertmanager
+          #   用的都是官方镜像，不需要我们重建。
+          # ★ suffix 与 docker-compose.yml 里 `image:` 的**插值默认值**同名，
+          #   这样 compose 只加一行 ${API_IMAGE:-...} 就能同时支持
+          #   「本地 build」和「CD 拉取」两种形态（见该文件的 image 注释）。
+          - name: api
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            suffix: storekeeper-api
+            build_args: ""
+          - name: web
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+            suffix: storekeeper-web
+            # ★ Vite 变量是**构建期**注入（编译进 bundle），不是运行期读取；
+            #   这里与 compose 的 frontend.build.args 保持同值，避免
+            #   「CD 出的包与本地 compose 出的包行为不同」。
+            build_args: |
+              VITE_DEMO_MODE=false
+              VITE_VOICE_CLONE_ENABLED=false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_REF }}
+          fetch-depth: 1
+
+      - name: 计算小写镜像前缀
+        # ★ GHCR 的镜像名**必须全小写**。本仓库是 kwj199153/eCommerce（含大写 E），
+        #   直接拼 ${GITHUB_REPOSITORY} 会在 push 时报
+        #   "invalid reference format: repository name must be lowercase"。
+        #   用 tr 而不是 ${VAR,,}：后者要 bash 4+，tr 在哪都能跑。
+        id: prefix
+        run: |
+          prefix="$(echo "${REGISTRY}/${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          echo "value=$prefix" >> "$GITHUB_OUTPUT"
+          echo "镜像前缀：$prefix"
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成镜像标签
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.prefix.outputs.value }}/${{ matrix.suffix }}
+          # ★ 主标签用 DEPLOY_REF（= tag 名），而不是 metadata-action 默认的
+          #   `type=ref,event=tag`：后者在 workflow_dispatch 下**不产生任何标签**
+          #   （因为 dispatch 的 ref 是分支，不是 tag）⇒ 手动部署时会挑不到镜像。
+          #   显式用 raw 值，两种触发方式下标签形状一致，部署侧才能精确引用。
+          tags: |
+            type=raw,value=${{ env.DEPLOY_REF }}
+            type=sha,format=short
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          labels: |
+            org.opencontainers.image.title=${{ matrix.suffix }}
+            org.opencontainers.image.version=${{ env.DEPLOY_REF }}
+
+      - name: 准备 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ matrix.build_args }}
+          # 用 GHA 缓存，scope 按镜像分开（否则两个镜像互相污染缓存层）
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  # ================= 部署到生产 =================
+  deploy:
+    name: 部署到生产
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+    # 用 environment 而不是裸 job：配了 required reviewers 时这里会等人工放行
+    # （没有配就是直接跑）；同时让「谁在什么时候部署了什么」留在 Deployments 里。
+    environment: production
+    steps:
+      - name: 检查部署机密是否齐备
+        # ★ 用 if 而不是 `[ -z "$X" ] && VAR=...`：
+        #   GitHub 的默认 shell 是 `bash -e`，而 `A && B` 在 A 为假时整句返回非 0
+        #   ⇒ 会被 -e 当成失败直接退出 job（经典坑）。
+        id: gate
+        env:
+          _HOST: ${{ secrets.DEPLOY_HOST }}
+          _USER: ${{ secrets.DEPLOY_USER }}
+          _KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          _PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          missing=""
+          if [ -z "$_HOST" ]; then missing="$missing DEPLOY_HOST"; fi
+          if [ -z "$_USER" ]; then missing="$missing DEPLOY_USER"; fi
+          if [ -z "$_KEY" ]; then missing="$missing DEPLOY_SSH_KEY"; fi
+          if [ -z "$_PATH" ]; then missing="$missing DEPLOY_PATH"; fi
+          if [ -n "$missing" ]; then
+            echo "::notice title=CD 未启用（跳过部署）::未配置机密：${missing}。本次只构建并推送镜像，未改动任何服务器。"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 检出部署版本
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_REF }}
+
+      - name: 解析目标镜像地址
+        # 不跨 job 传 build 的 outputs：matrix job 的 outputs 语义是
+        # 「最后一个完成的分支的值」，用它做部署输入是脆的。这里一行 tr 重算，
+        # 代价为零，且部署 job 自己就能解释清楚「我到底要拉哪个镜像」。
+        if: steps.gate.outputs.skip != 'true'
+        id: img
+        run: |
+          prefix="$(echo "${REGISTRY}/${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "api=${prefix}/storekeeper-api:${DEPLOY_REF}"
+            echo "web=${prefix}/storekeeper-web:${DEPLOY_REF}"
+          } >> "$GITHUB_OUTPUT"
+          echo "将部署：${prefix}/storekeeper-api:${DEPLOY_REF}"
+          echo "       ${prefix}/storekeeper-web:${DEPLOY_REF}"
+
+      - name: 装配 SSH 私钥
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          # printf 而不是 echo：私钥里的反斜杠不会被二次解释
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # 预置 host key：首次连接若进入交互式确认，在 CI 里会一直挂到超时
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: 远端部署（幂等 · 健康检查 · 失败整组回滚）
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          API_IMAGE: ${{ steps.img.outputs.api }}
+          WEB_IMAGE: ${{ steps.img.outputs.web }}
+        run: |
+          set -euo pipefail
+          echo "目标：${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}"
+          echo "版本：${DEPLOY_REF}"
+          # 脚本经 stdin 送到远端执行（服务器上不需要本仓库以外的任何额外前提）。
+          # 参数以 argv 传递（`bash -s -- a b c d`），而不是把值插进远端命令串里
+          # —— 后者会经历两次 shell 解析，含空格/引号的路径会被拆错。
+          ssh -i ~/.ssh/deploy_key \
+              -p "${DEPLOY_PORT}" \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes \
+              -o ConnectTimeout=20 \
+              "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              "bash -s -- '${DEPLOY_REF}' '${DEPLOY_PATH}' '${API_IMAGE}' '${WEB_IMAGE}'" \
+              < scripts/deploy/remote_deploy.sh
+
+      - name: 写入部署摘要
+        if: always()
+        run: |
+          {
+            echo "## CD 结果"
+            echo ""
+            if [ "${{ steps.gate.outputs.skip }}" = "true" ]; then
+              echo "- 状态：**未部署**（部署机密未配置，仅完成镜像构建与推送）"
+            elif [ "${{ steps.deploy.outcome }}" = "success" ]; then
+              echo "- 状态：**部署成功**"
+            elif [ "${{ steps.deploy.outcome }}" = "failure" ]; then
+              echo "- 状态：**部署失败**（远端脚本已尝试整组回滚，请查服务器日志）"
+            else
+              echo "- 状态：${{ steps.deploy.outcome }}"
+            fi
+            echo "- 版本：\`${{ env.DEPLOY_REF }}\`"
+            echo "- 镜像：\`${{ steps.img.outputs.api }}\`"
+            echo "- 镜像：\`${{ steps.img.outputs.web }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

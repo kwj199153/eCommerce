@@ -53,6 +53,21 @@
 #    3. /metrics 对外暴露前设 METRICS_TOKEN，否则 QPS/错误率/接口清单公开可读。
 #    4. 首次部署后跑 backfill_owner_id.py，否则存量店铺 owner_id 为空，
 #       生产模式下非 admin 访问业务数据一律 403。
+#    5. **数据库口令与端口不许用默认值**。本文件的口令走
+#       ${POSTGRES_PASSWORD:-123456} 插值，默认值只为本地一键起保留；
+#       生产请在**本目录**的 .env 里设 POSTGRES_PASSWORD（注意：compose 的
+#       变量插值只读本目录 .env，**不读 backend/.env**），并同步
+#       backend/worker/beat 的 DATABASE_URL；两处不一致会连不上库。
+#       5432 已改为只绑 127.0.0.1 —— 需要外部连库请走 SSH 隧道，
+#       不要改回 0.0.0.0。生产模式若仍用默认口令，后端会**拒绝启动**。
+#    6. **镜像名走 ${API_IMAGE:-...} / ${WEB_IMAGE:-...} 插值**（下方 4 个服务的
+#       image: 字段）。默认值就是原来的本地镜像名 ⇒ **不设变量时行为与改前完全一致**，
+#       本地 `docker compose up -d --build` 照旧。CD 部署时在**本目录**的 .env 里写：
+#           API_IMAGE=ghcr.io/<owner>/<repo>/storekeeper-api:v1.0.0
+#           WEB_IMAGE=ghcr.io/<owner>/<repo>/storekeeper-web:v1.0.0
+#       让 `docker compose pull` 去拉 GHCR 的镜像（详见 .github/workflows/cd.yml 与
+#       scripts/deploy/remote_deploy.sh）。**注意**：compose 的变量插值只读本目录 .env，
+#       **不读 backend/.env** —— 与第 5 条同一个坑。
 # ============================================================
 
 services:
@@ -62,17 +77,24 @@ services:
     container_name: my-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: kevin
-      POSTGRES_PASSWORD: "123456"
-      POSTGRES_DB: postgres
+      # ★ 口令不许写死在文件里（会被提交进 git、会被安全审计判为明文凭据）。
+      #   默认值只为「本地一键起」保留：不设任何环境变量时，行为与改前完全一致。
+      #   生产必须覆盖 POSTGRES_PASSWORD，且**同步改 backend/worker/beat 的
+      #   DATABASE_URL** —— 两处口令不一致时容器连不上库（改一处必踩）。
+      POSTGRES_USER: ${POSTGRES_USER:-kevin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123456}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
     ports:
-      # 保持与既有习惯一致（本机工具直连 localhost:5432）。
-      # 若要收紧，改成 "127.0.0.1:5432:5432" —— 数据库不该对公网开放。
-      - "5432:5432"
+      # ★ 只绑回环：`"5432:5432"` 等价于监听 0.0.0.0，即把库连同弱口令
+      #   一起挂到公网（扫描器几小时内就能撞上）。绑 127.0.0.1 后，
+      #   本机工具仍直连 localhost:5432，行为不变；外部连库请走 SSH 隧道。
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kevin -d postgres"]
+      # 用户名/库名与上面的 POSTGRES_* 同源：改了一处而漏改这里，
+      # 健康检查会永久 unhealthy，容器起不来但报错指向健康检查（难查）。
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kevin} -d ${POSTGRES_DB:-postgres}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -116,7 +138,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: storekeeper-api:latest
+    image: "${API_IMAGE:-storekeeper-api:latest}"
     container_name: storekeeper-api
     restart: unless-stopped
     depends_on:
@@ -130,7 +152,8 @@ services:
       # ★ 容器内连 PG/Redis 必须用**服务名**，不是 localhost。
       #   写 localhost 会连到容器自己的回环，表现为「compose 明明起来了却连不上库」。
       #   这里显式覆盖 .env 里的本地地址，让本地与容器两种环境共用同一份 .env。
-      DATABASE_URL: postgresql+asyncpg://kevin:123456@postgres:5432/postgres
+      # ★ 与 postgres 服务的口令同源：生产改 POSTGRES_PASSWORD 时必须同步改这里。
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://kevin:123456@postgres:5432/postgres}
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -153,7 +176,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: storekeeper-api:latest
+    image: "${API_IMAGE:-storekeeper-api:latest}"
     container_name: storekeeper-worker
     restart: unless-stopped
     # 覆盖 CMD：同一镜像跑 worker 而不是 uvicorn
@@ -166,7 +189,8 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://kevin:123456@postgres:5432/postgres
+      # ★ 与 postgres 服务的口令同源：生产改 POSTGRES_PASSWORD 时必须同步改这里。
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://kevin:123456@postgres:5432/postgres}
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -205,7 +229,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: storekeeper-api:latest
+    image: "${API_IMAGE:-storekeeper-api:latest}"
     container_name: storekeeper-beat
     restart: unless-stopped
     command: ["python", "beat.py"]
@@ -217,7 +241,8 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://kevin:123456@postgres:5432/postgres
+      # ★ 与 postgres 服务的口令同源：生产改 POSTGRES_PASSWORD 时必须同步改这里。
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://kevin:123456@postgres:5432/postgres}
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -238,7 +263,7 @@ services:
         #   改这里的值必须 `docker compose up -d --build` 重建，重启容器无效。
         VITE_DEMO_MODE: "false"
         VITE_VOICE_CLONE_ENABLED: "false"
-    image: storekeeper-web:latest
+    image: "${WEB_IMAGE:-storekeeper-web:latest}"
     container_name: storekeeper-web
     restart: unless-stopped
     depends_on:
@@ -246,6 +271,53 @@ services:
     ports:
       - "8080:80"
     networks: [storekeeper]
+
+  # ========== 6. 监控（可选，需 `--profile monitoring` 才启动）==========
+  # ★ 为什么默认不起：不是每个部署都需要自带 Prometheus（云监控 / APM 也可），
+  #   而默认多拉两个镜像会让「一键起」变慢、变脆弱。
+  # ★ 抓取配置（observability/prometheus.yml）**必须同时抓两个出口**：
+  #   backend:8000 与 worker:9100。只抓 8000 的话，任务类指标
+  #   （aigc_tasks_total / celery_task_results_total）永远是 0 ——
+  #   那是「告警永远不响」的最隐蔽形态。
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: storekeeper-prometheus
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    depends_on: [backend, worker]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      # ★ 令牌文件必须**先创建**，否则 Docker 会把不存在的源路径建成
+      #   一个空**目录**，Prometheus 启动当场失败（经典坑）：
+      #       echo -n "<METRICS_TOKEN 的值>" > observability/metrics_token
+      #   本地未设 METRICS_TOKEN 时不需要它 —— 把 prometheus.yml 里
+      #   两处 authorization 段删掉即可。
+      - ./observability/metrics_token:/etc/prometheus/metrics_token:ro
+      - promdata:/prometheus
+    ports:
+      # 只绑回环：Prometheus 的 UI/API 无鉴权，绝不能对公网开放
+      - "127.0.0.1:9090:9090"
+    networks: [storekeeper]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: storekeeper-alertmanager
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertdata:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    networks: [storekeeper]
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
 
 networks:
   storekeeper:
@@ -264,3 +336,9 @@ volumes:
     name: ecommerce_uploads
   logs:
     name: ecommerce_logs
+  # 监控数据（Prometheus TSDB / Alertmanager 静默记录）。
+  # 与 pgdata 同理：裸卷名 + 项目前缀，避免 compose 自动加项目名后挂空卷。
+  promdata:
+    name: ecommerce_promdata
+  alertdata:
+    name: ecommerce_alertdata

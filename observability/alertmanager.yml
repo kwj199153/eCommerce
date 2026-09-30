@@ -1,0 +1,71 @@
+# ============================================================
+#  Alertmanager 路由（P0-3）
+# ------------------------------------------------------------
+#  ★ 开箱默认**不发任何通知**（receiver 为空 = 只记录在 Alertmanager UI 里）。
+#    这是刻意的：一个写死的 webhook/邮箱占位符会持续报错、刷日志，
+#    最后所有人都学会忽略告警日志 —— 那比没有通知更糟。
+#    上线时按下面"接入通道"二选一改。
+#
+#  接入通道（示例，取消注释即可）：
+#    · 企业微信/钉钉/飞书机器人：
+#        webhook_configs:
+#          - url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=<key>
+#            send_resolved: true
+#      （注意：机器人入参格式与 Alertmanager 默认 payload 不同，需配
+#        `http_config` + 自定义 template，或在中间加一个小适配器。）
+#    · 邮件：
+#        email_configs:
+#          - to: ops@example.com
+#            from: alertmanager@example.com
+#            smarthost: smtp.example.com:587
+#            auth_username: alertmanager@example.com
+#            auth_password_file: /etc/alertmanager/smtp_password
+#
+#  ★ 为什么要分 default / critical 两个 receiver：
+#    critical 的 repeat_interval 更短（1h vs 4h）—— 服务不可用必须反复提醒，
+#    而 warning 反复刷屏只会训练人忽略它（告警疲劳）。
+# ============================================================
+
+global:
+  # 告警恢复的判定窗口。与 Prometheus 的 evaluation_interval 同量级即可。
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  # 同一 alertname + 同一实例的告警合并成一条，避免"一次设备故障发 50 封邮件"
+  group_by: [alertname, job, instance]
+  # 首次通知前等 30s：给"瞬时报错随即自愈"留出窗口，不发无效告警
+  group_wait: 30s
+  # 同一分组内新增告警的合并间隔
+  group_interval: 5m
+  # 未恢复告警的重复提醒周期（warning 档）
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: critical
+      repeat_interval: 1h
+
+receivers:
+  # 默认：只记录，不发送。生产请按文件头的说明接入真实通道。
+  - name: default
+  - name: critical
+
+# ==========================================================================
+# 抑制规则：让"根因告警"压住它引发的"衍生告警"
+# ==========================================================================
+inhibit_rules:
+  # 实例都不可达了，就不要再喊它的 5xx/时延 —— 那些只是"抓不到数据"的副作用。
+  - source_matchers:
+      - alertname = "ApiDown"
+    target_matchers:
+      - severity =~ "warning|critical"
+    equal: [instance]
+
+  # 数据库挂了会连带 llm_config / 业务全线报错，只保留依赖告警本身。
+  - source_matchers:
+      - alertname = "DependencyDown"
+      - name = "postgres"
+    target_matchers:
+      - alertname =~ "Http5xxRateHigh|LlmErrorRateHigh|CeleryInfraFailure"
+    equal: []

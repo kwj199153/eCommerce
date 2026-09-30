@@ -13,6 +13,7 @@
 - [技术栈](#技术栈)
 - [快速开始（本地开发）](#快速开始本地开发)
 - [容器化部署](#容器化部署)
+- [持续部署（CD）](#持续部署cd)
 - [环境变量](#环境变量)
 - [项目结构](#项目结构)
 - [可观测性](#可观测性)
@@ -49,12 +50,23 @@
 
 ### 2. 起依赖服务
 
-```bash
-# PostgreSQL（若已有 my-postgres 在跑，跳过）
-docker compose up -d postgres
+> 本机 `my-postgres` / `my-redis` 是**手工 `docker run`** 建的（无 compose 标签），
+> **不要用 `docker compose up`** —— 会因 `container_name` 冲突报 `already in use`。
+> 两个容器的重启策略已设为 `unless-stopped`：**开机自启，不必每次手动拉 Docker**。
+> `start-backend.bat` 已内置下面全部步骤（含自动拉起 Docker Desktop），一般无需手动执行。
 
-# Redis（Celery 与跨进程限流需要）
-docker compose up -d redis
+```bash
+docker start my-postgres my-redis        # 已在跑会提示 already running，退出码仍为 0
+
+# 仅当容器不存在时才需要重建（数据卷沿用）：
+# docker run -d --name my-postgres --restart unless-stopped \
+#   -e POSTGRES_PASSWORD=<同 backend/.env> -p 5432:5432 \
+#   -v pgdata:/var/lib/postgresql/data postgres:15-alpine
+# docker run -d --name my-redis --restart unless-stopped \
+#   -p 127.0.0.1:6379:6379 -v ecommerce_redisdata:/data redis:7-alpine
+
+# 想彻底改由 compose 托管（pgdata / ecommerce_redisdata 卷不丢）：
+# docker rm -f my-postgres my-redis && docker compose up -d
 ```
 
 ### 3. 后端
@@ -130,7 +142,46 @@ curl -s localhost:8000/metrics | head -20
 > （与既有环境一致，避免出现"PG 起来了但是空库"的假象）。
 > 若该容器是手工 `docker run` 起的，compose 会提示名称冲突，两种处理：
 > a) `docker rm -f my-postgres` 后 `docker compose up -d`（数据在 `pgdata` 卷里，不会丢）；
-> b) 只起需要的服务：`docker compose up -d --build backend worker frontend`。
+## 持续部署（CD）
+
+`.github/workflows/cd.yml`：**推 tag 即发版** —— 构建镜像 → 推 GHCR → SSH 到服务器 →
+健康检查 → 失败自动**整组回滚**。
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0     # 触发 CD
+# 也可以在 GitHub 上手动触发：Actions → CD → Run workflow，填一个 tag
+```
+
+| 环节 | 做法 | 为什么这么做 |
+|---|---|---|
+| 触发 | tag `v*` / 手动指定 tag | 发版是**显式动作**，不该跟着 push 分支自动上线 |
+| 镜像仓库 | GHCR `ghcr.io/<owner>/<repo>/storekeeper-{api,web}` | 用内置 `GITHUB_TOKEN` 推送，**零额外密钥** |
+| 镜像标签 | `:<tag>` + `:sha-xxxxxxx` + `:latest` | 部署按**精确 tag** 引用；`latest` 只为人眼方便 |
+| 部署单元 | backend / worker / beat / frontend | **不动 postgres / redis**：重启数据面会中断连接，且期间无法回滚 |
+| 就绪判据 | `docker inspect` 的 healthcheck 状态 | 用镜像自带判据，免依赖宿主工具；容器「在跑」≠「能干活」 |
+| 失败处置 | 按 `.cd_images` 里记的**上一版 ref + 镜像**整组还原 | 只回镜像会得到「新 compose + 旧镜像」的半成品，比不回滚更难查 |
+
+**首次启用需要三件事**（流水线**不负责**首次部署）：
+
+1. 服务器上先人工初始化：`git clone` + 配 `backend/.env` + `docker compose up -d --build`
+   （数据卷与 `.env` 不在流水线管辖范围）；
+2. 让服务器能拉私有镜像：`echo '<PAT>' | docker login ghcr.io -u <用户名> --password-stdin`
+   （PAT 需要 `read:packages`），或者把该包设为 public；
+3. 配 4 个仓库机密：`DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_SSH_KEY` / `DEPLOY_PATH`
+   （可选 `DEPLOY_PORT`，默认 22）。
+
+> **未配机密时不会红，也不会假装部署过**：这一步会打一条 notice 并跳过部署，
+> 只完成「构建 + 推镜像」。这是刻意如此 —— 否则本仓库会被自己的 CD 判成常红，
+> 进而有人为了「让它变绿」而写出一个假的部署步骤。
+
+> ⚠️ **`docker-compose.yml` 的 `image:` 已改为可插值**（`${API_IMAGE:-storekeeper-api:latest}`）：
+> 默认值就是原来的本地镜像名 ⇒ 不设变量时 `docker compose up -d --build` 行为**完全不变**；
+> CD 部署时由服务器侧脚本写入根目录 `.env` 指向 GHCR。
+> 注意 compose 的变量插值**只读根目录 `.env`，不读 `backend/.env`**。
+
+资产一致性由 CI 的 **`CD 资产门禁`** 守住（存在性 / 行尾 LF / shell 语法 / YAML 结构 /
+镜像名对账 / 无明文凭据），判据在 `scripts/check-cd-assets.py`，部署脚本为
+`scripts/deploy/remote_deploy.sh`。
 
 ---
 
@@ -384,6 +435,8 @@ npx vue-tsc --noEmit
 5. 换掉 `JWT_SECRET_KEY`（占位值会被启动校验拦住，但别只换一半）。
 6. **改掉宝塔面板密码** —— 该密码曾出现在本项目的历史对话记录中。
 7. 确认 `VoiceClonePanel.vue` 等文件已纳入版本控制（曾长期处于未跟踪状态）。
+8. **CD 首次启用前做完上面那三件事**（服务器初始化 / GHCR 登录 / 配 4 个机密）。
+   没配机密时 CD 不会报错，只会静默地「只构建不部署」—— 别把「流水线绿了」当成「已经上线」。
 
 ---
 
@@ -403,6 +456,7 @@ npx vue-tsc --noEmit
 | 平台数据接入 | 商品池仍为自研 mock | 未接真实生产凭证；SP-API 客户端已就绪 |
 | ESLint 未真正启用 | lint 脚本是死脚本 | `package.json` 有脚本但 devDeps 里没有 eslint |
 | ruff / mypy 未进门禁 | 静态检查靠人 | 配置已在 `backend/pyproject.toml` 备好，需先生成基线再设门禁 |
+| CD 尚未真正生效 | 发布仍是手工 | 流水线已就位（tag → GHCR → SSH 部署 + 健康检查 + 整组回滚），但**缺 4 个部署机密** ⇒ 目前只构建并推送镜像、不部署。另：灰度/分批发布、部署通知均未做 |
 
 ---
 

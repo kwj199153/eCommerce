@@ -1,0 +1,312 @@
+# ============================================================
+#  告警规则 —— 店管家 AI（P0-3）
+# ------------------------------------------------------------
+#  ★ 本文件里出现的每一个指标名，都**逐一核对过两件事**（缺一即假告警）：
+#      ① 名字真实存在于 backend/core/observability/metrics.py 的 _REGISTRY；
+#      ② 全仓存在 `.inc()/.set()/.observe()` 调用点（否则它恒为 0 / 序列不存在，
+#         "告警"永远不会响，却让人以为已经有监控）。
+#    前身实测踩到过两个反例，故此处刻意**不写**它们的规则：
+#      · `quota_rejections_total` —— _REGISTRY 里有，但全仓 **0 个 `.inc()`**
+#        ⇒ 恒为 0，任何基于它的阈值都是死规则。
+#      · `dependency_up` 原先只在 `/health` 里 set，而 Prometheus 抓 `/metrics`
+#        ⇒ 序列根本不存在。已在 main.py 加后台任务每 30s 刷新（P0-3 配套）后
+#        才敢在这里用它。
+#    这两条由 backend/scripts/check_alert_rules.py 自动守住（可反向注入）。
+#
+#  ★ 阈值不是拍脑袋，取值理由写在每条 rule 上方。
+# ============================================================
+
+groups:
+  # ==========================================================================
+  # 1. 存活与依赖
+  # ==========================================================================
+  - name: storekeeper-availability
+    rules:
+      - alert: ApiDown
+        expr: up{job="storekeeper-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "API 进程不可达（{{ $labels.instance }}）"
+          description: >-
+            Prometheus 连续 1 分钟抓不到 /metrics。1 分钟是「明显不是抖动」的下限：
+            抓取周期 15s，连丢 4 次说明进程真的挂了或端口不通。
+          runbook: "docker compose logs --tail=200 backend"
+
+      - alert: WorkerDown
+        expr: up{job="storekeeper-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Celery worker 不可达（{{ $labels.instance }}）"
+          description: >-
+            worker 挂了不会影响 API 的 200，但**所有异步任务会静默排队**：
+            AIGC 出图、账单清算、记忆整理全部停摆，而界面上看不出任何异常。
+            给 2 分钟而不是 1 分钟：worker 的 healthcheck start_period 是 60s。
+          runbook: "docker compose logs --tail=200 worker"
+
+      - alert: InstanceRestartLoop
+        expr: changes(up{job=~"storekeeper-.*"}[30m]) > 4
+        for: 0m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "{{ $labels.job }} 实例在 30 分钟内反复重启"
+          description: >-
+            30 分钟内 up 在 0/1 之间跳变超过 4 次，说明进程在崩溃-重启循环里。
+            用 `up` 而不是 `process_uptime_seconds`：后者单调递增，changes() 每次抓取都算变化，
+            得到的永远是抓取次数而不是重启次数。
+
+      - alert: DependencyDown
+        expr: dependency_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "依赖不可用：{{ $labels.name }}"
+          description: >-
+            postgres 不可用 ⇒ 业务全废；redis 不可用 ⇒ 限流降级为进程内计数
+            （多副本时实际限额被放大 N 倍）；llm_config 不可用 ⇒ 所有 Agent 调用失败。
+            数据来源是 main.py 每 30s 刷新的 dependency_up（不是靠 /health 被访问）。
+
+  # ==========================================================================
+  # 2. HTTP 质量
+  # ==========================================================================
+  - name: storekeeper-http
+    rules:
+      - alert: Http5xxRateHigh
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_requests_total[5m])), 1) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "5xx 比例超过 5%（最近 5 分钟）"
+          description: >-
+            `clamp_min(..., 1)` 是必需的：流量为 0 时分母为 0 会让表达式变成 NaN/Inf，
+            那种情况下的"无告警"是假象。5% 取自常见 SLO 的起点。
+          runbook: "按 path 标签聚合定位：topk(5, sum by (path) (rate(http_requests_total{status=~\"5..\"}[5m])))"
+
+      - alert: HttpLatencyP95High
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_request_duration_ms_bucket[5m]))
+          ) > 3000
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "P95 时延超过 3s（最近 5 分钟）"
+          description: >-
+            3s 是「用户已经明显感觉卡」的量级，且远低于指标桶上限 30s
+            （阈值贴着桶边界会让计算结果失真）。for: 10m 是为了滤掉 LLM 长尾。
+
+      - alert: RequestsStuckInFlight
+        expr: http_requests_in_flight{job="storekeeper-api"} > 50
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "并发在建请求数持续 > 50"
+          description: >-
+            这个 gauge 在请求开始 inc、结束 dec。持续高说明请求**卡住不返回**
+            （典型：下游连接池耗尽，或某个 await 永远不苏醒）。
+            此时通常还没有 5xx —— 它比 5xx 更早一步报警。
+
+  # ==========================================================================
+  # 3. LLM / AIGC
+  # ==========================================================================
+  - name: storekeeper-llm-aigc
+    rules:
+      - alert: LlmErrorRateHigh
+        expr: |
+          sum(rate(llm_calls_total{status="error"}[10m]))
+            / clamp_min(sum(rate(llm_calls_total[10m])), 1) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+          team: ai
+        annotations:
+          summary: "LLM 调用失败率超过 10%"
+          description: >-
+            status 取值只有 success / error（口径由 dashscope_client 定死）。
+            10% 而不是 1%：上游模型服务偶发限流是常态，过低会长期泡在告警里
+            从而使真事故被淹没。
+
+      - alert: LlmOutputInvalidSpike
+        expr: increase(llm_output_invalid_total[1h]) > 5
+        for: 0m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "LLM 结构化输出不可用次数异常（1 小时内 > 5 次）"
+          description: >-
+            ★ 这是**静默的正确性故障**：HTTP 调用是成功的（llm_calls_total 是 success），
+            只是返回的 JSON 解不开或被截断。它不会报错、不会降级，只会把错数据交出去。
+            reason ∈ {json_decode_error, truncated}，按 reason 聚合可区分
+            「提示词太长被截断」与「模型没按格式输出」。
+
+      - alert: AigcTaskFailureRate
+        expr: |
+          sum(rate(aigc_tasks_total{status="failed"}[30m]))
+            / clamp_min(sum(rate(aigc_tasks_total[30m])), 1) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "AIGC 任务失败率超过 20%"
+          description: >-
+            status ∈ {started, succeeded, failed, exception}。20% 的门槛偏宽，
+            因为 AIGC 上游（图/视频生成）本身波动大；但**持续** 20% 说明是系统性问题。
+            注意本指标只在 **worker 进程**自增 ⇒ 必须抓 9100 才看得到。
+
+      - alert: CeleryInfraFailure
+        expr: increase(celery_task_results_total{status="infra_failure"}[30m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Celery 任务基础设施失败（30 分钟内 > 0）"
+          description: >-
+            status="infra_failure" 专指「任务根本没跑起来」（broker/worker/序列化问题），
+            与业务失败（ok/failure/skipped）刻意分开。
+            任何一次 infra_failure 都值得看：它意味着任务被静默丢弃。
+            同样只在 worker 进程自增。
+
+      - alert: MemoryDistillStalled
+        expr: sum(increase(memory_distill_runs_total[26h])) == 0
+        for: 1h
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "长期记忆夜间整理 26 小时无任何记录"
+          description: >-
+            正常情况下每晚至少产生一条（status 可能是 ok/no_messages/skipped）。
+            26h 无记录 ⇒ 调度器（beat）没跑，或任务被静默丢弃。
+            ★ 部署后 26 小时内会响一次属正常（还没有第一个整夜）。
+            注意：如果指标序列**完全不存在**，increase 返回空 ⇒ 本规则不会触发；
+            所以这条覆盖的是"跑过、后来停了"，纯"从未跑过"由 WorkerDown 覆盖。
+
+  # ==========================================================================
+  # 4. 安全与审计（P0-5）
+  # ==========================================================================
+  - name: storekeeper-audit
+    rules:
+      - alert: AuditWriteFailing
+        expr: increase(audit_write_errors_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "审计写入失败（最近 10 分钟）"
+          description: >-
+            `record_audit()` 写 audit_logs 失败。★ 这是**旁路静默故障**：
+            业务操作照常返回 200（审计刻意不阻断业务，见 core/audit/service.py），
+            所以从接口与访问日志的"成功"上**完全看不出问题** —— 而后果是安全审计
+            出现空洞（那段时间的痕迹永久丢失）。任何一次都值得查：通常是数据库
+            连接/权限问题，或 detail 字段过大导致写入被拒。
+          runbook: "docker compose logs --tail=200 backend | grep 审计写入失败"
+
+      # ---- 保留期清理（第 328 轮）----
+      # ★ 两条**方向相反**的规则，缺一不可：
+      #   Failing = 跑了但抛错；Stalled = 压根没跑。
+      #   只留 Failing 的话，「beat 没起 / 任务名两处不一致」这类
+      #   **完全不产生任何指标**的故障永远不会被报出来。
+      - alert: AuditPurgeFailing
+        expr: increase(audit_purge_runs_total{status="failed"}[1h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "审计保留期清理失败（最近 1 小时）"
+          description: >-
+            `core/audit/tasks.py::purge_expired_audit_logs` 抛异常（事务回滚，
+            一行都没删）。★ 这是**静默型故障的另一半**：任务失败不影响任何
+            业务接口，所以从"系统看起来正常"上完全看不出问题；而后果是
+            audit_logs **只增不减** —— 磁盘与备份体积持续上涨，
+            且没有任何人知道"保留期"已经名存实亡。
+            ★ 任何一次都值得查：通常是数据库连接 / 权限问题，
+              或 `audit_retention_days` 被配成了非法值。
+          runbook: "docker compose logs --tail=200 beat worker | grep 审计保留期清理"
+
+      - alert: AuditPurgeStalled
+        expr: sum(increase(audit_purge_runs_total[50h])) == 0
+        for: 1h
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "审计保留期清理 50 小时无任何记录"
+          description: >-
+            本任务每天 5:07 触发一次，50h 内正常情况下至少有 2 条记录。
+            无记录 ⇒ beat 没跑，或任务名两处写法不一致
+            （`core/redis.py::beat_schedule` 里是**字面量**，理由见
+            `core/audit/tasks.py`；两处由 tests/test_audit_retention_gate.py 钉住）。
+            ★ 与 MemoryDistillStalled 同款注意：指标序列**完全不存在**时
+              increase 返回空 ⇒ 本规则不触发；纯"从未跑过"由 WorkerDown 覆盖。
+          runbook: "docker compose logs --tail=200 beat | grep audit-purge-expired"
+
+  # ==========================================================================
+  # 5. 身份域保留期清理（第 331 轮）
+  # ==========================================================================
+  # ★ 与第 4 节 audit 那两条**同款、方向相反**：Failing = 跑了但抛错；
+  #   Stalled = 压根没跑。只留 Failing 的话，「beat 没起 / 任务名两处不一致 /
+  #   autodiscover 漏了一行」这类**完全不产生任何指标**的故障永远不会被报出来
+  #   —— 而它们恰恰是本轮修掉的那个缺陷（两张表零调用点 ⇒ 只增不减）
+  #   最可能复发的形态：零件全在，只是没人调用。
+  - name: storekeeper-identity
+    rules:
+      - alert: IdentityPurgeFailing
+        expr: increase(identity_purge_runs_total{status="failed"}[1h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "身份域保留期清理失败（最近 1 小时）"
+          description: >-
+            `core/identity/tasks.py::purge_expired_identity_rows` 抛异常
+            （事务回滚，两张表一行都没删）。★ 这是**静默型故障**：任务失败不影响
+            任何业务接口，所以从"系统看起来正常"上完全看不出问题；而后果是
+            `login_attempts` / `email_tokens` **只增不减** —— 前者每次登录写一行
+            （含失败的尝试，可被脚本刷），后者每点一次「重发验证邮件」写一行，
+            两者都会稳定吃掉磁盘与备份体积（实测开发库 14 天累积 3169 行登录审计）。
+            ★ 任何一次都值得查：通常是数据库连接 / 权限问题，
+              或保留期被配成了非法值。
+          runbook: "docker compose logs --tail=200 beat worker | grep 身份域保留期清理"
+
+      - alert: IdentityPurgeStalled
+        expr: sum(increase(identity_purge_runs_total[50h])) == 0
+        for: 1h
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "身份域保留期清理 50 小时无任何记录"
+          description: >-
+            本任务每天 5:17 触发一次，50h 内正常情况下至少有 2 条记录。
+            无记录 ⇒ beat 没跑、任务名两处写法不一致
+            （`core/redis.py::beat_schedule` 里是**字面量**，理由见
+            `core/identity/tasks.py`），或 `autodiscover_tasks([...])` 漏了
+            `"core.identity"`（后者会让装饰器从未被执行过 ⇒ 任务根本不存在，
+            而 beat 照常投递 ⇒ 永远停在 pending）。两处由
+            tests/test_identity_retention_gate.py 钉住。
+            ★ 与 AuditPurgeStalled 同款注意：指标序列**完全不存在**时
+              increase 返回空 ⇒ 本规则不触发；纯"从未跑过"由 WorkerDown 覆盖。
+          runbook: "docker compose logs --tail=200 beat | grep identity-purge-expired"
