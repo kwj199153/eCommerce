@@ -26,7 +26,7 @@ import re
 import json
 import hashlib
 import asyncio
-from typing import Any, Optional, List, Dict, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, List, Dict, Tuple, Union
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
@@ -34,6 +34,10 @@ from datetime import datetime
 import numpy as np
 
 from core.logger import get_logger
+
+if TYPE_CHECKING:  # ★ 第 346 轮：sklearn 是重依赖，运行期必须保持延迟导入
+    #   （见 `KeywordRetriever.build_index` 里的局部 import）⇒ 只在类型检查期引入。
+    from sklearn.feature_extraction.text import TfidfVectorizer
 
 logger = get_logger(__name__)
 
@@ -106,9 +110,9 @@ class DocumentProcessor:
     @staticmethod
     def split_text(
         text: str,
-        chunk_size: int = None,
-        chunk_overlap: int = None,
-        separators: List[str] = None,
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
+        separators: Optional[List[str]] = None,
     ) -> List[str]:
         """
         智能文本分块
@@ -206,7 +210,7 @@ class DocumentProcessor:
 class DashScopeEmbedding:
     """DashScope 文本向量化"""
 
-    def __init__(self, model: str = None):
+    def __init__(self, model: Optional[str] = None):
         self.model = model or RAGConfig.EMBEDDING_MODEL
         self._client = None
 
@@ -298,7 +302,7 @@ class SKLearnVectorStore:
     async def add_texts(
         self,
         texts: List[str],
-        metadatas: List[Dict] = None,
+        metadatas: Optional[List[Dict]] = None,
     ) -> List[str]:
         """便捷方法：添加纯文本"""
         docs = [
@@ -313,7 +317,7 @@ class SKLearnVectorStore:
     async def similarity_search(
         self,
         query: str,
-        k: int = None,
+        k: Optional[int] = None,
         filter_func=None,
     ) -> List[RetrievalResult]:
         """
@@ -430,11 +434,14 @@ class SKLearnVectorStore:
 class KeywordRetriever:
     """基于 TF-IDF/BM25 的关键词检索"""
 
-    def __init__(self, documents: List[Document] = None):
+    def __init__(self, documents: Optional[List[Document]] = None):
         self.documents = documents or []
-        self._tfidf_matrix = None
-        self._feature_names = None
-        self._vectorizer = None
+        # ★ 第 346 轮：显式标注。原先是裸 `= None`，mypy 把它们推断成 `None`
+        #   类型，于是 `self._vectorizer.fit_transform(...)` 报
+        #   `"None" has no attribute "fit_transform"` —— 这条改动正是被它照出来的。
+        self._tfidf_matrix: Any = None
+        self._feature_names: Any = None
+        self._vectorizer: Optional["TfidfVectorizer"] = None
         self._initialized = False
 
     def build_index(self, documents: List[Document]):
@@ -463,10 +470,13 @@ class KeywordRetriever:
     async def search(
         self,
         query: str,
-        k: int = None,
+        k: Optional[int] = None,
     ) -> List[RetrievalResult]:
         """关键词检索"""
-        if not self._initialized or not self.documents:
+        # ★ 第 346 轮：补 `self._vectorizer is None` 的**类型层**收窄。
+        #   `_initialized=True` 只在 `build_index` 里、紧接着 vectorizer 赋值之后
+        #   设置，所以两者运行期等价 ⇒ 这条 guard 不改变任何行为。
+        if not self._initialized or not self.documents or self._vectorizer is None:
             return []
 
         k = k or RAGConfig.KEYWORD_TOP_K
@@ -519,7 +529,7 @@ class HybridRAGEngine:
     def __init__(
         self,
         domain: str = "default",
-        config: RAGConfig = None,
+        config: Optional[RAGConfig] = None,
     ):
         self.domain = domain
         self.config = config or RAGConfig()
@@ -599,7 +609,7 @@ class HybridRAGEngine:
     async def search(
         self,
         query: str,
-        top_k: int = None,
+        top_k: Optional[int] = None,
         mode: str = "hybrid",
         min_score: float = 0.1,
     ) -> List[RetrievalResult]:
@@ -716,7 +726,7 @@ class HybridRAGEngine:
         self,
         query: str,
         llm_client,  # DashScopeLLM 实例
-        system_prompt: str = None,
+        system_prompt: Optional[str] = None,
         top_k: int = 3,
     ) -> RAGResponse:
         """

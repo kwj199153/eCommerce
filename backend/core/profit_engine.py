@@ -374,6 +374,15 @@ def _reverse_price(
     if denominator <= 0:
         raise ValueError(f"费率合计 ({rate_sum * 100:.1f}%) 已达 100%，无法反推出有效价格")
 
+    # ★ 第 346 轮：把**前提显式化**。两个调用点（`_calculate_amazon` /
+    #   `_calculate_shopee`）都用 `if req.target_profit is not None and
+    #   req.listing_price is None` 守卫着进来，所以 `None + float` 运行期不会发生；
+    #   但函数**自身**没有声明这个前提 ⇒ mypy 报 operator 类型错。
+    #   显式化后：① mypy 能收窄 ② 万一将来有人绕过守卫，拿到的是能读懂的错误
+    #   而不是 `TypeError: unsupported operand type(s) for +: 'NoneType' and 'float'`。
+    if req.target_profit is None:
+        raise ValueError("_reverse_price 需要 target_profit（逆向定价的前提）")
+
     actual_price = (req.target_profit + fixed_with_return) / denominator
     if discount_pct > 0:
         return round(actual_price / (1 - discount_pct / 100), 2)

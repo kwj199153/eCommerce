@@ -277,9 +277,9 @@ async def register(
 
 @router.post("/login", response_model=dict)
 async def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
-    request: Request = None,
 ):
     """
     用户登录（OAuth2 Password 模式）
@@ -467,7 +467,7 @@ async def refresh_token(
 
     # 2. 提取用户 ID 并查找用户
     user_id = token_data.user_id
-    user = await get_user_by_id(db, user_id)
+    user = await get_user_by_id(db, user_id) if user_id else None
     if not user or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

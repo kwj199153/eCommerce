@@ -48,9 +48,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional, cast
 
-from sqlalchemy import delete
+from sqlalchemy import CursorResult, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.audit.models import AuditLog
@@ -99,4 +99,7 @@ async def purge_expired(db: AsyncSession, retention_days: Optional[int] = None) 
     """
     cutoff = retention_cutoff(retention_days)
     res = await db.execute(delete(AuditLog).where(AuditLog.created_at < cutoff))
-    return int(res.rowcount or 0)
+    # ★ 第 346 轮：`AsyncSession.execute()` 的静态返回是 `Result`，而
+    #   `rowcount` 只有 `CursorResult` 有（DELETE/UPDATE 的实返就是它）。
+    #   `cast` 只收口类型，运行期是同一个对象。
+    return int(cast("CursorResult[Any]", res).rowcount or 0)

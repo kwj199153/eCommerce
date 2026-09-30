@@ -25,7 +25,24 @@
 #    - ruff：**只接「已收敛到零」的规则子集**（见 backend job 的 Lint 步骤，
 #      当前跑 --select T20）。全量基线 2796 条，一次性修不现实 ——
 #      每收敛一类就往 --select 加一项，形成棘轮；
-#    - mypy：**仍未接入**（存量无标注，接入前要先跑基线）；
+#    - mypy：**第 346 轮已接入**（见 backend job 的「类型检查（mypy）」步骤）。
+#      接入前的形态与 ruff 那次**同形**：`pyproject.toml` 的 [tool.mypy] 写好了、
+#      `requirements-dev.txt` 也装了 mypy，但 CI 里**没有任何一步调用它**
+#      ⇒ 同为纸面门禁（这次连"配置就绪"都写得很完整，所以更难看出来）。
+#      口径：同 ruff 的棘轮 —— 只查**已收敛到零**的目标（`core ai_infra`），
+#      每收敛一批就往目标里加目录，只增不减。
+#      ★ 接入时顺手修掉两条 blocking（它们会让 mypy **一个字符都检查不到**）：
+#        ① [tool.mypy] python_version 写 "3.11"，而 venv 实为 CPython 3.12.14
+#           ⇒ 读已装依赖的 numpy stub 直接 syntax 错 +
+#             "errors prevented further checking"（退出码 2，看着像全绿）；
+#        ② 无参数 `mypy` 从 CWD 递归收集，`tests/` 与 `scripts/` 各有一份
+#           `conftest.py` ⇒ `Duplicate module named "conftest"`（退出码 2）
+#           ⇒ 必须**显式给检查目标**。
+#      ★ 基线口径更正：`mypy core ai_infra` 的真实基线是 **74 条 / 18 文件**，
+#        不是早期文档里的 48。48 是「先跑 py311（abort 于 stub）→ 复用同一份
+#        缓存再跑 py312」的**欠计**产物：mypy 的检查面积取决于**缓存状态**，
+#        换 --cache-dir 会静默少报（实测同一 commit 下 299/231/205 三个数）。
+#        详见 docs/baseline-r345-lint.md 的更正说明。
 #    - 前端 ESLint：**第 346 轮已接入**（见 frontend job 的 `npm run lint:ci` 步骤）。
 #      接入前的形态与本仓 ruff 那次同形 —— `package.json` 里有 `lint` 脚本，
 #      但 `devDependencies` 里**没有任何 eslint 包**，脚本还写着 `--ext`
@@ -189,6 +206,21 @@ jobs:
         #     T20 —— 生产代码里不得出现 print（scripts/ 与演示型测试已按文件豁免，
         #            理由写在 backend/pyproject.toml 的 per-file-ignores 注释里）
         run: ruff check . --select T20
+
+      - name: 类型检查（mypy：棘轮 —— 只查已收敛到零的目录）
+        # ★ 与上一步 ruff 同一套棘轮思路：**不给全仓**，只给「已收敛到零」的
+        #   目标目录；每收敛一批就往目标里加一个，只增不减。
+        # ★★ 为什么必须**显式给目标**、不能只写 `mypy`：
+        #    无参数时 mypy 从 CWD 递归收集全部 .py，而 `tests/` 与 `scripts/`
+        #    下各有一份 `conftest.py` ⇒ `Duplicate module named "conftest"`，
+        #    退出码 2 却**一条检查都没做**；且 `follow_imports = "silent"`
+        #    会把它拖进 modules/platforms，报出几百条与本次收敛无关的存量错误。
+        # ★ 当前已收敛：core / ai_infra（第 346 轮，74 条 → 0）。
+        # ★ 判据是「退出码 + Success 行」，不是"有没有输出"：mypy 报
+        #   "errors prevented further checking" 时也用退出码 2，必须当失败看。
+        # ★ 与 tests/test_core_layering.py（core 不得 import modules）互补：
+        #   那条守分层红线，这条守类型正确性。
+        run: mypy core ai_infra
 
       - name: 跑测试（含覆盖率门禁）
         # ★ 覆盖率的口径与阈值在 backend/pyproject.toml 的 [tool.coverage.*] 里，

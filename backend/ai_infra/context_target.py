@@ -108,7 +108,10 @@ class ContextTarget:
 
     def as_dict(self) -> dict:
         """渲染用视图（不含 `specified`：它不是一个展示字段）。"""
-        out = {"label": self.label, "title": self.title, "ref": self.ref}
+        # ★ 第 346 轮：显式声明为 `dict` —— 原先是裸字面量，mypy 推断成
+        #   `dict[str, str]`，随后 `out["detail"] = self.detail`（值是 dict）就报
+        #   assignment。`as_dict()` 的返回注解本就是 `dict`，这里只是写实。
+        out: dict = {"label": self.label, "title": self.title, "ref": self.ref}
         if self.detail:
             out["detail"] = self.detail
         return out

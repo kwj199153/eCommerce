@@ -214,7 +214,10 @@ async def query_library(
             stmt = stmt.order_by(sort_clause, getattr(spec.model, spec.tie_breaker).asc())
             if limit:
                 stmt = stmt.limit(int(limit))
-            return (await session.execute(stmt)).all()
+            # ★ 第 346 轮：`Result.all()` 的静态类型是 `Sequence[Row[...]]`，
+            #   而本函数注解收 `list[Any]`。运行期它本就是列表，`list()` 只是
+            #   把契约写实（调用方按列表用：索引 / len / 迭代，行为不变）。
+            return list((await session.execute(stmt)).all())
 
         sub = _deduped_subquery(spec, shop_id)
         stmt = (
@@ -228,7 +231,7 @@ async def query_library(
         stmt = stmt.order_by(sort_clause, getattr(spec.model, spec.tie_breaker).asc())
         if limit:
             stmt = stmt.limit(int(limit))
-        return (await session.execute(stmt)).all()
+        return list((await session.execute(stmt)).all())
 
 
 async def count_library(

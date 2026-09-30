@@ -15,7 +15,7 @@ HITL (Human-in-the-Loop) 装饰器
 - 数据导出/批量操作前审批
 """
 
-from typing import Callable, Any
+from typing import Any, Callable, Optional
 from langchain_core.tools import BaseTool, tool as create_tool
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import interrupt, Command
@@ -44,7 +44,7 @@ class HITLPrerequisiteError(RuntimeError):
 def add_human_in_the_loop(
     tool: BaseTool | Callable,
     *,
-    interrupt_config: dict = None,
+    interrupt_config: Optional[dict] = None,
     require_reason: bool = False,
     timeout_seconds: int = 3600,  # 默认1小时超时
 ) -> BaseTool:

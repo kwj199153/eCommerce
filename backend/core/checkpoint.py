@@ -19,7 +19,7 @@ LangGraph Checkpoint 生命周期管理
 """
 
 import logging
-from typing import Optional
+from typing import Any, Optional, cast
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
@@ -54,7 +54,11 @@ async def setup_checkpoint() -> AsyncPostgresSaver:
         kwargs={"autocommit": True},
     )
     await pool.open()
-    _checkpointer = AsyncPostgresSaver(pool)
+    # ★ 第 346 轮：`cast` 只为对齐 psycopg 的**泛型参数** —— `AsyncConnectionPool`
+    #   的 row 类型被推断成 `tuple[...]`，而 langgraph 的签名要 `dict[...]`。
+    #   运行期是同一个对象、同一套行为（langgraph 自己按 cursor 指定 dict 行工厂），
+    #   故只做类型层收口，不碰连接池构造。
+    _checkpointer = AsyncPostgresSaver(cast("Any", pool))
     await _checkpointer.setup()
     logger.info("✅ LangGraph Checkpoint 表已就绪（psycopg3）")
     return _checkpointer

@@ -190,6 +190,37 @@ E1 的三种官方修法（mypy 自己提示的）：`--exclude` 排除其一 / 
 
 ### 2.2 业务面基线（`core modules platforms ai_infra main.py worker.py`，py3.12）
 
+> ## ★★ 第 346 轮就地更正：下表的 **205 / 「ai_infra 29 + core 19」是欠计**
+>
+> **根因**：mypy 的**检查面积取决于「缓存状态」**，不只是「文件在不在磁盘上」。
+> 本次采集的实际顺序是「先跑 py311（abort 于 §2.1 的 E2 numpy stub）→ **复用同一份
+> `--cache-dir`** 再跑 py312」。`--python-version` **不参与缓存键**，于是 py312
+> 那一跑复用了 py311 留下的中间结果 ⇒ **静默少报**，而且**连汇总行都不打印**
+> （退出码仍是 2，所以从输出上看不出异常）。
+>
+> **四因子隔离实测**（同一 commit、同一 venv、同一命令
+> `mypy core modules platforms ai_infra main.py worker.py`）：
+>
+> | 因子 | 结果 |
+> |---|---|
+> | `--python-version 3.12` | 299 → 299（**不影响**） |
+> | **`--cache-dir`（唯一因子）** | 299 → **205**（`ai_infra/base_agent.py` 的 24 条**整份消失**、汇总行也不打印） |
+> | 确定性重跑（`--no-incremental`） | **231** |
+>
+> **更正后的数字**：
+> - 业务面（同一命令、确定性重跑）= **231**；其中 `ai_infra` **54** / `core` **20**；
+> - **B-1 的目标集** `mypy core ai_infra`（不夹带 `modules/`）= **74 条 / 18 文件 / 87 源文件**
+>   —— 这才是 §4.2 该用的规模数。
+>
+> **★ 安全边界（别把结论外推）**：目标集 `core ai_infra` 在**五个场景**下恒定 **74**
+> —— 全新缓存 / 被 py311 abort 污染的缓存 / 热缓存 / `--no-incremental` / 默认缓存，
+> **且每个场景都打印汇总行**。不稳的只是「含 `modules/` 的业务面」。
+> ⇒ 「缓存跨口径复用会少报」这条只证明「圈小面」是稳的，**不等于**整份业务面也稳。
+>
+> 证据文件：`.workbuddy/probes/r346_f1/mypy_b1_deterministic.txt`（74）、
+> `mypy_poison_py312.txt`（205，与 r345 原始产物**逐条一致**）、
+> `mypy_scoped_cache_test.py`（五场景）、`mypy_factor_isolation.py`（四因子）。
+
 | 指标 | 数值 |
 |---|---|
 | error 总数 | **205** |
@@ -269,7 +300,7 @@ error 最密集的文件（Top 12）：
 
 | # | 修什么 | 依据 | 为什么无争议 |
 |---|---|---|---|
-| **P1** | `[tool.mypy] python_version` 3.11 → **3.12**（或显式 `--python-version 3.12`） | §2.1 E2 | 不改则 mypy **一条业务结果都出不来** |
+| **P1** | `[tool.mypy] python_version` 3.11 → **3.12**（或显式 `--python-version 3.12`） | §2.1 E2 | 不改则 mypy **一条业务结果都出不来**。**✔ 第 346 轮已落**（`backend/pyproject.toml`） |
 | **P2** | mypy 的目标**必须显式给**（用 `core modules platforms ai_infra main.py worker.py` 这类列表，或 `--explicit-package-bases`） | §2.1 E1 | 不改则 `mypy .` 直接崩在同名 conftest |
 | **P3** | ESLint 侧必须**关闭 `no-undef`** | §1.6 ① | TS 项目里该规则本就不生效（官方立场），13 条里 12 条是假阳性 |
 
@@ -296,7 +327,7 @@ error 最密集的文件（Top 12）：
 
 | 档 | 内容 | 规模 | 说明 |
 |---|---|---|---|
-| **B-1** | 先修 P1 / P2，然后在 **`core/` + `ai_infra/`** 上开 mypy（19 + 29 = 48 error） | 48 | 与 `--select T20` 相同的棘轮思路：**先圈小面**，这两个包是整个仓最核心也最稳的 |
+| **B-1** | 先修 P1 / P2，然后在 **`core/` + `ai_infra/`** 上开 mypy | **74** ⚠️ | 与 `--select T20` 相同的棘轮思路：**先圈小面**。★ **规模数已按 §2.2 的更正改为 74**（原写 48 = 欠计）。**✔ 第 346 轮已完成并接 CI** |
 | **B-2** | 用 `disable_error_code` 关掉 `var-annotated`(17) + `assignment`(34) = 51 条噪声类 | 154 剩余 | 这两类在本仓多为"缺标注"，不是 bug |
 | **B-3** | 高价值类优先收敛：`union-attr` 31 / `arg-type` 32 / `attr-defined` 35 / `call-arg` 11 / `operator` 4 / `name-defined` 4 | **117** | 这些**最可能藏真 bug**（None 解引用、参数错位、属性名写错） |
 | **B-4** | `tests/` 与 `scripts/` 的 50 条 | 50 | 最后再收 |
@@ -323,6 +354,7 @@ error 最密集的文件（Top 12）：
 | `mypy-raw.txt` | `mypy .` 原始输出（E1 阻塞证据） |
 | `mypy-biz-raw.txt` | 业务面 + pyproject 的 `python_version=3.11`（E2 阻塞证据） |
 | `mypy-biz-py312-raw.txt` | **业务面 + py312 ⇒ 205 error（§2.2 的主数据）** |
+| （第 346 轮新增）| `r346_f1/mypy_b1_deterministic.txt`（B-1 目标集 **74**）、`mypy_poison_py312.txt`（205 的复现 → 证明是欠计）、`mypy_after_broad.txt`（改后 157，新增 0） |
 | `mypy-all-epb-raw.txt` | 全量 + `--explicit-package-bases` + py311（仍 E2 阻塞） |
 | `mypy-all-py312-raw.txt` | **全量 + epb + py312 ⇒ 255 error（§2.3）** |
 | `eslint-raw.json` | **ESLint 全量 JSON 结果（6.3 MB，§1 的唯一数据源）** |

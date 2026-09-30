@@ -18,11 +18,11 @@ class TokenData:
     """Token 解码后的数据"""
     def __init__(
         self,
-        user_id: str = None,
-        email: str = None,
+        user_id: Optional[str] = None,
+        email: Optional[str] = None,
         role: str = "user",
-        exp: datetime = None,
-        jti: str = None,
+        exp: Optional[datetime] = None,
+        jti: Optional[str] = None,
         token_version: Optional[int] = None,
     ):
         self.user_id = user_id

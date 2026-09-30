@@ -17,7 +17,19 @@
 #      所以 CI 只跑**已收敛到零的那部分**：`ruff check . --select T20`。
 #      以后每收敛一类（如 F401 unused-import）就往 CI 的 --select 加一项，
 #      形成**棘轮**：只增不减、永不回退。
-#    - mypy：配置已就绪，**仍未接入 CI**（存量无标注，接入前同样要先跑基线）。
+#    - mypy：**第 346 轮已接入 CI**（backend job 的「类型检查（mypy）」步骤，
+#      `run: mypy core ai_infra`）。同 ruff 的棘轮：只查**已收敛到零**的目录，
+#      每收敛一批就往目标里加一个，只增不减。
+#      ★ 上面那句「配置已就绪」当时是**纸面门禁**：本文件 + requirements-dev.txt
+#        都齐了，但 CI 里**没有任何一步调用 mypy**。接入时还查出两条 blocking
+#        （它们会让 mypy「一个业务字符都检查不到」）：
+#        ① python_version 写 "3.11" 而 venv 实为 3.12 ⇒ 读已装依赖的 numpy
+#           stub 直接 syntax 错 + "errors prevented further checking"；
+#        ② 无参数 `mypy` 会因 tests/ 与 scripts/ 各有一份 conftest.py 报
+#           `Duplicate module named "conftest"`（退出码 2，却一条都没检查）
+#           ⇒ 必须**显式给检查目标**。
+#      ★ 基线口径：「core + ai_infra」真实基线是 **74 条 / 18 文件**（不是 48；
+#        48 是缓存跨口径复用的欠计，见 docs/baseline-r345-lint.md §2.2）。
 #    - 覆盖率 / bandit / pip-audit：见下方 [tool.coverage.*]、[tool.bandit]，
 #      以及 .github/workflows/ci.yml 的 security job。
 # ============================================================
@@ -103,7 +115,14 @@ skip-magic-trailing-comma = false
 # ==================== mypy（宽松档）====================
 
 [tool.mypy]
-python_version = "3.11"
+# ★ 第 346 轮修正：这里原写 "3.11"，而 backend/.venv 实为 CPython 3.12.14，
+#   已装依赖的 stub（numpy/__init__.pyi:737）用了 3.12 的 `type` 语句 ⇒
+#   `mypy core ai_infra` 直接报 syntax 错并 "errors prevented further checking"
+#   ⇒ **一个业务字符都检查不到**。
+#   注意别和 [project] requires-python = ">=3.11" 混为一谈：那是**安装下限**
+#   （允许 3.11/3.12/3.13），而这里是**类型检查所依据的解释器版本**，
+#   必须等于实际运行/装 stub 的那个版本。
+python_version = "3.12"
 # 不以「零错误」为目标启动 —— 先只抓「能确定是 bug」的类别
 ignore_missing_imports = true
 follow_imports = "silent"

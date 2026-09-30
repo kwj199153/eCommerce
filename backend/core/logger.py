@@ -35,6 +35,7 @@
 import logging
 import os
 import sys
+from typing import Union
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -83,6 +84,9 @@ class InterceptHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         # 级别名优先用 loguru 里注册过的名字，取不到就用原始数值
+        # ★ 第 346 轮：显式声明 —— 两条分支给的类型不同（注册过的级别名是 str，
+        #   取不到时回落到数值 int），原先靠隐式推断，mypy 报 assignment。
+        level: Union[str, int]
         try:
             level = logger.level(record.levelname).name
         except ValueError:
@@ -192,7 +196,7 @@ LOG_FORMAT = (
 
 # ====== 上下文注入 ======
 
-def _inject_context(record) -> bool:
+def _inject_context(record) -> None:
     """
     loguru patcher：给每条日志补上请求级字段，并修正标准库日志的定位信息。
 
@@ -200,8 +204,12 @@ def _inject_context(record) -> bool:
     这里不覆盖 —— 否则「手工指定的追踪 ID」（例如从上游网关透传进来的）会被抹掉。
 
     Returns:
-        必须是 bool/None（loguru 要求 patcher 返回 falsy 或 True）；返回 False
-        会让该条日志被丢弃，这里永远返回 True。
+        None。★ 第 346 轮修正：此处原写「返回 False 会让该条日志被丢弃」——
+        **那是错的**。loguru 只把 patcher 当作「就地改 record」的回调，
+        调用处是裸语句 `core.patcher(log_record)`（`loguru/_logger.py:2059-2063`），
+        **返回值被丢弃**；决定「要不要丢这条日志」的是各 sink 的 `filter`。
+        本函数只被 `logger.configure(patcher=...)` 用过一处，从未当 filter。
+        ⇒ 原来的 `return True` 是死码，已删；注解改为 `-> None`。
     """
     from core.observability.context import (
         EMPTY,
@@ -235,7 +243,6 @@ def _inject_context(record) -> bool:
     ):
         if not extra.get(key):
             extra[key] = getter() or EMPTY
-    return True
 
 
 # ====== 文件轮转判据（P0-2）======
@@ -263,7 +270,9 @@ def _make_rotation(max_bytes: int):
     Returns:
         loguru 接受的 rotation 回调，签名 (message, file) -> bool。
     """
-    state = {"next_midnight": None}
+    # ★ 第 346 轮：显式声明为 `dict` —— 裸字面量会被推断成 `dict[str, None]`，
+    #   后面写回 datetime 就报 assignment。
+    state: dict = {"next_midnight": None}
 
     def _rotation(message, file) -> bool:  # noqa: ANN001 - loguru 约定签名
         now = datetime.now()

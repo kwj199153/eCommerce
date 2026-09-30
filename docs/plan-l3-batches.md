@@ -137,6 +137,91 @@
 
 ---
 
+### 1.7 执行记录 · B-1 后端 mypy 棘轮（第 346 轮 · #1259）
+
+**方案与落地逐条对账：**
+
+| §4.2 / §3 条目 | 方案原文 | 实际落地 | 偏差 |
+|---|---|---|---|
+| P1 | `python_version` 3.11 → 3.12 | 已落 | — |
+| P2 | 目标**必须显式给** | CI 写死 `mypy core ai_infra` | — |
+| B-1 | 在 `core/` + `ai_infra/` 开 mypy（**48** error） | 同上，但真实基线 **74 条 / 18 文件** | ★ **48 是欠计**（见下） |
+| — | 方案未提 | CI 还必须解决**第 2 条 blocking**：无参数 `mypy` 撞 `Duplicate module "conftest"`（退出码 2、**一条都没检查**） | 方案只把它当"本地跑不通"，没意识到它会让 CI **永远红或永远假绿** |
+
+**1.7.1 权威口径（数字全部由实测产物现算）**
+
+| 指标 | 值 |
+|---|---|
+| B-1 目标集基线 | **74 条 / 18 文件 / 87 源文件**（`mypy core ai_infra`） |
+| ├ `ai_infra` | **54** |
+| └ `core` | **20** |
+| 落地后 | **0**（`Success: no issues found in 87 source files`） |
+| 按 code | `assignment` 32（内含 **28** 条 implicit-Optional）/ `attr-defined` 14 / `union-attr` 11 / `arg-type` 6 / `return-value` 6 / `misc` 3 / `operator` 1 / `name-defined` 1 |
+| 最密集文件 | `ai_infra/base_agent.py` 24 / `rag/hybrid_engine.py` 15 / `llm/prompt_spec.py` 7 / `llm/dashscope_client.py` 6 / `core/auth/jwt_handler.py` 5 / `core/logger.py` 3 |
+
+**1.7.2 ★★ 口径级发现：mypy 的检查面积取决于「缓存状态」，不是「文件在不在磁盘上」**
+
+同一 commit、同一 venv（mypy 2.3.1）、同一命令
+`mypy core modules platforms ai_infra main.py worker.py`，仅因 `--cache-dir` 不同：
+
+| 因子 | 结果 |
+|---|---|
+| `--python-version 3.12` | 299 → 299（不影响） |
+| **`--cache-dir`（唯一因子）** | 299 → **205**（`base_agent.py` 的 24 条整份消失、**汇总行也不打印**，退出码仍是 2） |
+| `--no-incremental` | **231** |
+
+⇒ `docs/baseline-r345-lint.md` §2.2 的 **205 / 「ai_infra 29 + core 19」是欠计**：
+「先跑 py311（abort 于 numpy stub）→ **复用同一份缓存**再跑 py312」，
+而 `--python-version` **不参与缓存键**。已在该文档 §2.2 就地更正。
+
+**★ 安全边界（别外推）**：目标集 `core ai_infra` 在**五个场景**下恒定 **74**
+（全新缓存 / 被 abort 污染的缓存 / 热缓存 / `--no-incremental` / 默认缓存，**都带汇总行**）；
+不稳的只是「含 `modules/` 的业务面」。这条只证明「圈小面」稳，不证明整份业务面稳。
+
+**1.7.3 落地方式（逐条守「不改运行期行为」）**
+
+以**一次性成表**的补丁脚本落地（`(old, new, expect_n)`，写盘后读回复核、**按文件保留行尾**）。
+74 条里绝大多数是**纯注解**（补 `Optional` / 补类级注解 / 补 `cast` / 参数类型改 `Mapping`），
+另**顺带修掉 2 条真实潜在崩溃**（这是 mypy 真正的价值所在，不是风格）：
+
+1. `ai_infra/base_agent.py`：`(m.content or "").strip()` —— `BaseMessage.content` 的静态类型是
+   `str | list[...]`（多模态块），**content 是列表时会抛 `AttributeError: 'list' object has no attribute 'strip'`**。
+   改为统一走新增的 `_content_text(content)`（对 `str` 输入与原行为**逐字一致**，对列表取文本块拼接）。
+2. `ai_infra/base_agent.py`：`if not last_message.tool_calls` —— `messages[-1]` 的静态类型是全部消息的
+   联合，**只有 `AIMessage` 才有 `tool_calls`** ⇒ 拿到非 AI 消息时 AttributeError。
+   加 `isinstance` 收窄，且收窄后语义更强：不是 AI 消息 ⇒ 本就没有工具调用 ⇒ respond。
+
+**1.7.4 ★ 落地中踩到的三个坑（都进了护栏，供下次复用）**
+
+| 坑 | 现象 | 处置 |
+|---|---|---|
+| **锚点缩进整体多 4 空格** | 统计工具的输出格式是 `f"{path}:{lineno}\n    {text}"`，那 **4 空格是它自己加的前缀**；照抄进锚点 ⇒ 18 个文件里 **6 个锚点命中 0 次** | 改成「引号后正文 + 空格数」的**内容锚定**；纠正规则写成「块内引号后统一减 4 格」 |
+| **`request: Request = None` 不能直接删 `= None`** | mypy 报的是 implicit-Optional，但删掉后 Python 语法禁止「无默认值形参跟在有默认值后面」⇒ `[syntax] Parameter without a default follows parameter with a default`，**整个文件连 import 都做不到**（mypy 只报 1 条，看着像小事） | 把 `request` **提到**有默认值的形参之前 —— FastAPI 按**类型注解**注入、与顺序无关；同仓 `security_router.forgot_password` 早已这么写（**与既有范式一致**） |
+| **`Optional[...]` 会"传染"出 2 条新错** | `TokenData.user_id`（真值来自 `payload.get("sub")`，**确实可能缺失**）如实改成 `Optional[str]` 后，2 处 `get_user_by_id(db, user_id)` 报 arg-type | 用 `... if user_id else None` 把它归并进**原有的**「用户不存在」401（**文案、副作用完全不变**）—— 而不是把类型改回谎话 |
+
+**1.7.5 验收（四条，全过）**
+
+1. `mypy core ai_infra` = **0 error / 退出码 0**（`--no-incremental` 与默认缓存两种口径都验，
+   另用**全新缓存目录**模拟 CI，同样 Success）。
+2. **业务面全仓零新增**：`mypy core modules platforms ai_infra main.py worker.py`
+   改前 **231** → 改后 **157**，逐条 diff **新增 0 条**、消失 65 处（`core/` + `ai_infra/` 全清）。
+3. **反向注入自证通过**：往 `core/` 塞一个临时文件（implicit-Optional + union-attr 两条）
+   ⇒ 基线绿 → 注入后 `exit=1` 且**红在指定的两条规则上** → 还原回绿（不留残file）。
+   ★ 探针自身第一版把 `len(v: str | None)` 断言成 `union-attr`（实际 mypy 报 `arg-type`）⇒ **假红**；
+   改成在 `int | str` 上取 `.bit_length()` 才是真 `union-attr`。**这条记下来：反向注入的断言必须
+   与被测工具的实际归类一致，否则会把"探针写错"当成"门禁没抓到"。**
+4. **不破坏现有流程**：19 个改动模块全部 import 通过；直接相关的 37 个测试文件全绿。
+
+**1.7.6 CI 接线**
+
+- backend job 在 `ruff` 之后、`pytest` 之前新增「类型检查（mypy：棘轮 —— 只查已收敛到零的目录）」，
+  `run: mypy core ai_infra`（11 → 12 步）。
+- 头注第 28 行的「`mypy：**仍未接入**`」同步改写，并把**两条 blocking** 与
+  **基线口径更正到 74** 写进注释 —— 否则下一个人还会照 48 去规划。
+- ★ 判据是**退出码**：mypy 报 `errors prevented further checking` 时同样非零 ⇒ 必须当失败看。
+
+---
+
 ## 2. 批次 2 —— 「出事后能不能还原当时发生了什么」
 
 ### 2A `request_id` 贯通三段

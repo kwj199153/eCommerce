@@ -38,7 +38,7 @@
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 import enum
 
@@ -133,7 +133,15 @@ class User(Base):
     # 关系
     # ★ P1-c：`shops` relationship 已随 Shop 删除；店铺归属改走
     #   account → store（见 core/identity/account_models.py）。
-    subscription: Mapped[Optional["Subscription"]] = relationship("Subscription", back_populates="user", uselist=False, lazy="selectin")
+    # ★ 第 346 轮：原注解 `Mapped[Optional["Subscription"]]` 里的 "Subscription"
+    #   在**本模块命名空间里并不存在**（真实类在 `modules/billing/models.py`，
+    #   靠文件末尾 `import modules.billing.models` 注册进 SQLAlchemy registry）
+    #   ⇒ mypy 报 `name-defined`。
+    #   ★ 为什么不补 `if TYPE_CHECKING: from modules.billing.models import Subscription`：
+    #     `tests/test_core_layering.py::_import_time_nodes` 明确把**模块级 if 体**
+    #     也算 import 期 ⇒ 那会新增一条 `KERNEL → modules` 的边，撞老板定的红线。
+    #     用一个例外登记去换类型精度不划算 ⇒ 退一步写 `Any`（运行期语义完全不变）。
+    subscription: Mapped[Optional[Any]] = relationship("Subscription", back_populates="user", uselist=False, lazy="selectin")
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, role={self.role})>"

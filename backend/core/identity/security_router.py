@@ -343,10 +343,10 @@ async def change_password(
 
 @router.post("/logout", response_model=dict)
 async def logout(
+    request: Request,
     payload: Optional[LogoutRequest] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    request: Request = None,
 ):
     """
     登出：把当前这枚 token（及其 refresh token）加入撤销名单。

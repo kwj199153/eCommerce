@@ -185,6 +185,14 @@ class RenderedPrompt(str):
     ★ 反过来说，这也意味着**不能**用 `type(x) is str` 去判它 —— 本仓没有这么判的。
     """
 
+    # ★ 第 346 轮：`str` 子类不会自动获得实例属性 —— `__new__` 里
+    #   `obj._spec = spec` / `obj._values = ...` 两处赋值让 mypy 报
+    #   `"RenderedPrompt" has no attribute "_spec"`（连带 7 条 attr-defined）。
+    #   补类级**注解**：只影响类型检查，运行期仍是 `__new__` 里赋的实例属性
+    #   （不引入 `__slots__`，那会改变实例的内存布局）。
+    _spec: PromptSpec
+    _values: Dict[str, Any]
+
     def __new__(
         cls,
         text: str,

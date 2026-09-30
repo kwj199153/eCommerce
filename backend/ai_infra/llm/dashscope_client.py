@@ -372,7 +372,7 @@ class DashScopeLLM:
 
     def __init__(
         self,
-        model: str = None,
+        model: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 2048,
         top_p: float = 0.9,
@@ -405,7 +405,7 @@ class DashScopeLLM:
     async def chat(
         self,
         messages: Union[str, List[Message], List[Dict]],
-        system_prompt: str = None,
+        system_prompt: Optional[str] = None,
         **kwargs,
     ) -> LLMResponse:
         """
@@ -450,7 +450,7 @@ class DashScopeLLM:
     async def chat_stream(
         self,
         messages: Union[str, List[Message], List[Dict]],
-        system_prompt: str = None,
+        system_prompt: Optional[str] = None,
         **kwargs,
     ) -> AsyncIterable[str]:
         """
@@ -587,7 +587,7 @@ class DashScopeLLM:
         system_prompt: str,
         output_format: str = "json",
         **kwargs,
-    ) -> Union[Dict, List]:
+    ) -> Union[Dict, List, str]:
         """
         结构化输出
 
@@ -647,7 +647,7 @@ class DashScopeLLM:
     def _format_messages(
         self,
         messages: Union[str, List[Message], List[Dict]],
-        system_prompt: str = None,
+        system_prompt: Optional[str] = None,
     ) -> List[Dict]:
         """统一消息格式"""
         result = []
@@ -784,7 +784,7 @@ class DashScopeLLM:
 _instances: Dict[str, DashScopeLLM] = {}
 
 
-def get_llm(model: str = None, **kwargs) -> DashScopeLLM:
+def get_llm(model: Optional[str] = None, **kwargs) -> DashScopeLLM:
     """获取 LLM 实例（按模型缓存）"""
     key = model or LLMConfig.DEFAULT_MODEL
     if key not in _instances:

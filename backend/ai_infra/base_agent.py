@@ -58,9 +58,10 @@ import json
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, AsyncIterable, Dict, List, Optional, Union
+from typing import Any, AsyncIterable, Dict, List, Mapping, Optional, Union
 
 from langchain_core.language_models import BaseChatModel
+from langchain_core.runnables import Runnable
 from langchain_core.messages import (
     AIMessage,
     HumanMessage,
@@ -70,6 +71,7 @@ from langchain_core.messages import (
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 
 from ai_infra.budget import (
@@ -103,6 +105,32 @@ from core.observability.context import current_user_id
 logger = get_logger(__name__)
 
 
+def _content_text(content: Any) -> str:
+    """把 `BaseMessage.content` 取成纯文本。
+
+    ★ 第 346 轮新增。它的静态类型是 `str | list[str | dict]`（多模态内容块），
+      而原先 `_sanitize_tool_call_pairing` 里写的是 `(m.content or "").strip()`
+      —— content 是**列表**时会抛
+      `AttributeError: 'list' object has no attribute 'strip'`。
+      mypy 的 union-attr 指的正是这个潜在崩溃。
+
+    对 `str` 的输入与原来**逐字一致**（原样返回）；对列表取其中的文本块拼接。
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts)
+    return "" if content is None else str(content)
+
+
 # ====== LLM 调用结果 ======
 @dataclass
 class LLMCallResult:
@@ -131,7 +159,13 @@ class LLMCallResult:
 class AgentState(MessagesState):
     """Agent 状态 Schema"""
     # 结构化响应（用于返回标准化结果）
-    structured_response: Optional[dict] = None
+    # ★ 第 346 轮：TypedDict 的字段**不能带默认值**（mypy 报
+    #   `misc: Right hand side values are not supported in TypedDict`）。
+    #   LangGraph 只读 `__annotations__`（`_get_channels`），**不读类属性默认值**；
+    #   全仓也没有任何读取方依赖它们（`state["budget"]` 只出现在注释里，
+    #   真实读取一律是 `state.get(...) or {}`）⇒ 删掉默认值，运行期语义不变。
+    #   本类另两处同理（见 `budget` / `todos`）。
+    structured_response: Optional[dict]
     # ★ 第 159 轮（批 D3）：这里原先有一个 `metadata: dict = {}` —— 已删除。
     #   它是**只写不读的死重量**：唯一出口是 `default_metadata` → 本字段，
     #   而全仓 0 处读 `state["metadata"]`；写进去的只有「角色标记」
@@ -156,7 +190,7 @@ class AgentState(MessagesState):
     #:   （本轮到此为止）。前者不该让 status 变红，后者必须让它变红 ——
     #:   把两者合成一个字段，就会要么「长会话每次都被报成失败」，
     #:   要么「真截断了却没人知道」。
-    budget: dict = {}
+    budget: dict
 
     #: 子任务清单（第 148 轮 · 批 C3）。生产者 = `ai_infra.plan` 的两个工具
     #: （`plan_tasks` / `update_task`），消费者 = `_llm_call_node`（每轮渲染进
@@ -171,7 +205,7 @@ class AgentState(MessagesState):
     #: ★ 为什么用默认的「覆盖」更新语义、不自定义 reducer：两个规划工具**总是
     #:   返回完整的新列表**，覆盖即正确语义。自定义 reducer（把两份列表合并）
     #:   反而引入歧义 —— 重规划本该整体替换，合并会让旧步骤赖着不走。
-    todos: list = []
+    todos: list
 
 
 class BaseAgent:
@@ -574,7 +608,7 @@ class BaseAgent:
                 logger.warning(f"[{self.agent_name}] RAG init failed: {e}")
         return self._rag_engine
 
-    async def initialize_rag(self, faq_items: List[Dict] = None):
+    async def initialize_rag(self, faq_items: Optional[List[Dict]] = None):
         """初始化 RAG 引擎，并（可选）载入**调用方提供的**知识条目。
 
         ★ 基类只做两件事：把检索能力准备好 + 把**传入的**知识灌进去；
@@ -607,8 +641,8 @@ class BaseAgent:
     async def llm_chat(
         self,
         user_message: str,
-        system_prompt: str = None,
-        model: str = None,
+        system_prompt: Optional[str] = None,
+        model: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 2048,
         **kwargs,
@@ -664,7 +698,7 @@ class BaseAgent:
         user_message: str,
         system_prompt: str,
         output_format: str = "json",
-        model: str = None,
+        model: Optional[str] = None,
         **kwargs,
     ) -> LLMCallResult:
         """结构化输出调用（JSON/表格/列表）。
@@ -726,7 +760,7 @@ class BaseAgent:
     async def llm_rag_answer(
         self,
         query: str,
-        system_prompt: str = None,
+        system_prompt: Optional[str] = None,
         top_k: int = 3,
     ) -> LLMCallResult:
         """RAG 增强回答（先检索再生成）。
@@ -919,7 +953,7 @@ class BaseAgent:
             self._graph = self._build_graph(self.checkpointer)
         return self._graph
 
-    def _build_graph(self, checkpointer: Optional[Any] = None) -> StateGraph:
+    def _build_graph(self, checkpointer: Optional[Any] = None) -> "CompiledStateGraph":
         """
         构建 LangGraph 工作流
 
@@ -1005,7 +1039,10 @@ class BaseAgent:
                         update={"tool_calls": kept, "invalid_tool_calls": []}
                     )
                     # 剥空且无文本内容 → 整条丢弃，避免产生空 AIMessage
-                    if not kept and not (m.content or "").strip():
+                    # ★ 第 346 轮：`content` 是 `str | list[...]`，原写法
+                    #   `(m.content or "").strip()` 在列表形态下抛 AttributeError。
+                    #   统一走 `_content_text`（对 str 与原行为逐字一致）。
+                    if not kept and not _content_text(m.content):
                         continue
             elif isinstance(m, ToolMessage):
                 # 孤立的 ToolMessage（其 AIMessage 已不在或未声明该 id）→ 丢弃
@@ -1156,7 +1193,7 @@ class BaseAgent:
         return has_reply and not has_tool
 
     @staticmethod
-    def _carried_tokens(state: dict, *, iterations_done: int) -> int:
+    def _carried_tokens(state: Mapping[str, Any], *, iterations_done: int) -> int:
         """本轮**此前**已消耗的 token（0 表示本轮第一次迭代）。
 
         ★ 为什么从 state 读、不记在实例上：Agent 实例是**进程内单例**
@@ -1190,7 +1227,7 @@ class BaseAgent:
         """
         return messages
 
-    def _system_prompt_with_plan(self, state: dict, *, sections: str = "") -> str:
+    def _system_prompt_with_plan(self, state: Mapping[str, Any], *, sections: str = "") -> str:
         """本轮要发给模型的 system prompt。
 
         组成**按顺序**（空的部分整段跳过）：
@@ -1414,7 +1451,7 @@ class BaseAgent:
 
         return {"messages": [response], "budget": budget_state}
 
-    def _llm_with_tools(self, model: Optional[str] = None) -> BaseChatModel:
+    def _llm_with_tools(self, model: Optional[str] = None) -> Runnable:
         """绑定工具的 LLM。
 
         关键：必须 bind_tools，否则 LLM 永不输出 tool_calls，
@@ -1443,7 +1480,11 @@ class BaseAgent:
         last_message = state["messages"][-1]
 
         # 构建结构化响应
-        response_content = ""
+        # ★ 第 346 轮：`AIMessage.content` 的静态类型是 `str | list[...]`（多模态块）。
+        #   这里**故意透传**原值 —— 收窄成 `str` 会改变
+        #   `structured_response["message"]` 的下发形状。声明成联合类型
+        #   = 与运行期行为一致，且不再骗过 mypy。
+        response_content: Union[str, list] = ""
         if isinstance(last_message, AIMessage):
             response_content = last_message.content or "处理完成"
         elif isinstance(last_message, ToolMessage):
@@ -1509,7 +1550,11 @@ class BaseAgent:
             return "respond"
 
         # 如果没有工具调用，直接返回
-        if not last_message.tool_calls or len(last_message.tool_calls) == 0:
+        # ★ 第 346 轮：加 `isinstance` 收窄。`messages[-1]` 的静态类型是全部消息的
+        #   联合，只有 `AIMessage` 才有 `tool_calls` —— 原写法在拿到非 AI 消息时
+        #   会 AttributeError（mypy 的 union-attr 指的正是这个潜在崩溃）。
+        #   收窄后语义更强：不是 AI 消息 ⇒ 本就没有工具调用 ⇒ respond。
+        if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
             return "respond"
 
         # 如果有工具调用，继续执行

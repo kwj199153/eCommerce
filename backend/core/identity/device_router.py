@@ -287,7 +287,8 @@ async def switch_account(
         )
 
     # ---- 第 2 道：用户仍然存在且启用 ----
-    user = await get_user_by_id(db, data.user_id)
+    user_id = data.user_id
+    user = await get_user_by_id(db, user_id) if user_id else None
     if not user or not user.is_active:
         await device_vault.forget(device_id, payload.user_id)
         raise HTTPException(

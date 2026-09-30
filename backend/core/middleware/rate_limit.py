@@ -33,7 +33,7 @@
 import asyncio
 import logging
 import time
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
@@ -136,7 +136,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.exempt_paths = (
             frozenset(exempt_paths) if exempt_paths is not None else DEFAULT_EXEMPT_PATHS
         )
-        self._counter: object = _MemoryCounter()
+        # ★ 第 346 轮：原注解是 `object` —— 于是 `self._counter.incr(...)` 报
+        #   `"object" has no attribute "incr"`。两个实现（进程内 / Redis）
+        #   都提供 `async incr(key, window) -> int`，用联合类型即可如实表达。
+        self._counter: Union[_MemoryCounter, _RedisCounter] = _MemoryCounter()
         self._backend_resolved = False
         # 后端选择：None = 自动探测（默认，生产行为）；
         #           False = 强制进程内计数；True = 强制 Redis。
