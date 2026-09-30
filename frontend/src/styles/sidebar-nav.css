@@ -1,0 +1,52 @@
+/* ====== 侧边栏「分组标题」与「分节菜单」的唯一真源 ==========================
+   为什么单独成文件（第 260 轮）：
+     这两组规格原先在 `Sidebar/AgentList.vue` 与 `Sidebar/KnowledgeBase.vue`
+     里**各写了一份**（逐字相同），而各自的容器**又加了 `padding: var(--space-8) 0`**。
+     padding 与标题自己的 `padding-top` 叠加，导致三个分组标题的**上间距**
+     实测为 **8 / 18 / 2**（CDP 实测，不是目测）—— 看起来就是
+     「Agent 群 / 资料库 / 能力 三个标题行高度不一致」。
+
+   现在的分工（改间距只需动这一处）：
+     · 容器**不再有纵向 padding**（`AgentList.vue` / `KnowledgeBase.vue` 里已清零）；
+     · 分组之间的留白**只由**标题自身的 `margin-top` 决定；
+     · 菜单项的行高与纵向 margin 只在这里定义一次，两组菜单共用同一个类名。
+
+   ★ 几何不变量（三个标题盒子等高 + 上间距相等 + 侧边栏不溢出/不出滚轮）由
+     `scripts/cdp-sidebar-layout-probe.mjs` 在**真实浏览器**里钉住 ——
+     样式叠加的实际像素只有浏览器算得出来，静态读源码证明不了。
+   ★ 结构不变量（样式不得被搬回组件、类名必须被引用）由
+     `scripts/check-sidebar-layout.cjs` 在 `npm run build` 里钉住。
+   ========================================================================== */
+
+.sidebar-section-title {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  /* 三个分组共用同一个上间距 —— 这是「三个标题行看起来一样高」的关键。
+     一旦这里出现第二个值，L2 断言就会红。 */
+  margin-top: var(--space-8);
+  padding: 0 var(--space-16);
+  font-size: var(--font-size-13);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-tertiary);
+}
+
+.sidebar-nav-menu .ant-menu-item {
+  height: 34px;
+  line-height: 34px;
+  margin: var(--space-1) var(--space-8);
+  border-radius: var(--radius-6);
+}
+
+/* 每组**最后一项**不留底边距。
+   否则它的 margin-bottom 会叠加到下一个分组标题的 margin-top 上，
+   使「资料库 / 能力」的上间距比第一个分组（紧跟 logo 分隔线）多 1px。 */
+.sidebar-nav-menu .ant-menu-item:last-child {
+  margin-bottom: 0;
+}
+
+.sidebar-nav-menu .ant-menu-item .anticon {
+  font-size: var(--font-size-16);
+  margin-right: var(--space-10);
+}

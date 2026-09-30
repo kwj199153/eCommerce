@@ -169,6 +169,18 @@
               <span class="mi-extra"></span>
             </a-menu-item>
 
+            <!-- 2.6 审计日志（★ 第 328 轮：后端 P0-5 读口 `GET /api/v1/audit/*` 的界面入口）
+                 ★ `v-if="isPlatformAdmin"` —— 后端读口本身就是 `Depends(get_admin_user)`
+                   （匿名 401 / 非超管 403）。界面这层是**展示收敛**，不是授权：
+                   收掉入口只为别让普通用户看到一个必然失败的按钮。
+                 ★ 事件名沿用既有的 `open-*-drawer` 约定（与设置 / 记忆与进化同一条通路），
+                   账户菜单因此**不需要 import 审计面板的任何东西**。 -->
+            <a-menu-item v-if="isPlatformAdmin" key="audit" @click="openAuditDrawer">
+              <span class="mi-icon"><FileSearchOutlined /></span>
+              <span class="mi-label">审计日志</span>
+              <span class="mi-extra"></span>
+            </a-menu-item>
+
             <!-- 3. 外观（子菜单：主题切换） -->
             <a-sub-menu key="appearance">
               <template #icon><span class="mi-icon"><BgColorsOutlined /></span></template>
@@ -199,6 +211,16 @@
             <a-menu-item key="help" @click="handleHelpFeedback">
               <span class="mi-icon"><QuestionCircleOutlined /></span>
               <span class="mi-label">帮助与反馈</span>
+              <span class="mi-extra"></span>
+            </a-menu-item>
+
+            <!-- 4.5 重看新手引导（第 284 轮）
+                 ★ 必须保留这个入口：引导是一次性的（看完就记不住了），
+                   而被跳过的步骤（比如当时没选 Agent ⇒ 右栏那步没讲）
+                   只有在用户把它叫出来之后才有机会补上。 -->
+            <a-menu-item key="tour-replay" @click="handleTourReplay">
+              <span class="mi-icon"><CompassOutlined /></span>
+              <span class="mi-label">重看新手引导</span>
               <span class="mi-extra"></span>
             </a-menu-item>
 
@@ -263,7 +285,8 @@ import {
   SettingOutlined, ExperimentOutlined, BgColorsOutlined,
   QuestionCircleOutlined, ReloadOutlined, LogoutOutlined, LoginOutlined,
   DownOutlined, CheckOutlined, CopyOutlined, CrownOutlined, TeamOutlined,
-  UserSwitchOutlined, PlusOutlined, DeleteOutlined,
+  UserSwitchOutlined, PlusOutlined, DeleteOutlined, CompassOutlined,
+  FileSearchOutlined,
 } from '@ant-design/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useThemeStore } from '@/stores/theme'
@@ -314,6 +337,23 @@ const avatarLetter = computed(() => displayName.value.charAt(0).toUpperCase())
 const isRealLogin = computed(
   () => !!userStore.token && !isDemoToken(userStore.token) && !!userStore.user
 )
+
+/**
+ * 是否**平台超管**（第 328 轮：审计日志入口的可见性）。
+ *
+ * ★ 判定复用 `userStore.isAdmin` —— 它是本仓前端**已有**的唯一角色源
+ *   （`user.role === 'admin'`，与后端 `core/auth/accounts.py::is_platform_admin`
+ *   同一个字符串）。这里刻意**不再从零写一遍** `user.role === 'admin'`：
+ *   同一判定两份实现 ⇒ 至少一份永远测不到（本仓吃过的亏）。
+ *
+ * ★ 必须**与 `isRealLogin` 相与**：演示模式的 `DEMO_USER.role` 就是 `'admin'`
+ *   （见 `config/demoMode.ts`），只判 `isAdmin` 的话演示身份会看到这个入口，
+ *   点进去必然 401（demo token 不是身份）⇒ 界面承诺了一件做不到的事。
+ *
+ * ★ 这层只是**展示收敛**，不是授权：后端读口是 `Depends(get_admin_user)`，
+ *   越权请求照样 403。收掉按钮是为了别让 99% 的用户看到一个必然失败的入口。
+ */
+const isPlatformAdmin = computed(() => isRealLogin.value && userStore.isAdmin)
 
 const userRoleLabel = computed(() => {
   if (!isRealLogin.value) return '未登录 · 演示模式'
@@ -521,6 +561,18 @@ const openTeam = () => {
   router.push('/team')
 }
 
+/**
+ * 打开审计日志抽屉（第 328 轮）。
+ *
+ * ★ 与 `openSettings` / `openMemoryDrawer` 完全同构：只发事件、不 import 面板，
+ *   面板由 `Workspace.vue` 挂载并监听。这样账户菜单与审计面板之间零耦合 ——
+ *   面板将来换实现（比如改成路由页）不必回来改这里。
+ */
+const openAuditDrawer = () => {
+  menuOpen.value = false
+  window.dispatchEvent(new CustomEvent('open-audit-drawer'))
+}
+
 const openMemoryDrawer = () => {
   menuOpen.value = false
   window.dispatchEvent(new CustomEvent('open-memory-drawer'))
@@ -529,6 +581,18 @@ const openMemoryDrawer = () => {
 const handleHelpFeedback = () => {
   menuOpen.value = false
   message.info('帮助与反馈：请联系项目维护者或提交 Issue')
+}
+
+/**
+ * 重看新手引导。
+ *
+ * ★ 这里只发一个事件，**不 import 引导的任何东西**：
+ *   账户菜单是低频 UI，把它和引导的实现绑起来毫无收益，
+ *   而事件能让「谁都可以 requesting 重播」这件事保持零耦合。
+ */
+const handleTourReplay = () => {
+  menuOpen.value = false
+  window.dispatchEvent(new CustomEvent('tour:replay'))
 }
 
 const checkUpdate = () => {
@@ -582,6 +646,13 @@ const copyAccountId = async () => {
   border-top: 1px solid var(--border-base);
   margin-top: auto;
   flex-shrink: 0;
+  /* ★ 第 260 轮：粘在滚动容器底部 —— 窗口比侧边栏内容矮时，
+     导航区滚动而账户入口**始终可见可点**（改前它会被挤出视口，实测 top=895 > 856）。
+     background 必须给：否则滚上来的菜单项会从它背后透出来。 */
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background-color: var(--bg-sidebar);
 }
 
 .user-trigger {
@@ -604,7 +675,7 @@ const copyAccountId = async () => {
   height: 32px;
   min-width: 32px;
   border-radius: var(--radius-circle);
-  background: linear-gradient(135deg, #52c41a, #389e0d);
+  background: linear-gradient(135deg, #2c8409, #237804);
   color: #fff;
   display: flex;
   align-items: center;
@@ -745,7 +816,7 @@ const copyAccountId = async () => {
   flex-shrink: 0;
 }
 .sp-item.is-current .sp-avatar {
-  background: linear-gradient(135deg, #52c41a, #389e0d);
+  background: linear-gradient(135deg, #2c8409, #237804);
   color: #fff;
 }
 
@@ -887,7 +958,7 @@ const copyAccountId = async () => {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-circle);
-  background: linear-gradient(135deg, #52c41a, #389e0d);
+  background: linear-gradient(135deg, #2c8409, #237804);
   color: #fff;
   display: flex;
   align-items: center;

@@ -114,9 +114,22 @@
                ★ 取消勾选会**撤销**该账号已有的免密，而不只是"这次不新增"：
                  否则对已经记住过的账号，这个勾选框就是个摆设。 -->
             <a-form-item class="remember-row">
-              <a-checkbox v-model:checked="rememberDevice">
-                记住登录状态，下次免密切换
-              </a-checkbox>
+              <div class="remember-inner">
+                <a-checkbox v-model:checked="rememberDevice">
+                  记住登录状态，下次免密切换
+                </a-checkbox>
+                <!-- ★ 台账 #1154：「忘记密码」放在这一行 ——
+                     它与「记住登录状态」是同一类东西（都是这次登录的附加选项），
+                     而找不到密码的用户，最先盯的就是密码框正下方。
+                     ★ 用 <button> 而不是 <a>：它不跳页（弹窗），
+                       <a> 会被浏览器与读屏软件当成导航。
+                     ★ 这个入口此前**不存在**：全仓 `forgot-password` 调用 0 处，
+                       而它背后的邮件链接 `/reset-password` 也没有落地页 ⇒
+                       「忘记密码」这件事在整条链路上**没有任何入口**。 -->
+                <button type="button" class="forgot-link" @click="openForgot">
+                  忘记密码？
+                </button>
+              </div>
             </a-form-item>
 
             <a-form-item>
@@ -237,12 +250,73 @@
           🚀 一键体验（跳过登录）
         </a-button>
       </template>
+
+      <!-- ===== 忘记密码（台账 #1154）=====
+           ★ 用弹窗而不是新页面：这个动作只需要一个邮箱，
+             跳页会让"刚才输错的那次登录"整个丢上下文。
+           ★ 成功态的话术**原样用后端返回的那句**（`_FORGOT_GENERIC_MESSAGE`：
+             "如果该邮箱已注册，我们已发送一封重置密码的邮件…"）。
+             前端自己另写一句"重置邮件已发送"，就等于给了一个
+             **能判断账号是否存在**的旁证。 -->
+      <!-- ★ 显式声明宽度：浮层宽度必须取自 WINDOW_W 阶梯
+           （`scripts/check-window-widths.cjs` 的 S3；它在 `npm run build` 链里，
+           缺这一行等于构建红）。取 `md`(520) = antd Modal 默认宽度 ⇒ 观感不变。
+           ★ 注释必须放在标签**之前**：Vue 模板的属性区域内不能插 HTML 注释。 -->
+      <a-modal
+        v-model:open="forgotOpen"
+        title="找回密码"
+        :footer="null"
+        :width="WINDOW_W.md"
+        @cancel="resetForgot"
+      >
+        <a-result
+          v-if="forgotSent"
+          status="success"
+          title="已受理"
+          :sub-title="forgotMessage"
+        />
+
+        <template v-else>
+          <a-alert
+            v-if="forgotError"
+            type="error"
+            show-icon
+            :message="forgotError"
+            class="forgot-alert"
+          />
+
+          <a-form layout="vertical" @finish="submitForgot">
+            <a-form-item label="注册邮箱">
+              <a-input
+                v-model:value="forgotEmail"
+                placeholder="输入注册时用的邮箱"
+                size="large"
+                allow-clear
+                @press-enter="submitForgot"
+              />
+            </a-form-item>
+            <a-button
+              type="primary"
+              html-type="submit"
+              block
+              size="large"
+              :loading="forgotSending"
+            >
+              发送重置邮件
+            </a-button>
+          </a-form>
+
+          <p class="forgot-note">
+            邮件里的链接 30 分钟内有效。若链接打不开，可在页面上手工粘贴邮件中的那串代码。
+          </p>
+        </template>
+      </a-modal>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { UserOutlined, LockOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
@@ -250,6 +324,8 @@ import { useUserStore } from '@/stores/user'
 import { DEMO_MODE, DEMO_TOKEN, DEMO_REFRESH_TOKEN, DEMO_USER } from '@/config/demoMode'
 import { useKnownAccounts, forgetAllAccounts, type KnownAccount } from '@/config/knownAccounts'
 import { isRemembered, rememberedAccountCount, forgetRemembered } from '@/config/authVault'
+import { forgotPassword } from '@/api/auth'
+import { WINDOW_W } from '@/config/layout'
 
 const router = useRouter()
 const route = useRoute()
@@ -533,6 +609,83 @@ const handleDemoLogin = async () => {
   message.success('🎉 已进入演示模式')
   router.push('/')
 }
+
+// ============================================================================
+// 忘记密码（★ 台账 #1154）
+//
+// ★ 与后端 `/auth/forgot-password` 的三条约定，写在这里免得日后被"优化"掉：
+//   ① **统一响应**：无论邮箱是否存在，后端返回**同一句话**（防邮箱枚举）。
+//      ⇒ 前端不得依据响应判断"这个邮箱存不存在"，也不得弹"邮箱未注册"。
+//   ② **唯一该如实显示的失败是 503**（邮件服务未启用）——
+//      这是与具体邮箱无关的全局配置状态，不构成枚举通道；
+//      不说的话，用户会一直等一封永远不会来的信。
+//   ③ 成功态**不跳页**：后端刻意不在这里透露任何账号信息，
+//      前端也不该用"跳转到登录页并带上邮箱"之类的方式把它泄回去。
+// ============================================================================
+
+const forgotOpen = ref(false)
+const forgotEmail = ref('')
+const forgotSending = ref(false)
+/** 常驻错误面（不是 toast）：邮件发不出去时用户需要能反复看到原因 */
+const forgotError = ref('')
+const forgotSent = ref(false)
+const forgotMessage = ref('')
+
+function openForgot() {
+  // ★ 把用户已经敲进登录框的邮箱带过去：他刚才多半只是密码记错了，
+  //   邮箱十有八九是对的，不该让他再打一遍。
+  if (!forgotEmail.value && loginForm.email) {
+    forgotEmail.value = loginForm.email.trim()
+  }
+  forgotError.value = ''
+  forgotOpen.value = true
+}
+
+function resetForgot() {
+  forgotSent.value = false
+  forgotError.value = ''
+}
+
+async function submitForgot() {
+  forgotError.value = ''
+  const email = forgotEmail.value.trim()
+  if (!email) {
+    forgotError.value = '请输入注册邮箱'
+    return
+  }
+
+  forgotSending.value = true
+  try {
+    // ★ silentError：本弹窗自己有常驻错误面，不能让拦截器再弹一次
+    const res = await forgotPassword(email, { silentError: true })
+    forgotSent.value = true
+    forgotMessage.value = res?.message || '请查收邮件并按提示操作'
+  } catch (err) {
+    const e = err as { response?: { data?: { detail?: unknown } } }
+    const detail = e?.response?.data?.detail
+    forgotError.value =
+      typeof detail === 'string' && detail ? detail : '发送失败，请稍后重试'
+  } finally {
+    forgotSending.value = false
+  }
+}
+
+/**
+ * `?forgot=1` ⇒ 自动展开找回密码弹窗。
+ *
+ * ★ 存在的理由：`ResetPassword.vue` 的失败态里有「重新申请一封」，
+ *   它把用户送回这里。若只是回到登录页、还要用户自己再找一次入口，
+ *   那就是把"你刚才申请的那条链接已作废"这件事的善后责任推给了他。
+ * ★ 用 `immediate` 而不是 onMounted：`route.query` 在 setup 阶段就已可用，
+ *   不必去动本文件既有的 onMounted（那里有一串与免密账号相关的初始化）。
+ */
+watch(
+  () => route.query.forgot,
+  (v) => {
+    if (v) openForgot()
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
@@ -666,12 +819,50 @@ const handleDemoLogin = async () => {
   margin-bottom: var(--space-16);
 }
 
+/* ★ 台账 #1154：勾选框靠左、「忘记密码？」靠右。
+   ★ 为什么不直接把 .remember-row 设成 flex：Ant 的 a-form-item 内部还有
+     .ant-form-item-row / .ant-form-item-control 两层包裹，在外层设 flex
+     只会把它们当成 flex item 排布，checkbox 并不会真的靠左靠右分居两端。
+     加一层自己的 div，语义与布局都稳。 */
+.remember-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.forgot-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: var(--font-size-12);
+  line-height: 1.5;
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.forgot-link:hover {
+  color: var(--primary-hover);
+  text-decoration: underline;
+}
+
+.forgot-alert {
+  margin-bottom: var(--space-16);
+}
+
+.forgot-note {
+  margin: var(--space-12) 0 0;
+  font-size: var(--font-size-12);
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
 .ra-avatar {
   width: 26px;
   height: 26px;
   min-width: 26px;
   border-radius: var(--radius-circle);
-  background: linear-gradient(135deg, #52c41a, #389e0d);
+  background: linear-gradient(135deg, #2c8409, #237804);
   color: #fff;
   display: inline-flex;
   align-items: center;

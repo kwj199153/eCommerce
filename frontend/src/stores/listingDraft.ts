@@ -13,12 +13,26 @@ import { useProductLibraryStore } from './productLibrary'
 
 // ====== 类型定义 ======
 
+/**
+ * 关键词行。
+ *
+ * ★ 三个指标字段可空（`null`），这不是洁癖 —— `null` 的语义是
+ *   **「后端没提供这个指标」**，与「指标真的是 0」是两件事：
+ *
+ *   · `POST /listing/generate/keywords` 回的是 **Search Terms**（后台搜索词：
+ *     扁平字符串数组 + 总字节数），**没有** 搜索量 / 竞争度 / 相关度；
+ *   · 关键词挖掘那条链（`syncListingDraft` case `keyword-miner` 把工具结果
+ *     原样透传）**有**真实指标。
+ *
+ *   旧写法用 `0 / 'medium' / 80` 兜底 ⇒ 把「未测量」渲染成「搜索量 0、相关度 80」，
+ *   那就是编数据。现在统一 `null`，界面渲染 «—»。
+ */
 export interface KeywordRow {
   id: string
   word: string
-  search_volume: number
-  competition: 'high' | 'medium' | 'low'
-  relevance: number
+  search_volume: number | null
+  competition: 'high' | 'medium' | 'low' | null
+  relevance: number | null
   selected: boolean
 }
 
@@ -71,6 +85,23 @@ export const useListingDraftStore = defineStore('listingDraft', () => {
   const seoChecks = ref<SeoCheckItem[]>([])
   const seoScore = ref<number | null>(null)
 
+  // ====== 自定义 prompt（第 273 轮：全局 + 局部覆盖）======
+  // 全局指令：作用于四模块的默认兜底；局部 customPrompt 非空则覆盖全局对应部分。
+  const globalInstruction = ref('')
+  // 局部指令：四个模块各自的覆盖项。空串 = 未覆盖，走全局。
+  const keywordPrompt = ref('')
+  const titlePrompt = ref('')
+  const bulletPrompt = ref('')
+  const aplusPrompt = ref('')
+
+  /** 解析某模块最终生效的 prompt：局部优先，否则全局；均空 ⇒ undefined（走默认） */
+  function resolvePrompt(local: string): string | undefined {
+    const v = (local ?? '').trim()
+    if (v) return v
+    const g = globalInstruction.value.trim()
+    return g || undefined
+  }
+
   // 各模块是否已有内容（用于 Tab 角标 / 生成按钮状态）
   const moduleFilled = computed(() => ({
     keywords: keywords.value.length > 0,
@@ -95,12 +126,13 @@ export const useListingDraftStore = defineStore('listingDraft', () => {
     asin.value = p.asin || ''
     variationValue.value = p.spec_value || ''
 
+    // 产品库里只存了词本身，一个指标都没有 ⇒ 一律 null（不用 0 / 80 冒充）
     keywords.value = (p.keywords || []).map((w: string) => ({
       id: uid('kw'),
       word: w,
-      search_volume: 0,
-      competition: 'medium' as const,
-      relevance: 80,
+      search_volume: null,
+      competition: null,
+      relevance: null,
       selected: true,
     }))
     title.value = p.generated_title || p.title || ''
@@ -119,22 +151,38 @@ export const useListingDraftStore = defineStore('listingDraft', () => {
     if (!raw) return []
     if (Array.isArray(raw)) return raw.map(normalizeModule)
     if (Array.isArray(raw.modules)) return raw.modules.map(normalizeModule)
-    if (Array.isArray(raw.sections)) {
-      return raw.sections.map((s: any) => ({
-        id: uid('ap'),
-        type: 'text' as const,
-        heading: s.heading || '',
-        content: s.content || '',
-      }))
-    }
+    // 走 normalizeModule：后端 sections 是 `{type: 'intro'|'features'|'scenarios', content}`，
+    // 旧写法硬编 `type:'text'` + 只认 `s.heading` ⇒ 后端段落全部 heading 为空。
+    if (Array.isArray(raw.sections)) return raw.sections.map(normalizeModule)
     return []
   }
 
+  /** A+ 的**版式**类型（决定用哪个编辑控件渲染） */
+  const A_PLUS_LAYOUTS = ['text', 'image-text', 'highlights', 'comparison']
+
+  /**
+   * 后端 `ProductDescription.sections[*].type` 是**语义**枚举，不是版式。
+   * 实测取值 `intro` / `features` / `scenarios`，item 只有 `{type, content}` 两个键。
+   *
+   * ★ 这两个 "type" 同名不同义。不映射的后果不是「显示得难看」，而是
+   *   `AplusSection` 的三个 `v-if`（text / image-text / highlights）**全不命中**
+   *   ⇒ 正文一个字都不渲染，只剩一个空的标题输入框。
+   *   小标题用后端给的那个枚举做中文标签，正文仍是 verbatim 的 `content`。
+   */
+  const SECTION_TYPE_LABEL: Record<string, string> = {
+    intro: '产品简介',
+    features: '核心卖点详解',
+    scenarios: '使用场景',
+  }
+
   function normalizeModule(m: any): APlusModule {
+    const rawType = String(m?.type || '')
+    const isLayout = A_PLUS_LAYOUTS.includes(rawType)
     return {
       id: uid('ap'),
-      type: m.type || 'text',
-      heading: m.heading || '',
+      type: (isLayout ? rawType : 'text') as APlusModule['type'],
+      // 后端语义 type → 中文小标题；认不出的类型不硬编，留空
+      heading: m.heading || (isLayout ? '' : SECTION_TYPE_LABEL[rawType] || ''),
       content: m.content || '',
       paragraphs: m.paragraphs ? [...m.paragraphs] : undefined,
       items: m.items ? m.items.map((i: any) => ({ title: i.title || '', desc: i.desc || '' })) : undefined,
@@ -142,24 +190,34 @@ export const useListingDraftStore = defineStore('listingDraft', () => {
   }
 
   // ====== 各模块写入（生成/编辑共用）======
-  function setKeywords(rows: Array<Partial<KeywordRow>>) {
+  /**
+   * 写入关键词行（**唯一写入点**，两个生产者的键在这里对账）。
+   *
+   * ★ 两个生产者用的键不同：
+   *   · Listing 工作区自己生成 → `word`
+   *   · 关键词挖掘（`syncListingDraft` 把工具结果原样透传）→ `keyword`
+   *   只认 `word` 会让挖掘结果变成 N 行**空关键词**（实测就是如此）。
+   * ★ 指标缺省一律 `null`（未提供），不拿 0 / 'medium' / 80 兜底。
+   */
+  function setKeywords(rows: Array<Partial<KeywordRow> & { keyword?: string }>) {
     keywords.value = rows.map(r => ({
       id: uid('kw'),
-      word: r.word || '',
-      search_volume: r.search_volume ?? 0,
-      competition: (r.competition as any) || 'medium',
-      relevance: r.relevance ?? 80,
+      word: String(r.word ?? r.keyword ?? '').trim(),
+      search_volume: r.search_volume ?? null,
+      competition: (r.competition as KeywordRow['competition']) ?? null,
+      relevance: r.relevance ?? null,
       selected: r.selected ?? true,
     }))
   }
 
   function addKeyword(word = '') {
+    // 手工新增的行**没有任何来源** ⇒ 指标全 null
     keywords.value.push({
       id: uid('kw'),
       word,
-      search_volume: 0,
-      competition: 'low',
-      relevance: 70,
+      search_volume: null,
+      competition: null,
+      relevance: null,
       selected: true,
     })
   }
@@ -264,6 +322,11 @@ export const useListingDraftStore = defineStore('listingDraft', () => {
     aplusModules.value = []
     seoChecks.value = []
     seoScore.value = null
+    globalInstruction.value = ''
+    keywordPrompt.value = ''
+    titlePrompt.value = ''
+    bulletPrompt.value = ''
+    aplusPrompt.value = ''
   }
 
   return {
@@ -271,12 +334,13 @@ export const useListingDraftStore = defineStore('listingDraft', () => {
     productId, productName, brand, sellingPoints, category, site, sourceMode,
     asin, variationValue,
     keywords, title, titleVariants, bullets, aplusModules, seoChecks, seoScore,
+    globalInstruction, keywordPrompt, titlePrompt, bulletPrompt, aplusPrompt,
     // computed
     moduleFilled, filledCount,
     // actions
     loadFromProduct, setKeywords, addKeyword, removeKeyword,
     setTitle, setBullets, addBullet, removeBullet,
     setAPlus, addAPlusModule, removeAPlusModule,
-    setSeo, saveToProduct, reset,
+    setSeo, saveToProduct, reset, resolvePrompt,
   }
 })

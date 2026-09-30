@@ -19,6 +19,7 @@ import ProfitAnalysisCard from './ProfitAnalysisCard.vue'
 import PainPointAnalysisCard from './PainPointAnalysisCard.vue'
 import CompetitorAnalysisCard from './CompetitorAnalysisCard.vue'
 import PendingApprovalCard from './PendingApprovalCard.vue'
+import ReviewReportCard from './ReviewReportCard.vue'
 
 export const CONVERSATION_RESULT_COMPONENTS: Record<string, Component> = {
   // 选品分析师
@@ -28,6 +29,11 @@ export const CONVERSATION_RESULT_COMPONENTS: Record<string, Component> = {
   competitor_analysis: CompetitorAnalysisCard,
   // 选品分析师 · HITL 人工审批（有副作用的工具被 interrupt() 挂起时由后端下发）
   pending_approval: PendingApprovalCard,
+  // 运营复盘师 · 6 项复盘报告（后端 `REVIEW_REPORT_DISPLAY_TYPE = "review_report"`）
+  //   ★ 键名必须与后端那个常量逐字一致 —— 不一致的后果是**静默按纯文本渲染**
+  //     （`resolveConversationResult` 未登记返回 null），结构化 data 白白下发。
+  //     这条对账由 `backend/tests/test_skill_shortcut_compat.py` 钉住。
+  review_report: ReviewReportCard,
 }
 
 /** display_type → 组件；未登记的类型返回 null（按普通文本处理） */

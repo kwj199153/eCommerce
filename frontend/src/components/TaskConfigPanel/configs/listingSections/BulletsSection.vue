@@ -20,11 +20,14 @@
       </div>
       <a-button size="small" block type="dashed" @click="draft.addBullet()">+ 新增一条</a-button>
     </div>
+
+    <PromptTab v-model="draft.bulletPrompt" placeholder="例如：五点各突出一个卖点，用数据说话（如『续航 8 小时』），避免空泛形容词" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { useListingDraftStore } from '@/stores/listingDraft'
+import PromptTab from './PromptTab.vue'
 
 defineProps<{ genLoading: boolean; disabled?: boolean }>()
 defineEmits<{ (e: 'gen'): void }>()

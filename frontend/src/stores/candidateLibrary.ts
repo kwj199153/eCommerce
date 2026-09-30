@@ -105,56 +105,14 @@ export const REVIEW_STATUS_MAP: Record<ReviewStatus, { label: string; color: str
 
 export const GROUP_COLORS: readonly string[] = GROUP_PALETTE
 
-// ====== Mock 数据（离线兜底用） ======
-
-const MOCK_CANDIDATES: CandidateItem[] = [
-  {
-    id: 'cand-000',
-    asin: 'B0CAND0001',
-    sku: 'SKU-CAND-000',
-    title: 'Sunset Projection Alarm Clock with Sunrise Simulation & White Noise',
-    brand: 'SunRise',
-    category: 'home',
-    sub_category: '智能家居',
-    price: 32.99,
-    currency: 'USD',
-    site: 'Amazon US',
-    estimated_monthly_sales: 4200,
-    review_count: 856,
-    rating: 4.4,
-    bsr: 2345,
-    bsr_category: 'Home & Kitchen > Alarm Clocks',
-    listed_date: '2025-11-20',
-    roi_estimated: 142,
-    margin: 58,
-    blue_ocean_score: 86,
-    overall_listing_score: 71,
-    keywords: ['sunrise alarm clock', 'wake up light', 'white noise machine'],
-    competitor_asins: ['B0COMP0001', 'B0COMP0002'],
-    selling_points: '日出模拟自然唤醒 | 白噪音助眠 | 星空投影',
-    main_image: '/mock/products/B0CAND0001.png',
-    images: [],
-    source: 'blue_ocean',
-    review_status: 'pending',
-    review_notes: '',
-    reviewed_at: null,
-    reviewed_by: null,
-    monitor_data: null,
-    last_monitored_at: null,
-    shop_id: 'shop-1',
-    tags: ['蓝海挖掘', '评分:86'],
-    notes: '高潜力蓝海，竞争度低',
-    groups: [],
-    created_at: '2026-09-05T09:00:00Z',
-    updated_at: '2026-09-05T09:00:00Z',
-  },
-]
-
 // ====== Store ======
 
 export const useCandidateLibraryStore = defineStore('candidateLibrary', () => {
   const items = ref<CandidateItem[]>([])
   const isLoading = ref(false)
+  // ★ 若取数失败，这里记录原因（界面据它显示「加载失败」，而不是把失败
+  //   伪装成「暂无数据」）。与 productLibrary / assetLibrary 同口径。
+  const loadError = ref<string | null>(null)
   const searchQuery = ref('')
   // filter 默认值改为 undefined；占位符文本用 'all'/'all_status'/'all_category' 之类的字符串在 a-select option 里
   const filterReviewStatus = ref<string | undefined>(undefined)
@@ -224,6 +182,7 @@ export const useCandidateLibraryStore = defineStore('candidateLibrary', () => {
 
   async function fetchItems() {
     isLoading.value = true
+    loadError.value = null
     try {
       const res = await fetchCandidates()
       items.value = res.items || []
@@ -234,8 +193,12 @@ export const useCandidateLibraryStore = defineStore('candidateLibrary', () => {
         console.warn('[CandidateLibrary] 分组拉取失败', e)
       }
     } catch (e) {
-      console.warn('[CandidateLibrary] 拉取候选失败，回退 Mock 数据', e)
-      items.value = [...MOCK_CANDIDATES]
+      // ★ 第 279 轮：读失败**不得**回退 Mock 假数据（假 ASIN `B0CAND0001` 与真候选
+      //   同形，且会被下游拿去建竞品监控 ⇒ 假数据会一路流到付费功能里）。
+      //   与 productLibrary / assetLibrary 同口径：保留空数组 + 记录错误态。
+      console.warn('[CandidateLibrary] 拉取候选失败', e)
+      items.value = []
+      loadError.value = (e as Error)?.message || '选品库加载失败'
     } finally {
       isLoading.value = false
     }
@@ -633,6 +596,7 @@ export const useCandidateLibraryStore = defineStore('candidateLibrary', () => {
     // State
     items,
     isLoading,
+    loadError,
     searchQuery,
     filterReviewStatus,
     filterCategory,

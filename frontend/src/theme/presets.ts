@@ -142,7 +142,9 @@ const LIGHT_VARS = {
   '--border-strong': '#d9d9d9',
   '--text-primary': '#262626',
   '--text-secondary': '#595959',
-  '--text-tertiary': '#8c8c8c',
+  // ★ WCAG AA 实测（白底 5.25 / 页面底 #f5f7fa 4.89 / 小徽标底 #f0f0f0 4.61）：
+  //   旧值 #8c8c8c 三面全部不到 4.5（3.36 / 3.13 / 2.95）—— 不是取舍，是缺陷。
+  '--text-tertiary': '#6c6c6c',
   '--text-disabled': '#bfbfbf',
   '--text-inverse': '#ffffff',
   '--primary': '#1890ff',
@@ -196,6 +198,15 @@ const LIGHT_VARS = {
   '--geekblue-bg': '#f0f5ff',   // geekblue-1
   '--geekblue-border': '#adc6ff', // geekblue-3
 
+  /* ===== 补的语义底（第 317 轮遗留：粉彩硬编码里**没有等值变量**的那几个）=====
+     ★ 取值口径：浅色值 = **原粉彩逐字**（保证浅色零视觉变化，可 grep 验证）；
+       深色值 = 同族半透明/深一档（深色下才不会「亮底 + 浅字」）。
+     ★ 为什么不直接复用 --info-bg：--info-bg 浅色是 #e6f7ff，与 #f0f7ff/#e6f4ff
+       有色差 —— 换成最接近的语义变量会带来浅色下的细微变化，属于「偷偷改浅色」。 */
+  '--bg-subtle': '#f7f9fc',              // 中性最淡底（统计卡 / 摘要块）
+  '--primary-bg-subtle': '#f0f7ff',      // 主色最淡底（hover 态 / 产品横幅）
+  '--primary-border-subtle': '#91caff',  // 与 --primary-bg-subtle 配套的边框
+
   /* ===== 图表调色板（多序列区分色，8 档；深色档整体提亮）===== */
   '--chart-1': '#5b8ff9',       // 蓝
   '--chart-2': '#5ad8a6',       // 绿
@@ -232,7 +243,10 @@ const DARK_VARS: ThemeVars = {
   '--border-strong': '#434343',
   '--text-primary': 'rgba(255, 255, 255, 0.92)',
   '--text-secondary': 'rgba(255, 255, 255, 0.65)',
-  '--text-tertiary': 'rgba(255, 255, 255, 0.45)',
+  // ★ WCAG AA 实测（真机 74 个节点，最差 4.73 —— 落在 `.stat-draft` 的
+  //   var(--warning-bg) 上）：旧值 0.45 只有 4.25，0.50 是 4.49（差 0.01），
+  //   故取 0.52。手算与页面引擎同式复核见 .workbuddy/probes/tools/r319b_fix_alpha.py。
+  '--text-tertiary': 'rgba(255, 255, 255, 0.52)',
   '--text-disabled': 'rgba(255, 255, 255, 0.25)',
   '--text-inverse': '#1f1f1f',
   '--primary': '#177ddc',
@@ -283,6 +297,10 @@ const DARK_VARS: ThemeVars = {
   '--geekblue': '#85a5ff',      // geekblue-5（深底提亮）
   '--geekblue-bg': 'rgba(29, 57, 196, 0.12)',   // geekblue-6 半透明
   '--geekblue-border': 'rgba(29, 57, 196, 0.4)',
+  /* 补的三个语义底（与 LIGHT_VARS 同名；深色取半透明同族） */
+  '--bg-subtle': '#262626',
+  '--primary-bg-subtle': 'rgba(24, 144, 255, 0.10)',
+  '--primary-border-subtle': 'rgba(24, 144, 255, 0.35)',
 
   /* ===== 图表调色板（深色档：整体提亮 1-2 档，解决深底对比度不足）===== */
   '--chart-1': '#7db3ff',
@@ -400,10 +418,15 @@ const MACARON_VARS: Partial<ThemeVars> = {
 
   /* —— 文字：暖褐（关键一笔）——
      冷灰 #262626 放在粉底上会显脏；换成同明度的暖褐，整体才「甜」而不「灰」。
-     对比度实测：#4a3b42 on #fdf6f8 ≈ 8.6:1 ✅ AAA；#7d6a72 ≈ 4.6:1 ✅ AA。 */
+     对比度实测：#4a3b42 on #fdf6f8 ≈ 8.6:1 ✅ AAA；#7d6a72 ≈ 4.7:1 ✅ AA。
+     ★ `--text-tertiary` 有个**改不动**的天花板：它语义上必须比
+       `--text-secondary`(#7d6a72, 粉底 4.72:1) 更浅 ⇒ 它永远 ≤4.72:1。
+       本轮由 #a8949c(2.67:1) 提到 #827379(4.21:1)，已贴近天花板。
+       要真正到 AA 4.5 必须**连 secondary 一起压深** —— 那属于
+       「马卡龙整套文字梯度的对比度预算」问题，单独立项，不混在本轮。 */
   '--text-primary': '#4a3b42',
   '--text-secondary': '#7d6a72',
-  '--text-tertiary': '#a8949c',
+  '--text-tertiary': '#827379',
   '--text-disabled': '#cfc0c6',
 
   /* —— 主色：树莓 ——
@@ -444,6 +467,10 @@ const MACARON_VARS: Partial<ThemeVars> = {
   '--cyan-border': '#b3e4de',
   '--geekblue-bg': '#eff0fd',
   '--geekblue-border': '#c6cbf0',
+  /* 补的三个语义底：与马卡龙暖调对齐（冷灰/纯蓝底在粉底上会「脏」） */
+  '--bg-subtle': '#fbf1f5',
+  '--primary-bg-subtle': '#f2f7fe',
+  '--primary-border-subtle': '#c6d6f8',
 
   /* —— 图表调色板：8 色整体降饱和提亮（原色板是数据可视化常用的中饱和色，
      放在马卡龙底上会「吵」；换粉彩系后多序列仍可区分 —— 相邻色相间隔 ≥ 40°）—— */
@@ -481,6 +508,11 @@ export const THEME_PRESETS: Record<ThemeName, ThemePreset> = {
         // 本项目用 v4 蓝 #1890ff（antd 默认 seed 是 v5 蓝 #1677ff），因此整个 primary 色阶
         // 都落在 v4 蓝色盘上，正好等于 `:root --primary` / `--primary-hover`，无需钉住。
         colorPrimary: '#1890ff',
+        // ★ 弱化文字档必须与 vars `--text-tertiary` **逐字一致** ——
+        //   派生默认 = fade(colorText, 45%) ≈ #8c8c8c（白底 3.36:1，不到 AA）。
+        //   只提亮 CSS 变量而不钉这里，antd 组件（Descriptions 次要值 /
+        //   表格次要列 / 空态说明）会继续用旧浅灰 ⇒ 同一语义两份值。
+        colorTextTertiary: '#6c6c6c',
       },
     },
   },
@@ -509,7 +541,7 @@ export const THEME_PRESETS: Record<ThemeName, ThemePreset> = {
         colorBgMask: 'rgba(0, 0, 0, 0.65)', // 派生默认 0.45；对齐 Modal/Drawer 遮罩补丁
         colorText: 'rgba(255, 255, 255, 0.92)', // 原 0.85；对齐 App.vue 的 --text-primary，消掉约 18 处文字色差异
         colorTextSecondary: 'rgba(255, 255, 255, 0.65)',
-        colorTextTertiary: 'rgba(255, 255, 255, 0.45)',
+        colorTextTertiary: 'rgba(255, 255, 255, 0.52)', // = --text-tertiary（真机最差 4.73）
         colorTextPlaceholder: 'rgba(255, 255, 255, 0.45)', // 派生默认 0.25；对齐 placeholder/占位图标补丁
         colorBorder: '#303030',
         colorBorderSecondary: '#303030',
@@ -561,7 +593,7 @@ export const THEME_PRESETS: Record<ThemeName, ThemePreset> = {
         // 文字 —— 与 vars 文字层对齐（antd 默认是冷灰 #262626 系，在粉底上显脏）
         colorText: '#4a3b42', // = --text-primary
         colorTextSecondary: '#7d6a72', // = --text-secondary
-        colorTextTertiary: '#a8949c', // = --text-tertiary
+        colorTextTertiary: '#827379', // = --text-tertiary
         colorTextPlaceholder: '#a8949c',
         // 边框 / 分隔线 —— 与 vars 边框层对齐
         colorBorder: '#e6d2dc', // = --border-strong

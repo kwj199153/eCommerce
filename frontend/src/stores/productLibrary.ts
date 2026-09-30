@@ -203,86 +203,6 @@ export const PRODUCT_CATEGORIES: ProductCategory[] = [
 /** 预置分组标签颜色 */
 export const GROUP_COLORS: readonly string[] = GROUP_PALETTE
 
-// ====== Mock 数据（离线兜底用，SPU + SKU 结构） ======
-
-const MOCK_SPUS: Spu[] = [
-  {
-    id: 'spu-000',
-    title: 'Portable Mini Humidifier for Bedroom Desk USB Cool Mist',
-    brand: 'CoolMist',
-    category: 'home',
-    sub_category: '加湿器',
-    spu_theme: null,
-    keywords: ['mini humidifier', 'usb humidifier', 'bedroom humidifier'],
-    selling_points: '500ml 大容量水箱 | 双雾量模式 | USB 供电 | 自动断电保护',
-    description: 'Portable mini humidifier for bedroom and desk.',
-    main_image: '/mock/products/B0CXXXX001.png',
-    images: ['/mock/products/B0CXXXX001.png'],
-    spu_common: { brand: 'CoolMist', category: 'home', keywords: ['mini humidifier'], selling_points: '500ml 大容量水箱', bullets: [], a_plus: null },
-    shop_id: 'shop-1',
-    tags: ['蓝海', '新品'],
-    notes: '从蓝海挖掘保存的草稿',
-    status: 'draft',
-    groups: [],
-    created_at: '2026-09-01T07:00:00Z',
-    updated_at: '2026-09-01T07:00:00Z',
-  },
-  {
-    id: 'spu-001',
-    title: '无线蓝牙耳机 降噪头戴式 长续航40小时 HiFi音质',
-    brand: 'SoundMax',
-    category: 'electronics',
-    sub_category: '耳机/音响',
-    spu_theme: 'Color',
-    keywords: ['wireless headphone', 'noise cancelling', 'over ear headphone'],
-    selling_points: '主动降噪 -35dB | 蓝牙 5.3 | 40 小时续航 | HiFi 音质',
-    description: 'ANC wireless headphones with 40H battery.',
-    main_image: '/mock/products/B0DGXRLVLC.png',
-    images: ['/mock/products/B0DGXRLVLC.png', '/mock/products/B0DGXRLVLC.png'],
-    spu_common: { brand: 'SoundMax', category: 'electronics', keywords: ['wireless headphone'], selling_points: '主动降噪 -35dB', bullets: [], a_plus: null },
-    shop_id: 'shop-1',
-    tags: ['热销', 'Prime'],
-    notes: 'Q4 主推款',
-    status: 'active',
-    groups: [],
-    created_at: '2026-07-15T10:00:00Z',
-    updated_at: '2026-08-29T10:00:00Z',
-  },
-]
-
-const MOCK_SKUS: Sku[] = [
-  {
-    id: 'sku-000-0', spu_id: 'spu-000', spec_value: null, asin: 'B0CXXXX001',
-    sku_code: 'SKU-BL-000', price: 24.99, cost: 14.48, currency: 'USD',
-    fba_stock: 0, fbm_stock: 0, fulfillment_type: 'FBA',
-    bsr: null, rating: 0, review_count: 0, daily_sales_avg: 0, roi: 0, margin: 26,
-    listing_status: 'draft', seo_score: 68, listing_version: 1,
-    has_a_plus: false, has_video: false,
-    tags: ['蓝海', '新品'], notes: '从蓝海挖掘保存的草稿，待 Listing 优化',
-    status: 'draft', created_at: '2026-09-01T07:00:00Z', updated_at: '2026-09-01T07:00:00Z',
-  },
-  {
-    id: 'sku-001-0', spu_id: 'spu-001', spec_value: '黑色', asin: 'B0DGXRLVLC',
-    sku_code: 'SKU-WL-001-BK', price: 49.99, cost: 18.5, currency: 'USD',
-    fba_stock: 450, fbm_stock: 0, fulfillment_type: 'FBA',
-    bsr: 1234, rating: 4.6, review_count: 2890, daily_sales_avg: 45, roi: 170, margin: 63,
-    listing_status: 'active', seo_score: 86, listing_version: 1,
-    has_a_plus: true, has_video: true,
-    tags: ['热销', 'Prime'], notes: 'Q4 主推款',
-    status: 'active', created_at: '2026-07-15T10:00:00Z', updated_at: '2026-08-29T10:00:00Z',
-  },
-  {
-    id: 'sku-001-1', spu_id: 'spu-001', spec_value: '白色', asin: 'B0DGXRLVLD',
-    sku_code: 'SKU-WL-001-WH', price: 49.99, cost: 18.5, currency: 'USD',
-    fba_stock: 320, fbm_stock: 0, fulfillment_type: 'FBA',
-    bsr: 2100, rating: 4.5, review_count: 1560, daily_sales_avg: 32, roi: 170, margin: 63,
-    listing_status: 'active', seo_score: 82, listing_version: 1,
-    has_a_plus: true, has_video: true,
-    tags: ['热销'], notes: '白色款',
-    status: 'active', created_at: '2026-07-15T10:00:00Z', updated_at: '2026-08-29T10:00:00Z',
-  },
-]
-
 // ====== Store ======
 
 export const useProductLibraryStore = defineStore('productLibrary', () => {
@@ -290,6 +210,7 @@ export const useProductLibraryStore = defineStore('productLibrary', () => {
   const spus = ref<Spu[]>([])
   const skus = ref<Sku[]>([])
   const isLoading = ref(false)
+  const loadError = ref<string | null>(null)
   const searchQuery = ref('')
   const filterCategory = ref<string | undefined>(undefined)
   const filterStatus = ref<string | undefined>(undefined)
@@ -532,6 +453,7 @@ export const useProductLibraryStore = defineStore('productLibrary', () => {
 
   async function fetchItems() {
     isLoading.value = true
+    loadError.value = null
     try {
       const [sres, kres] = await Promise.all([fetchSpus(), fetchSkus()])
       spus.value = sres.items || []
@@ -543,9 +465,13 @@ export const useProductLibraryStore = defineStore('productLibrary', () => {
         console.warn('[ProductLibrary] 分组拉取失败', e)
       }
     } catch (e) {
-      console.warn('[ProductLibrary] 拉取失败，回退 Mock 数据', e)
-      spus.value = [...MOCK_SPUS]
-      skus.value = [...MOCK_SKUS]
+      // ★ 第 271 轮 P0-3：读失败**不得**回退 Mock 假数据（假 ASIN 与真数据同形，
+      //   会命中「空状态优于虚构默认」红线）。保留空数组 + 记录错误态，
+      //   由界面据 loadError 展示「加载失败」而非伪造一屏假商品。
+      console.warn('[ProductLibrary] 拉取失败', e)
+      spus.value = []
+      skus.value = []
+      loadError.value = (e as Error)?.message || '产品库加载失败'
     } finally {
       isLoading.value = false
     }
@@ -553,43 +479,15 @@ export const useProductLibraryStore = defineStore('productLibrary', () => {
 
   /** 新增 SPU（主产品，可带初始 SKU） */
   async function addSpu(data: Partial<Spu>, initialSkus: Array<Partial<Sku>> = []): Promise<Spu> {
-    try {
-      const created = await createSpu(data)
-      spus.value.unshift(created)
-      for (const s of initialSkus) {
-        await createSku({ ...s, spu_id: created.id })
-      }
-      // 重新拉取 SKU 以保持同步
-      const kres = await fetchSkus()
-      skus.value = kres.items || []
-      return created
-    } catch (e) {
-      console.warn('[ProductLibrary] 新增 SPU 失败，本地兜底', e)
-      const now = new Date().toISOString()
-      const newSpu: Spu = {
-        id: `spu-${Date.now()}`,
-        title: data.title || '未命名主产品',
-        brand: data.brand || '',
-        category: data.category || 'other',
-        sub_category: data.sub_category || '',
-        spu_theme: data.spu_theme ?? null,
-        keywords: data.keywords || [],
-        selling_points: data.selling_points,
-        description: data.description,
-        main_image: data.main_image || '',
-        images: data.images || [],
-        spu_common: data.spu_common,
-        shop_id: data.shop_id || '',
-        tags: data.tags || [],
-        notes: data.notes || '',
-        status: data.status || 'draft',
-        groups: data.groups || [],
-        created_at: now,
-        updated_at: now,
-      }
-      spus.value.unshift(newSpu)
-      return newSpu
+    const created = await createSpu(data)
+    spus.value.unshift(created)
+    for (const s of initialSkus) {
+      await createSku({ ...s, spu_id: created.id })
     }
+    // 重新拉取 SKU 以保持同步
+    const kres = await fetchSkus()
+    skus.value = kres.items || []
+    return created
   }
 
   async function updateSpuItem(id: string, data: Partial<Spu>): Promise<void> {
@@ -615,51 +513,9 @@ export const useProductLibraryStore = defineStore('productLibrary', () => {
   }
 
   async function addSku(data: Partial<Sku>): Promise<Sku> {
-    try {
-      const created = await createSku(data)
-      skus.value.unshift(created)
-      return created
-    } catch (e) {
-      console.warn('[ProductLibrary] 新增 SKU 失败，本地兜底', e)
-      const now = new Date().toISOString()
-      const newSku: Sku = {
-        id: `sku-${Date.now()}`,
-        spu_id: data.spu_id || '',
-        spec_value: data.spec_value ?? null,
-        asin: data.asin || '',
-        sku_code: data.sku_code || `SKU-${Date.now()}`,
-        price: data.price || 0,
-        cost: data.cost || 0,
-        currency: data.currency || 'USD',
-        fba_stock: data.fba_stock || 0,
-        fbm_stock: data.fbm_stock || 0,
-        fulfillment_type: data.fulfillment_type || 'FBA',
-        bsr: data.bsr ?? null,
-        rating: data.rating || 0,
-        review_count: data.review_count || 0,
-        daily_sales_avg: data.daily_sales_avg || 0,
-        roi: data.roi || 0,
-        margin: data.margin || 0,
-        listing_status: data.listing_status || 'draft',
-        generated_title: data.generated_title,
-        generated_bullets: data.generated_bullets,
-        generated_a_plus: data.generated_a_plus,
-        seo_score: data.seo_score,
-        generated_at: data.generated_at,
-        listing_version: data.listing_version || 1,
-        listing_history: data.listing_history,
-        has_a_plus: data.has_a_plus || false,
-        has_video: data.has_video || false,
-        rating_breakdown: data.rating_breakdown,
-        tags: data.tags || [],
-        notes: data.notes || '',
-        status: data.status || 'active',
-        created_at: now,
-        updated_at: now,
-      }
-      skus.value.unshift(newSku)
-      return newSku
-    }
+    const created = await createSku(data)
+    skus.value.unshift(created)
+    return created
   }
 
   async function updateSkuItem(id: string, data: Partial<Sku>): Promise<void> {
@@ -801,22 +657,9 @@ export const useProductLibraryStore = defineStore('productLibrary', () => {
   // ====== 分组 Actions ======
 
   async function createGroup(input: { name: string; color?: string }): Promise<ProductGroup> {
-    try {
-      const g = await createProductGroup(input)
-      groups.value.push(g)
-      return g
-    } catch (e) {
-      console.warn('[ProductLibrary] 新建分组失败', e)
-      const g: ProductGroup = {
-        id: `group-${Date.now()}`,
-        name: input.name,
-        color: input.color || GROUP_COLORS[0],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }
-      groups.value.push(g)
-      return g
-    }
+    const g = await createProductGroup(input)
+    groups.value.push(g)
+    return g
   }
 
   function renameGroup(id: string, name: string) {
@@ -1064,6 +907,7 @@ export const useProductLibraryStore = defineStore('productLibrary', () => {
     skus,
     items,
     isLoading,
+    loadError,
     searchQuery,
     filterCategory,
     filterStatus,

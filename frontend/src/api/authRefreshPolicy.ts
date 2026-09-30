@@ -58,6 +58,27 @@ export const NO_REFRESH_ENDPOINTS = [
   '/auth/device/switch',
   '/auth/device/forget',
   '/auth/device/forget-all',
+
+  // ★ 台账 #1155：账号安全模块（`backend/core/identity/security_router.py`）的
+  //   三个**匿名入口**一并豁免。
+  //
+  //   这三个端点**不需要登录** —— 点邮件的人很可能正是登不上的那个
+  //   （"忘记密码"本来就是"进不去才用"的功能）。它们的 4xx 是业务结论：
+  //     · `/auth/reset-password` = "重置链接无效或已过期，请重新申请"
+  //     · `/auth/verify-email`   = "验证链接无效或已过期，请重新获取"
+  //   与"当前会话该刷新了"毫无关系。若不豁免，一次"链接过期"会先触发一次
+  //   **注定无意义**的 `/auth/refresh`（此刻手里往往根本没有可用的 refresh_token），
+  //   白白多两跳；更糟的是刷新会**轮换 refresh_token** ——
+  //   可能把用户**当前正常**的那个会话搅乱。
+  //
+  //   ★ 反过来看：`/auth/verify-email/resend` 与 `/auth/logout-all`
+  //     **刻意不在这份清单里** —— 它们要求登录（`get_current_user`），
+  //     401 恰好就是"这枚 access token 该换了"的**正当信号**，
+  //     交给刷新机制处理才是对的。豁免清单的判据是"这个 401 是不是业务结论"，
+  //     不是"这个 URL 是不是以 /auth 开头"。
+  '/auth/forgot-password',
+  '/auth/reset-password',
+  '/auth/verify-email',
 ] as const
 
 /**

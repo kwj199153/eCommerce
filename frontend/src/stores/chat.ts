@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { PlanSummary } from '@/api/secretary'
+import type { ThinkingStep } from '@/api/stream'
 
 export interface Message {
   role: 'user' | 'assistant'
@@ -8,6 +9,16 @@ export interface Message {
   timestamp?: number
   data?: any
   displayType?: string
+  /**
+   * 本轮的「思考过程」轨迹（后端 `event: step` 逐条累积）。
+   *
+   * ★ 为什么挂在**消息**上，而不是像 `loadingStatus` 那样做成一个全局 ref：
+   *   老板的要求是「有结果后过程**折叠掉**」—— 折叠的前提是它还在、能展开回看。
+   *   全局 ref 会被 `setLoading(false)` 清空（这正是本轮之前的形态：
+   *   过程**从未被留存**，而接口上看不出少了什么）。挂在消息上以后，
+   *   过程与答复同生共死、随消息一起进历史，也就自然随「清空对话」一起清掉。
+   */
+  thinkingSteps?: ThinkingStep[]
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -177,6 +188,53 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
+   * 就地**替换**最后一条消息的正文（第 212 轮，店秘书切流式时加）。
+   *
+   * 为什么需要它：流式下正文是逐段渲染上屏的（`appendToLastMessage`），
+   * 而有些分支要在拿到结构化字段之后**换掉**这段正文 —— 例如店秘书的
+   * 「交接给子 Agent」与「店铺切换失败」。旧的非流式实现是"算好最终文案再
+   * addMessage"，流式做不到（正文早就上屏了）。
+   *
+   * ★ 为什么「就地改」而不是「删掉再加一条」：删了再加，挂在同一条消息上的
+   *   `thinkingSteps`（思考过程）与 `data` / `displayType`（结论卡）会一起丢。
+   *   就地改与 `setLastMessageResult` 同形 —— 那次改的是最后一条的 `data`，
+   *   这次改的是 `content`。
+   */
+  const setLastMessageContent = (content: string, agentId?: string) => {
+    const targetId = agentId || activeAgentId.value || 'default'
+    const list = messagesByAgent.value[targetId]
+    if (!list || list.length === 0) return
+    list[list.length - 1].content = content
+  }
+
+  /**
+   * 记录一步「思考过程」（SSE `step` 事件）。
+   *
+   * ★ 按 `id` **合并**而不是无脑 push —— 后端对一次工具调用发**两条**事件
+   *   （开始 `running` + 结束 `done`/`error`，同 id）。直接 push 的话，
+   *   界面上每次工具调用会变成「正在调用…」+「调用完成」两行，
+   *   而第一行永远停在「正在」，读起来像卡住了。
+   *   合并后一行 = 一次工具调用，且 `detail`（入参）与 `result`（返回）各留各的
+   *   （后端结束态**不发** `detail`，所以 `Object.assign` 不会把它抹掉）。
+   *
+   * ★ 没有 `id` 时退回 append：宁可多一行，也不要因为拿不到 id 就把这一步丢掉
+   *   —— 丢步骤的表现是「过程看起来断了一截」，且**零报错**。
+   */
+  const appendThinkingStep = (step: ThinkingStep, agentId?: string) => {
+    const targetId = agentId || activeAgentId.value || 'default'
+    const list = messagesByAgent.value[targetId]
+    if (!list || list.length === 0) return
+    const last = list[list.length - 1]
+    if (!last.thinkingSteps) last.thinkingSteps = []
+    const same = step.id ? last.thinkingSteps.find((s) => s.id === step.id) : undefined
+    if (same) {
+      Object.assign(same, step)
+      return
+    }
+    last.thinkingSteps.push(step)
+  }
+
+  /**
    * 回填「最后一条消息」的结构化结果（收到 SSE meta 事件时调用）。
    *
    * 有了它，一条对话消息才同时具备两副面孔：
@@ -258,6 +316,8 @@ export const useChatStore = defineStore('chat', () => {
     clearSessionId,
     addMessage,
     appendToLastMessage,
+    setLastMessageContent,
+    appendThinkingStep,
     setLastMessageResult,
     removeMessage,
     clearMessages,

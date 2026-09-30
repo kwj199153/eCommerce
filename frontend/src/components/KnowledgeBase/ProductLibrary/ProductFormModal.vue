@@ -2,7 +2,7 @@
   <a-modal
     v-model:open="open"
     :title="editingId ? '编辑产品' : '新增产品'"
-    width="720px"
+    :width="WINDOW_W.xxl"
     @ok="handleSubmit"
     :okLoading="submitting"
     cancelText="取消"
@@ -140,6 +140,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { ref, reactive, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'

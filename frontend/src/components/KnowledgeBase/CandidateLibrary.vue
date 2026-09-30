@@ -146,6 +146,16 @@
       size="middle"
       :scroll="{ y: 'calc(100vh - 360px)' }"
     >
+      <!-- ★ 表格自带空态是「暂无数据」；换成统一组件，且用 store.hasActiveFilters
+           区分「筛选无果」与「本来就是空」——两者对应相反的操作。 -->
+      <template #emptyText>
+        <AsyncEmpty
+          :error="store.loadError"
+          label="选品库"
+          :empty-description="store.hasActiveFilters ? '没有匹配的候选' : '选品库为空，点右上角导入候选'"
+          @retry="store.fetchItems()"
+        />
+      </template>
       <template #bodyCell="{ column, record }">
         <!-- 标题列 -->
         <template v-if="column.key === 'title'">
@@ -281,7 +291,7 @@
     <a-modal
       v-model:open="addModalVisible"
       title="手动录入候选选品"
-      :width="560"
+      :width="WINDOW_W.lg"
       :confirm-loading="adding"
       @ok="handleAddSubmit"
     >
@@ -328,7 +338,7 @@
     <a-modal
       v-model:open="showImportModal"
       title="批量导入候选"
-      width="520px"
+      :width="WINDOW_W.md"
       :footer="null"
     >
       <div class="import-area">
@@ -386,6 +396,8 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
+import AsyncEmpty from '@/components/common/AsyncEmpty.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {

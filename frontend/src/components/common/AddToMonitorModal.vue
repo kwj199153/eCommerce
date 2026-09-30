@@ -2,7 +2,7 @@
   <a-modal
     :open="open"
     title="🛰️ 开启竞品监控"
-    :width="520"
+    :width="WINDOW_W.md"
     centered
     :footer="null"
     @cancel="close"
@@ -71,6 +71,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, FundOutlined } from '@ant-design/icons-vue'

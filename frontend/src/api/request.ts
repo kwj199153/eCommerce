@@ -21,21 +21,31 @@ import {
 } from '@/api/authRefreshPolicy'
 
 /**
- * 给 Axios 配置加一个 silent 开关。
+ * 提示归属（第 267 轮定稿）：**成功提示归调用点，错误提示归拦截器**。
  *
- * 划词翻译这类**高频**请求不该每选一次就弹一次「翻译完成」——
- * 调用方传 `{ silent: true }` 即可跳过响应拦截器的成功提示。
+ * ★ 为什么不再有 `silent` 开关 —— 起因「一点击运营复盘师，中间对话区顶部就弹字」：
+ *   此前响应拦截器对「非 GET + 响应体带 message」**无条件**弹 `message.success`，
+ *   于是后端任何 `message="XX已生成"` 都被翻译成一条绿勾。而爆点那个端点
+ *   （`review_analyst` 的 6 个结构化 POST）本就由调用点渲染成看板/卡片 ⇒
+ *   用户看到的字**逐字等于**响应体的 `message` 字段，且与界面内容重复。
+ *
+ *   `silent` 就是为压这类刷屏而打的补丁，但它只覆盖「调用方**记得**声明」的场景：
+ *   没声明的调用点（对话卡那几个分支）照样刷屏 —— 补丁治不了病根。
+ *
+ *   改成**默认不弹成功提示**：谁要在操作完成后给回执，谁自己拿到结果后调
+ *   `message.success(...)`。`silent` 因此彻底失去语义，已全仓清理
+ *   （门禁 `check-toast-ownership.cjs` 钉住）。
  */
 declare module 'axios' {
   export interface AxiosRequestConfig {
-    silent?: boolean
     /**
-     * `silentError: true` —— 连**错误提示**也交给调用方处理。
+     * `silentError: true` —— **错误提示**也交给调用方处理。
      *
-     * 与上面的 `silent`（只压成功提示）分开命名，是因为两者语义真的不同：
      * 语音播报这类**后台自动触发**的请求失败时，调用方自己会给出更精确的原因
      * （「当前店铺还没有克隆音色，去设置里创建」）并顺手关掉开关；
      * 若拦截器再按 `detail` 弹一次，用户就会看到两条重复提示。
+     * 同理：自带**常驻**错误面（内联横幅 / 对话卡）的调用点也声明它 ——
+     * 免得同一个原因既上横幅又弹 toast。
      */
     silentError?: boolean
     /**
@@ -139,9 +149,18 @@ request.interceptors.response.use(
     // 统一处理成功响应
     const data = response.data
 
-    // 如果响应包含 message，显示提示（silent 请求跳过：高频调用弹提示会刷屏）
-    if (data?.message && response.config.method !== 'get' && !response.config.silent) {
-      message.success(data.message)
+    // ★ 成功提示不再由拦截器自动弹（理由见文件顶部「提示归属」）：
+    //   回执交给调用点自己决定 —— 有的渲染成对话卡、有的弹 toast、有的只更新横幅。
+    //   旧的「非 GET + 带 message ⇒ 弹绿勾」已删：它会把「订单查不到」
+    //   「工单创建失败」这类业务结论也渲染成绿色「成功」提示。
+    //
+    // ★ 这里只补一条**业务失败**通道：后端对「HTTP 200 + 业务失败」用
+    //   `success: false` 表达（响应点见 `ad_analysis` 6 处 + `customer_service`
+    //   工单 2 处），它既不是 4xx、也不进下面的 error 分支 ⇒ 不补判就没人看见。
+    //   受 `silentError` 管：自带常驻错误面的调用点（如广告看板的内联横幅）
+    //   声明它，避免同一个原因两处报。
+    if (data?.success === false && !response.config.silentError) {
+      message.error(data?.message || data?.detail || '操作失败')
     }
 
     return data

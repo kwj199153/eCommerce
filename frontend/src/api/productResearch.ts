@@ -30,14 +30,24 @@ export function analyzeBlueOcean(data: {
  */
 export function analyzeProfit(data: {
   asin?: string
-  productName?: string
-  sellingPrice: number
-  costPrice: number
-  weightLbs?: number
+  /** 后端 `ProfitAnalysisRequest.product_name` */
+  product_name?: string
+  /** 后端 `ProfitAnalysisRequest.selling_price` —— **必填**且 `gt=0` */
+  selling_price: number
+  /** 后端 `ProfitAnalysisRequest.cost_price` —— **必填**且 `ge=0` */
+  cost_price: number
+  weight_lbs?: number
   dimensions?: string
   category?: string
-  adAcosPct?: number
+  ad_acos_pct?: number
 }) {
+  // ★★ 第 200 轮修复：此前这里写的是 camelCase（productName / sellingPrice /
+  //    costPrice / weightLbs / adAcosPct），而后端 `ProfitAnalysisRequest` 是
+  //    snake_case ⇒ body 直接透传 ⇒ Pydantic 收不到必填字段 ⇒ **稳定 422**。
+  //    更刺眼的是**同一个文件**里 `chatWithProductResearcher` 与 `resumeApproval`
+  //    的注释都写着「必须与后端字段逐字一致」—— 规矩写在下面两处，
+  //    却漏了上面这三处（契约铁律只对后写的函数生效）。
+  //    当前这三个函数在前端**零调用**，所以从未爆出来。
   return request.post('/product-research/profit', data)
 }
 
@@ -46,7 +56,8 @@ export function analyzeProfit(data: {
  */
 export function analyzePainPoints(data: {
   asin: string
-  analyzePositive?: boolean
+  /** 后端 `PainPointRequest.analyze_positive`（原写作 `analyzePositive`） */
+  analyze_positive?: boolean
 }) {
   return request.post('/product-research/pain-points', data)
 }
@@ -56,7 +67,8 @@ export function analyzePainPoints(data: {
  */
 export function compareCompetitors(data: {
   asins: string[]
-  includeReviews?: boolean
+  /** 后端 `CompetitorCompareRequest.include_reviews`（原写作 `includeReviews`） */
+  include_reviews?: boolean
 }) {
   return request.post('/product-research/competitors', data)
 }
@@ -71,6 +83,17 @@ export function chatWithProductResearcher(data: {
   // 「按会话隔离的待补槽位 / 上一轮蓝海结果」全部退化成全局共享。
   context_id?: string
   stream?: boolean
+  // ★ 同一条铁律适用于 `skill`：后端 `ChatRequest.skill`。改名 ⇒ 静默丢弃 ⇒ 技能不注入。
+  /** 点名的技能名（`skills.name`，不是 id）。后端据此注入该技能正文 */
+  skill?: string
+  /**
+   * 本次请求的「作用对象」（第 251 轮）。**三态**，后端靠它做前置门禁：
+   *   · 字段**不出现** ⇒ 本客户端未参与该机制，不注入任何提示段；
+   *   · `null`        ⇒ 本次**明确没有**对象（点名的技能要求对象时会被拒答）；
+   *   · `{…}`         ⇒ 本次的对象。
+   * ★ 与后端 `ChatRequest.context_target` 同名（改名 ⇒ 被 Pydantic 丢掉 ⇒ 静默无门禁）。
+   */
+  context_target?: { label: string; title: string; ref: string } | null
 }): Promise<any> {
   return request.post('/product-research/chat', data)
 }
@@ -106,4 +129,15 @@ export function resumeApproval(data: {
  */
 export function getProductResearchCapabilities() {
   return request.get('/product-research/capabilities')
+}
+
+/**
+ * 选品市场洞察大盘云图（第 305 轮 · 蓝海挖掘大盘云图）
+ *
+ * GET /product-research/market-insight/treemap
+ * 返回站点 × 类目 的市场洞察快照，前端 ECharts Treemap 渲染六维度大盘。
+ * ★ 真源诚实：演示账号返回 mock 快照且 `degraded=true`，真实账号返回空 + degraded=false。
+ */
+export function getMarketInsightTreemap(): Promise<any> {
+  return request.get('/product-research/market-insight/treemap')
 }

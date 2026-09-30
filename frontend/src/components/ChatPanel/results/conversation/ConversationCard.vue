@@ -17,6 +17,15 @@
     <div class="cc-body">
       <slot />
     </div>
+    <!--
+      ★ 第 251 轮：底部动作区（可选）。
+        为什么单独开一个 slot 而不是让消费方塞进默认 slot：动作区需要与正文
+        **视觉分隔**（分隔线 + 右对齐），且有动作时卡片才需要这块空间 ——
+        用 `$slots.footer` 判断可以做到「没有动作就完全不渲染」，不留一行空白。
+    -->
+    <div v-if="$slots.footer" class="cc-foot">
+      <slot name="footer" />
+    </div>
   </div>
 </template>
 
@@ -67,5 +76,14 @@ withDefaults(
 .cc-body {
   font-size: var(--font-size-12);
   color: var(--text-secondary);
+}
+.cc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  margin-top: var(--space-10);
+  padding-top: var(--space-8);
+  border-top: 1px dashed var(--border-base);
 }
 </style>

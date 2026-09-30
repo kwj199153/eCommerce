@@ -366,8 +366,6 @@ import { FolderOpenOutlined } from '@ant-design/icons-vue'
 import LineChart from '@/components/charts/LineChart.vue'
 import { useMonitorPoolStore, type MonitorPoolRecord } from '@/stores/monitorPool'
 
-const props = defineProps<{ currentToolId?: string }>()
-
 /** 「对话 / 大屏」模式由 Workspace provide，与 ReviewConfig / AdDashboardConfig 同一份 */
 const reviewMode = inject<Ref<'chat' | 'data'>>('reviewMode', ref('chat') as Ref<'chat' | 'data'>)
 const isDataMode = computed(() => reviewMode.value === 'data')
@@ -387,9 +385,12 @@ const TABS = [
   { key: 'inventory', icon: '📦', name: '库存' },
 ] as const
 
-// 「监控仪表盘」工具与大屏是同一件事，落点就是默认面板；窄边栏下也只留这一屏
-const TOOL_TAB_MAP: Record<string, string> = { 'monitor-dashboard': 'pool' }
-const activeTab = ref<string>(TOOL_TAB_MAP[props.currentToolId || ''] || 'pool')
+// ★ 第 255 轮（#918）：原先这里有一张 `TOOL_TAB_MAP`，把「监控仪表盘」工具 id
+//   映射到 Tab，并对默认 Tab 做 `TOOL_TAB_MAP[props.currentToolId] || 'pool'`。
+//   那个工具已随 12 个**不可达**工具退役 ⇒ `currentToolId` 永远不会被传入、
+//   映射表恒命中 `'pool'`。删表 + 删 props 之后行为**逐字等价**，
+//   但少了一处「永远是死登记」的代码（本仓判据：死登记比缺登记更难发现）。
+const activeTab = ref<string>('pool')
 
 // ---------------------------------------------------------------------------
 // 派生数据

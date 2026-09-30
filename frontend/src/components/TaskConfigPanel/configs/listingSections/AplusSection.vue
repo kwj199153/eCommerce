@@ -44,11 +44,14 @@
         <a-button size="small" type="dashed" @click="draft.addAPlusModule('image-text')">+ 图文模块</a-button>
       </div>
     </div>
+
+    <PromptTab v-model="draft.aplusPrompt" placeholder="例如：A+ Content 风格，先讲使用场景痛点再讲解决方案，结尾加品牌承诺" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { useListingDraftStore } from '@/stores/listingDraft'
+import PromptTab from './PromptTab.vue'
 
 defineProps<{ genLoading: boolean; disabled?: boolean }>()
 defineEmits<{ (e: 'gen'): void }>()

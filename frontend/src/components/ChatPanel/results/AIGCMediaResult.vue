@@ -283,7 +283,7 @@
       v-model:open="framePickerVisible"
       :title="framePickerTitle"
       placement="right"
-      :width="520"
+      :width="WINDOW_W.md"
       :closable="true"
     >
       <a-tabs v-model:active-key="framePickerTab" size="small">
@@ -330,6 +330,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { ref, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
@@ -971,7 +972,7 @@ function onImgError(e: Event) {
   gap: var(--space-4);
   padding: var(--space-24) var(--space-12);
   cursor: pointer;
-  border: 1px dashed var(--border-secondary);
+  border: 1px dashed var(--border-base);
   border-radius: var(--radius-8);
 }
 .frame-upload-icon { font-size: 30px; color: var(--primary); }

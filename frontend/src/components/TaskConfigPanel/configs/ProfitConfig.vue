@@ -1,166 +1,185 @@
 <template>
-  <div class="profit-config">
-    <!-- ====== 智能统一输入框 ====== -->
-    <div class="form-group">
-      <label>目标商品（可选）</label>
-      <div class="smart-input-wrapper">
-        <a-input
-          v-model:value="form.productInput"
-          :placeholder="inputPlaceholder"
-          size="small"
-          allow-clear
-          @change="onInputChange"
-        >
-          <template #prefix>
-            <SearchOutlined style="color: #bfbfbf" />
-          </template>
-          <template v-if="detectedType" #suffix>
-            <a-tag :color="platformTagColor" size="small" style="margin-right: var(--space-4); font-size: var(--font-size-10)">
-              {{ platformLabel }}
-            </a-tag>
-          </template>
-        </a-input>
-        <ProductPickerButton
-          class="smart-input-picker"
-          :model-value="selectedProduct"
-          :show-label="true"
-          @select="onProductSelect"
+  <div class="profit-config" :class="{ 'data-mode': isDataMode }">
+    <!-- 大屏模式：左表单 + 右计算结果窗口（第 312 轮对齐 AIGC 范式） -->
+    <div class="profit-content" :class="{ 'data-layout': isDataMode }">
+      <div class="profit-form">
+        <!-- ====== 智能统一输入框 ====== -->
+        <div class="form-group">
+          <label>目标商品（可选）</label>
+          <div class="smart-input-wrapper">
+            <a-input
+              v-model:value="form.productInput"
+              :placeholder="inputPlaceholder"
+              size="small"
+              allow-clear
+              @change="onInputChange"
+            >
+              <template #prefix>
+                <SearchOutlined style="color: #bfbfbf" />
+              </template>
+              <template v-if="detectedType" #suffix>
+                <a-tag :color="platformTagColor" size="small" style="margin-right: var(--space-4); font-size: var(--font-size-10)">
+                  {{ platformLabel }}
+                </a-tag>
+              </template>
+            </a-input>
+            <ProductPickerButton
+              class="smart-input-picker"
+              :model-value="selectedProduct"
+              :show-label="true"
+              @select="onProductSelect"
+            />
+          </div>
+          <div class="input-hints">
+            <span
+              v-for="hint in inputHints"
+              :key="hint.type"
+              class="hint-chip"
+              :class="{ active: detectedType === hint.type }"
+              @click="fillHint(hint)"
+            >{{ hint.label }}</span>
+          </div>
+        </div>
+
+        <!-- 已识别商品信息 -->
+        <div v-if="detectedProduct" class="product-card-mini">
+          <ShopOutlined />
+          <span class="mini-platform">{{ detectedProduct.platform || '商品' }}</span>
+          <span class="mini-id">{{ detectedProduct.displayId }}</span>
+          <CloseOutlined class="mini-clear" @click="clearProduct" />
+        </div>
+
+        <!-- ====== 成本明细表（Excel 风格）====== -->
+        <div class="cost-sheet">
+          <table class="cost-table">
+            <colgroup>
+              <col class="col-group" />
+              <col class="col-item" />
+              <col class="col-value" />
+              <col class="col-hint" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>分组</th>
+                <th>成本项</th>
+                <th>数值</th>
+                <th>说明</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in costRows" :key="row.key">
+                <td v-if="row.span" :rowspan="row.span" class="cell-group">{{ row.group }}</td>
+                <td class="cell-item">{{ row.label }}</td>
+                <td class="cell-value">
+                  <a-input-number
+                    v-model:value="row.value"
+                    size="small"
+                    :min="row.min"
+                    :max="row.max"
+                    :step="row.step"
+                    :precision="row.precision"
+                    :placeholder="row.placeholder"
+                    :disabled="row.disabled"
+                  />
+                </td>
+                <td class="cell-hint">{{ row.hint }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="sheet-note">正向计算：填「目标售价」算利润；逆向定价：填「目标毛利」算售价（「目标售价」自动禁用）。其余空值一律按 0 计算。</div>
+        </div>
+
+        <!-- ====== 计算模式 + 操作 ====== -->
+        <div class="mode-bar">
+          <a-radio-group v-model:value="form.mode" size="small" button-style="solid">
+            <a-radio-button value="forward">正向计算</a-radio-button>
+            <a-radio-button value="reverse">逆向定价</a-radio-button>
+          </a-radio-group>
+
+          <div v-if="form.mode === 'reverse'" class="mode-target">
+            <label>目标毛利 ($)</label>
+            <a-input-number v-model:value="form.targetProfit" placeholder="期望利润" :min="0" :precision="2" size="small" style="width: 100%" />
+          </div>
+
+          <div class="mode-actions">
+            <a-button size="small" @click="handleReset">
+              <ReloadOutlined /> 重置
+            </a-button>
+            <a-button type="primary" size="small" :loading="loading" @click="handleSubmit">
+              <CalculatorOutlined /> {{ form.mode === 'forward' ? '计算利润' : '计算售价' }}
+            </a-button>
+          </div>
+        </div>
+
+        <!-- ====== 实时预览（后端唯一计算源）======
+             对话模式下在表单下方；大屏模式下「计算结果」移入右栏，这里只留实时预览。 -->
+        <div v-if="preview" class="quick-preview">
+          <div class="preview-metrics">
+            <template v-if="form.mode === 'forward'">
+              <div class="preview-item">
+                <span class="preview-label">预估毛利</span>
+                <span class="preview-value" :class="{ positive: preview.net_profit > 0, negative: preview.net_profit <= 0 }">
+                  {{ preview.net_profit > 0 ? '+' : '' }}${{ (preview.net_profit ?? 0).toFixed(2) }}
+                </span>
+              </div>
+              <div class="preview-item">
+                <span class="preview-label">毛利率</span>
+                <span class="preview-value">{{ (preview.profit_margin_pct ?? 0).toFixed(1) }}%</span>
+              </div>
+              <div class="preview-item">
+                <span class="preview-label">总费用占比</span>
+                <span class="preview-value warning">{{ previewCostPct.toFixed(1) }}%</span>
+              </div>
+            </template>
+            <template v-else>
+              <div class="preview-item">
+                <span class="preview-label">建议售价</span>
+                <span class="preview-value suggested">${{ (preview.listing_price ?? 0).toFixed(2) }}</span>
+              </div>
+              <div class="preview-item">
+                <span class="preview-label">对应毛利率</span>
+                <span class="preview-value">{{ (preview.profit_margin_pct ?? 0).toFixed(1) }}%</span>
+              </div>
+            </template>
+          </div>
+          <div v-if="form.mode === 'reverse'" class="preview-hint">
+            要实现 ${{ (form.targetProfit || 0).toFixed(2) }} 目标毛利，需定价不低于 ${{ (preview.listing_price ?? 0).toFixed(2) }}
+          </div>
+          <div class="preview-source">{{ preview.platform }} · {{ preview.currency }} · 费率取当前店铺</div>
+        </div>
+        <div v-else-if="previewError" class="quick-preview quick-preview--error">{{ previewError }}</div>
+        <div v-else class="quick-preview quick-preview--idle">
+          {{ previewLoading
+            ? '正在按当前店铺费率测算…'
+            : `填好「采购成本」和${form.mode === 'forward' ? '目标售价' : '目标毛利'}，这里会实时给出店铺费率下的结果。` }}
+        </div>
+      </div>
+
+      <!-- 大屏模式：右栏计算结果窗口（复用 ProfitResult，结果不进对话流） -->
+      <div v-if="isDataMode" class="profit-result-panel">
+        <ProfitResult
+          v-if="latestResult"
+          :data="latestResult"
+          @close="latestResult = null"
+        />
+        <a-empty
+          v-else
+          description="暂无计算结果，点「计算利润/售价」出结果"
+          :image-style="{ height: '48px' }"
         />
       </div>
-      <div class="input-hints">
-        <span
-          v-for="hint in inputHints"
-          :key="hint.type"
-          class="hint-chip"
-          :class="{ active: detectedType === hint.type }"
-          @click="fillHint(hint)"
-        >{{ hint.label }}</span>
-      </div>
-    </div>
-
-    <!-- 已识别商品信息 -->
-    <div v-if="detectedProduct" class="product-card-mini">
-      <ShopOutlined />
-      <span class="mini-platform">{{ detectedProduct.platform || '商品' }}</span>
-      <span class="mini-id">{{ detectedProduct.displayId }}</span>
-      <CloseOutlined class="mini-clear" @click="clearProduct" />
-    </div>
-
-    <!-- ====== 成本明细表（Excel 风格：表头 + 一行一项 + 框线 + 分组合并格）======
-         输入框去掉自身边框融进单元格，聚焦时整格高亮；金额/费率的含义统一写在「说明」列 -->
-    <div class="cost-sheet">
-      <table class="cost-table">
-        <colgroup>
-          <col class="col-group" />
-          <col class="col-item" />
-          <col class="col-value" />
-          <col class="col-hint" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th>分组</th>
-            <th>成本项</th>
-            <th>数值</th>
-            <th>说明</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in costRows" :key="row.key">
-            <td v-if="row.span" :rowspan="row.span" class="cell-group">{{ row.group }}</td>
-            <td class="cell-item">{{ row.label }}</td>
-            <td class="cell-value">
-              <a-input-number
-                v-model:value="row.value"
-                size="small"
-                :min="row.min"
-                :max="row.max"
-                :step="row.step"
-                :precision="row.precision"
-                :placeholder="row.placeholder"
-                :disabled="row.disabled"
-              />
-            </td>
-            <td class="cell-hint">{{ row.hint }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="sheet-note">正向计算：填「目标售价」算利润；逆向定价：填「目标毛利」算售价（「目标售价」自动禁用）。其余空值一律按 0 计算。</div>
-    </div>
-
-    <!-- ====== 计算模式 + 操作（同一行，不再各占一段）====== -->
-    <div class="mode-bar">
-      <a-radio-group v-model:value="form.mode" size="small" button-style="solid">
-        <a-radio-button value="forward">正向计算</a-radio-button>
-        <a-radio-button value="reverse">逆向定价</a-radio-button>
-      </a-radio-group>
-
-      <div v-if="form.mode === 'reverse'" class="mode-target">
-        <label>目标毛利 ($)</label>
-        <a-input-number v-model:value="form.targetProfit" placeholder="期望利润" :min="0" :precision="2" size="small" style="width: 100%" />
-      </div>
-
-      <div class="mode-actions">
-        <a-button size="small" @click="handleReset">
-          <ReloadOutlined /> 重置
-        </a-button>
-        <a-button type="primary" size="small" :loading="loading" @click="handleSubmit">
-          <CalculatorOutlined /> {{ form.mode === 'forward' ? '计算利润' : '计算售价' }}
-        </a-button>
-      </div>
-    </div>
-
-    <!-- ====== 实时预览（后端唯一计算源，与对话结果卡同源）======
-         这里不再有前端公式：输入 → 调 /stores/profit/calculate（费率来自当前店铺）
-         → 拿回的 result 同时喂给本预览区与对话结果卡，两处只做渲染差异。 -->
-    <div v-if="preview" class="quick-preview">
-      <div class="preview-metrics">
-        <template v-if="form.mode === 'forward'">
-          <div class="preview-item">
-            <span class="preview-label">预估毛利</span>
-            <span class="preview-value" :class="{ positive: preview.net_profit > 0, negative: preview.net_profit <= 0 }">
-              {{ preview.net_profit > 0 ? '+' : '' }}${{ (preview.net_profit ?? 0).toFixed(2) }}
-            </span>
-          </div>
-          <div class="preview-item">
-            <span class="preview-label">毛利率</span>
-            <span class="preview-value">{{ (preview.profit_margin_pct ?? 0).toFixed(1) }}%</span>
-          </div>
-          <div class="preview-item">
-            <span class="preview-label">总费用占比</span>
-            <span class="preview-value warning">{{ previewCostPct.toFixed(1) }}%</span>
-          </div>
-        </template>
-        <template v-else>
-          <div class="preview-item">
-            <span class="preview-label">建议售价</span>
-            <span class="preview-value suggested">${{ (preview.listing_price ?? 0).toFixed(2) }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="preview-label">对应毛利率</span>
-            <span class="preview-value">{{ (preview.profit_margin_pct ?? 0).toFixed(1) }}%</span>
-          </div>
-        </template>
-      </div>
-      <div v-if="form.mode === 'reverse'" class="preview-hint">
-        要实现 ${{ (form.targetProfit || 0).toFixed(2) }} 目标毛利，需定价不低于 ${{ (preview.listing_price ?? 0).toFixed(2) }}
-      </div>
-      <div class="preview-source">{{ preview.platform }} · {{ preview.currency }} · 费率取当前店铺</div>
-    </div>
-    <div v-else-if="previewError" class="quick-preview quick-preview--error">{{ previewError }}</div>
-    <div v-else class="quick-preview quick-preview--idle">
-      {{ previewLoading
-        ? '正在按当前店铺费率测算…'
-        : `填好「采购成本」和${form.mode === 'forward' ? '目标售价' : '目标毛利'}，这里会实时给出店铺费率下的结果。` }}
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, inject, onMounted, onBeforeUnmount, type Ref } from 'vue'
 import { ReloadOutlined, CalculatorOutlined, SearchOutlined, ShopOutlined, CloseOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import ProductPickerButton from './ProductPickerButton.vue'
-import { calculateProfit, toProfitRequest, type ProfitResult } from '@/api/stores'
+import ProfitResult from '@/components/ChatPanel/results/ProfitResult.vue'
+import { useProductResearchResultsStore } from '@/stores/productResearchResults'
+import { calculateProfit, toProfitRequest, type ProfitResult as ProfitResultType } from '@/api/stores'
 import { useShopStore } from '@/stores/shop'
 
 const emit = defineEmits<{
@@ -168,6 +187,18 @@ const emit = defineEmits<{
 }>()
 
 const loading = ref(false)
+
+// ====== 大屏/对话模式：读 Workspace 注入的 reviewMode（第 312 轮对齐 AIGC 双模式）======
+const reviewMode = inject<Ref<'chat' | 'data'>>('reviewMode', ref('chat') as Ref<'chat' | 'data'>)
+const isDataMode = computed(() => reviewMode.value === 'data')
+
+// ====== 大屏结果窗口（结果存在 store，切工具不丢，对齐 aigcResults）======
+const PROFIT_TOOL_ID = 'profit-calc'
+const productResults = useProductResearchResultsStore()
+const latestResult = computed<any>({
+  get: () => productResults.getResult(PROFIT_TOOL_ID),
+  set: (v: any) => (v ? productResults.setResult(PROFIT_TOOL_ID, v) : productResults.clearResult(PROFIT_TOOL_ID)),
+})
 
 // 当前店铺决定费率模板 —— 利润测算的「平台规则」部分由它提供
 const shopStore = useShopStore()
@@ -366,7 +397,7 @@ const onProductSelect = (product: any) => {
 // ====== 实时预览（后端为唯一计算源）======
 // 之前这里是一段前端 computed 公式，与 mock 执行器、后端引擎三方并存 ——
 // 同一份输入能算出三个结果。现在只保留一条路：调后端。
-const preview = ref<ProfitResult | null>(null)
+const preview = ref<ProfitResultType | null>(null)
 const previewLoading = ref(false)
 const previewError = ref('')
 
@@ -493,6 +524,35 @@ const handleReset = () => {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  height: 100%;
+  min-height: 0;
+}
+
+/* 大屏模式：左表单 + 右计算结果窗口左右分栏 */
+.profit-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-height: 0;
+  flex: 1;
+}
+.profit-content.data-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(280px, 1.3fr);
+  gap: var(--space-12);
+  overflow: hidden;
+}
+.profit-form {
+  min-height: 0;
+  overflow-y: auto;
+}
+.profit-result-panel {
+  min-height: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--border-base);
+  padding-left: var(--space-10);
+  display: flex;
+  flex-direction: column;
 }
 
 .form-group > label {
@@ -778,8 +838,8 @@ const handleReset = () => {
   align-items: center;
   gap: var(--space-6);
   padding: var(--space-5) var(--space-8);
-  background: linear-gradient(135deg, #f0f9ff 0%, #e6f7ff 100%);
-  border: 1px solid #bae7ff;
+  background: linear-gradient(135deg, var(--primary-bg-subtle) 0%, var(--info-bg) 100%);
+  border: 1px solid var(--info-border);
   border-radius: var(--radius-6);
   font-size: var(--font-size-11);
 }

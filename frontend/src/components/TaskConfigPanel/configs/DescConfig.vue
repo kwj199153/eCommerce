@@ -228,7 +228,8 @@ const handleReset = () => { form.value = { ...defaultForm }; localStorage.remove
 .product-banner {
   display: flex; align-items: center; gap: var(--space-6);
   padding: var(--space-6) var(--space-10); margin-bottom: var(--space-8);
-  background: #f0f7ff; border: 1px solid #91caff; border-radius: var(--radius-4);
+  background: var(--primary-bg-subtle); border: 1px solid var(--primary-border-subtle);
+  border-radius: var(--radius-4);
   font-size: var(--font-size-12); color: var(--primary-strong);
 }
 .product-banner .banner-icon { font-size: var(--font-size-14); }

@@ -73,7 +73,7 @@ export interface SampleUploadResult {
  *   而不是把错误弹给用户（用户根本不该知道有这个模块）。
  */
 export async function fetchVoiceConfig(): Promise<VoiceConfig> {
-  return request.get('/voice-clone/config', { silent: true } as any)
+  return request.get('/voice-clone/config')
 }
 
 /**
@@ -213,12 +213,13 @@ export interface SpeechPlanResult {
  *
  * ★ 静默：本端点由播报队列**自动高频**调用（每个增量一次），
  *   既不该弹成功提示，也不该弹错误提示 —— 失败原因由 store 统一给出并关开关。
+ *   ⇒ 只声明 `silentError`：成功提示自第 267 轮起拦截器就不会自动弹了。
  */
 export async function fetchSpeechPlan(text: string): Promise<SpeechPlanResult> {
   return request.post(
     '/voice-clone/speak-plan',
     { text },
-    { silent: true, silentError: true, timeout: 15000 } as any
+    { silentError: true, timeout: 15000 } as any
   )
 }
 

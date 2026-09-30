@@ -157,7 +157,26 @@ except FileNotFoundError:
     print("  --   跳过（未找到 %s）" % API)
 
 print()
+print("[5] 弱化文字档：antd `colorTextTertiary` ≡ vars `--text-tertiary`（同一语义不许两份值）")
+# ★ 为什么值得单列一条：`--text-tertiary` 的提亮是**改 CSS 变量**，而 antd 组件的
+#   弱化文字走的是 `colorTextTertiary`（派生默认 = fade(colorText,45%) ≈ #8c8c8c）。
+#   只提亮变量、不钉 token ⇒ 自定义 CSS 变清楚了、antd 组件还是旧浅灰，
+#   **同一语义两份实现**，而且这条在两边的静态检查里都是盲区：
+#     · check-theme-var-refs.py 只管「引用的名字存不存在」；
+#     · vue-tsc / build / 单测 都看不见颜色值。
+#   真机侧也判不了：实测 `/` 与 `/subscription` 上一个消费 colorTextTertiary 的
+#   antd 组件都没有 ⇒ 放在 CDP 探针里会是一条**永久假红**。
+blk = presets[presets.index("export const THEME_PRESETS"):]
+for m in re.finditer(r"\n    name: '(\w+)',([\s\S]*?)(?=\n    name: '|\n  \},|\Z)", blk):
+    name, body = m.group(1), m.group(2)
+    tk = re.search(r"colorTextTertiary:\s*'([^']*)'", body)
+    want = vars_of(presets, "%s_VARS" % name.upper()).get("--text-tertiary") \
+        or light_vars.get("--text-tertiary")
+    got = tk.group(1) if tk else "(未声明 → antd 派生默认)"
+    check(tk is not None and got == want, "⑩ %s colorTextTertiary == --text-tertiary" % name, got, want)
+
+print()
 if fails:
     print("RESULT: FAIL（%d 处漂移）—— 请按上表把复制点同步到 presets.ts" % len(fails))
     sys.exit(1)
-print("RESULT: PASS（主题清单与首屏兜底在 %d 处复制点全部一致）" % 9)
+print("RESULT: PASS（主题清单 / 首屏兜底 / 弱化文字档在各复制点全部一致）")

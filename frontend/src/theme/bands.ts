@@ -101,7 +101,11 @@ const DEFS = {
     cuts: [75, 50],
     keys: ['strong', 'medium', 'weak'],
     colors: [SEM.success, SEM.warning, SEM.danger],
-    note: '竞争力评分。适用：BuyBoxAnalysisResult、PriceTrackResult（两处 `competitiveness_score` 必须同档，勿各写一份）。',
+    // ★ 第 255 轮（#918）：原引用方 `BuyBoxAnalysisResult` / `PriceTrackResult`
+    //   已随 12 个不可达工具退役删除 ⇒ 本档当前**无前端消费方**。
+    //   档位口径保留（后端仍下发 `competitiveness_score`），但注释里不能再点名
+    //   不存在的组件 —— 悬空引用会被下一个读代码的人当成「这里还在用」。
+    note: '竞争力评分（口径保留；第 255 轮起前端无消费方，勿并进邻近档）。',
   },
 
   /** 关键词相关度：关键词挖掘 */
@@ -121,7 +125,7 @@ const DEFS = {
     cuts: [80, 60, 40],
     keys: ['good', 'warn', 'weak', 'poor'],
     colors: [SEM.success, SEM.warning, SEM.orangeStrong, SEM.danger],
-    note: '商品监控健康度（MonitorDashboardResult，四档）。⚠️ **与 `campaignHealth` 名字像但指标不同** —— 它由商品侧价格下跌 / 库存风险扣分得出（见 `mock/toolExecutors.ts` 的 health_score 推导），与广告 Campaign 无关，**不要合并**。',
+    note: '商品监控健康度，四档。⚠️ **与 `campaignHealth` 名字像但指标不同** —— 它由商品侧价格下跌 / 库存风险扣分得出，与广告 Campaign 无关，**不要合并**。📌 #744（2026-09-18）后**本档暂无消费者**：原先唯一的消费卡 `MonitorDashboardResult` 与其执行器 `executeMonitorDashboard` 已作为「无入口死码」删除（商品监控改由 `IntelBoardConfig` 大屏承载）。保留本档 = 保留这条口径的唯一出处，将来大屏若要用健康分，**从这里取阈值，不要另起一套**。',
   },
 
   /** 等级 A–F —— 阈值对齐后端两处实现 */
@@ -153,7 +157,7 @@ const DEFS = {
     cuts: [4, 3],
     keys: ['good', 'fair', 'low'],
     colors: [SEM.success, SEM.primary, SEM.warning],
-    note: '星级 / 评分（0–5）。适用：ABTestGenerator 指标色、CompetitorAnalysisCard 与 CompetitorIntelEvidence 的星级。⚠️ **量纲 0–5**，勿并进 0–100 档。',
+    note: '星级 / 评分（0–5）。适用：ABTestGenerator 指标色、CompetitorAnalysisCard 的星级。⚠️ **量纲 0–5**，勿并进 0–100 档。',
   },
 
   /** 情感得分 0–1 */
@@ -163,7 +167,7 @@ const DEFS = {
     cuts: [0.7, 0.45],
     keys: ['pos', 'neu', 'neg'],
     colors: [SEM.success, SEM.warning, SEM.danger],
-    note: '评论情感得分（ReviewSpyResult）。⚠️ **量纲 0–1 比率**，勿并进 0–100 档。',
+    note: '📌 #744（2026-09-18）后**本档暂无消费者**：原唯一消费卡 `ReviewSpyResult` 与其执行器 `executeReviewSpy` 已作为「无入口死码」删除。阈值保留为「评论情感三档」的唯一口径出处。 评论情感得分。⚠️ **量纲 0–1 比率**，勿并进 0–100 档。',
   },
 
   // ==================== 领域专用口径（量纲/方向各不相同，勿互相合并） ====================
@@ -250,7 +254,7 @@ const DEFS = {
     cuts: [30, 15, 5],
     keys: ['dominated', 'competitive', 'emerging', 'open'],
     colors: [SEM.dangerStrong, SEM.orangeStrong, SEM.primary, SEM.success],
-    note: '市场份额（MarketShareResult）。⚠️ **反向：份额越高说明该市场越拥挤、越难切** —— 蓝色（`emerging`）才是机会档，勿并进正向档。',
+    note: '市场份额。⚠️ **反向：份额越高说明该市场越拥挤、越难切** —— 蓝色（`emerging`）才是机会档，勿并进正向档。（第 255 轮：`MarketShareResult` 已删，口径保留。）',
   },
 } as const
 

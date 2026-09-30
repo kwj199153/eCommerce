@@ -2,7 +2,7 @@
   <a-modal
     v-model:open="open"
     :title="editingId ? '编辑SKU' : '新增SKU'"
-    width="480px"
+    :width="WINDOW_W.sm"
     @ok="submit"
     :okLoading="submitting"
     cancelText="取消"
@@ -34,6 +34,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { ref, reactive, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useProductLibraryStore, type ProductItem } from '@/stores/productLibrary'

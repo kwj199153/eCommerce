@@ -42,7 +42,10 @@
           <a-tag :color="platformColor(shop.platform)" size="small">{{ platformLabel(shop.platform) }}</a-tag>
         </div>
         <div class="item-right">
-          <span :class="['status-dot', shop.is_connected ? 'connected' : 'disconnected']"></span>
+          <span
+            :class="['status-dot', connectStateOf(shop)]"
+            :title="connectTitleOf(shop)"
+          ></span>
           <a-tooltip title="编辑">
             <button class="icon-btn" @click.stop="openEditModal(shop)">
               <EditOutlined />
@@ -71,7 +74,7 @@
       :title="isEditing ? '编辑店铺' : '添加店铺'"
       :confirm-loading="submitting"
       @ok="handleSubmit"
-      width="480px"
+      :width="WINDOW_W.sm"
       ok-text="保存"
       cancel-text="取消"
     >
@@ -134,12 +137,20 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useShopStore } from '@/stores/shop'
 import { useAccountStore } from '@/stores/account'
-import { createShop, fetchStores, updateShop as apiUpdateShop, deleteShop as apiDeleteShop, transferStore } from '@/api/stores'
+import {
+  createShop,
+  fetchStores,
+  updateShop as apiUpdateShop,
+  deleteShop as apiDeleteShop,
+  transferStore,
+  shopConnectState,
+} from '@/api/stores'
 import type { Shop } from '@/stores/shop'
 
 const emit = defineEmits<{
@@ -185,6 +196,28 @@ const PLATFORM_CURRENCY_MAP: Record<string, string> = {
 
 const platformLabel = (p: string) => ({ amazon_us: 'US', amazon_uk: 'UK', amazon_de: 'DE', amazon_jp: 'JP', shopee_my: 'MY', shopee_tw: 'TW', shopee_ph: 'PH', shopee_th: 'TH', shopee_sg: 'SG', shopee_vn: 'VN', shopee_id: 'ID', shopee_br: 'BR', tiktok: 'TK', shopify: 'SF' }[p] || p)
 const platformColor = (p: string) => p.startsWith('amazon') ? 'orange' : p.startsWith('shopee') ? 'green' : p === 'tiktok' ? 'blue' : 'purple'
+
+// ★★ 第 318 轮：状态点也走**三态**（与 Settings.vue 同源，`shopConnectState()`）。
+//
+//   原来是 `shop.is_connected ? 'connected' : 'disconnected'` —— 而在这个改动
+//   之前后端**根本不返回** `is_connected`（普通 `@property` 不进 `model_dump`），
+//   所以这个点**恒为灰色**，用户看到的是「所有店铺都没连上」。
+//
+//   现在后端返回了，但**两态仍然不够**：「库里有凭据但没验过」
+//   （网络不通 / 该平台未接入自动校验）既不该显示绿灯，也不该显示成灰点 ——
+//   灰点会让用户以为白填了，于是重填一遍，然后再次看到灰点。
+const connectStateOf = (s: any) => shopConnectState(s)
+
+const connectTitleOf = (s: any) => {
+  switch (shopConnectState(s)) {
+    case 'connected':
+      return '凭据已通过平台校验'
+    case 'configured':
+      return '凭据已保存，但尚未通过平台校验'
+    default:
+      return '未配置平台凭据'
+  }
+}
 
 const handleSelectShop = (shop: Shop) => { shopStore.setCurrentShop(shop) }
 
@@ -322,6 +355,11 @@ onMounted(async () => { await refreshShopList() })
 
 .status-dot { width: 6px; height: 6px; border-radius: var(--radius-circle); flex-shrink: 0; }
 .status-dot.connected { background: var(--success); }
+/* ★ 第 318 轮：「已配置未验证」需要自己的颜色 ——
+   绿点会撒谎（没验过），灰点会被读成「没配」，用户于是重填一遍、再看到灰点。
+   带兜底值：本文件此前没引用过 `--warning`，若主题里未定义，
+   退到 antd 的警示黄，而不是变成一个没有颜色的点。 */
+.status-dot.configured { background: var(--warning, #faad14); }
 .status-dot.disconnected { background: #d9d9d9; }
 
 .icon-btn { width: 24px; height: 24px; border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); border-radius: var(--radius-4); display: inline-flex; align-items: center; justify-content: center; font-size: var(--font-size-12); padding: 0; }

@@ -30,7 +30,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent          # frontend/
 APP_ACTIONS = ROOT / "src" / "utils" / "appActions.ts"
 API = ROOT / "src" / "api" / "secretary.ts"
+# ★ 第 169 轮 #664：编排层已拆成「壳 + composables/chat/**」。
+#   本脚本判的是「编排层有没有消费 dispatchAppAction 的返回值」，与它住在哪个文件无关
+#   ⇒ 读**整个编排域**。口径与 scripts/_orch-domain.cjs 对齐（Node 侧同源）。
 ORCH = ROOT / "src" / "composables" / "useChatOrchestrator.ts"
+ORCH_DOMAIN_DIR = ROOT / "src" / "composables" / "chat"
 WORKSPACE = ROOT / "src" / "views" / "Workspace.vue"
 NAV_TOOLS = ROOT.parent / "backend" / "modules" / "secretary" / "navigation_tools.py"
 SHOP_TOOLS = ROOT.parent / "backend" / "modules" / "secretary" / "shop_tools.py"
@@ -40,6 +44,15 @@ fails = []
 
 def read(p: Path) -> str:
     return io.open(p, encoding="utf-8", newline="").read()
+
+
+def read_orch_domain() -> str:
+    """壳 + composables/chat/** 全部 .ts 拼接（口径见 scripts/_orch-domain.cjs）。"""
+    parts = [read(ORCH)]
+    if ORCH_DOMAIN_DIR.is_dir():
+        for p in sorted(ORCH_DOMAIN_DIR.rglob("*.ts")):
+            parts.append(read(p))
+    return "\n".join(parts)
 
 
 def check(ok: bool, label: str, got="", want=""):
@@ -97,7 +110,7 @@ print("=== 动作分发穷尽性自检 ===")
 
 app_actions = read(APP_ACTIONS)
 api = read(API)
-orch = read(ORCH)
+orch = read_orch_domain()
 
 declared = declared_types(app_actions, "export type AppAction")
 implemented = implemented_types(app_actions)

@@ -1,4 +1,9 @@
-// 验收「删除音色」是否真的落在步骤 3（创建音色），而不是步骤 4（试听）。
+// 验收「删除音色」是否真的落在**面板最上方**（第 322 轮老板口径：业务顺序应当是
+// 「先删旧音色 → 才能创建新音色」，所以删除入口必须排在创建流程之前）。
+//
+// 演进：本探针原先断言「删除音色属于步骤 3 卡片」—— 那是更早一轮的设计。
+// 第 322 轮把它上移到面板最上（所有步骤卡之上），判据随之改为
+// 「不在任何 .vc-card 里，且坐标高于第一张步骤卡」。
 //
 // 为什么必须真跑浏览器：`v-if="record.exists"` + popconfirm 包裹 + 卡片归属，
 // 这些读源码「看起来对」，但只有真实 DOM 才知道按钮落在哪张卡片里、是否分行、
@@ -134,13 +139,15 @@ await sleep(4000)
 console.log('\n=== 3. 量测控件归属（按钮落在哪张步骤卡里）')
 const layout = await run(`(()=>{
   const cardTitle=(el)=>{const c=el&&el.closest('.vc-card');if(!c)return null;const t=c.querySelector('.ant-card-head-title');return t?t.textContent.trim().replace(/\\s+/g,' '):'(无标题)'};
-  const btn=(re)=>[...document.querySelectorAll('button')].find(b=>re.test(b.textContent));
+  const btn=(re)=>[...document.querySelectorAll('button')].find(b=>re.test(b.textContent.replace(/\\s+/g,'')));
   const del=btn(/^删除音色$/);
-  const pv=btn(/生成试听/);
+  const pv=btn(/^试听$/);
   const en=btn(/开始克隆|已有可用音色/);
   const rect=(e)=>{if(!e)return null;const r=e.getBoundingClientRect();return {top:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height)}};
+  const firstCard=[...document.querySelectorAll('.vc-card')][0];
   return JSON.stringify({
     cardCount: document.querySelectorAll('.vc-card').length,
+    firstCardTop: firstCard?Math.round(firstCard.getBoundingClientRect().top):null,
     cardTitles: [...document.querySelectorAll('.vc-card .ant-card-head-title')].map(e=>e.textContent.trim().replace(/\\s+/g,' ')),
     del: del? {text:del.textContent.trim(), inCard:cardTitle(del), danger:del.classList.contains('ant-btn-dangerous'), primary:del.classList.contains('ant-btn-primary'), disabled:del.disabled, rect:rect(del), popParent: !!(del.closest('.ant-popconfirm')||del.parentElement&&del.parentElement.className.includes('popconfirm'))} : null,
     pv:  pv?  {text:pv.textContent.trim(),  inCard:cardTitle(pv),  disabled:pv.disabled, rect:rect(pv)} : null,
@@ -218,7 +225,7 @@ console.log('  后端 status:', JSON.stringify(statusAfter))
 console.log('  UI:', uiAfter)
 
 // ── 7. 截图 ────────────────────────────────────────────────────────────
-console.log('\n=== 7. 截图（步骤 3 + 步骤 4 交界处）')
+console.log('\n=== 7. 截图（面板顶部：状态条 + 删除音色）')
 await run(`(()=>{
   const d=document.querySelector('.vc-danger-row');
   if(d) d.scrollIntoView({block:'center'});
@@ -237,35 +244,36 @@ try { L = JSON.parse(layout) } catch { /* ignore */ }
 let P = null
 try { P = JSON.parse(pop) } catch { /* ignore */ }
 
-const delInStep3 = !!L?.del && String(L.del.inCard || '').includes('3')
-const delNotStep4 = !!L?.del && !String(L.del.inCard || '').includes('4')
+// ★ 第 322 轮改判：删除音色必须落在**所有步骤卡之上**。
+//   两个条件合取：① 不属于任何 .vc-card（inCard 为 null）；② 坐标真在第一张卡上方。
+//   只判 ① 会被"挪到面板外/未渲染"蒙混过关；只判 ② 会被"挪进第一张卡内部"蒙混过关。
+const delAtTop = !!(L?.del?.rect && !L.del.inCard && L.firstCardTop != null && L.del.rect.top < L.firstCardTop)
 const pvInStep4 = !!L?.pv && String(L.pv.inCard || '').includes('4')
-// 与主操作分行：删除按钮 top 明显大于「开始克隆」top（不是并排）
-const stacked = !!(L?.del?.rect && L?.enroll?.rect && L.del.rect.top - L.enroll.rect.top > 20)
-// 删除按钮必须在试听按钮上方（顺序：步骤 3 在步骤 4 之前）
+// 删除按钮在试听按钮上方（先删后建 ⇒ 删在上）
 const orderOk = !!(L?.del?.rect && L?.pv?.rect && L.del.rect.top < L.pv.rect.top)
 const popconfirmOk = !!P?.exists
 const stateKept = statusAfter.ready === true && statusAfter.voice_id === statusBefore.voice_id
 
 console.log('\n=== 汇总')
 console.log('  卡片标题 = ' + JSON.stringify(L?.cardTitles || []))
-console.log('  删除音色   → 所属卡片 ' + JSON.stringify(L?.del?.inCard ?? null) + '  danger=' + (L?.del?.danger ?? '-'))
-console.log('  生成试听   → 所属卡片 ' + JSON.stringify(L?.pv?.inCard ?? null))
+console.log('  删除音色   → 所属卡片 ' + JSON.stringify(L?.del?.inCard ?? null) + '（null = 不在任何步骤卡里）  danger=' + (L?.del?.danger ?? '-'))
+console.log('  试听       → 所属卡片 ' + JSON.stringify(L?.pv?.inCard ?? null))
 console.log('  开始克隆   → 所属卡片 ' + JSON.stringify(L?.enroll?.inCard ?? null) + '  top=' + (L?.enroll?.rect?.top ?? '-'))
-console.log('  垂直位置：开始克隆 ' + (L?.enroll?.rect?.top ?? '-') + ' / 删除音色 ' + (L?.del?.rect?.top ?? '-') + ' / 生成试听 ' + (L?.pv?.rect?.top ?? '-'))
+console.log('  第一张步骤卡 top = ' + (L?.firstCardTop ?? '-'))
+console.log('  垂直位置：删除音色 ' + (L?.del?.rect?.top ?? '-') + ' / 第一张卡 ' + (L?.firstCardTop ?? '-') + ' / 试听 ' + (L?.pv?.rect?.top ?? '-'))
 console.log('  .vc-danger-row 存在 = ' + (L?.dangerRowExists ?? '-'))
 console.log('  二次确认弹框 = ' + (P?.exists ?? false) + ' 内容=' + JSON.stringify(P?.text ?? null))
 console.log('  音色仍在（后端）= ' + statusAfter.ready + ' voice_id=' + statusAfter.voice_id)
 console.log(
-  '  ★★ VERDICT layout=' + (delInStep3 && delNotStep4 && pvInStep4) +
-  ' stack=' + stacked +
+  '  ★★ VERDICT delAtTop=' + delAtTop +
+  ' pvInStep4=' + pvInStep4 +
   ' order=' + orderOk +
   ' popconfirm=' + popconfirmOk +
   ' dangerRow=' + !!L?.dangerRowExists +
   ' stateKept=' + stateKept +
   (READONLY ? ' mode=readonly' : ' mode=interactive'),
 )
-const pass = delInStep3 && delNotStep4 && pvInStep4 && stacked && orderOk && popconfirmOk && !!L?.dangerRowExists && stateKept
+const pass = delAtTop && pvInStep4 && orderOk && popconfirmOk && !!L?.dangerRowExists && stateKept
 console.log('  ★★ PASS=' + pass)
 console.log('  ★★ EXIT ' + (pass ? 0 : 1))
 

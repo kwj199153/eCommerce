@@ -171,6 +171,16 @@
       :children-column-name="'children'"
       :row-class-name="rowClassName"
     >
+      <!-- ★ 表格自带空态是「暂无数据」，与「加载失败」自相矛盾；换成统一组件
+           （失败 ⇒ 说失败 + 重试；无错且空 ⇒ 说空）。 -->
+      <template #emptyText>
+        <AsyncEmpty
+          :error="store.loadError"
+          label="产品库"
+          empty-description="产品库为空，点击右上角添加产品"
+          @retry="store.fetchItems()"
+        />
+      </template>
       <template #bodyCell="{ column, record }">
         <!-- 产品信息 -->
         <template v-if="column.dataIndex === 'title'">
@@ -471,10 +481,15 @@
     <a-drawer
       v-model:open="drawerVisible"
       :title="currentDetail?.title || '产品详情'"
-      width="520"
+      :width="WINDOW_W.md"
       placement="right"
     >
       <template v-if="currentDetail">
+        <!-- ★ 详情 / 差评 双 tab（第 289 轮 P0）：默认停在「详情」，
+             不打扰既有阅读路径；差评 tab 上有条数 / 缺口角标。 -->
+        <a-tabs v-model:activeKey="detailTab" size="small" class="pl-detail-tabs">
+          <a-tab-pane key="detail">
+            <template #tab><span>🗂 详情</span></template>
         <!-- 主图 -->
         <div class="detail-main-image">
           <img v-if="currentDetail.main_image" :src="currentDetail.main_image" alt="主图" @error="onImgError" />
@@ -618,6 +633,79 @@
             row-key="asin"
           />
         </div>
+          </a-tab-pane>
+
+          <!-- ★ 差评 tab：SPU 只是聚合壳，真正的键在 SKU 的 ASIN 上 -->
+          <a-tab-pane key="reviews">
+            <template #tab>
+              <span>
+                📉 差评
+                <span v-if="reviewResult?.total" class="pl-tab-count">{{ reviewResult.total }}</span>
+                <span
+                  v-else-if="reviewResult && reviewResult.empty_state && reviewResult.empty_state !== 'no_reviews'"
+                  class="pl-tab-warn"
+                  title="关联有缺口，进去看说明"
+                >!</span>
+              </span>
+            </template>
+
+            <div class="pl-review-bar">
+              <a-switch v-model:checked="reviewOnlyNegative" size="small" @change="reloadProductReviews" />
+              <span class="pl-review-bar-label">只看中差评（≤3 星）</span>
+              <a-button size="small" type="text" :loading="reviewLoading" @click="reloadProductReviews">
+                <ReloadOutlined /> 刷新
+              </a-button>
+            </div>
+
+            <div v-if="reviewResult" class="pl-review-scope">
+              关联口径：{{ currentDetail.is_spu ? '本 SPU' : '所属 SPU' }}名下
+              <b>{{ reviewResult.sku_count }}</b> 个 SKU /
+              <b>{{ reviewResult.asin_count }}</b> 个 ASIN（按 SKU 的 ASIN
+              <template v-if="reviewResult.asin_count === 0">，为空时</template>匹配）
+            </div>
+
+            <a-alert
+              v-if="reviewError"
+              type="error"
+              show-icon
+              :message="reviewError"
+              class="pl-review-alert"
+            />
+
+            <div v-else-if="reviewLoading && !reviewResult" class="pl-review-empty">
+              <a-spin size="small" /> 正在按 SKU 的 ASIN 关联差评…
+            </div>
+
+            <div v-else-if="reviewEmpty" :class="['pl-review-empty', reviewEmpty.tone]">
+              <div class="pl-review-empty-icon">{{ reviewEmpty.icon }}</div>
+              <div class="pl-review-empty-title">{{ reviewEmpty.title }}</div>
+              <div class="pl-review-empty-desc">{{ reviewEmpty.desc }}</div>
+            </div>
+
+            <div v-else class="pl-review-list">
+              <div v-for="r in reviewResult?.reviews ?? []" :key="r.id" class="pl-review-item">
+                <div class="pl-review-top">
+                  <span class="pl-review-stars">{{ '★'.repeat(Math.max(0, r.rating)) }}<span class="pl-stars-dim">{{ '★'.repeat(Math.max(0, 5 - (r.rating || 0))) }}</span></span>
+                  <span class="pl-review-date">{{ (r.review_at || '').slice(0, 10) || '-' }}</span>
+                  <a-tag v-if="r.source === 'mock_seed'" color="orange" size="small">演示数据</a-tag>
+                </div>
+                <div class="pl-review-title-line">{{ r.title || '（无标题）' }}</div>
+                <div class="pl-review-body">{{ r.body || '—' }}</div>
+                <div class="pl-review-meta">
+                  <span>{{ r.buyer_name || '匿名买家' }}</span>
+                  <span>·</span>
+                  <span>{{ REVIEW_STATUS_LABELS[r.status] || r.status || '未处理' }}</span>
+                  <template v-if="r.match_kind === 'asin'">
+                    <span>·</span><span>命中 ASIN <code>{{ r.asin }}</code></span>
+                  </template>
+                  <template v-else-if="r.match_kind === 'sku_code'">
+                    <span>·</span><span>命中 SKU 码 <code>{{ r.sku }}</code></span>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </a-tab-pane>
+        </a-tabs>
       </template>
     </a-drawer>
 
@@ -633,7 +721,7 @@
     <a-modal
       v-model:open="showImportModal"
       title="批量导入产品"
-      width="540px"
+      :width="WINDOW_W.lg"
       :footer="null"
     >
       <div class="import-area">
@@ -671,7 +759,7 @@
       v-model:open="createGroupVisible"
       title="新建产品分组"
       :footer="null"
-      :width="400"
+      :width="WINDOW_W.xs"
       centered
     >
       <a-form layout="vertical">
@@ -706,7 +794,7 @@
       v-model:open="renameVisible"
       title="重命名分组"
       :footer="null"
-      :width="400"
+      :width="WINDOW_W.xs"
       centered
     >
       <a-input v-model:value="renameValue" placeholder="新分组名称" @pressEnter="submitRename" />
@@ -720,7 +808,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { WINDOW_W } from '@/config/layout'
+import AsyncEmpty from '@/components/common/AsyncEmpty.vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   PlusOutlined,
@@ -737,6 +827,7 @@ import {
   FileTextOutlined,
   AppstoreOutlined,
   UnorderedListOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons-vue'
 import { useProductLibraryStore, PRODUCT_CATEGORIES, GROUP_COLORS, type ProductItem, type ProductGroup } from '@/stores/productLibrary'
 import CompetitorManager from '@/components/competitor/CompetitorManager.vue'
@@ -748,6 +839,10 @@ import { useMonitorPoolStore } from '@/stores/monitorPool'
 import { productTagColor, productStatusColor } from '@/utils/colorSemantics'
 import { translateFromEvent } from '@/composables/useSelectionTranslate'
 import { bandOf } from '@/theme/bands'
+import {
+  listReviewsBySpu,
+  type ProductReviewsResult,
+} from '@/api/trade'
 
 const store = useProductLibraryStore()
 const cpStore = useCompetitorPoolStore()
@@ -1071,6 +1166,112 @@ function openDetailDrawer(record: ProductItem) {
   drawerVisible.value = true
 }
 
+// ============================================================ 差评 tab
+//
+// ★ 差评与产品是**软关联**：`customer_reviews.asin` 没有外键指到 `skus`
+//   （平台侧标识符，不能因为本地少一行就让差评插不进来）。没有外键兜 ⇒
+//   join 可能一行都匹配不上，而「匹配不上」有两种语义完全不同的"空"：
+//     · 这个产品确实没有差评       —— 正常结论
+//     · 差评和产品**没能对上**     —— 数据缺口
+//   下面把这两种分别播报（见 `reviewEmpty`）—— 混成一个「暂无差评」
+//   等于把缺口伪装成「产品没问题」。
+//
+// ★ SPU 只当聚合壳：SPU 无 ASIN、不可售 ⇒ 由后端按
+//   `spus.id → skus.spu_id → skus.asin` 解出 ASIN 集合再去匹配，并去重
+//   （同一个 ASIN 可能挂在多个 SKU 上，真库实测一个 ASIN → 4 SKU / 4 SPU）。
+
+/** 详情抽屉当前 tab；换产品时回到「详情」（差评是新信息，不是默认视图） */
+const detailTab = ref<'detail' | 'reviews'>('detail')
+const reviewLoading = ref(false)
+const reviewResult = ref<ProductReviewsResult | null>(null)
+const reviewError = ref('')
+const reviewOnlyNegative = ref(true)
+
+/** 差评状态中文名（后端 `status` 取值：new / triaged / replied / closed） */
+const REVIEW_STATUS_LABELS: Record<string, string> = {
+  new: '待处理',
+  triaged: '已归因',
+  replied: '已回复',
+  closed: '已结案',
+}
+
+/** 差评要挂到哪个 SPU 上：SPU 详情用自己，SKU 详情用它的父 SPU */
+const reviewOwnerId = computed<string>(() => {
+  const p = currentDetail.value
+  if (!p) return ''
+  return p.is_spu ? p.id : (p.spu_id || '')
+})
+
+async function loadProductReviews() {
+  const spuId = reviewOwnerId.value
+  reviewResult.value = null
+  reviewError.value = ''
+  // ★ 拿不到归属就明确报错，不放空列表：「挂不到 SPU 上」不是「没有差评」
+  if (!spuId) {
+    reviewError.value = '这个 SKU 没有归属 SPU，差评无法按产品聚合（差评是按 SPU 名下 SKU 的 ASIN 关联的）'
+    return
+  }
+  reviewLoading.value = true
+  try {
+    reviewResult.value = await listReviewsBySpu(spuId, {
+      max_rating: reviewOnlyNegative.value ? 3 : undefined,
+      limit: 50,
+    })
+  } catch (e: any) {
+    reviewError.value = e?.response?.data?.detail || e?.message || '差评加载失败'
+  } finally {
+    reviewLoading.value = false
+  }
+}
+
+function reloadProductReviews() {
+  void loadProductReviews()
+}
+
+/** 打开抽屉 / 换产品就重新拉：抽屉里没有「手动刷新」才是合格的默认行为 */
+watch([drawerVisible, () => currentDetail.value?.id], ([open, _id]) => {
+  detailTab.value = 'detail'
+  reviewResult.value = null
+  reviewError.value = ''
+  if (open) void loadProductReviews()
+})
+
+/** 空态文案 —— 两种「空」必须字面不同 */
+const reviewEmpty = computed(() => {
+  if (reviewError.value) return null
+  const r = reviewResult.value
+  if (!r) return null
+  const scope = `已登记 ${r.sku_count} 个 SKU / ${r.asin_count} 个 ASIN`
+  switch (r.empty_state) {
+    case 'not_found':
+      return {
+        tone: 'warn', icon: '🔒',
+        title: '这个产品在所选店铺下查不到',
+        desc: '可能已被删除，或不属于当前店铺 —— 与「没有差评」是两件事。',
+      }
+    case 'no_sku':
+      return {
+        tone: 'warn', icon: '🧩',
+        title: '这个 SPU 下还没有登记任何 SKU',
+        desc: '差评是按 SKU 的 ASIN 关联的；没有 SKU 就无从关联。这不是「没有差评」。',
+      }
+    case 'no_asin_binding':
+      return {
+        tone: 'warn', icon: '🔗',
+        title: 'SKU 登记了，但 ASIN / SKU 码都是空的',
+        desc: scope + ' ⇒ 差评再怎么存在也对不上来。这是数据缺口，先去补 SKU 的 ASIN 再回来看。',
+      }
+    case 'no_reviews':
+      return {
+        tone: 'ok', icon: '✅',
+        title: reviewOnlyNegative.value ? '未见中差评' : '暂无评价',
+        desc: scope + '，关联得上，且确实没有符合条件的评价。',
+      }
+    default:
+      return null
+  }
+})
+
 /** 详情抽屉里 SPU 的 SKU 列表：始终取真实 SKU（不受 treeItems 单品隐藏 children 影响） */
 const detailSkus = computed<ProductItem[]>(() => {
   const p = currentDetail.value
@@ -1234,7 +1435,11 @@ onMounted(() => {
 .pl-group-count {
   font-size: var(--font-size-11);
   color: var(--text-tertiary);
-  background: var(--border-base);
+  /* ★ 这里原本写的是 `var(--border-base)` —— **把「边框色」当「底色」用**。
+     浅色下两者恰好都是 #f0f0f0（所以一直没被发现），换主题后才露馅：
+     macaron 的 --border-base=#f3e3ea 让 tertiary 压上去只有 3.63:1（全主题最差）。
+     小徽标底的正主是 --bg-card-pill（浅色同为 #f0f0f0 ⇒ 浅色零变化）。 */
+  background: var(--bg-card-pill);
   border-radius: var(--radius-10);
   padding: 0 var(--space-8);
 }
@@ -2064,5 +2269,110 @@ onMounted(() => {
   gap: var(--space-8);
   align-items: center;
   margin-bottom: var(--space-8);
+}
+
+/* ===== 差评 tab（第 289 轮） ===== */
+.pl-detail-tabs {
+  margin-top: calc(-1 * var(--space-8));
+}
+.pl-tab-count {
+  margin-left: var(--space-4);
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-6);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--font-size-12);
+}
+.pl-tab-warn {
+  margin-left: var(--space-4);
+  color: var(--warning);
+  font-weight: 600;
+}
+.pl-review-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-bottom: var(--space-8);
+}
+.pl-review-bar-label {
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
+}
+.pl-review-scope {
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
+  padding: var(--space-6) var(--space-8);
+  border: 1px dashed var(--border-base);
+  border-radius: var(--radius-6);
+  margin-bottom: var(--space-8);
+}
+.pl-review-alert {
+  margin-bottom: var(--space-8);
+}
+.pl-review-empty {
+  padding: var(--space-16);
+  text-align: center;
+  color: var(--text-secondary);
+  border: 1px dashed var(--border-base);
+  border-radius: var(--radius-6);
+}
+.pl-review-empty.warn {
+  border-color: var(--warning-border);
+  background: var(--bg-elevated);
+}
+.pl-review-empty.ok {
+  color: var(--text-disabled);
+}
+.pl-review-empty-icon {
+  font-size: 22px;
+  margin-bottom: var(--space-6);
+}
+.pl-review-empty-title {
+  font-weight: 600;
+  margin-bottom: var(--space-4);
+}
+.pl-review-empty-desc {
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
+}
+.pl-review-item {
+  padding: var(--space-8);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-6);
+  margin-bottom: var(--space-8);
+}
+.pl-review-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-bottom: var(--space-4);
+}
+.pl-review-stars {
+  color: #faad14;
+  letter-spacing: 1px;
+}
+.pl-stars-dim {
+  color: var(--text-disabled);
+}
+.pl-review-date {
+  font-size: var(--font-size-12);
+  color: var(--text-disabled);
+  margin-left: auto;
+}
+.pl-review-title-line {
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+}
+.pl-review-body {
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-4);
+}
+.pl-review-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  font-size: var(--font-size-12);
+  color: var(--text-disabled);
 }
 </style>

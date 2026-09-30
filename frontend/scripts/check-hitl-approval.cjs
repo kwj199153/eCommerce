@@ -36,6 +36,9 @@ const fs = require('fs')
 const path = require('path')
 
 const ROOT = path.resolve(__dirname, '..')
+// ★ 第 169 轮 #664：编排层已按域拆分 ⇒ 读**整个编排域**（口径见 _orch-domain.cjs 头注释）。
+//   反向注入时 SRC_DIR 指向副本，域目录随之定位到副本内。
+const { readOrchestratorDomain } = require('./_orch-domain.cjs')
 const SRC_DIR = process.env.HITL_SRC_DIR
   ? path.resolve(process.env.HITL_SRC_DIR)
   : path.join(ROOT, 'src')
@@ -169,9 +172,12 @@ check('A5 流式降级到非流式时也必须回填 display_type/data（否则�
   // 把 display_type / data 直接丢掉 ⇒ 用户在降级路径上会读到后端那句
   // 「请选择『批准』或『拒绝』」却**没有任何按钮可点** —— 一句无法执行的指令。
   // （路径直接用 SRC_DIR 拼，反向注入时自动跟着副本走。）
-  const p = path.join(SRC_DIR, 'composables', 'useChatOrchestrator.ts')
-  assert(fs.existsSync(p), '未找到 composables/useChatOrchestrator.ts')
-  const s = readCode(p)
+  // ★ 第 169 轮 #664 起，这段代码住在 `composables/chat/replies/productResearch.ts`
+  //   ⇒ 断言口径改成「编排域里有没有」，不再钉死单文件路径。
+  const dom = require('./_orch-domain.cjs').readOrchestratorDomain(
+    path.join(SRC_DIR, 'composables', 'useChatOrchestrator.ts'),
+    path.join(SRC_DIR, 'composables', 'chat'))
+  const s = stripComments(dom.text)
   const i = s.indexOf('chatWithProductResearcher({')
   assert(i >= 0, '未找到 chatWithProductResearcher 调用点')
   const seg = s.slice(i, i + 700)

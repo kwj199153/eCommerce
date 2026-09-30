@@ -243,7 +243,12 @@
         </div>
       </div>
       <div v-else class="al-empty">
-        <a-empty :description="store.searchQuery || store.currentGroupId ? '没有匹配的素材' : '素材库为空，点击右上角添加素材'" />
+        <AsyncEmpty
+          :error="store.loadError"
+          label="素材库"
+          :empty-description="store.searchQuery || store.currentGroupId ? '没有匹配的素材' : '素材库为空，点击右上角添加素材'"
+          @retry="store.fetchItems()"
+        />
       </div>
     </div>
 
@@ -251,7 +256,7 @@
     <a-modal
       v-model:open="modalVisible"
       :title="editingId ? '编辑素材' : '添加素材'"
-      width="640px"
+      :width="WINDOW_W.xl"
       @ok="handleSubmit"
       :okLoading="submitting"
       cancelText="取消"
@@ -326,7 +331,7 @@
     <a-modal
       v-model:open="previewVisible"
       :title="previewItem?.name || '素材预览'"
-      width="720px"
+      :width="WINDOW_W.xxl"
       :footer="null"
     >
       <div v-if="previewItem" class="preview-wrap">
@@ -377,7 +382,7 @@
     <a-modal
       v-model:open="productPickerVisible"
       title="从产品库选择主图作为素材"
-      width="560px"
+      :width="WINDOW_W.lg"
       :footer="null"
     >
       <div v-if="productOptions.length" class="product-picker-grid">
@@ -399,7 +404,7 @@
       v-model:open="createGroupVisible"
       title="新建素材分组"
       :footer="null"
-      :width="400"
+      :width="WINDOW_W.xs"
       centered
     >
       <a-form layout="vertical">
@@ -434,7 +439,7 @@
       v-model:open="renameVisible"
       title="重命名分组"
       :footer="null"
-      :width="400"
+      :width="WINDOW_W.xs"
       centered
     >
       <a-input v-model:value="renameValue" placeholder="新分组名称" @pressEnter="submitRename" />
@@ -447,6 +452,8 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
+import AsyncEmpty from '@/components/common/AsyncEmpty.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {

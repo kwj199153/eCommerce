@@ -244,15 +244,14 @@ export const useUserStore = defineStore('user', () => {
 
     try {
       if (token.value) {
-        // ★ silentError 与 silent 语义不同（见 request.ts 的类型声明）：
-        //   `silent` 只压「成功提示」，`silentError` 才压错误提示。
+        // ★ `silentError` 压的是**错误提示**（见 request.ts 的类型声明）。
         //   登出是**用户主动行为**，它失败不该以「登录已过期，被踢出去」
         //   的姿态呈现 —— 而且紧接着本函数就会 clearAuth()，
         //   再弹一条错误提示纯属噪声。
         await post(
           '/auth/logout',
           { refresh_token: refreshToken.value },
-          { silent: true, silentError: true }
+          { silentError: true }
         )
       }
     } catch (error) {
@@ -310,7 +309,7 @@ export const useUserStore = defineStore('user', () => {
       const res = await post<{ ok: boolean; accounts: string[]; total: number }>(
         '/auth/device/enroll',
         { refresh_token: refreshToken.value },
-        { silent: true, silentError: true }
+        { silentError: true }
       )
       if (res && Array.isArray(res.accounts)) setRemembered(res.accounts)
       const ok = !!(res && res.ok)
@@ -339,7 +338,7 @@ export const useUserStore = defineStore('user', () => {
     try {
       const res = await get<{ accounts: string[]; total: number }>(
         '/auth/device/accounts',
-        { silent: true, silentError: true }
+        { silentError: true }
       )
       const ids = res && Array.isArray(res.accounts) ? res.accounts : []
       setRemembered(ids)
@@ -426,7 +425,7 @@ export const useUserStore = defineStore('user', () => {
       const res = await post<{ ok: boolean; accounts: string[]; total: number }>(
         '/auth/device/forget',
         { user_id: targetUserId },
-        { silent: true, silentError: true }
+        { silentError: true }
       )
       if (res && Array.isArray(res.accounts)) setRemembered(res.accounts)
       return true
@@ -446,7 +445,7 @@ export const useUserStore = defineStore('user', () => {
    */
   async function forgetDeviceAll(): Promise<boolean> {
     try {
-      await post('/auth/device/forget-all', {}, { silent: true, silentError: true })
+      await post('/auth/device/forget-all', {}, { silentError: true })
       return true
     } catch (error) {
       console.warn('清空本机凭据失败:', error)

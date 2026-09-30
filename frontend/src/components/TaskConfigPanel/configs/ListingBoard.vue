@@ -37,6 +37,27 @@
       </div>
     </div>
 
+    <!-- ====== 全局文案指令（第 273 轮） ====== -->
+    <div class="lb-global-prompt">
+      <div class="gp-label">🌐 全局文案指令 <span class="gp-sub">作用于四个模块；模块内「自定义 prompt」可覆盖对应部分</span></div>
+      <a-textarea
+        v-model:value="draft.globalInstruction"
+        :rows="2"
+        placeholder="例如：整体面向欧美户外人群，语气专业但不生硬，避免过度营销词"
+      />
+    </div>
+
+    <!--
+      生成失败：内联**常驻**出口。
+      HTTP 错误拦截器已经弹过一次 toast（内容是后端 detail），但 toast 会消失；
+      这里留一条不消失的记录，避免「点了没反应 / 只闪了一下」。
+      ★ 因此本组件**不再重复** message.error，避免同一次失败弹两条。
+    -->
+    <div v-if="boardError" class="lb-error">
+      <span class="lb-error-msg">{{ boardError }}</span>
+      <a-button size="small" type="text" @click="boardError = ''">关闭</a-button>
+    </div>
+
     <!-- ====== 对话模式：仅显示当前工具对应模块 ====== -->
     <div v-if="!isDataMode" class="lb-pane lb-pane-single">
       <KeywordsSection v-if="activeModule === 'keywords'" :gen-loading="genLoading === 'keywords'" :disabled="noProduct" @gen="genOne('keywords')" />
@@ -94,10 +115,43 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Listing 统一工作区
+ *
+ * ★ 第 169 轮 #738：原先四个模块的文案全部来自 `@/mock/listingBoard` 的
+ *   `genAll()`（一次同步调用吐一份写死的「手摇咖啡磨」文案），现在改调后端
+ *   `/api/v1/listing/*`。四个模块各自走最贴的端点，不为了省往返去生成用不到的东西：
+ *
+ *   | 模块 | 端点 | 说明 |
+ *   |---|---|---|
+ *   | 关键词 | `POST /generate/keywords` | **Search Terms**，参数走 body |
+ *   | 标题 | `POST /optimize/title` | 唯一能单独出标题的端点 |
+ *   | 五点 | `POST /generate/bullets` | |
+ *   | 长描述 | `POST /generate/description` | |
+ *   | 一键全部 | `POST /generate` | 一次往返拿全四个模块 |
+ *
+ * ★ 三处「后端确实没有」的地方，一律**如实呈现，不补数**：
+ *   1. 搜索量 / 竞争度 / 相关度：Search Terms 端点不提供 ⇒ 渲染 «—»（不是 0）。
+ *   2. 备选标题：`ListingTitle` 没有 variants 字段 ⇒ 该区块自动隐藏。
+ *   3. SEO 诊断：面板不生成（`/analyze/seo` 本机实测 500），走对话编排器那条链。
+ *
+ * ★ 提示归属：成功提示由本组件自己给（`message.success('已生成，可直接修改')`）——
+ *   拦截器自第 267 轮起**不再**自动弹成功提示，所以这里不需要任何开关；
+ *   失败提示交给拦截器（它带 detail），本组件另外补一条常驻横幅 `boardError`。
+ *   ★ 为什么**不**声明 `silentError`：本模块的端点是 `listing_generator`，
+ *     失败走 4xx/5xx（该模块全仓没有一处 `success=False`）⇒ 新补的业务失败
+ *     补判不会在这里触发；错误 toast 也就没有「两处报」的问题。
+ */
 import { ref, computed, watch, inject, onMounted, nextTick, type Ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { useListingDraftStore } from '@/stores/listingDraft'
-import { genAll, type BoardGenContext } from '@/mock/listingBoard'
+import {
+  generateListing,
+  generateBullets,
+  generateDescription,
+  generateKeywords,
+  optimizeTitle,
+} from '@/api/listingGenerator'
 import KeywordsSection from './listingSections/KeywordsSection.vue'
 import TitleSection from './listingSections/TitleSection.vue'
 import BulletsSection from './listingSections/BulletsSection.vue'
@@ -135,6 +189,8 @@ const flashingModule = ref<string | null>(null)
 const genLoading = ref<string | null>(null)
 const allLoading = ref(false)
 const saving = ref(false)
+/** 常驻失败原因（toast 会消失，这个不会） */
+const boardError = ref('')
 
 // 是否未载入产品（未载入则禁止生成/保存）
 const noProduct = computed(() => draft.sourceMode !== 'product')
@@ -182,52 +238,120 @@ function flashModule(key: string) {
   flashTimer = setTimeout(() => { flashingModule.value = null }, 1400)
 }
 
+// ====== 请求前的守卫与入参整理 ======
+
+/** 未载入产品 → 拦截，提示先载入（与其他 Agent 一致） */
+function ensureProduct(): boolean {
+  if (draft.sourceMode === 'product') return true
+  message.warning('请先从顶部「载入产品」选定商品，再生成文案')
+  return false
+}
+
+/** 用户填的「核心卖点」是一个用 | ， 、 换行 分隔的长串 → 拆成数组给后端 */
+function featureList(): string[] {
+  return (draft.sellingPoints || '')
+    .split(/[|，,、\n]/)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .slice(0, 8)
+}
+
+/**
+ * `/optimize/title` 的 `current_title` 是必填且 `min_length=5`。
+ * 工作区可能还没写过标题 ⇒ 用产品名当种子；产品名也短就补一个中性后缀
+ * —— 它只是给模型的**上下文**，不是产物，所以补词不影响数据真实性。
+ */
+function titleSeed(): string {
+  const base = (draft.title || draft.productName || '').trim()
+  return base.length >= 5 ? base : `${base || 'Untitled'} Product`
+}
+
+/** 错误文案：后端 500 的 `detail` 是给用户看的中文原因，优先用它 */
+function errText(e: any): string {
+  return e?.response?.data?.detail || e?.message || '生成失败，请稍后重试'
+}
+
+/** 后端 `Search Terms`（扁平词表）→ 关键词行。★ 指标留给后端不提供的 null。 */
+function termsToRows(terms: string[]) {
+  return terms.map(w => ({ word: w }))
+}
+
 // ====== 生成 ======
-const genCtx = computed<BoardGenContext>(() => ({
-  productName: draft.productName,
-  brand: draft.brand,
-  sellingPoints: draft.sellingPoints,
-  category: draft.category,
-  site: draft.site,
-}))
 
-function applyGenerated(data: ReturnType<typeof genAll>) {
-  draft.setKeywords(data.keywords)
-  draft.setTitle(data.title.main, data.title.variants)
-  draft.setBullets(data.bullets)
-  draft.setAPlus(data.aplus)
-}
-
-function genOne(mod: string) {
-  // 未载入产品 → 拦截，提示先载入（与其他 Agent 一致）
-  if (draft.sourceMode !== 'product') {
-    message.warning('请先从顶部「载入产品」选定商品，再生成文案')
-    return
-  }
+async function genOne(mod: string) {
+  if (!ensureProduct()) return
   genLoading.value = mod
-  const data = genAll(genCtx.value)
-  setTimeout(() => {
-    if (mod === 'keywords') draft.setKeywords(data.keywords)
-    else if (mod === 'title') draft.setTitle(data.title.main, data.title.variants)
-    else if (mod === 'bullets') draft.setBullets(data.bullets)
-    else if (mod === 'aplus') draft.setAPlus(data.aplus)
-    genLoading.value = null
+  boardError.value = ''
+  try {
+    if (mod === 'keywords') {
+      // ★ 第 273 轮：后端已改 body（Pydantic KeywordRequest），
+      //   `custom_prompt` 也走 body。局部覆盖全局，均空则走默认词池。
+      const res = await generateKeywords(
+        {
+          title: draft.title.trim() || draft.productName,
+          category: draft.category || undefined,
+          custom_prompt: draft.resolvePrompt(draft.keywordPrompt),
+        }
+      )
+      draft.setKeywords(termsToRows(res.data.terms || []))
+    } else if (mod === 'title') {
+      const res = await optimizeTitle(
+        {
+          current_title: titleSeed(),
+          product_name: draft.productName,
+          main_keyword: undefined,
+          custom_prompt: draft.resolvePrompt(draft.titlePrompt),
+        }
+      )
+      // `ListingTitle` 没有备选标题字段 ⇒ variants 传空（TitleSection 会隐藏该区块）
+      draft.setTitle(res.data.optimized_title || '', [])
+    } else if (mod === 'bullets') {
+      const res = await generateBullets(
+        { product_name: draft.productName, features: featureList(), custom_prompt: draft.resolvePrompt(draft.bulletPrompt) }
+      )
+      draft.setBullets(res.data.bullets || [])
+    } else if (mod === 'aplus') {
+      const res = await generateDescription(
+        { product_name: draft.productName, features: featureList(), custom_prompt: draft.resolvePrompt(draft.aplusPrompt) }
+      )
+      // `sections` 的 `type` 是语义枚举（intro/features/scenarios），
+      // 到 A+ 版式类型的映射在 `stores/listingDraft.ts::normalizeModule` 里做
+      draft.setAPlus(res.data.sections || [])
+    }
     message.success('已生成，可直接修改')
-  }, 600)
+  } catch (e: any) {
+    boardError.value = errText(e)
+  } finally {
+    genLoading.value = null
+  }
 }
 
-function genAllModules() {
-  // 未载入产品 → 拦截，提示先载入
-  if (draft.sourceMode !== 'product') {
-    message.warning('请先从顶部「载入产品」选定商品，再生成文案')
-    return
-  }
+async function genAllModules() {
+  if (!ensureProduct()) return
   allLoading.value = true
-  setTimeout(() => {
-    applyGenerated(genAll(genCtx.value))
-    allLoading.value = false
+  boardError.value = ''
+  try {
+    const res = await generateListing(
+      {
+        product_name: draft.productName,
+        brand: draft.brand || undefined,
+        category: draft.category || undefined,
+        features: featureList(),
+      }
+    )
+    const d = res.data
+    draft.setTitle(d.title?.title || '', [])
+    draft.setBullets(d.bullet_points?.bullets || [])
+    draft.setAPlus(d.description?.sections || [])
+    draft.setKeywords(termsToRows(d.search_terms?.terms || []))
+    // 注意：**不**写 SEO。面板不展示 SEO（`/analyze/seo` 实测 500），
+    // SEO 诊断结果由对话编排器那条链写入草稿。
     message.success('四个模块已全部生成')
-  }, 900)
+  } catch (e: any) {
+    boardError.value = errText(e)
+  } finally {
+    allLoading.value = false
+  }
 }
 
 // ====== 保存 / 清空 ======
@@ -274,6 +398,24 @@ function clearAll() {
   border-bottom: 1px solid var(--border-base);
 }
 
+/* 常驻失败横幅 */
+.lb-error {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  background: rgba(255, 77, 79, 0.08);
+  border-bottom: 1px solid var(--border-base);
+}
+.lb-error-msg {
+  flex: 1;
+  font-size: var(--font-size-12);
+  line-height: 1.5;
+  color: var(--danger);
+  word-break: break-word;
+}
+
 .lb-prod {
   display: flex;
   gap: var(--space-8);
@@ -292,6 +434,26 @@ function clearAll() {
 .lb-prod-sub { font-size: var(--font-size-11); color: var(--text-tertiary); margin-top: var(--space-2); }
 .lb-prod-asin { font-family: monospace; font-size: var(--font-size-11); color: var(--primary); margin-right: var(--space-6); }
 .mini-tag { transform: scale(0.85); margin-left: var(--space-4); }
+
+/* 全局文案指令 */
+.lb-global-prompt {
+  flex-shrink: 0;
+  padding: var(--space-8) var(--space-12);
+  border-bottom: 1px solid var(--border-base);
+  background: var(--bg-base);
+}
+.gp-label {
+  font-size: var(--font-size-12);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-6);
+}
+.gp-sub {
+  font-weight: 400;
+  font-size: var(--font-size-11);
+  color: var(--text-tertiary);
+  margin-left: var(--space-4);
+}
 
 .lb-tabs {
   display: flex;

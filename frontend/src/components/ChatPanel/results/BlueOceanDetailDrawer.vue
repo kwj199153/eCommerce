@@ -2,7 +2,7 @@
   <!-- 单行详情抽屉：点击行尾「详情」右侧滑出完整数据 -->
   <a-drawer
     v-model:open="open"
-    :width="460"
+    :width="WINDOW_W.sm"
     placement="right"
     :closable="true"
     :title="record ? `${record.asin} 完整档案` : '商品档案'"
@@ -169,6 +169,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { bandColor } from '@/theme/bands'
 import { computed } from 'vue'
 import { FundOutlined } from '@ant-design/icons-vue'

@@ -342,29 +342,69 @@ check('AST · Login.vue 的 catch 必须自己给文案（成对不变量）★'
   const m = v.match(/<script[^>]*>([\s\S]*?)<\/script>/)
   assert(!!m, 'Login.vue 里找不到 <script> 块')
   const sf = ts.createSourceFile(LOGIN_VUE, m[1], ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
-  const catches = []
+
+  // ★★ 第 320 轮修正：判据窗口必须限定在**被考核的那两个函数内**，
+  //    不能扫整个 <script>。
+  //
+  //    为什么改：本文件后来长了第三个流程（忘记密码），它的失败刻意用
+  //    **常驻 alert** 而不是 toast（`silentError: true` + 页面级
+  //    `forgotError`）—— 这与 api/billing.ts / api/adAnalysis.ts 的做法一致，
+  //    理由是"链接已过期"这类错误必须**留在页面上**，弹一下就没的信息
+  //    用户根本来不及看。
+  //    若还按"文件里每一处 catch 都必须 message.error"判，
+  //    就会因为代码**变得更对**而变红 —— 这正是"判据窗口开得过宽"的形状。
+  //    ⇒ 收窄回这条断言**自己声明的口径**（注释里写的就是"登录与注册两处"）。
+  const targets = ['handleLogin', 'handleRegister']
+  const found = {}
   ;(function w(n) {
-    if (ts.isCatchClause(n)) catches.push(n)
+    if (
+      ts.isVariableDeclaration(n) &&
+      ts.isIdentifier(n.name) &&
+      targets.includes(n.name.text)
+    ) {
+      const init = n.initializer
+      if (init && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))) {
+        found[n.name.text] = init
+      }
+    }
     ts.forEachChild(n, w)
   })(sf)
-  assert(catches.length >= 2, `登录与注册两处 catch 都应在，实际 ${catches.length}`)
-  catches.forEach((c, i) => {
-    assert(c.block.statements.length > 0, `第 ${i + 1} 处 catch 是空的 —— 短路之后登录失败将毫无提示`)
-    let hasMsg = false
-    ;(function w(x) {
-      if (
-        ts.isCallExpression(x) &&
-        ts.isPropertyAccessExpression(x.expression) &&
-        x.expression.name.text === 'error' &&
-        ts.isIdentifier(x.expression.expression) &&
-        x.expression.expression.text === 'message'
-      ) {
-        hasMsg = true
-      }
-      ts.forEachChild(x, w)
-    })(c.block)
-    assert(hasMsg, `第 ${i + 1} 处 catch 必须调用 message.error 把后端 detail 显示出来`)
-  })
+
+  for (const fn of targets) {
+    assert(!!found[fn], `Login.vue 里找不到 ${fn} —— 找不到窗口就无从判定，按失败处理`)
+  }
+
+  for (const fn of targets) {
+    const catches = []
+    ;(function w(n) {
+      if (ts.isCatchClause(n)) catches.push(n)
+      ts.forEachChild(n, w)
+    })(found[fn])
+    assert(catches.length >= 1, `${fn} 里没有 catch —— 短路之后登录失败将毫无提示`)
+    catches.forEach((c, i) => {
+      assert(
+        c.block.statements.length > 0,
+        `${fn} 的第 ${i + 1} 处 catch 是空的 —— 短路之后登录失败将毫无提示`
+      )
+      let hasMsg = false
+      ;(function w(x) {
+        if (
+          ts.isCallExpression(x) &&
+          ts.isPropertyAccessExpression(x.expression) &&
+          x.expression.name.text === 'error' &&
+          ts.isIdentifier(x.expression.expression) &&
+          x.expression.expression.text === 'message'
+        ) {
+          hasMsg = true
+        }
+        ts.forEachChild(x, w)
+      })(c.block)
+      assert(
+        hasMsg,
+        `${fn} 的第 ${i + 1} 处 catch 必须调用 message.error 把后端 detail 显示出来`
+      )
+    })
+  }
 })
 
 // ===== 输出 =====

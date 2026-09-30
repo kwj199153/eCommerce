@@ -105,14 +105,15 @@ export interface SelectionTranslation {
  * 与 translateContent 的分工：那个面向内容生产（长文本、关键词、多版本），
  * 这个面向「选中一段英文想立刻看懂」。
  *
- * silent: 划词是高频操作，不能每次都弹「翻译完成」提示。
+ * 提示归属：本接口**不弹任何提示**（划词是高频操作，结果直接显示在浮层里）。
+ * 响应拦截器自第 267 轮起不再自动弹成功提示，所以这里**不需要**任何开关。
  */
 export async function translateSelection(data: {
   text: string
   target_lang?: string
   context?: string
 }): Promise<{ success: boolean; response: SelectionTranslation; message?: string }> {
-  return request.post('/aigc/content/translate-selection', data, { silent: true })
+  return request.post('/aigc/content/translate-selection', data)
 }
 
 /** 提示词增强的返回体（只含改写后的文本） */
@@ -131,13 +132,13 @@ export interface PromptEnhancement {
  * 把对话框里的一句口语化需求改写成更可执行的提示词（补齐任务目标 / 约束条件 / 期望的输出形式）。
  * 与 translateSelection 并列，但**改的不是语言，是需求的完备度**。
  *
- * silent: 这是输入框的即时操作，成功与否都靠输入框内容体现，不要弹提示打断输入。
+ * 提示归属：这是输入框的即时操作，成功与否都由输入框内容体现，不弹提示打断输入。
  */
 export async function enhancePrompt(data: {
   draft: string
   context?: string
 }): Promise<{ success: boolean; response: PromptEnhancement; message?: string }> {
-  return request.post('/aigc/prompt/enhance', data, { silent: true })
+  return request.post('/aigc/prompt/enhance', data)
 }
 
 // ============================================================
@@ -280,17 +281,17 @@ export async function submitAigcJob(
   kind: 'asset_generate' | 'image_generate',
   params: Record<string, unknown>,
 ): Promise<AigcJobSubmitResponse> {
-  return request.post('/aigc/jobs', { kind, params }, { silent: true })
+  return request.post('/aigc/jobs', { kind, params })
 }
 
 /** 查询任务状态 */
 export async function getAigcJob(jobId: string): Promise<{ job: AigcJob }> {
-  return request.get(`/aigc/jobs/${jobId}`, { silent: true, silentError: true })
+  return request.get(`/aigc/jobs/${jobId}`, { silentError: true })
 }
 
 /** 我的任务列表（前端刷新后能找回刚提交的任务） */
 export async function listAigcJobs(limit = 20): Promise<{ jobs: AigcJob[]; total: number }> {
-  return request.get(`/aigc/jobs?limit=${limit}`, { silent: true, silentError: true })
+  return request.get(`/aigc/jobs?limit=${limit}`, { silentError: true })
 }
 
 export interface AigcJobWaitResult {

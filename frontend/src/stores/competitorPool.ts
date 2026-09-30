@@ -16,6 +16,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useCandidateLibraryStore } from './candidateLibrary'
 import { useProductLibraryStore } from './productLibrary'
+import { rankSimilarAsins } from '@/utils/competitorSimilarity'
 
 // ====== 类型定义 ======
 
@@ -104,8 +105,11 @@ export const useCompetitorPoolStore = defineStore('competitorPool', () => {
     const prodStore = useProductLibraryStore()
     if (!candStore.items.length && !candStore.isLoading) await candStore.ensureLoaded?.()
     if (!prodStore.items.length && !prodStore.isLoading) await prodStore.fetchItems().catch(() => {})
-    const { recommendSimilarAsins } = await import('@/mock/competitorRecommend')
-    const found = recommendSimilarAsins(ownerAsin, opts, count, sourceUniverse.value)
+    // ★ 第 167 轮 #725：数据只来自**真实库**（`sourceUniverse` = 产品库 + 候选库，
+    //   均来自后端），算法是纯函数。原先这里调 `@/mock/competitorRecommend`，
+    //   它内部会 `[...MOCK_PRODUCTS, ...universe]` 把假商品**前置掺进**真实候选集，
+    //   并用兜底分保证假数据一定进结果 —— 真数据是有的，假数据是额外加的。
+    const found = rankSimilarAsins(ownerAsin, opts, count, sourceUniverse.value)
     // 存推荐结果进池（默认全部启用，用户可删减）
     const pool = ensurePool(ownerType, ownerAsin, opts.title)
     const existing = new Set(pool.competitors.map(c => c.asin))

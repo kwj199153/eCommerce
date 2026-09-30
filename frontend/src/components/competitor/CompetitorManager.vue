@@ -2,7 +2,7 @@
   <a-modal
     :open="open"
     :title="`⚔️ 竞品管理 · ${owner?.title?.slice(0, 18) || owner?.asin || ''}`"
-    :width="680"
+    :width="WINDOW_W.xxl"
     :footer="null"
     :destroy-on-close="false"
     @cancel="emit('update:open', false)"
@@ -128,6 +128,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { ref, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
@@ -180,6 +181,14 @@ const enabledCount = computed(() => cp.enabledCount(ownerType.value, ownerKey.va
 const recommending = ref(false)
 async function doRecommend() {
   if (!props.owner) return
+  // ★ 第 167 轮 #725：退役 `@/mock/competitorRecommend` 之后，推荐**不再自带内置商品兜底**，
+  //   候选只来自真实库（产品库 + 候选库）。所以「库为空」必须在点按钮时就说清楚，
+  //   否则用户看到的 `未找到更多相似竞品` 会与「确实算不出相似项」**不可区分**。
+  //   （失败路径必须回写界面状态，不能让失败转译成「随机失败」。）
+  if (!cp.sourceUniverse.length) {
+    message.warning('本地产品库与候选库均为空，没有可用的相似来源；请先导入产品或候选后重试')
+    return
+  }
   recommending.value = true
   try {
     const added = await cp.recommendSimilar(ownerType.value, props.owner.asin, {
@@ -188,8 +197,12 @@ async function doRecommend() {
       keywords: props.owner.keywords,
       count: 12,
     })
-    if (added.length) message.success(`已推荐 ${added.length} 个相似竞品，可删除不相关项`)
-    else message.info('未找到更多相似竞品')
+    if (added.length) {
+      message.success(`已推荐 ${added.length} 个相似竞品，可删除不相关项`)
+    } else {
+      // ★ 只按类目/关键词**实际命中**排序，没有兜底分凑数 ⇒ 空结果是可信的
+      message.info('本地库中未找到与本品的相似项（仅按类目/关键词实际匹配，不凑数）')
+    }
   } finally {
     recommending.value = false
   }

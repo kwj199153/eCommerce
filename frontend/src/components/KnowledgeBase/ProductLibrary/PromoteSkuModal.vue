@@ -2,7 +2,7 @@
   <a-modal
     v-model:open="open"
     title="提升为SPU"
-    width="480px"
+    :width="WINDOW_W.sm"
     @ok="submit"
     :okLoading="submitting"
     okText="确定组化"
@@ -35,6 +35,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { ref, reactive, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useProductLibraryStore } from '@/stores/productLibrary'

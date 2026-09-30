@@ -2,7 +2,7 @@
   <a-modal
     :open="open"
     :title="title"
-    :width="520"
+    :width="WINDOW_W.md"
     :mask-closable="false"
     :confirm-loading="exporting"
     ok-text="选择位置并导出"
@@ -67,6 +67,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { ref, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
@@ -196,7 +197,7 @@ function handleCancel() {
 }
 .em-format-card.active {
   border-color: var(--primary);
-  background: #e6f4ff;
+  background: var(--bg-active-light);
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
 }
 .em-f-icon {
@@ -205,10 +206,10 @@ function handleCancel() {
 .em-f-label {
   font-size: var(--font-size-12);
   margin-top: var(--space-4);
-  color: #333;
+  color: var(--text-primary);
 }
 .em-f-ext {
   font-size: var(--font-size-10);
-  color: #999;
+  color: var(--text-tertiary);
 }
 </style>

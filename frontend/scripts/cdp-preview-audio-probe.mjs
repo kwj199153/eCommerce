@@ -1,4 +1,15 @@
-// CDP 复现「生成试听只有文字、没有语音播放器」。
+// 验收「试听」一键出声（第 322 轮老板口径：「生成试听改为试听，
+// 不要让用户生成试听后再点一次播放」）。
+//
+// 演进：本探针最早是为了复现「合成完只有一行文字、看不到播放器」（<audio> 被 CSS
+// 压成 0 高）。那个缺陷已修。现在它多守一条：**点完必须已经在播**——
+// 把「不需要再点一次播放」变成可观测读数（`audio.paused === false`）。
+//
+// ★ 为什么带 `--autoplay-policy=no-user-gesture-required`：
+//   本探针要测的是**我们的代码有没有调用 play()**，不是 Chrome 的自动播放策略。
+//   合成是异步的，`play()` 落在 await 之后；而 CDP 里 `.click()` 是合成事件，
+//   默认不构成用户手势 ⇒ 不关掉策略会把「我们做对了」判成红（假红）。
+//   点击那一处仍显式带 `userGesture: true`，尽量贴近真机。
 //
 // 为什么必须真跑浏览器：后端 `POST /voice-clone/preview` 实测 HTTP 200 且返回
 // `audio_url=/static/voice/tts-*.mp3`（80KB 真 MP3，5173 代理取得到）。
@@ -48,6 +59,8 @@ const chrome = spawn(
     '--no-default-browser-check',
     '--disable-gpu',
     '--disable-extensions',
+    // ★ 见文件头：这里要测「我们的代码有没有 play()」，不是浏览器的自动播放策略
+    '--autoplay-policy=no-user-gesture-required',
     'about:blank',
   ],
   { stdio: 'ignore' }
@@ -96,6 +109,16 @@ const run = async (expr) => {
   return r.result?.result?.value
 }
 
+// ★ 点击这类**会授予用户激活**的动作走这里：`userGesture: true` 让它等价于真实点按。
+const runUser = async (expr) => {
+  const r = await send('Runtime.evaluate', {
+    expression: expr, awaitPromise: true, returnByValue: true, userGesture: true,
+  })
+  const ex = r.result?.exceptionDetails
+  if (ex) return 'EXC: ' + String(ex.exception?.description || ex.text || '').slice(0, 400)
+  return r.result?.result?.value
+}
+
 await send('Page.enable')
 await send('Runtime.enable')
 await send('Network.enable')
@@ -134,7 +157,9 @@ await sleep(3000)
 
 const panelState = () => run(`(()=>{
   const btns=[...document.querySelectorAll('button')];
-  const pv=btns.find(b=>b.textContent.includes('生成试听'));
+  // ★ 按文案精确定位（剥空白）：改名成「试听」后，这条本身就是改名的判据 ——
+  //   文案若还是「生成试听」，这里直接找不到按钮 ⇒ 探针报 NO_BTN。
+  const pv=btns.find(b=>b.textContent.replace(/\\s+/g,'')==='试听');
   const warn=document.querySelector('.vc-hint-warn');
   return JSON.stringify({
     hasPanel: !!document.querySelector('.vc-preview, .vc-audio, .vc-hint'),
@@ -144,12 +169,12 @@ const panelState = () => run(`(()=>{
 })()`)
 console.log('  面板状态:', await panelState())
 
-console.log('\n=== 4. 点「生成试听」')
-console.log('  ', await run(`(()=>{
-  const pv=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('生成试听'));
+console.log('\n=== 4. 点「试听」（期望：点完直接出声，无需再点播放）')
+console.log('  ', await runUser(`(()=>{
+  const pv=[...document.querySelectorAll('button')].find(b=>b.textContent.replace(/\\s+/g,'')==='试听');
   if(!pv) return 'NO_BTN';
   if(pv.disabled) return 'BTN_DISABLED';
-  pv.click(); return 'clicked';
+  pv.click(); return 'clicked:'+pv.textContent.trim();
 })()`))
 
 console.log('\n=== 5. 等试听结果落地')
@@ -159,13 +184,18 @@ for (let i = 0; i < 60; i++) {
   st = await run(`(()=>{
     const a=document.querySelector('audio.vc-audio');
     const er=document.querySelector('.ant-alert-error');
-    return JSON.stringify({audio:!!a, src:a?(a.currentSrc||a.getAttribute('src')||''):null, err:er?er.textContent.trim().slice(0,120):null, btn:!![...document.querySelectorAll('button')].find(b=>b.textContent.includes('生成试听'))});
+    return JSON.stringify({audio:!!a, src:a?(a.currentSrc||a.getAttribute('src')||''):null, err:er?er.textContent.trim().slice(0,120):null,
+      btn:!![...document.querySelectorAll('button')].find(b=>b.textContent.replace(/\\s+/g,'')==='试听'),
+      paused:a?a.paused:null, t:a?Math.round(a.currentTime*100)/100:null});
   })()`)
   try { const p = JSON.parse(st); if (p.audio || p.err) break } catch { /* ignore */ }
 }
 console.log('  ', st)
 
-console.log('\n=== 6. 量测 <audio> 真实可见性')
+// ★ 音频元素一出现（previewUrl 落值）就走完第 5 步，而 play() 是异步的：
+//   不等一拍就量 paused，会量到「刚开始加载」的瞬间 ⇒ 把做对的判成红。
+await sleep(2500)
+console.log('\n=== 6. 量测 <audio> 真实可见性 + 是否已在播')
 const dump = await run(`(()=>{
   const wrap=document.querySelector('.vc-preview');
   const a=document.querySelector('.vc-preview audio') || document.querySelector('audio.vc-audio');
@@ -217,20 +247,24 @@ const visible = !!(a && a.rect.w > 0 && a.rect.h > 0 && a.css.display !== 'none'
 const hasReq = netLog.some((n) => n.status === 200 || n.status === 206)
 const errText = (() => { try { return JSON.parse(st).err } catch { return null } })()
 
+// ★ 「不需要再点一次播放」的可观测形式：paused === false（而不是靠"有播放器"推断）
+const autoplaying = a?.paused === false
+
 console.log('\n=== 汇总')
 console.log('  wrapExists = ' + (parsed?.wrapExists ?? 'n/a'))
+console.log('  自动播放 = paused=' + (a?.paused ?? 'n/a') + ' currentTime=' + (a?.currentTime ?? 'n/a'))
 console.log('  audio 在 DOM = ' + !!a)
 if (a) console.log('  audio 尺寸 = ' + a.rect.w + 'x' + a.rect.h + ' css.height=' + a.css.height + ' display=' + a.css.display + ' visibility=' + a.css.visibility)
 console.log('  audio 可加载 = readyState=' + (a?.readyState ?? '-') + ' duration=' + (a?.duration ?? '-') + ' loadErr=' + JSON.stringify(a?.err ?? null))
 console.log('  音频 HTTP = ' + JSON.stringify(netLog.map((n) => n.status)))
 console.log('  页内错误条 = ' + (errText || '(无)'))
-console.log('  ★★ VERDICT preview audioInDom=' + !!a + ' visible=' + visible + ' netOk=' + hasReq + ' duration=' + (a?.duration ?? '-'))
+console.log('  ★★ VERDICT preview audioInDom=' + !!a + ' visible=' + visible + ' netOk=' + hasReq + ' duration=' + (a?.duration ?? '-') + ' autoplaying=' + autoplaying)
 
 // ★ 判定必须落到**退出码**上：只打印 VERDICT 而恒 exit 0，等于「FAIL 了但 CI 绿」——
 //   那是假绿的另一面（反向注入时实测到过：visible=false 而 EXIT=0）。
 const playable = typeof a?.duration === 'number' && a.duration > 0
-const pass = !!a && visible && hasReq && playable
-console.log('  ★★ PASS=' + pass + '（要求：在 DOM + 可见 + 音频 HTTP 200/206 + duration>0）')
+const pass = !!a && visible && hasReq && playable && autoplaying
+console.log('  ★★ PASS=' + pass + '（要求：在 DOM + 可见 + 音频 HTTP 200/206 + duration>0 + **点完已在播**）')
 console.log('  ★★ EXIT ' + (pass ? 0 : 1))
 
 ws.close()

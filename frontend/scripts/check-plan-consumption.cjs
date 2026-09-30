@@ -55,6 +55,9 @@ const fs = require('fs')
 const path = require('path')
 
 const ROOT = path.resolve(__dirname, '..')
+// ★ 第 169 轮 #664：编排层已拆成「壳 + composables/chat/**」，
+//   所以这里读的是**整个编排域**而不是单文件（口径见 _orch-domain.cjs 头注释）。
+const { readOrchestratorDomain, resolvePair } = require('./_orch-domain.cjs')
 
 function pick(envName, ...rel) {
   const v = process.env[envName]
@@ -63,6 +66,7 @@ function pick(envName, ...rel) {
 
 const API_SRC = pick('PLAN_API_SRC', 'src', 'api', 'secretary.ts')
 const ORCH_SRC = pick('PLAN_ORCH_SRC', 'src', 'composables', 'useChatOrchestrator.ts')
+const ORCH_DIR = pick('PLAN_ORCH_DIR', 'src', 'composables', 'chat')
 const STORE_SRC = pick('PLAN_STORE_SRC', 'src', 'stores', 'chat.ts')
 const VIEW_SRC = pick('PLAN_VIEW_SRC', 'src', 'components', 'ChatPanel', 'PlanChecklist.vue')
 const PANEL_SRC = pick('PLAN_PANEL_SRC', 'src', 'components', 'ChatPanel', 'index.vue')
@@ -182,7 +186,10 @@ function extractBody(src, name) {
 // ---------------------------------------------------------------- 读盘
 
 const rawApi = fs.readFileSync(API_SRC, 'utf8')
-const rawOrch = fs.readFileSync(ORCH_SRC, 'utf8')
+// ★ 反注入提示：计划链路的 `setPlan('<agent>', ...)` 住在 `chat/replies/secretary.ts`，
+//   **不在壳里** ⇒ 要打红 C1 必须改域目录的副本（`PLAN_ORCH_DIR=<副本目录>`）。
+const orchDomain = readOrchestratorDomain(ORCH_SRC, ORCH_DIR)
+const rawOrch = orchDomain.text
 const rawStore = fs.readFileSync(STORE_SRC, 'utf8')
 const rawView = fs.readFileSync(VIEW_SRC, 'utf8')
 const rawPanel = fs.readFileSync(PANEL_SRC, 'utf8')
@@ -260,7 +267,7 @@ const viewTemplate = view.slice(0, view.indexOf('<script'))
 
 console.log('计划消费链路门禁 —— 盘面读数')
 console.log(`  api    ${path.relative(ROOT, API_SRC)}`)
-console.log(`  orch   ${path.relative(ROOT, ORCH_SRC)}`)
+console.log(`  orch   ${path.relative(ROOT, ORCH_SRC)} + ${orchDomain.files.length - 1} 个域文件`)
 console.log(`  store  ${path.relative(ROOT, STORE_SRC)}`)
 console.log(`  view   ${path.relative(ROOT, VIEW_SRC)}`)
 console.log(`  panel  ${path.relative(ROOT, PANEL_SRC)}`)

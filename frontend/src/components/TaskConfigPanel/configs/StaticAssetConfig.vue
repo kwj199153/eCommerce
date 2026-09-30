@@ -84,6 +84,9 @@
                     <span class="chip-name">{{ type.name }}</span>
                   </div>
                 </div>
+                <div class="type-help-hint">
+                  💡 场景图＝产品+环境布景，突出「在哪用」，通常无人物；生活方式图＝真人出镜使用实拍，突出「谁在用、怎么用」。
+                </div>
               </section>
 
               <!-- 通用参数 -->
@@ -179,7 +182,11 @@
                   <span class="title-hint">全权由文字限定，覆盖参数配置</span>
                 </div>
                 <div class="form-group">
-                  <label>完整提示词（可选）</label>
+                  <!-- 提示词增强：这段文字**全权覆盖**参数配置直接送给出图模型 ⇒ 最值得扩写的输入点 -->
+                  <div class="label-row">
+                    <label>完整提示词（可选）</label>
+                    <PromptEnhanceButton v-model="form.extraPrompt" context="aigc-image" size="sm" />
+                  </div>
                   <a-textarea
                     v-model:value="form.extraPrompt"
                     :auto-size="{ minRows: 4, maxRows: 10 }"
@@ -246,6 +253,7 @@ import {
 import { message } from 'ant-design-vue'
 import ProductPickerButton from './ProductPickerButton.vue'
 import AIGCMediaResult from '@/components/ChatPanel/results/AIGCMediaResult.vue'
+import PromptEnhanceButton from '@/components/common/PromptEnhanceButton.vue'
 
 const emit = defineEmits<{
   (e: 'startAnalysis', params: any): void
@@ -284,8 +292,8 @@ const isGenerating = computed<boolean>({
 const imageTypes = [
   { id: 'spu-main', icon: '🖼️', name: 'SPU 主图', desc: 'Listing 第 1 张图 · 搜索缩略图', use: '抓点击、搜索展示', rule: '✅ 强制纯白底，严格合规' },
   { id: 'white-bg', icon: '⚪', name: '白底副图', desc: '副图 · 多角度白底', use: '展示产品不同面', rule: '✅ 白底，但不是搜索缩略图，规则略松' },
-  { id: 'scene', icon: '🛋️', name: '场景图', desc: '副图 / A+ 图', use: '提升转化，展示使用场景', rule: '❌ 不需要白底' },
-  { id: 'lifestyle', icon: '✨', name: '生活方式图', desc: '副图 / A+ 图', use: '提升转化，展示使用场景', rule: '❌ 不需要白底' },
+  { id: 'scene', icon: '🛋️', name: '场景图', desc: '副图 / A+ 图 · 产品+环境布景', use: '突出「在哪用」：产品置于厨房、办公桌、户外等场景陈列', rule: '❌ 不需要白底 · 主体是产品，通常无人物' },
+  { id: 'lifestyle', icon: '✨', name: '生活方式图', desc: '副图 / A+ 图 · 真人使用实拍', use: '突出「谁在用、怎么用」：人物出镜的真实使用情境', rule: '❌ 不需要白底 · 有人物出镜，重氛围共鸣' },
   { id: 'infographic', icon: '📊', name: '信息图解图', desc: '副图 / A+ 图', use: '打消买家疑虑，讲参数卖点', rule: '❌ 不需要白底' },
   { id: 'ad-main', icon: '📣', name: '广告主图', desc: '广告素材（SP/SD 广告）', use: '广告点击率测试', rule: '可场景图，不用于商品详情首图' },
 ]
@@ -595,6 +603,12 @@ const handleReset = () => {
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-6);
 }
+.type-help-hint {
+  margin-top: var(--space-6);
+  font-size: var(--font-size-11);
+  color: var(--text-tertiary);
+  line-height: 1.6;
+}
 .type-chip {
   display: flex;
   align-items: center;
@@ -643,13 +657,18 @@ const handleReset = () => {
 }
 
 /* ====== 表单 ====== */
-.form-group > label {
+.form-group > label,
+.label-row > label {
   display: block;
   font-size: var(--font-size-12);
   color: var(--text-secondary);
   margin-bottom: var(--space-4);
   font-weight: 500;
 }
+/* 字段名 + 右侧「提示词增强」按钮同排。
+   ★ 别把按钮塞进 <label>：button 是 labelable 元素 ⇒ 点标签文字会一并触发增强。 */
+.label-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-6); }
+.label-row > label { margin-bottom: 0; }
 .form-row { display: flex; gap: var(--space-10); }
 .flex-1 { flex: 1; min-width: 0; }
 

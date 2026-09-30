@@ -1,10 +1,10 @@
 <template>
   <a-drawer
-    :open="open"
-    @update:open="(val: boolean) => $emit('update:open', val)"
+    :open="drawerOpen"
+    @update:open="handleOpenChange"
     title="账号设置"
     placement="right"
-    :width="680"
+    :width="WINDOW_W.xxl"
     :body-style="{ padding: '0', overflow: 'auto' }"
     :destroyOnClose="false"
   >
@@ -140,15 +140,37 @@
         <a-card :bordered="false" title="登录会话" class="security-card" style="margin-top: 16px">
           <a-descriptions :column="1" size="small">
             <a-descriptions-item label="当前设备">
-              <a-tag color="blue">本机 - Chrome / Windows</a-tag>
+              <!-- ★ 台账 #1154：这个标签原来写死「本机 - Chrome / Windows」——
+                   在 Safari / Mac / 手机上它是一句**假话**，而这张卡的作用
+                   恰恰是让用户判断"哪些登录是我的"。假话在这里的代价不是
+                   难看，是**误判**（以为自己被盗号）。改成按 UA 粗分类。 -->
+              <a-tag color="blue">{{ currentDeviceLabel }}</a-tag>
             </a-descriptions-item>
             <a-descriptions-item label="最后登录时间">
               {{ userStore.user?.last_login_at ? formatTime(userStore.user.last_login_at) : '-' }}
             </a-descriptions-item>
           </a-descriptions>
-          <a-button danger size="small" style="margin-top: 8px">
-            退出所有其他设备
-          </a-button>
+
+          <!-- ★ 按钮文案不能写「退出所有**其他**设备」。
+               后端走的是 `token_version += 1`，本机这枚 token **也一样失效**
+               （与 `/auth/change-password` 的后半段同一机制）。
+               按错误文案理解，用户会以为"本机不受影响"，结果下一个请求
+               就被踢出去 —— 看起来像"莫名其妙掉线"，而真正的原因
+               是他自己刚点的这个按钮。 -->
+          <a-popconfirm
+            title="退出所有设备？包含本机在内，全部登录都会失效，需要重新登录。"
+            ok-text="退出所有设备"
+            cancel-text="取消"
+            @confirm="handleLogoutAll"
+          >
+            <a-button danger size="small" style="margin-top: 8px" :loading="loggingOutAll">
+              退出所有设备（含本机）
+            </a-button>
+          </a-popconfirm>
+
+          <p class="session-note">
+            本机凭据会被服务端作废。当「退出登录」因服务异常没生效时，用这个可以强制下线。
+          </p>
         </a-card>
       </a-tab-pane>
 
@@ -238,9 +260,23 @@
                   </template>
                 </a-list-item-meta>
                 <template #actions>
-                  <a-tag :color="item.is_connected ? 'green' : 'default'">
-                    {{ item.is_connected ? '已连接' : '未连接' }}
+                  <!-- ★ 第 318 轮：状态从「两态」改成「三态」。
+                       改造前是 `item.is_connected ? '已连接' : '未连接'`，而这个字段
+                       后端**根本没返回**（普通 @property 不进 model_dump）
+                       ⇒ 永远渲染「未连接」，用户以为界面坏了。 -->
+                  <a-tag :color="connectTagColor(item)" :title="connectHint(item)">
+                    {{ connectLabel(item) }}
                   </a-tag>
+                  <a-button size="small" @click="openConnect(item)">
+                    {{ isConnected(item) ? '重新配置' : '连接平台' }}
+                  </a-button>
+                  <a-popconfirm
+                    v-if="isConnected(item) || hasCredentials(item)"
+                    title="断开连接会同时清除已保存的凭据，确定吗？"
+                    @confirm="handleDisconnect(item.id)"
+                  >
+                    <a-button size="small" type="text" danger>断开</a-button>
+                  </a-popconfirm>
                   <a-popconfirm title="确定删除此店铺？" @confirm="handleDeleteShop(item.id)">
                     <a-button size="small" type="text" danger>删除</a-button>
                   </a-popconfirm>
@@ -253,6 +289,14 @@
             <a-button type="primary" @click="showAddShop = true">立即添加</a-button>
           </a-empty>
         </a-card>
+
+        <!-- 平台连接弹窗（★ 第 318 轮）：一套通用组件吃下全部平台，
+             表单字段由后端 `GET /stores/{id}/connect/schema` 驱动。 -->
+        <ShopConnectModal
+          v-model:open="showConnect"
+          :shop="connectTarget"
+          @connected="loadShops"
+        />
       </a-tab-pane>
 
       <!-- ====== Tab 6: 客服语音（附加模块，可插拔）======
@@ -267,7 +311,7 @@
     </a-tabs>
 
     <!-- ====== 创建 API Key 弹窗 ====== -->
-    <a-modal
+    <a-modal :width="WINDOW_W.md"
       v-model:open="showCreateKeyModal"
       title="创建 API 密钥"
       @ok="handleCreateKey"
@@ -282,7 +326,7 @@
     </a-modal>
 
     <!-- ====== 创建后显示完整密钥弹窗 ====== -->
-    <a-modal
+    <a-modal :width="WINDOW_W.md"
       v-model:open="showNewKeyModal"
       title="API 密钥已创建"
       :footer="null"
@@ -296,7 +340,7 @@
     </a-modal>
 
     <!-- ====== 添加店铺弹窗 ====== -->
-    <a-modal
+    <a-modal :width="WINDOW_W.md"
       v-model:open="showAddShop"
       title="添加店铺"
       @ok="handleAddShop"
@@ -335,6 +379,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { SEM } from '@/theme/semantic'
 import { VOICE_CLONE_ENABLED } from '@/config/featureFlags'
 import { ref, reactive, computed, onMounted } from 'vue'
@@ -348,17 +393,60 @@ import {
 import { useUserStore } from '@/stores/user'
 import { useShopStore } from '@/stores/shop'
 import { get, post, put, del } from '@/api/request'
-import { fetchStores, createShop, deleteShop as apiDeleteShop } from '@/api/stores'
+import { useRouter } from 'vue-router'
+import { logoutAll } from '@/api/auth'
+import { resetSessionContext } from '@/utils/sessionContext'
+import {
+  fetchStores,
+  createShop,
+  deleteShop as apiDeleteShop,
+  disconnectPlatform,
+  shopConnectState,
+} from '@/api/stores'
 import { useSelectionTranslate } from '@/composables/useSelectionTranslate'
 // 附加模块：客服语音（可插拔，宿主只加这一行 import + 一个 tab-pane）
 import VoiceClonePanel from '@/components/Settings/VoiceClonePanel.vue'
+import ShopConnectModal from '@/components/Settings/ShopConnectModal.vue'
 
-defineProps<{
-  open: boolean
-}>()
-defineEmits<{
+/**
+ * ★★ 「路由模式」（第 323 轮）：本组件既是 Workspace 里的抽屉，又是 `/settings` 页面。
+ *    判定依据是 **`open` 是否缺席**：传了 ⇒ 受控抽屉；没传 ⇒ 路由页面，自行打开。
+ *
+ *    ⚠️ 坑（本轮实测踩到）：`defineProps<{ open?: boolean }>()` 这种**纯类型声明**，
+ *    编译出的运行时 prop 类型是 `Boolean`，而 Vue 对 Boolean prop 有一条
+ *    **缺席强制转换**：没传、又没写默认值 ⇒ 值被写成 `false`，**不是 `undefined`**。
+ *    ⇒ `props.open === undefined` 恒假、`props.open ?? true` 恒为 `false`，
+ *      「没传就自行打开」这层意图**永远不会生效**（`/memory` 此前就是这么白屏的）。
+ *    解法：`withDefaults(..., { open: undefined })` 显式给一个 `undefined` 默认值 ——
+ *    Vue 只在 `!hasOwn(prop, 'default')` 时才做那条转换，给了默认值就跳过。
+ */
+const props = withDefaults(defineProps<{ open?: boolean }>(), { open: undefined })
+const emit = defineEmits<{
   (e: 'update:open', val: boolean): void
 }>()
+
+const ROUTE_MODE = props.open === undefined
+/** 路由模式下由本组件自己持有开关（没有父组件可接管）。 */
+const innerOpen = ref(ROUTE_MODE)
+const drawerOpen = computed(() => (ROUTE_MODE ? innerOpen.value : !!props.open))
+
+/**
+ * 关闭语义分两路：
+ *   · 抽屉模式：照旧把 `update:open` 抛给 `Workspace.vue`；
+ *   · 路由模式：**退回工作台**。停在原地的话，用户会落在一条只剩背景色的
+ *     空白路由上 —— 那正是第 323 轮修掉的东西。
+ */
+function handleOpenChange(val: boolean) {
+  if (ROUTE_MODE) {
+    if (!val) {
+      router.push('/')
+      return
+    }
+    innerOpen.value = val
+    return
+  }
+  emit('update:open', val)
+}
 
 const userStore = useUserStore()
 const shopStore = useShopStore()
@@ -468,14 +556,17 @@ async function handleChangePassword() {
   changingPassword.value = true
   try {
     // ★ 路径是 /auth/change-password（曾经写成 /users/change-password ⇒ 404 断链）
-    // ★ silent: true —— 后端返回的 message 会被拦截器自动弹一次，这里再弹就会出现两条
+    // ★ silentError: true —— 本调用点**自己**负责全部回执：
+    //   成功在下面弹「密码修改成功…」，失败在 catch 里弹 detail。
+    //   不声明的话，同一个原因会被拦截器再弹一次
+    //   （成功提示自第 267 轮起拦截器已不再自动弹）。
     const res: any = await post(
       '/auth/change-password',
       {
         current_password: passwordForm.current,
         new_password: passwordForm.newPwd,
       },
-      { silent: true }
+      { silentError: true }
     )
     // ★ 必须消费返回的新 token 对：改密会提升 token_version，
     //   当前这枚 token 同时失效；不换发的话用户改完密码立刻掉线。
@@ -680,6 +771,74 @@ async function handleDeleteShop(shopId: string) {
   }
 }
 
+// ====== 平台连接（★ 第 318 轮：从「没有入口」到「能连、能断、能看状态」）======
+//
+// ★★ 状态判定的**唯一真源**是 `shopConnectState()`（`@/api/stores`）。
+//    它把后端的 `is_connected`（凭据已验证）与 `has_credentials`（库里有凭据）
+//    收敛成一个三态。**不要**在模板里各写一个三元表达式 ——
+//    同一个判定写两处，改一处漏一处时两个界面对同一家店显示不同状态，
+//    而且两边都不报错。
+const showConnect = ref(false)
+const connectTarget = ref<any>(null)
+
+const isConnected = (s: any) => shopConnectState(s) === 'connected'
+const hasCredentials = (s: any) => !!s?.has_credentials
+
+function connectLabel(s: any): string {
+  switch (shopConnectState(s)) {
+    case 'connected':
+      return '已连接'
+    case 'configured':
+      return '已配置（未验证）'
+    default:
+      return '未连接'
+  }
+}
+
+function connectTagColor(s: any): string {
+  switch (shopConnectState(s)) {
+    case 'connected':
+      return 'green'
+    case 'configured':
+      return 'orange'
+    default:
+      return 'default'
+  }
+}
+
+/**
+ * 状态点的悬浮说明 —— 把「为什么不是已连接」讲清楚。
+ *
+ * ★ 「已配置（未验证）」这一档最容易被误解成"连接失败了，白填了"。
+ *   它实际有两种成因，且都不是用户的错：网络/平台暂时不可达，或该平台
+ *   尚未接入自动校验（如 TikTok）。用户需要知道凭据**已经存下来了**。
+ */
+function connectHint(s: any): string {
+  switch (shopConnectState(s)) {
+    case 'connected':
+      return '凭据已通过平台校验'
+    case 'configured':
+      return '凭据已加密保存，但尚未通过平台校验（网络不通，或该平台暂未接入自动校验）。可点「连接平台」重试验证。'
+    default:
+      return '还没有配置平台凭据 —— 点「连接平台」填写'
+  }
+}
+
+function openConnect(shop: any) {
+  connectTarget.value = shop
+  showConnect.value = true
+}
+
+async function handleDisconnect(shopId: string) {
+  try {
+    await disconnectPlatform(shopId)
+    message.success('已断开连接，已保存的凭据已清除')
+    await loadShops()
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || '断开失败')
+  }
+}
+
 // ====== 工具函数 ======
 function formatTime(time: string | null): string {
   if (!time) return '-'
@@ -695,6 +854,78 @@ function formatDate(time: string | null): string {
 onMounted(async () => {
   await Promise.all([loadApiKeys(), loadShops()])
 })
+
+// ============================================================================
+// 登录会话 —— 退出所有设备（★ 台账 #1154）
+// ============================================================================
+
+const router = useRouter()
+
+/**
+ * 当前设备标签。
+ *
+ * ★ 只做粗粒度识别：这里不需要精确到版本号，"不是我的浏览器 / 不是我的系统"
+ *   才是用户在意的信号。
+ * ★ 判定顺序不能换：Edge 的 UA 里含 `Chrome`、Chrome 的 UA 里含 `Safari`，
+ *   所以必须先判 Edg / OPR，再判 Chrome，最后才轮到 Safari。
+ */
+const currentDeviceLabel = computed(() => {
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
+  const browser = /Edg\//.test(ua)
+    ? 'Edge'
+    : /OPR\//.test(ua)
+      ? 'Opera'
+      : /Firefox\//.test(ua)
+        ? 'Firefox'
+        : /Chrome\//.test(ua)
+          ? 'Chrome'
+          : /Safari\//.test(ua)
+            ? 'Safari'
+            : '未知浏览器'
+  const os = /Windows/.test(ua)
+    ? 'Windows'
+    : /Mac OS X/.test(ua)
+      ? 'macOS'
+      : /Android/.test(ua)
+        ? 'Android'
+        : /iPhone|iPad|iPod/.test(ua)
+          ? 'iOS'
+          : /Linux/.test(ua)
+            ? 'Linux'
+            : '未知系统'
+  return `本机 - ${browser} / ${os}`
+})
+
+const loggingOutAll = ref(false)
+
+/**
+ * 退出所有设备。
+ *
+ * ★ 后端 `/auth/logout-all` 走 DB 的 `token_version`，**不依赖 Redis** ——
+ *   它存在的意义就是"当 `/auth/logout` 因 Redis 故障回 503 时，
+ *   给用户一条永远可用的出路"。
+ * ★ 成功后本机这枚 token 也失效了，所以顺序不能反：
+ *   先提示 → 再清本地 → 再清会话上下文 → 最后跳登录页。
+ *   少清 `resetSessionContext()` 的后果：团队/店铺上下文被下一个身份继承。
+ */
+async function handleLogoutAll() {
+  loggingOutAll.value = true
+  try {
+    const res = await logoutAll({ silentError: true })
+    message.success(res?.message || '已登出所有设备，请重新登录')
+    userStore.clearAuth()
+    resetSessionContext()
+    router.push('/login')
+  } catch (err) {
+    const e = err as { response?: { data?: { detail?: unknown } } }
+    const detail = e?.response?.data?.detail
+    // ★ 失败时**不清本地**：这次调用没成功，本机凭据在服务端仍然有效，
+    //   假装已登出只会让用户以为安全了。
+    message.error(typeof detail === 'string' && detail ? detail : '操作失败，请稍后重试')
+  } finally {
+    loggingOutAll.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -734,6 +965,13 @@ onMounted(async () => {
 }
 
 /* 安全设置 */
+.session-note {
+  margin: var(--space-8) 0 0;
+  font-size: var(--font-size-12);
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
 .security-card {
   max-width: 600px;
 }

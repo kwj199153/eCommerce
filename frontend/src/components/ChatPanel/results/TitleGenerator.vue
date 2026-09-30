@@ -234,7 +234,7 @@
       v-model:open="saveSuccessVisible"
       title="保存成功"
       :footer="null"
-      :width="420"
+      :width="WINDOW_W.sm"
     >
       <div class="save-success-content">
         <a-result
@@ -255,6 +255,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { SEM } from '@/theme/semantic'
 import { bandColor, bandIndex, bandOf } from '@/theme/bands'
 import { ref, computed, watch } from 'vue'

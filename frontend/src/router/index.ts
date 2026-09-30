@@ -41,6 +41,39 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/MemoryEvolution.vue'),
     meta: { requiresAuth: true },
   },
+
+  // ====== 邮件落地页（台账 #1154）======
+  //
+  // ★★★ 这两条路由不是"新增功能"，是**补上两条断链**。
+  //
+  //   后端 `core/identity/email_tokens.py::_link()` 生成的邮件链接是
+  //     `{PUBLIC_SITE_URL}/reset-password?token=…`   （send_reset_email）
+  //     `{PUBLIC_SITE_URL}/verify-email?token=…`     （send_verify_email）
+  //   而本文件此前只有 6 条路由，**两条都不在其中** ⇒
+  //   用户点开邮件看到的是**空白页**：链接是好的、token 是好的、后端也是好的，
+  //   唯独没有页面去接它。
+  //
+  //   ⇒ 凡在本文件里增删路由，都要回头确认后端还在往哪些 path 发链接；
+  //     `scripts/check-auth-frontend-wiring.cjs` 把这条对账钉成了门禁
+  //     （它会从 email_tokens.py 里把 `_link("/…")` 全部抠出来，
+  //      逐个要求这里存在同名路由）。
+  //
+  // ★ 必须 `requiresAuth: false`：点邮件的人**很可能根本没登录** ——
+  //   "忘记密码"本身就是"登不上才用"的功能；邮箱验证更是注册后、
+  //   首次登录前就要点。若要求登录，守卫会把用户弹去登录页，
+  //   而他此刻恰恰进不去（这正是死锁的形状，见下方 beforeEach 的注释）。
+  {
+    path: '/reset-password',
+    name: 'ResetPassword',
+    component: () => import('@/views/ResetPassword.vue'),
+    meta: { requiresAuth: false },
+  },
+  {
+    path: '/verify-email',
+    name: 'VerifyEmail',
+    component: () => import('@/views/VerifyEmail.vue'),
+    meta: { requiresAuth: false },
+  },
 ]
 
 const router = createRouter({

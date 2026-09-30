@@ -2,29 +2,51 @@
  * 工具执行器 —— 工具 ID → 执行结果
  *
  * 由 components/ChatPanel/index.vue 拆分而来（S1 低垂果实）。
+ *
+ * ★ #744（2026-09-18）删除 13 个**无入口**执行器。判据是可达性，不是「有没有配置面板」：
+ *   `tool-analysis` 事件是注册表的唯一触发口，而 `AdDashboardConfig` / `ReviewConfig` /
+ *   `IntelBoardConfig` 三个统一大面板**声明了 emits 却一次都不 emit**（各自直调 `@/api/*`）
+ *   ⇒ 挂在他们下面的 13 个执行器没有任何入口 —— 是「后端已接好、前端被新面板取代」之后
+ *   留下的假数据坟墓。删掉是净收益：它们仍在 `mock/` 里等着被重新 import 成第二条假数据路径。
+ *   删除清单：ad-diagnosis / keyword-report / competitor-ad / anomaly-detect /
+ *   monitor-dashboard / review-spy / weekly-report / monthly-review / ad-review /
+ *   product-performance / inventory-health / profit-audit / action-plan。
+ *   ★ 保留 bid-suggest —— 它经 `useAgentShortcuts` 的广告快捷 chip 可达。
+ *   ★ 第 316 轮：`budget-alloc` 已随老板「广告分析师删除异常检测、广告预算再平衡」
+ *     **整条退役** ⇒ 执行器 / `TOOL_DATA_SOURCE` / 注册表三处一并删除
+ *     （不再是「保留待接线」的欠账）。
  * 每个执行器签名统一为 `async (params: any) => Promise<any>`，
  * 组件层通过 `toolExecutors` 注册表查表调用，不关心实现来源。
  *
- * ★ P0-2 批 1（2026-09-18）：**4 个高曝光执行器已接真后端**
- *   - `ad-diagnosis`  → POST /ad-analysis/diagnose
+ * ★ P0-2 批 1（2026-09-18）：**高曝光执行器已接真后端**
+ *   - `ad-diagnosis`  → POST /ad-analysis/diagnose（**工具卡路径已于 #744 删除**：
+ *     该工具由 `AdDashboardConfig` 接管；对话路径在 `composables/chat/replies/adAnalysis.ts`，
+ *     直调 `diagnoseAdAccount`，不经过本文件）
  *   - `competitor`    → POST /competitor/compare
  *   - `seo-audit`     → POST /listing/analyze/seo
  *   - `bullet-gen`    → POST /listing/generate/bullets
  *   形状转换统一在 `@/utils/toolResultAdapters`。
  *   ★ 这 4 个**不再产出本地假数据**；后端给不出的字段一律留空，**不编造**。
  *
+ * ★ 批 2（2026-09-20）：`order-track` → POST /customer-service/order/track
+ *   原实现用 `Math.random()` 编状态 / 商品名 / 金额 / 运单号，**与后端
+ *   `modules/customer_service/agent_cs.py::_mock_order_info` 是同一份谎话的
+ *   两处实现**（连 carriers 列表都逐字相同）。后端已改 fail-closed 查 SP-API，
+ *   这里同步改真调用 —— 否则界面上还剩第二条路径能编出一张假订单。
+ *
  * ★ 其余执行器**仍是本地 mock**（本目录的定位所在），由前端门禁
  *   `scripts/check-tool-reality.cjs` 钉住「真调用执行器数量不得回退」。
  *
- * 外部依赖：useMonitorPoolStore（竞品监控执行器读监控池）+ 上述 4 个 @/api 模块。
+ * 外部依赖：上述 4 个 @/api 模块。
+ *   ★ 第 255 轮（#918）：原先还依赖 `useMonitorPoolStore`（竞品监控那 6 个执行器
+ *     读监控池做时序聚合），那 6 个已随 12 个**不可达**工具一并退役 ⇒
+ *     本文件不再认识监控池。退役依据见 `toolDefinitions.ts` 的 `competitor-intel`。
  */
-import { useMonitorPoolStore } from '@/stores/monitorPool'
 import { generateAssets } from '@/api/aigcMedia'
-import { diagnoseAdAccount } from '@/api/adAnalysis'
 import { generateBullets, analyzeSEO } from '@/api/listingGenerator'
 import { compareCompetitors } from '@/api/competitorIntel'
+import { trackOrder } from '@/api/customerService'
 import {
-  adaptAdDiagnosis,
   adaptBulletGen,
   adaptSeoAudit,
   adaptCompetitorCompare,
@@ -44,38 +66,10 @@ export const getParamSummary = (toolId: string, params: any): string => {
       return `- 竞品数：${params.validAsins?.length || params.asins?.filter((a: string) => a)?.length || 0} 个\n- 对比维度：${params.dimensions?.join('、') || '全部'}`
     case 'profit-calc':
       return `- 成本：$${params.costPrice || 0}\n- 售价：$${params.sellingPrice || 0}\n- 模式：${params.mode === 'reverse' ? '逆向定价' : '正向计算'}`
-    case 'ad-diagnosis':
-      return `- 时间范围：${timeRangeLabel(params.time_range)}\n- Campaign：${params.campaign_ids?.join('、') || '全部'}\n- 行业基准对比：${params.include_benchmark ? '是' : '否'}`
-    case 'keyword-report':
-      return `- 时间范围：${timeRangeLabel(params.time_range)}\n- Campaign类型：${params.campaign_types?.join('、') || 'SP/SB/SD'}\n- 最小花费过滤：$${params.min_spend || 0}\n- 排序方式：${params.sort_by || 'spend'}`
     case 'bid-suggest':
       return `- 策略：${({ aggressive: '激进', balanced: '平衡', conservative: '保守' } as Record<string, string>)[params.strategy] || '平衡'}\n- 目标ACoS：${params.target_acos || 20}%\n- 预算变动上限：±${params.budget_change_limit || 20}%`
-    case 'competitor-ad':
-      return `- 竞品ASIN：${params.asin_tags?.join('、') || '未指定'}\n- 自动检测：${params.auto_detect ? '是' : '否'}\n- 关键词重叠分析：${params.analyze_overlap ? '是' : '否'}`
-    case 'budget-alloc':
-      return `- 总日预算：$${params.total_daily_budget || 1000}\n- 目标RoAS：${params.target_roas || 4}x\n- 季节性因素：$(({ low: '低', medium: '中', high: '高', peak: '旺季' } as Record<string, string>)[params.seasonality] || '中')`
-    case 'anomaly-detect':
-      return `- 检测周期：$(({ '7d': '近7天', '14d': '近14天', '30d': '近30天' } as Record<string, string>)[params.check_period] || '近7天'}\n- 敏感度：${params.sensitivity || 'medium'}`
     case 'order-track':
       return `- 查询方式：${params.order_id ? `订单号 ${params.order_id}` : params.email ? `邮箱 ${params.email}` : params.phone_last4 ? `手机后四位 ${params.phone_last4}` : '未知'}`
-    case 'ticket-create':
-      return `- 标题：${params.subject}\n- 分类：${params.category || 'general'}\n- 优先级：${params.priority || 'medium'}\n- 关联订单：${params.order_id || '无'}`
-    case 'monitor-dashboard':
-      return `- 目标ASIN：${params.asin || '全部竞品'}\n- 时间范围：近 ${params.days || 30} 天`
-    case 'price-track':
-      return `- 追踪ASIN：${params.asins?.join('、') || '-'}（${params.asins?.length || 0}个）\n- 历史趋势：${params.include_history ? '包含' : '不含'}`
-    case 'market-share':
-      return `- 类目：${params.category}\n- 估算方法：${params.estimate_method === 'revenue_based' ? '收入估算' : 'BSR排名估算'}`
-    case 'pricing-analysis':
-      return `- 目标ASIN：${params.asin || '全部'}\n- 对比竞品：${params.compare_asins?.join('、') || '无'}\n- 分析深度：${({ basic: '基础', standard: '标准', deep: '深度' } as Record<string, string>)[params.analysis_depth] || '标准'}`
-    case 'review-spy':
-      return `- 目标ASIN：${params.asin}\n- 关注维度：${params.aspects?.join('、') || '全部'}\n- 采样数：${params.sample_size || 100} 条`
-    case 'intruder-alert':
-      return `- 监控类目：${params.category}\n- 回溯天数：${params.lookback_days || 30} 天\n- 评论阈值：≥ ${params.min_reviews_threshold || 50} 条`
-    case 'buy-box-analysis':
-      return `- 目标ASIN：${params.asin || '全部'}\n- 站点：${params.marketplace || 'US'}`
-    case 'compare-grid':
-      return `- 对比ASIN：${params.asins?.join('、') || '-'}（${params.asins?.length || 0}个）\n- 维度：${params.dimensions?.join('、') || '全部'}`
     // ===== Listing 优化师 =====
     case 'keyword-miner':
       return `- 种子词：${params.seed_keywords?.join('、') || '未指定'}\n- 目标数量：${params.target_count || 20} 个\n- 来源：${['种子词扩展', '竞品词', '类目词', '长尾词'].join(' / ')}`
@@ -98,28 +92,13 @@ export const getParamSummary = (toolId: string, params: any): string => {
       // （源图是前端 base64、没有图床），结果摘要按真实返回写（见 useChatOrchestrator）
       return `- 产品：${params._sourceProduct?.title || params.productName || '未指定'}\n- 素材类型：${(params.imageTypes || []).join('、') || '三视图'}\n- 数量：${params.quantity || 4} 张\n- 参考原图：${params.source_image_name || '未提供'}`
     case 'video-script-gen':
-      return `- 产品：${params._sourceProduct?.title || params.productName || '未指定'}\n- 平台：${({ tiktok: 'TikTok', reels: 'Reels', 'youtube-shorts': 'Shorts', 'amazon-post': 'Amazon Post' } as Record<string, string>)[params.platform] || 'TikTok'}\n- 风格：${params.videoStyle || '痛点解决型'}\n- 分镜数：${params.scenes?.length || 5} 个镜头\n- 总时长：${params.total_scene_duration || 30}s`
+      return `- 产品：${params._sourceProduct?.title || params.productName || '未指定'}\n- 平台：${({ tiktok: 'TikTok', reels: 'Reels', 'youtube-shorts': 'Shorts', 'amazon-post': 'Amazon Post' } as Record<string, string>)[params.platform] || 'TikTok'}\n- 风格：${params.videoStyle || '痛点解决型'}\n- 分镜数：${params.sceneCount || 5} 个镜头（每镜 ${params.sceneDuration || 5} 秒）\n- 总时长：${params.total_scene_duration || 30}s`
     case 'ai-video-generator':
       const modeLabel = params.mode === 'single-image' ? '🖼️ 单图极速生成' : '🎬 分镜脚本专业模式'
       return `- 产品：${params._sourceProduct?.title || params.productName || '未指定'}\n- 生成模式：${modeLabel}\n` +
         (params.mode === 'single-image'
           ? `- 底图：${params.singleImageUrl ? '已选择 ✓' : '未选择'}\n- 产品文案：${params.singleCopyText?.slice(0, 50) || '未填写'}\n- 平台：${params.targetPlatform || 'TikTok'}`
           : `- 镜头数：${params.storyboardScenes?.length || 0} 个\n- 各镜头素材来源：${params.storyboardScenes?.filter((s: any) => s.imageUrl).length || 0}/${params.storyboardScenes?.length || 0} 已就绪\n- 平台：${params.targetPlatform || 'TikTok'}`)
-    // ===== 运营复盘师 =====
-    case 'weekly-report':
-      return `- 报告周期：${params.week_label || '本周'}\n- 包含模块：销售/广告/库存/客诉/预警`
-    case 'monthly-review':
-      return `- 复盘月份：${params.month_label || new Date().toISOString().slice(0, 7)}\n- 包含模块：GMV趋势/SKU排名/战略建议`
-    case 'ad-review':
-      return `- 时间范围：${params.period || '近30天'}\n- 分析深度：Campaign归因 + 关键词 attribution`
-    case 'product-performance':
-      return `- 时间范围：${params.period || '近30天'}\n- 排序维度：${params.sort_by || '营收降序'}`
-    case 'inventory-health':
-      return `- 检查日期：${new Date().toISOString().slice(0, 10)}\n- 预警阈值：<14天断货 / >50天滞销`
-    case 'profit-audit':
-      return `- 审计周期：${params.period || '本月'}\n- 核算维度：收入-COGS-佣金-FBA-广告-退货-仓储=净利`
-    case 'action-plan':
-      return `- 复盘周期：${params.dateRange ? '已选择' : '默认本月'}\n- 自动分类：止损项 + 优化项 + 机会点\n- 输出：${params.detailLevel || '标准'}版`
     default:
       return JSON.stringify(params, null, 2)
   }
@@ -266,53 +245,6 @@ export const executeCompetitorAnalysis = async (params: any): Promise<any> => {
 
 // ========== 广告分析 Mock 执行函数 ==========
 
-// 执行广告诊断（Mock）
-export const executeAdDiagnosis = async (params: any): Promise<any> => {
-  // ★ 真调后端。★ 与对话路径（useChatOrchestrator 的 `/诊断/` 分支）**同源同端点** ——
-  //   同一能力只有一个数据来源，避免「工具卡与对话给出两个数字」。
-  const resp: any = await diagnoseAdAccount({
-    time_range: params?.time_range || '30d',
-  })
-  if (resp?.success === false) {
-    throw new Error(resp?.message || '广告诊断失败')
-  }
-  return adaptAdDiagnosis(resp, params)
-}
-
-// 执行搜索词报告（Mock）
-export const executeSearchTermReport = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 550))
-
-  const termPool = [
-    { term: 'portable coffee grinder manual', impr: 12500, clicks: 380, spend: 342.00, sales: 1280.00, acos: 26.7, roas: 3.7, orders: 42, cpc: 0.90, match_type: 'exact', efficiency: 'high' },
-    { term: 'ceramic burr coffee grinder', impr: 8900, clicks: 290, spend: 261.00, sales: 956.00, acos: 27.3, roas: 3.7, orders: 34, cpc: 0.90, match_type: 'phrase', efficiency: 'high' },
-    { term: 'hand coffee bean grinder travel', impr: 15600, clicks: 520, spend: 468.00, sales: 1872.00, acos: 25.0, roas: 4.0, orders: 62, cpc: 0.90, match_type: 'exact', efficiency: 'high' },
-    { term: 'coffee mill hand crank stainless', impr: 4300, clicks: 98, spend: 88.20, sales: 198.00, acos: 44.5, roas: 2.2, orders: 8, cpc: 0.90, match_type: 'broad', efficiency: 'low' },
-    { term: 'best coffee grinder under 30', impr: 22000, clicks: 1100, spend: 990.00, sales: 0, acos: 999, roas: 0, orders: 0, cpc: 0.90, match_type: 'broad', efficiency: 'waste' },
-    { term: 'aeropress coffee grinder recommendation', impr: 3100, clicks: 78, spend: 70.20, sales: 0, acos: 999, roas: 0, orders: 0, cpc: 0.90, match_type: 'phrase', efficiency: 'waste' },
-    { term: 'cold brew coffee grinder coarse', impr: 6700, clicks: 185, spend: 148.00, sales: 444.00, acos: 33.3, roas: 3.0, orders: 15, cpc: 0.80, match_type: 'exact', efficiency: 'medium' },
-    { term: 'hario mini mill slim plus', impr: 2900, clicks: 92, spend: 82.80, sales: 265.00, acos: 31.3, roas: 3.2, orders: 10, cpc: 0.90, match_type: 'exact', efficiency: 'low' },
-  ]
-
-  return {
-    period: timeRangeLabel(params.time_range),
-    total_terms: 42,
-    high_performers: termPool.filter(t => t.efficiency === 'high'),
-    low_performers: termPool.filter(t => t.efficiency === 'low'),
-    waste_terms: termPool.filter(t => t.efficiency === 'waste'),
-    new_opportunities: [
-      { term: 'camping coffee equipment compact', impr: 2400, clicks: 68, spend: 54.60, sales: 163.80, acos: 33.3, roas: 3.0, orders: 6, cpc: 0.80, match_type: 'exact', efficiency: 'high' },
-      { term: 'gift for coffee lover dad', impr: 1800, clicks: 52, spend: 41.60, sales: 145.60, acos: 28.6, roas: 3.5, orders: 5, cpc: 0.80, match_type: 'phrase', efficiency: 'high' },
-    ],
-    suggestions: [
-      `立即将 ${termPool.filter(t => t.efficiency === 'waste').length} 个浪费词（$${termPool.filter(t => t.efficiency === 'waste').reduce((s, t) => s + t.spend, 0).toFixed(2)}/月）添加为精确否定`,
-      `对 ${termPool.filter(t => t.efficiency === 'low').length} 个低效词降低出价 20-30%，或改为 phrase/exact 匹配`,
-      `对 ${termPool.filter(t => t.efficiency === 'high').length} 个高效词提高预算 15-25%，测试扩大曝光`,
-      '每周一导出搜索词报告，新增否定词不少于 10 个',
-    ],
-  }
-}
-
 // 执行出价建议（Mock）
 export const executeBidSuggest = async (params: any): Promise<any> => {
   await new Promise(resolve => setTimeout(resolve, 500))
@@ -336,437 +268,29 @@ export const executeBidSuggest = async (params: any): Promise<any> => {
     rationale: '基于近30天转化数据、竞争强度、季节性因素综合计算。平衡策略兼顾曝光与效率。',
   }
 }
-
-// 执行竞品广告分析（Mock）
-export const executeCompetitorAd = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 550))
-
-  const yourSOV = 18.5
-
-  return {
-    competitors: [
-      { competitor_name: 'BrewMaster Pro', asin: 'B08XXXXXX1', share_of_voice: 24.2, overlap_keywords: 38, avg_position: 2.1, estimated_spend: 520, top_keywords: ['coffee grinder', 'burr mill', 'manual grinder'], strengths: ['高品质陶瓷磨芯', '调节粗细度高'], weaknesses: ['价格偏高', '款式单一'] },
-      { competitor_name: 'GrindElite', asin: 'B09XXXXXX2', share_of_voice: 19.8, overlap_keywords: 31, avg_position: 2.8, estimated_spend: 380, top_keywords: ['portable grinder', 'travel coffee'], strengths: ['性价比突出', '评价数量多'], weaknesses: ['质量参差', '退货率略高'] },
-      { competitor_name: 'CoffeeCraft', asin: 'B07XXXXXX3', share_of_voice: 14.5, overlap_keywords: 22, avg_position: 3.4, estimated_spend: 260, top_keywords: ['ceramic grinder', 'aeropress'], strengths: ['设计精美', '包装用心'], weaknesses: ['价格虚高', '发货慢'] },
-      { competitor_name: 'BaristaBasics', asin: 'B0AXXXXXX4', share_of_voice: 11.2, overlap_keywords: 18, avg_position: 3.9, estimated_spend: 190, top_keywords: ['kitchen gadget', 'coffee tool'], strengths: ['SKU丰富', '物流快'], weaknesses: ['缺乏创新', '同质化严重'] },
-    ],
-    your_share_of_voice: yourSOV,
-    market_position: 'nicher',
-    actionable_insights: [
-      '**BrewMaster Pro** 是最大威胁（SOV 24.2%），重点关注其 38 个重叠关键词的广告策略',
-      '**GrindElite** SOV 仅 19.8%，可尝试抢夺其展示份额',
-      '建议增加品牌防御广告（SBV）预算，保护品牌词展示份额',
-      '关注竞品的新品上架节奏，提前布局防御性广告',
-    ],
-  }
-}
-
-// 执行预算分配（Mock）
-export const executeBudgetAlloc = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 480))
-
-  const allocations = [
-    { campaign_name: '自动广告-广泛', current_budget: 300, suggested_budget: 285, allocation_pct: 21.2, reason: '流量入口，保持稳定', expected_roas: 3.2 },
-    { campaign_name: '手动-精准-核心词', current_budget: 450, suggested_budget: 562, allocation_pct: 41.8, reason: '主力转化，建议加码', expected_roas: 5.1 },
-    { campaign_name: '手动-短语-长尾词', current_budget: 250, suggested_budget: 238, allocation_pct: 17.7, reason: '低成本拓量', expected_roas: 3.8 },
-    { campaign_name: '品牌-SB-品牌词', current_budget: 180, suggested_budget: 162, allocation_pct: 12.0, reason: '品牌防御，维持现状', expected_roas: 4.5 },
-    { campaign_name: '展示-SD-竞品定向', current_budget: 220, suggested_budget: 264, allocation_pct: 19.6, reason: '抢量渠道，适度增加', expected_roas: 2.8 },
-    { campaign_name: 'SD-再营销', current_budget: 120, suggested_budget: 216, allocation_pct: 16.1, reason: '高ROI，建议翻倍', expected_roas: 6.8 },
-  ]
-
-  const totalCurrent = allocations.reduce((s, a) => s + a.current_budget, 0)
-  const totalSuggested = allocations.reduce((s, a) => s + a.suggested_budget, 0)
-
-  return {
-    total_current_budget: totalCurrent,
-    total_suggested_budget: totalSuggested,
-    allocations,
-    projected_improvement: {
-      expected_roas_increase: '+22.5%',
-      expected_acos_decrease: '-5.2%',
-      efficiency_gain: '+16.8%',
-    },
-    risk_assessment: '中等风险 — 建议分两周逐步调整，每周监测效果',
-  }
-}
-
-// 执行异常检测（Mock）
-export const executeAnomalyDetect = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 450))
-
-  return {
-    check_period: params.check_period === '7d' ? '近7天 vs 前7天' : params.check_period === '14d' ? '近14天 vs 前14天' : '近30天 vs 前30天',
-    anomalies: [
-      { type: 'spend_spike', severity: 'high', campaign: '手动-精准-核心词', metric: '日花费', current_value: 280, expected_value: 150, deviation_pct: 86.7, detected_at: new Date(Date.now() - 86400000).toISOString().slice(0, 10), possible_cause: '某关键词出价被意外调高或竞争加剧导致 CPC 飙升', suggested_action: '立即检查出价设置，必要时暂停高价词' },
-      { type: 'conversion_drop', severity: 'high', campaign: '自动广告-广泛', metric: '转化率', current_value: 3.2, expected_value: 8.5, deviation_pct: -62.4, detected_at: new Date(Date.now() - 172800000).toISOString().slice(0, 10), possible_cause: 'Listing 被差评拉低转化率，或出现恶意竞争点击', suggested_action: '检查 Listing 评价情况，排查无效点击' },
-      { type: 'impression_anomaly', severity: 'medium', campaign: '品牌-SB-品牌词', metric: '展示量', current_value: 8500, expected_value: 25000, deviation_pct: -66.0, detected_at: new Date(Date.now() - 86400000).toISOString().slice(0, 10), possible_cause: '品牌词搜索量季节性下降或预算耗尽提前', suggested_action: '确认预算是否充足，考虑拓展非品牌词' },
-      { type: 'ctr_drop', severity: 'medium', campaign: '展示-SD-竞品定向', metric: 'CTR', current_value: 0.12, expected_value: 0.35, deviation_pct: -65.7, detected_at: new Date(Date.now() - 43200000).toISOString().replace('T', ' ').slice(0, 16), possible_cause: '创意素材疲劳或竞品更新了更有吸引力的素材', suggested_action: '轮换 SD 广告创意，A/B 测试新素材' },
-    ],
-    summary: '⚠️ 发现 **2 个高风险异常**，需立即关注 📋 还有 **2 个** 中等风险项',
-    alert_count: 2,
-  }
-}
-
 // ========== 客服 Mock 执行函数 ==========
 
-// 执行订单追踪（Mock）
+// 执行订单追踪（真后端）
+//
+// ★ 2026-09-20（批 2）：原实现用 Math.random() 编状态 / 商品名 / 金额 / 运单号，
+//   与后端 modules/customer_service/agent_cs.py::_mock_order_info 是**同一份谎话的
+//   两处实现**。后端已改 fail-closed 查 SP-API，这里同步改真调用 ——
+//   否则界面上还剩第二条路径能编出一张假订单。
+//
+//   返回形状与后端 OrderTrackResponse 对齐：`{found, order, message}`。
+//   查不到时 `order` 是 **null**（不是编一份），消费方必须先判 `found`。
 export const executeOrderTrack = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 400))
-
-  const statuses = [
-    { key: 'delivered', text: '已签收', icon: '✅' },
-    { key: 'shipped', text: '已发货', icon: '🚚' },
-    { key: 'processing', text: '处理中', icon: '⏳' },
-  ]
-  const status = statuses[Math.floor(Math.random() * statuses.length)]
-  const products = ['Portable Coffee Grinder Pro', 'Wireless Bluetooth Earbuds', 'Smart Home Security Camera']
-  const carriers = ['UPS', 'FedEx', 'USPS', 'Amazon Logistics']
-
-  const orderInfo = {
-    order_id: params.order_id || `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}${Math.floor(Math.random() * 100000).toString().padStart(8, '0')}`,
-    status: status.key,
-    status_text: status.text,
-    created_at: new Date(Date.now() - Math.floor(Math.random() * 14) * 86400000).toLocaleString('zh-CN').replace(/\//g, '-'),
-    product_name: products[Math.floor(Math.random() * products.length)],
-    quantity: Math.floor(Math.random() * 3) + 1,
-    total: parseFloat((Math.random() * 180 + 19.99).toFixed(2)),
-  }
-
-  if (status.key === 'shipped') {
-    Object.assign(orderInfo, {
-      tracking_number: `1Z${Math.floor(Math.random() * 9000000000 + 1000000000)}`,
-      carrier: carriers[Math.floor(Math.random() * carriers.length)],
-      estimated_delivery: new Date(Date.now() + Math.floor(Math.random() * 5 + 1) * 86400000).toISOString().slice(0, 10),
-    })
-  }
-
-  return { order: orderInfo }
-}
-
-// 执行工单创建（Mock）
-export const executeTicketCreate = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 380))
-
-  const ticketId = `TKT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 90000 + 10000)}`
-  const slaMap: Record<string, string> = { urgent: '2h', high: '4h', medium: '24h', low: '48h' }
-
-  return {
-    success: true,
-    ticket: {
-      ticket_id: ticketId,
-      subject: params.subject,
-      description: params.description,
-      category: params.category || 'general',
-      priority: params.priority || 'medium',
-      status: 'open',
-      customer_id: '',
-      order_id: params.order_id || undefined,
-      created_at: new Date().toISOString(),
-      sla_deadline: undefined,
-      tags: [params.category || 'general', params.priority || 'medium'],
-    },
-    estimated_response_time: slaMap[params.priority] || '24h',
-    auto_replies: [
-      '您好！我们已收到您的售后申请，将在 24 小时内处理完毕。',
-      '请您放心，我们会全力协助您解决问题。',
-      ...(params.priority === 'urgent' || params.priority === 'high' ? ['由于问题较紧急，已升级为优先处理。'] : []),
-    ],
-    message: `工单 ${ticketId} 创建成功！`,
-  }
-}
-
-// ========== 竞品监控员 Mock 执行函数 ==========
-
-// 执行监控仪表盘 —— 改为读取统一监控池（MonitorPool），不再各自随机造数
-export const executeMonitorDashboard = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 300))
-
-  const pool = useMonitorPoolStore()
-  // 监控池来自后端（唯一权威源）。这里是异步函数，直接等加载完成再进行聚合，
-  // 否则首屏直接跑本工具会把"还没加载"误当成"池是空的"。
-  await pool.ensureLoaded()
-  const records = pool.records.filter(r => {
-    if (params.asin) return r.asin === params.asin
-    return true
+  const res: any = await trackOrder({
+    order_id: params.order_id || undefined,
+    email: params.email || undefined,
+    phone_last4: params.phone_last4 || undefined,
   })
-
-  const stockMap: Record<string, string> = { in_stock: 'In Stock', low_stock: 'Low Stock', out_of_stock: 'Out of Stock' }
-  const competitors = records.map(r => {
-    const priceDrop = r.price_change_7d < -5
-    const stockRisk = r.stock_status !== 'in_stock'
-    const neg7 = r.review_events.slice(-7).filter(e => e.negative).length
-    let health_score = 90
-    if (priceDrop) health_score -= 15
-    if (stockRisk) health_score -= 18
-    if (neg7 > 0) health_score -= 12
-    if (r.rating < 4) health_score -= 8
-    return {
-      asin: r.asin,
-      brand: r.brand,
-      title: r.title,
-      price: r.latest_price,
-      bsr_rank: r.latest_bsr,
-      review_count: r.review_count,
-      rating: r.rating,
-      stock_status: stockMap[r.stock_status] || 'In Stock',
-      health_score: Math.max(0, health_score),
-      price_change: r.price_change_7d,
-      alert_count: (priceDrop ? 1 : 0) + (stockRisk ? 1 : 0) + (neg7 > 0 ? 1 : 0),
-    }
-  })
-
-  // 从池动态生成异动提醒
-  const recent_alerts: any[] = []
-  for (const r of records) {
-    if (r.price_change_7d < -5)
-      recent_alerts.push({ type: 'price_drop', severity: 'warning', message: `${r.brand} 价格骤降 ${Math.abs(r.price_change_7d)}%，可能发起价格战`, timestamp: new Date().toISOString().slice(0, 10) })
-    if (r.stock_status === 'out_of_stock')
-      recent_alerts.push({ type: 'stock_out', severity: 'critical', message: `${r.brand} 缺货，可能退出竞争或补货中`, timestamp: new Date().toISOString().slice(0, 10) })
-    if (r.bsr_change_7d > 150)
-      recent_alerts.push({ type: 'rank_jump', severity: 'info', message: `${r.brand} BSR 排名下降 ${r.bsr_change_7d} 位`, timestamp: new Date().toISOString().slice(0, 10) })
-  }
-
+  // 后端直返 body（无 {code,data} 信封）；这里兼容两种形状
+  const payload = res?.data ?? res ?? {}
   return {
-    total_competitors: competitors.length,
-    competitors,
-    summary: {
-      overview: `监控概览 — ${params.asin ? `聚焦 ${params.asin}` : `监控池 ${pool.totalCount} 个竞品`}，近 ${params.days || 30} 天内发现 ${competitors.filter(c => c.alert_count > 0).length} 个竞品存在异常警报。`,
-      recent_alerts: recent_alerts.slice(0, 5),
-    },
-  }
-}
-
-// 执行价格追踪 —— 读取统一监控池的真实价格时序，不再随机造数
-export const executePriceTrack = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 300))
-
-  const pool = useMonitorPoolStore()
-  await pool.ensureLoaded()
-  const asins = (params.asins || []).filter(Boolean)
-  const records = asins.length
-    ? pool.records.filter(r => asins.includes(r.asin))
-    : pool.records
-
-  const competitors = records.map(r => {
-    const ph = r.price_history
-    const p30 = ph[0]?.price ?? r.latest_price
-    return {
-      asin: r.asin,
-      brand: r.brand,
-      current_price: r.latest_price,
-      price_30d_ago: +p30.toFixed(2),
-      price_change_pct: r.price_change_7d,
-      rank_change: r.bsr_change_7d,
-      competitiveness_score: Math.max(10, Math.min(99, Math.round(100 - r.latest_bsr / 100 + r.rating * 5))),
-    }
-  })
-
-  return {
-    tracked_count: competitors.length,
-    competitors,
-    comparison_matrix: {
-      ranking: competitors
-        .map(c => ({ ...c, score: c.competitiveness_score }))
-        .sort((a, b) => b.score - a.score)
-        .map((c, i) => ({ asin: c.asin, brand: c.brand, score: c.score })),
-    },
-    insights: [
-      `${competitors.filter(c => c.price_change_pct < -5).length} 个竞品近期降价超过 5%`,
-      `数据源：统一竞品池（MonitorPool）近 30 天价格时序`,
-      '建议关注排名变化最大的竞品策略调整',
-    ],
-  }
-}
-
-// 执行市场份额分析（Mock）
-export const executeMarketShare = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 600))
-
-  const brands = [
-    { competitor_asin: 'B08LEAD001', brand_name: 'MarketLeader', estimated_market_share: 28.5, bsr_rank: 120, revenue_estimate: 125000, trend: 'stable' },
-    { competitor_asin: 'B08CHAL002', brand_name: 'ChallengerA', estimated_market_share: 18.2, bsr_rank: 350, revenue_estimate: 80000, trend: 'rising' },
-    { competitor_asin: 'B09FOLLOW3', brand_name: 'ChallengerB', estimated_market_share: 14.8, bsr_rank: 520, revenue_estimate: 65000, trend: 'rising' },
-    { competitor_asin: 'B07NICHE04', brand_name: 'NichePlayer', estimated_market_share: 9.5, bsr_rank: 1200, revenue_estimate: 42000, trend: 'stable' },
-    { competitor_asin: 'B06OLDGU5', brand_name: 'LegacyBrand', estimated_market_share: 12.3, bsr_rank: 280, revenue_estimate: 54000, trend: 'declining' },
-    { competitor_asin: 'B0ANEWCOM6', brand_name: 'NewEntrant', estimated_market_share: 6.2, bsr_rank: 2500, revenue_estimate: 27000, trend: 'rising' },
-    { competitor_asin: 'B05OTHERS7', brand_name: 'Others', estimated_market_share: 10.5, bsr_rank: 8000, revenue_estimate: 46000, trend: 'stable' },
-  ]
-
-  return {
-    category: params.category,
-    total_market_estimate: 439000,
-    competitors: brands,
-    concentration_ratio: { cr4: 73.8, hhi: 1820 },
-    insights: [
-      `市场由 **${brands[0].brand_name}** 主导（份额 ${brands[0].estimated_market_share}%），但 CR4=${73.8}% 表明存在中等集中度`,
-      '**ChallengerA** 和 **NewEntrant** 呈上升趋势，值得关注其增长策略',
-      'LegacyBrand 份额持续下滑，可能存在市场机会',
-      'HHI=1820 属于中度集中市场，新进入者仍有空间',
-    ],
-  }
-}
-
-// 执行定价策略分析（Mock）
-export const executePricingAnalysis = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 500))
-
-  return {
-    analyzed_count: 4,
-    strategies: [
-      { strategy_type: 'premium', base_price: 69.99, avg_discount: 8, promo_frequency: 'low', price_elasticity: -0.8, price_volatility: 0.03, recommendations: ['定位高端市场，强调品质差异化', '促销频率低但折扣力度大时转化率高'] },
-      { strategy_type: 'competitive', base_price: 34.99, avg_discount: 15, promo_frequency: 'medium', price_elasticity: -1.5, price_volatility: 0.08, recommendations: ['跟随市场领导者定价', '关注竞品调价动态快速响应'] },
-      { strategy_type: 'economy', base_price: 19.99, avg_discount: 22, promo_frequency: 'high', price_elasticity: -2.2, price_volatility: 0.12, recommendations: ['低价走量策略，利润薄但销量大', '需控制成本以维持微利'] },
-      { strategy_type: 'dynamic', base_price: 42.99, avg_discount: 18, promo_frequency: 'high', price_elasticity: -1.8, price_volatility: 0.15, recommendations: ['使用算法动态调价', '根据时段/库存/竞争灵活变动'] },
-    ],
-    market_positioning_map: {
-      segments: [
-        { name: '溢价区', count: 1, color: 'var(--danger-strong)' },
-        { name: '竞争区', count: 2, color: 'var(--primary)' },
-        { name: '经济区', count: 1, color: 'var(--success)' },
-      ],
-    },
-  }
-}
-
-// 执行评论侦探（Mock）
-export const executeReviewSpy = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 650))
-
-  return {
-    analyzed_products: 1,
-    analyses: [{
-      asin: params.asin || 'B08TARGET01',
-      brand: 'TargetCompetitor',
-      product: 'Premium Coffee Grinder Pro',
-      overall_rating: 4.2,
-      total_reviews: 2840,
-      insights: [
-        { aspect: '研磨质量', topic: '研磨均匀度好，粗细可调', sentiment_score: 0.82, mention_count: 420, example_quotes: ['研磨非常均匀', '粗细调节很方便'] },
-        { aspect: '噪音', topic: '噪音偏大，早起使用有顾虑', sentiment_score: 0.35, mention_count: 180, example_quotes: ['声音有点大', '像电钻一样响'] },
-        { aspect: '清洁难度', topic: '清理麻烦，粉容易飞溅', sentiment_score: 0.28, mention_count: 150, example_quotes: ['每次用完都要认真清', '粉到处都是'] },
-        { aspect: '耐用性', topic: '使用半年后电机异响', sentiment_score: 0.40, mention_count: 95, example_quotes: ['用了几个月开始有杂音', '感觉不太耐用'] },
-        { aspect: '容量', topic: '容量适中，够日常使用', sentiment_score: 0.75, mention_count: 310, example_quotes: ['容量刚好', '一次能磨够一家人用的'] },
-        { aspect: '外观设计', topic: '颜值高，摆着好看', sentiment_score: 0.88, mention_count: 260, example_quotes: ['放在厨房很好看', '设计感很强'] },
-      ],
-      swot: {
-        strengths: ['研磨质量获得广泛认可', '颜值和设计受好评', '容量满足大多数用户需求'],
-        weaknesses: ['噪音问题突出（-1星主因）', '清洁不便导致差评', '长期耐用性存疑'],
-        opportunities: ['推出静音升级版可抢占市场', '开发易清洁配件包', '强化质保承诺消除顾虑'],
-        threats: ['已有竞品主打静音卖点', '用户对耐用性要求提升', '差评积累影响转化率'],
-      },
-      actionable_intelligence: [
-        '🎯 最大痛点是**噪音**（提及率 6.3%），可开发"静音版"作为差异化卖点',
-        '🎯 **清洁问题**排第二（提及率 5.3%），附赠清洁刷/防飞溅罩可作为赠品营销点',
-        '⚠️ 耐用性负面评价在 6 个月后集中爆发，建议加强质保宣传',
-        '💡 外观设计是强项（正面提及率 9.2%），可在Listing图片和视频中重点展示',
-      ],
-    }],
-  }
-}
-
-// 执行入侵者检测（Mock）
-export const executeIntruderAlert = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 500))
-
-  return {
-    category: params.category,
-    detection_date: new Date().toISOString().slice(0, 10),
-    new_competitors: [
-      { asin: 'B0NEW001', title: 'Ultra Quiet Ceramic Coffee Grinder', brand: 'SilentGrind', entry_date: new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10), price: 27.99, threat_level: 'high', reasons: ['价格低于我方主力产品 30%', '主打静音卖点直接针对最大痛点', '14天内已获 68 条评论且评分 4.5'], our_product_affected: true },
-      { asin: 'B0NEW002', title: 'Smart WiFi Coffee Grinder App Control', brand: 'TechBrew', entry_date: new Date(Date.now() - 21 * 86400000).toISOString().slice(0, 10), price: 54.99, threat_level: 'medium', reasons: ['智能功能差异化明显', '定价处于中高端区间', '品牌知名度较低暂未形成威胁'], our_product_affected: false },
-      { asin: 'B0NEW003', title: 'Budget Manual Coffee Mill Compact', brand: 'ValueGrind', entry_date: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10), price: 12.99, threat_level: 'low', reasons: ['纯手动低端产品', '目标客群与我方不重叠', '评论数少影响力有限'], our_product_affected: false },
-    ],
-    threat_summary: { high: 1, medium: 1, low: 1 },
-    response_strategies: [
-      { target: 'SilentGrind (B0NEW001)', strategy: '防御性应对', actions: ['立即采购样品进行全方位分析', '监控其广告投放关键词是否重叠', '准备静音版产品线规划'], priority: 'P0' },
-      { target: 'TechBrew (B0NEW002)', strategy: '观察跟踪', actions: ['每周追踪其排名和评论变化', '评估智能化功能的用户接受度', '储备技术方案以备跟进'], priority: 'P1' },
-      { target: 'ValueGrind (B0NEW003)', strategy: '无需行动', actions: ['持续监控即可', '目标客群不同不构成直接威胁'], priority: 'P2' },
-    ],
-  }
-}
-
-// 执行 Buy Box 分析（Mock）
-export const executeBuyBoxAnalysis = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 480))
-
-  return {
-    analyzed_count: 1,
-    analyses: [{
-      asin: params.asin || 'B08SAMPLE01',
-      brand: 'SampleBrand',
-      product: 'Coffee Grinder Sample Product',
-      buy_box_analysis: {
-        sellers: [
-          { seller_name: 'SampleBrand (FBA)', price: 34.99, shipping: 0, in_stock: true, is_winner: true },
-          { seller_name: 'OtherSeller A', price: 36.50, shipping: 4.99, in_stock: true, is_winner: false },
-          { seller_name: 'OtherSeller B', price: 33.99, shipping: 5.99, in_stock: true, is_winner: false },
-          { seller_name: 'Reseller C', price: 38.00, shipping: 0, in_stock: false, is_winner: false },
-        ],
-        factors: {
-          price_competitiveness: { score: 82, status: 'good' },
-          shipping_speed: { score: 95, status: 'excellent' },
-          seller_rating: { score: 88, status: 'good' },
-          fulfillment_method: { score: 100, status: 'excellent' },
-          availability: { score: 90, status: 'good' },
-          feedback_quality: { score: 75, status: 'fair' },
-        },
-      },
-      competitiveness_score: 87,
-    }],
-    best_practices: [
-      '保持 FBA 履约方式，这是赢取 Buy Box 的最重要因素之一',
-      '当前价格竞争力良好，但 OtherSeller B 价格更低，需警惕',
-      '卖家反馈质量（75分）有提升空间，建议优化售后响应速度',
-      '确保库存充足避免缺货失去 Buy Box',
-      '考虑注册 Amazon Vine 计划提升评论数量和质量',
-    ],
-  }
-}
-
-// 执行多维对比（Mock）
-export const executeCompareGrid = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 700))
-
-  const asins = params.asins || ['B08AAAA01', 'B08BBBB02', 'B08CCCC03']
-  const dimensions = params.dimensions || ['价格', '评分', '评论数', 'BSR排名']
-
-  return {
-    type: 'compare_grid',
-    params,
-    compared_count: asins.length,
-    comparison: {
-      products: asins.map((asin: string, i: number) => ({
-        asin,
-        brand: [`Brand${String.fromCharCode(65 + i)}`, 'CompetitorA', 'TargetBrand', 'MarketLeader'][i] || `Brand${i}`,
-        name: [`Product Alpha`, `Product Beta`, `Product Gamma`][i] || `Product ${i + 1}`,
-        price: 19.99 + Math.random() * 40,
-        rating: (3.8 + Math.random() * 1.2).toFixed(1),
-        review_count: Math.floor(100 + Math.random() * 5000),
-        bsr_rank: Math.floor(100 + Math.random() * 10000),
-        size: `${(8 + Math.random() * 20).toFixed(1)}" x ${(6 + Math.random() * 12).toFixed(1)}" x ${(3 + Math.random() * 8).toFixed(1)}"`,
-        weight: `${(0.5 + Math.random() * 3).toFixed(2)} lbs`,
-        features: ['Feature A', 'Feature B', 'Feature C'].slice(0, 2 + Math.floor(Math.random() * 2)),
-      })),
-      differentiation: {
-        price_spread: parseFloat((Math.max(...asins.map(() => 19.99 + Math.random() * 40)) - Math.min(...asins.map(() => 19.99 + Math.random() * 40))).toFixed(2)),
-        rating_spread: parseFloat((1.4).toFixed(1)),
-      },
-      value_ranking: asins.map((asin: string, i: number) => ({
-        asin,
-        brand: `Brand${String.fromCharCode(65 + i)}`,
-        value_score: Math.floor(60 + Math.random() * 35),
-        reasoning: [
-          '性价比突出，价格低于均价 15%',
-          '综合表现均衡无明显短板',
-          '高端定位品质优秀但溢价较高',
-        ][i] || '表现中规中矩',
-      })).sort((a: any, b: any) => b.value_score - a.value_score),
-    },
-    insights: [
-      `价格区间 $${Math.min(...asins.map(() => 19.99 + Math.random() * 40)).toFixed(2)} - $${Math.max(...asins.map(() => 19.99 + Math.random() * 40)).toFixed(2)}`,
-      '建议从价格、质量、功能三个维度综合评估',
-      '最高性价比产品不一定是最低价产品',
-    ],
+    found: !!payload.found,
+    order: payload.order ?? null,
+    message: payload.message || '',
   }
 }
 
@@ -922,7 +446,13 @@ export const executeBulletGen = async (params: any): Promise<any> => {
   if (resp?.success === false) {
     throw new Error(resp?.message || '五点描述生成失败')
   }
-  return adaptBulletGen(resp, params)
+  const adapted = adaptBulletGen(resp, params)
+  // ★ 同上：空信封会让结果卡渲染出「五点描述：0 条」，
+  //   与「后端真的生成了 0 条」**不可区分** ⇒ 当场抛错，别让空壳冒充结果。
+  if (adapted.bullets.length === 0) {
+    throw new Error('五点描述未返回任何内容 —— 请确认产品名称与卖点信息是否完整，或稍后重试')
+  }
+  return adapted
 }
 
 // 执行描述生成（Mock）
@@ -989,7 +519,14 @@ export const executeSEOAudit = async (params: any): Promise<any> => {
   if (resp?.success === false) {
     throw new Error(resp?.message || 'SEO 诊断失败')
   }
-  return adaptSeoAudit(resp, params)
+  const adapted = adaptSeoAudit(resp, params)
+  // ★ 同上（#732）：空信封下 adaptSeoAudit 会产出 `overall_score: 0` 的**全 0 兜底**，
+  //   且不带 `success/found/degraded` 任何标志 ⇒ 消费方无法与「真的考了 0 分」区分。
+  //   （上面那道入参校验只挡得住「没带 Listing 文本」，挡不住「后端回空」。）
+  if (!adapted.dimensions.length && !adapted.total_count) {
+    throw new Error('SEO 诊断未返回任何结果 —— 请确认后端 /listing/analyze/seo 可用后重试')
+  }
+  return adapted
 }
 
 // 执行 A/B 测试（Mock）
@@ -1268,6 +805,24 @@ export const executeStaticAssetGen = async (params: any): Promise<any> => {
 
     const job = waited?.job || {}
     const jobId: string = job.id || ''
+    // ★ 没有任务编号 ⇒ **提交就没成功**（后端空信封 / 网关截断），这与
+    //   「任务已提交、只是等待超时」是**两件事**。旧写法把两者都归到
+    //   「任务仍在后台执行（已等待约 4 分钟）」，会让用户去「我的任务」里
+    //   找一个**根本不存在的编号**（归因错方向）。
+    if (!jobId) {
+      return {
+        type: 'static_asset_gen',
+        params,
+        product_name: productName,
+        generated_assets: [],
+        failed: [],
+        degraded: true,
+        degraded_reason:
+          '出图任务未提交成功（后端未返回任务编号）—— 请确认 AIGC 任务接口可用后重试；' +
+          '不要盲目重跑：同一入参会被后端去重，但换参数重跑会真的再出一次图（按张计费）',
+        generation_params: { mode: 'text2image', types: imageTypes, total_generated: 0 },
+      }
+    }
     const throttleNote = waited?.throttled
       ? `（轮询期间被限流 ${waited.throttled} 次，已自动退避，未影响任务）`
       : ''
@@ -1381,7 +936,7 @@ export const executeVideoScriptGen = async (params: any): Promise<any> => {
   const platform = params.platform || 'tiktok'
   const videoStyle = params.videoStyle || 'problem-solution'
   const sellingPoints = params.selling_points || '静音研磨、陶瓷磨芯、便携小巧'
-  const painPoints = params.painPoints || '电动噪音大、研磨不均匀、难清洗'
+  const painPoints = params.painPoints || params.pain_points || '电动噪音大、研磨不均匀、难清洗'
 
   const platformLabel: Record<string, string> = { tiktok: 'TikTok', reels: 'Reels', 'youtube-shorts': 'Shorts', 'amazon-post': 'Amazon Post' }
 
@@ -1412,7 +967,26 @@ export const executeVideoScriptGen = async (params: any): Promise<any> => {
   }
 
   const template = scriptTemplates[videoStyle] || scriptTemplates['problem-solution']
-  const totalDuration = template.scenes.reduce((sum, s) => sum + s.duration, 0)
+
+  // ★ 分镜数 / 单镜时长由侧边栏参数驱动（见 VideoScriptConfig.vue 的「分镜数/单镜时长」）。
+  //   此前这里按 videoStyle 直接吐一份硬编码 6 镜模板，用户配的镜头参数**完全没生效** ——
+  //   这正是「配置改了结果不变」的根因。现在镜头表由这两个字段算出。
+  // 分镜数取整；单镜时长保留 2 位小数 —— 侧边栏的联动会算出 7.5 这类非整数，
+  // 用 Math.floor 会把它悄悄截成 7（结果表里的时长和用户配的就对不上了）。
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  const sceneCount = Math.max(1, Math.round(Number(params.sceneCount) || 5))
+  const sceneDuration = Math.max(0.5, r2(Number(params.sceneDuration) || 5))
+  // 模板镜头是「内容池」：数量不够就循环复用（同风格续镜），多了就截断
+  const pool = template.scenes
+  const storyScenes = Array.from({ length: sceneCount }, (_, i) => {
+    const base = pool[i % pool.length]
+    return {
+      ...base,
+      duration: sceneDuration,
+      visual: i < pool.length ? base.visual : `${base.visual}（同风格续镜）`,
+    }
+  })
+  const totalDuration = r2(storyScenes.reduce((sum, s) => sum + s.duration, 0))
 
   return {
     type: 'video_script_gen',
@@ -1421,20 +995,22 @@ export const executeVideoScriptGen = async (params: any): Promise<any> => {
     platform,
     platform_label: platformLabel[platform],
     video_style: videoStyle,
+    scene_count: sceneCount,
+    scene_duration: sceneDuration,
     total_duration: totalDuration,
     script_summary: template.summary,
     selling_points_used: sellingPoints,
     pain_points_used: painPoints,
-    storyboard: template.scenes.map((s, i) => ({
+    storyboard: storyScenes.map((s, i) => ({
       ...s,
       scene: i + 1,
-      time: template.scenes.slice(0, i).reduce((sum, x) => sum + x.duration, 0),
+      time: r2(storyScenes.slice(0, i).reduce((sum, x) => sum + x.duration, 0)),
     })),
     shooting_tips: [
       `${platformLabel[platform]} 竖版 9:16 适配`,
       '前 3 秒必须有视觉或听觉钩子（痛点/悬念/反差）',
       '字幕要大且醒目（占画面 1/3），关键信息用高亮色',
-      '每个镜头控制在 3-6 秒，保持节奏紧凑',
+      `共 ${sceneCount} 个镜头、每镜 ${sceneDuration} 秒（可在生成结果的分镜表里逐项改）`,
       '音乐版权：使用无版权素材库或原创 BGM',
     ],
   }
@@ -1491,304 +1067,47 @@ export const executeAIVideoGenerator = async (params: any): Promise<any> => {
   }
 }
 
-// ========== 运营复盘师 Mock 执行函数 ==========
-
-// 执行周报生成（Mock）
-export const executeWeeklyReport = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 800))
-
-  const weekLabel = params.week_label || '本周'
-  return {
-    type: 'weekly_report',
-    params,
-    period: weekLabel,
-    report_date: new Date().toISOString().slice(0, 10),
-    kpis: {
-      total_revenue: { value: 28450, change_pct: 12.3, target: 25000, status: 'excellent' },
-      total_orders: { value: 892, change_pct: 8.5, target: 850, status: 'good' },
-      ad_spend: { value: 3850, change_pct: 5.2, target: 4000, status: 'good' },
-      acos: { value: 22.8, change_pct: -3.1, target: 25, status: 'good' },
-      conversion_rate: { value: 9.8, change_pct: 1.2, target: 9.0, status: 'good' },
-      return_rate: { value: 6.2, change_pct: 0.8, target: 8, status: 'excellent' },
-    },
-    highlights: [
-      '🏆 周三单日销售额突破 $5,200，创历史新高',
-      '📦 新品 SKU-0027 首周销量达 120 件，超出预期 50%',
-      '🎯 广告 RoAS 从 3.8 提升至 4.4，精准匹配优化见效',
-    ],
-    concerns: [
-      '⚠️ 周五下午出现 2 小时断货（SKU-0015），预计损失 $800 销售额',
-      '⚠️ 竞品 B08XXXXX2 在周三降价 10%，我们的 CTR 当日下降 15%',
-    ],
-    next_week_priorities: [
-      '补货 SKU-0015 至安全库存水位（≥200 件）',
-      '监控竞品价格变动，准备应对方案',
-      '测试新的视频广告素材（已完成分镜脚本）',
-    ],
-  }
-}
-
-// 执行月度复盘（Mock）
-export const executeMonthlyReview = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 1000))
-
-  return {
-    type: 'monthly_review',
-    params,
-    period: params.month_label || '2026年8月',
-    executive_summary: {
-      total_gmv: 118000,
-      mom_change: 15.2,
-      yoy_change: 42.5,
-      net_profit: 18200,
-      net_margin: 15.4,
-      total_ad_spend: 16500,
-      blended_acos: 23.5,
-    },
-    trend_analysis: {
-      revenue_trend: [92000, 98000, 102000, 118000],
-      acos_trend: [26.8, 25.2, 24.1, 23.5],
-      conversion_trend: [8.5, 8.9, 9.3, 9.8],
-      labels: ['5月', '6月', '7月', '8月'],
-    },
-    top_products: [
-      { sku: 'SKU-001', name: 'Premium Coffee Grinder', revenue: 35400, margin: 18.2, growth: 22.0 },
-      { sku: 'SKU-007', name: 'Silicone Utensil Set', revenue: 22800, margin: 21.5, growth: 15.0 },
-      { sku: 'SKU-012', name: 'LED Plant Grow Light', revenue: 15600, margin: 16.8, growth: 35.0 },
-      { sku: 'SKU-003', name: 'Portable Humidifier', revenue: 12200, margin: 14.2, growth: -5.0 },
-      { sku: 'SKU-019', name: 'Acrylic Makeup Organizer', revenue: 9800, margin: 25.1, growth: 8.0 },
-    ],
-    key_insights: [
-      '📈 GMV 连续 4 个月增长，月复合增长率 8.6%',
-      '💰 整体净利率从 12% 提升至 15.4%，主要得益于 ACoS 下降',
-      '⭐ SKU-012（植物灯）增速最快（+35%），Q4 需求旺季提前备货',
-      '⚠️ SKU-003 加湿器首次负增长，需关注竞品动态和评价变化',
-    ],
-    strategic_recommendations: [
-      '加大 SKU-001 和 SKU-012 的广告预算投入（ROI 最高）',
-      '启动 SKU-003 的 Listing 优化和价格策略 review',
-      'Q4 备货计划：基于 30% 增长预期，建议 9 月中旬入库完毕',
-      '新品线规划：基于选品蓝海分析结果，Q4 上线 2-3 个新 SKU',
-    ],
-  }
-}
-
-// 执行广告复盘（Mock）
-export const executeAdReview = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 900))
-
-  return {
-    type: 'ad_review',
-    params,
-    period: params.period || '近30天',
-    overview: {
-      total_spend: 16500,
-      total_sales: 70200,
-      blended_roas: 4.25,
-      blended_acos: 23.5,
-      total_clicks: 42500,
-      total_impressions: 2800000,
-      avg_ctr: 1.52,
-      avg_cpc: 0.39,
-      avg_cvr: 9.6,
-    },
-    campaign_breakdown: [
-      { campaign: 'SP-自动广告', spend: 4200, sales: 13440, roas: 3.2, acos: 31.3, trend: '↓ 改善中' },
-      { campaign: 'SP-手动-精准', spend: 5800, sales: 34800, roas: 6.0, acos: 16.7, trend: '↑ 稳定优秀' },
-      { campaign: 'SP-手动-短语', spend: 2100, sales: 8820, roas: 4.2, acos: 23.8, trend: '→ 持平' },
-      { campaign: 'SB-品牌广告', spend: 1600, sales: 7200, roas: 4.5, acos: 22.2, trend: '↑ 提升中' },
-      { campaign: 'SD-展示广告', spend: 2800, sales: 5940, roas: 2.1, acos: 47.1, trend: '↓ 需优化' },
-    ],
-    attribution_analysis: {
-      top_converting_keywords: [
-        { keyword: 'ceramic coffee grinder', spend: 2200, sales: 14300, roas: 6.5, attribution: 'last_click' },
-        { keyword: 'portable manual grinder', spend: 1800, sales: 9000, roas: 5.0, attribution: 'last_click' },
-        { keyword: 'hand coffee mill', spend: 1200, sales: 4800, roas: 4.0, attribution: 'assist' },
-      ],
-      assist_metrics: {
-        total_assisted_conversions: 280,
-        assist_value: 11200,
-        assisted_roas_boost: '+0.6x',
-      },
-    },
-    actionable_items: [
-      '🔴 SD 展示广告 ACoS 47.1% 过高，建议暂停低效 PAT 定向，释放 $1200 预算给 SP',
-      '🟢 SP 手动精准 Campaign 表现优异（RoAS 6.0），可追加 $800 预算测试扩量',
-      '🟡 自动广告 ACoS 31.3% 仍有空间，本周下载搜索词报告新增否定词',
-      '📊 建议开启品牌防御（SBV），保护品牌词 SOV 不被竞品抢占',
-    ],
-  }
-}
-
-// 执行商品表现（Mock）
-export const executeProductPerformance = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 700))
-
-  return {
-    type: 'product_performance',
-    params,
-    period: params.period || '近30天',
-    products: [
-      { sku: 'SKU-001', name: 'Premium Coffee Grinder', revenue: 35400, units: 1180, margin_pct: 18.2, profit: 6443, turnover_days: 32, rating: 4.6, reviews: 3420, trend: '📈 +22%', tier: 'star' },
-      { sku: 'SKU-007', name: 'Silicone Utensil Set', revenue: 22800, units: 760, margin_pct: 21.5, profit: 4902, turnover_days: 28, rating: 4.4, reviews: 1890, trend: '📈 +15%', tier: 'star' },
-      { sku: 'SKU-012', name: 'LED Plant Grow Light', revenue: 15600, units: 446, margin_pct: 16.8, profit: 2621, turnover_days: 45, rating: 4.5, reviews: 680, trend: '📈 +35%', tier: 'rising' },
-      { sku: 'SKU-019', name: 'Acrylic Makeup Organizer', revenue: 9800, units: 490, margin_pct: 25.1, profit: 2460, turnover_days: 18, rating: 4.8, reviews: 2150, trend: '📈 +8%', tier: 'stable' },
-      { sku: 'SKU-003', name: 'Portable Humidifier', revenue: 12200, units: 610, margin_pct: 14.2, profit: 1732, turnover_days: 55, rating: 4.1, reviews: 890, trend: '📉 -5%', tier: 'declining' },
-      { sku: 'SKU-025', name: 'Wireless Charging Pad', revenue: 4500, units: 225, margin_pct: 12.8, profit: 576, turnover_days: 72, rating: 3.9, reviews: 320, trend: '📉 -18%', tier: 'at_risk' },
-    ],
-    summary: {
-      total_skus: 6,
-      star_products: 2,
-      rising: 1,
-      stable: 1,
-      declining: 1,
-      at_risk: 1,
-      total_revenue: 100300,
-      avg_margin: 18.1,
-    },
-    alerts: [
-      { sku: 'SKU-025', alert: '连续 4 周下滑，库存周转 72 天，考虑清仓或下架', severity: 'high' },
-      { sku: 'SKU-003', alert: '月度首次负增长，近期差评增加 12 条（质量问题？）', severity: 'medium' },
-    ],
-  }
-}
-
-// 执行库存健康度（Mock）
-export const executeInventoryHealth = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 650))
-
-  return {
-    type: 'inventory_health',
-    params,
-    check_date: new Date().toISOString().slice(0, 10),
-    overall_health_score: 72,
-    inventory_items: [
-      { sku: 'SKU-001', name: 'Premium Coffee Grinder', fba_stock: 285, inbound: 200, daily_sales_avg: 38, days_of_stock: 7.5, status: 'healthy', reorder_point: 200, suggestion: '库存健康，在途 200 件预计 7 天内入仓' },
-      { sku: 'SKU-007', name: 'Silicone Utensil Set', fba_stock: 45, inbound: 0, daily_sales_avg: 25, days_of_stock: 1.8, status: 'critical', reorder_point: 250, suggestion: '⚠️ 即将断货！仅剩 1.8 天库存，紧急补货' },
-      { sku: 'SKU-012', name: 'LED Plant Grow Light', fba_stock: 520, inbound: 300, daily_sales_avg: 15, days_of_stock: 54.7, status: 'overstock', reorder_point: 150, suggestion: '库存偏高（55天），Q4 旺季前暂不额外补货' },
-      { sku: 'SKU-003', name: 'Portable Humidifier', fba_stock: 180, inbound: 100, daily_sales_avg: 20, days_of_stock: 14.0, status: 'warning', reorder_point: 200, suggestion: '低于安全水位，在途 100 件到货后恢复' },
-      { sku: 'SKU-019', name: 'Acrylic Makeup Organizer', fba_stock: 380, inbound: 0, daily_sales_avg: 16, days_of_stock: 23.8, status: 'healthy', reorder_point: 160, suggestion: '库存正常，建议 2 周后安排补货' },
-      { sku: 'SKU-025', name: 'Wireless Charging Pad', fba_stock: 420, inbound: 0, daily_sales_avg: 7.5, days_of_stock: 56.0, status: 'slow_moving', reorder_point: 80, suggestion: '周转过慢（56天），长期仓储费风险。建议促销清仓' },
-    ],
-    financial_impact: {
-      estimated_long_term_storage_fee: 285,
-      tied_up_capital: 18600,
-      lost_sales_risk: 6750, // SKU-007 断货预估
-    },
-    recommendations: [
-      '🚨 P0：SKU-007 紧急补货，联系供应商加急发货（预计损失 $6,750 销售额）',
-      '📋 P1：SKU-025 制定清仓计划（折扣 30-40% + Bundle 搭配）',
-      '💡 P2：SKU-012 库存充足，暂停补货直至 Q4 旺季开始',
-      '📊 建议设置自动补货阈值：FBA 库存 < 14 天销量时触发采购',
-    ],
-  }
-}
-
-// 执行利润审计（Mock）
-export const executeProfitAudit = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 900))
-
-  return {
-    type: 'profit_audit',
-    params,
-    period: params.period || '本月',
-    pnl_summary: {
-      total_revenue: 118000,
-      cogs: 58200,          // 销售成本
-      gross_profit: 59800,
-      gross_margin: 50.7,
-      expenses: [
-        { item: 'Amazon 佣金 (15%)', amount: -17700 },
-        { item: 'FBA 配送费', amount: -8920 },
-        { item: '广告花费', amount: -16500 },
-        { item: '退货损耗', amount: -3540 },
-        { item: '长期仓储费', amount: -285 },
-        { item: '头程运费摊销', amount: -4200 },
-        { item: '其他杂费', amount: -1455 },
-      ],
-      total_expenses: -52600,
-      net_profit: 7200,
-      net_margin: 6.1,
-    },
-    profitability_by_sku: [
-      { sku: 'SKU-001', revenue: 35400, cogs: 16500, fulfillment: 2680, ad_cost: 4960, returns: 1062, net_profit: 10198, net_margin: 28.8 },
-      { sku: 'SKU-007', revenue: 22800, cogs: 9120, fulfillment: 1730, ad_cost: 3200, returns: 684, net_profit: 8066, net_margin: 35.4 },
-      { sku: 'SKU-012', revenue: 15600, cogs: 7800, fulfillment: 1180, ad_cost: 2180, returns: 468, net_profit: 3972, net_margin: 25.5 },
-      { sku: 'SKU-003', revenue: 12200, cogs: 6588, fulfillment: 924, ad_cost: 1830, returns: 488, net_profit: 2370, net_margin: 19.4 },
-      { sku: 'SKU-025', revenue: 4500, cogs: 2700, fulfillment: 342, ad_cost: 1350, returns: 225, net_profit: -117, net_margin: -2.6 },
-    ],
-    insights: [
-      '💰 SKU-007（硅胶厨具）净利率最高 35.4%，应作为主力推广款',
-      '⚠️ SKU-025（无线充电板）净亏损 $117，需立即审查定价或考虑下架',
-      '📊 广告占总收入 14%，处于健康区间（行业平均 10-20%）',
-      '🔄 退货率 3% 控制良好，低于类目平均值 5-8%',
-    ],
-    optimization_plan: [
-      '将 SKU-007 广告预算提升 20%，发挥高利润优势',
-      'SKU-025 进行盈利能力审查：提价 $3 或寻找更低价供应链',
-      '目标下月净利率从 6.1% 提升至 8%+',
-    ],
-  }
-}
-
-// 执行行动计划（Mock）
-export const executeActionPlan = async (params: any): Promise<any> => {
-  await new Promise(resolve => setTimeout(resolve, 700))
-
-  return {
-    type: 'action_plan',
-    params,
-    period: params.period || '本月',
-    generated_at: new Date().toISOString(),
-    // 止损项（红色 - 需立即处理）
-    stop_loss: [
-      { id: 1, priority: 'P0', category: '广告', title: '硅胶厨具 ACOS 高达 45%', impact: '月浪费 $2,400+', action: '降低手动关键词出价 20%，否词搜索词 >$3', owner: '广告优化师', deadline: '3天内' },
-      { id: 2, priority: 'P0', category: '库存', title: 'SKU-025 无线充电板断货风险', impact: '预计 5 天后断货，月损失 $4,500', action: '紧急补货 500 件，开启加速模式', owner: '供应链', deadline: '立即' },
-      { id: 3, priority: 'P1', category: 'Listing', title: '便携加湿器差评率升至 8%', impact: '转化率下降 1.2%，BSR 下跌 15 名', action: '分析差评根因，优化产品描述+跟进客服', owner: '运营', deadline: '7天内' },
-    ],
-    // 优化项（黄色 - 可提升效率）
-    optimize: [
-      { id: 4, priority: 'P1', category: '广告', title: 'LED 植物灯 ROAS 提升空间大', impact: '当前 ROAS 2.8，目标可达 4.0+', action: '新增长尾词 20 个，测试视频广告格式', owner: '广告优化师', deadline: '14天内' },
-      { id: 5, priority: 'P2', category: '定价', title: ' acrylic 收纳盒定价偏低', impact: '竞品均价 $24.99，我们 $19.99', action: '提价至 $22.99 并 A/B 测试', owner: '运营', deadline: '30天内' },
-      { id: 6, priority: 'P2', category: 'FBA', title: 'LTF 费用超支 $285/月', action: '移库滞销 SKU-018/023 至卖家自配送', owner: '供应链', deadline: '本月' },
-    ],
-    // 机会点（绿色 - 增长潜力）
-    opportunity: [
-      { id: 7, priority: 'P2', category: '新品', title: '秋季新品：电动剥皮器蓝海验证', impact: '关键词搜索量月增 300%+，竞争度低', action: '快速上架 + SBV 视频 + Vine 计划', owner: '选品+运营', deadline: '下季' },
-      { id: 8, priority: 'P3', category: '拓展', title: '加拿大站扩展机会', impact: 'US 畅销 SKU 在 CA 无竞品', action: '同步 Top 5 SKU 至 CA，启用 NARF', owner: '运营', deadline: 'Q4' },
-      { id: 9, priority: 'P3', category: '品牌', title: 'Brand Store 访客转化提升', impact: 'Store 访客 CVR 仅 12%，行业 18%', action: '优化 Store 首页 + A+ 页面关联', owner: '品牌', deadline: '60天' },
-    ],
-    summary: {
-      total_actions: 9,
-      urgent: 3,
-      in_progress: 3,
-      opportunity: 3,
-      estimated_impact: '+$8,200/月潜在利润提升',
-    },
-  }
-}
-
 /** 工具 ID -> 执行器。分发链由原来的 switch 改为查表（未知 id 返回 undefined）。 */
+
+/**
+ * ★ #745：每个已注册工具的**数据来源声明**。
+ *
+ * 存在理由：`toolExecutors.ts` 里的函数**签名一样、返回形状也一样**，
+ * 所以「真调后端」和「本地编一份」在类型系统、单测、界面上**长得一模一样**。
+ * 把来源写成代码里的常量之后：
+ *   · 非真源的执行结果在对话里**显式标注**（见 `chat/useChatEventBridge.ts`）；
+ *   · 门禁 `scripts/check-tool-reality.cjs` 断言 E 可做**双向对账** ——
+ *     声明的 `backend` 必须被源码判据认定为真调用，声明 `local-mock` 的必须不是；
+ *     且**注册表里的每个 id 都必须在这里登记**（漏登记 = 门禁红）。
+ *
+ *   backend           真调 `@/api/*`；拿不到数据必须**显式失败**（断言 D 会真跑一遍）
+ *   backend-then-mock 先试后端，后端不可用才退回本地演示数据（离线演示）
+ *   local-mock        纯本地演示数据
+ */
+export const TOOL_DATA_SOURCE: Record<string, 'backend' | 'backend-then-mock' | 'local-mock'> = {
+  'competitor': 'backend',
+  'order-track': 'backend',
+  'bullet-gen': 'backend',
+  'seo-audit': 'backend',
+  'static-asset-gen': 'backend',
+  'blue-ocean': 'backend-then-mock',
+  'pain-points': 'local-mock',
+  'bid-suggest': 'local-mock',
+  'keyword-miner': 'local-mock',
+  'title-gen': 'local-mock',
+  'desc-gen': 'local-mock',
+  'ab-test': 'local-mock',
+  'pitfalls': 'local-mock',
+  'video-script-gen': 'local-mock',
+  'ai-video-generator': 'local-mock',
+}
+
 export const toolExecutors: Record<string, (params: any) => Promise<any>> = {
   'blue-ocean': executeBlueOceanAnalysis,
   'pain-points': executePainPointAnalysis,
   'competitor': executeCompetitorAnalysis,
-  'ad-diagnosis': executeAdDiagnosis,
-  'keyword-report': executeSearchTermReport,
   'bid-suggest': executeBidSuggest,
-  'competitor-ad': executeCompetitorAd,
-  'budget-alloc': executeBudgetAlloc,
-  'anomaly-detect': executeAnomalyDetect,
   'order-track': executeOrderTrack,
-  'ticket-create': executeTicketCreate,
-  'monitor-dashboard': executeMonitorDashboard,
-  'price-track': executePriceTrack,
-  'market-share': executeMarketShare,
-  'pricing-analysis': executePricingAnalysis,
-  'review-spy': executeReviewSpy,
-  'intruder-alert': executeIntruderAlert,
-  'buy-box-analysis': executeBuyBoxAnalysis,
-  'compare-grid': executeCompareGrid,
   'keyword-miner': executeKeywordMiner,
   'title-gen': executeTitleGen,
   'bullet-gen': executeBulletGen,
@@ -1799,11 +1118,4 @@ export const toolExecutors: Record<string, (params: any) => Promise<any>> = {
   'static-asset-gen': executeStaticAssetGen,
   'video-script-gen': executeVideoScriptGen,
   'ai-video-generator': executeAIVideoGenerator,
-  'weekly-report': executeWeeklyReport,
-  'monthly-review': executeMonthlyReview,
-  'ad-review': executeAdReview,
-  'product-performance': executeProductPerformance,
-  'inventory-health': executeInventoryHealth,
-  'profit-audit': executeProfitAudit,
-  'action-plan': executeActionPlan,
 }

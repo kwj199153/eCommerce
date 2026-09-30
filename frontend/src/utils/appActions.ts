@@ -32,7 +32,27 @@ import { useUserStore } from '@/stores/user'
 import { useShopStore } from '@/stores/shop'
 import router from '@/router'
 
-/** 资料库 / 内容区视图枚举（与 Workspace.currentView 保持一致） */
+/**
+ * 资料库 / 内容区视图枚举（与 Workspace.currentView 保持一致）。
+ *
+ * ★★ 第 251 轮补齐（原先只有 7 项，`Workspace` 实际有 9 个可切换视图）：
+ *
+ *   · `competitors` —— 「竞品监控**池**」视图（资料库那一组的第 4 项）。
+ *     改前它**不在白名单里**：组件内部走 CustomEvent 能跳过去
+ *     （`IntelBoardConfig.vue` 就是这么干的），但**经 AI 动作跳转会被拒**
+ *     （`VALID_VIEWS.has('competitors') === false` ⇒ 静默 `return false`）。
+ *     同一条能力两条通道两种结果 —— 正是本仓「同一判定两份实现」的形态。
+ *
+ *   · `monitor` —— 「竞品监控**看板**」（大屏模式），**不是**一个视图 id：
+ *     `Workspace.handleKnowledgeNavigate` 收到它会重定向到 `openIntelBoard()`
+ *     （切竞品监控员 + 右栏大屏）。所以它与 `competitors` **不是重复**，
+ *     两者并存是有意的；`VIEW_LABELS` 里两句话也刻意不同。
+ *
+ *   · `reviews` —— 复盘库（第 251 轮新增的第 7 个资料库）。
+ *
+ * ★ 与后端 `modules/secretary/navigation_tools.py::VIEW_IDS` 是**同一套值**
+ *   （那边是 LLM 工具签名的一部分，漏改的症状是「老板说打开某个库，Agent 答没这个视图」）。
+ */
 export type AppView =
   | 'chat'
   | 'faq'
@@ -40,6 +60,8 @@ export type AppView =
   | 'products'
   | 'assets'
   | 'rules'
+  | 'reviews'
+  | 'competitors'
   | 'monitor'
 
 /** 视图中文名（用于回复文案 / 日志） */
@@ -50,6 +72,8 @@ export const VIEW_LABELS: Record<AppView, string> = {
   products: '产品库',
   assets: '营销素材库',
   rules: '平台规则库',
+  reviews: '复盘库',
+  competitors: '竞品监控池',
   monitor: '竞品监控看板',
 }
 
@@ -66,7 +90,7 @@ export type AppAction =
   /** 打开账户菜单项（设置/记忆/订阅/退出登录）——账户类跳转的统一网关 */
   | { type: 'account_menu'; target: 'settings' | 'memory' | 'subscription' | 'logout' }
   /** 把对话交接给专业 Agent 接管（子 Agent 追问缺失字段后执行） */
-  | { type: 'handoff'; agentId: string; intent: string; missingFields: string[] }
+  | { type: 'handoff'; agentId: string; intent: string; missingFields: string[]; query?: string }
   /** 切换界面外观主题（模式与可用预设由 @/theme/presets 定义，「跟随系统」也在其中） */
   | { type: 'set_theme'; mode: ThemeMode }
   /**
@@ -83,7 +107,7 @@ export type AppAction =
 
 /** 合法视图白名单 */
 const VALID_VIEWS = new Set<AppView>([
-  'chat', 'faq', 'candidates', 'products', 'assets', 'rules', 'monitor',
+  'chat', 'faq', 'candidates', 'products', 'assets', 'rules', 'reviews', 'competitors', 'monitor',
 ])
 
 /**
@@ -185,6 +209,10 @@ export function dispatchAppAction(action: AppAction): boolean {
         agentId: action.agentId,
         intent: action.intent,
         missingFields: action.missingFields,
+        // ★ 第 215 轮：把老板**原话**一并带下去，由 handleSecretaryHandoff 回显到
+        //   子 Agent 对话区。handoff 只切页、**不续跑**，原话不落地就只剩一句概括
+        //   —— 链接 / ASIN 这类只在原话里的信息会永久丢失（实测事故）。
+        query: action.query,
       },
     }))
     return true

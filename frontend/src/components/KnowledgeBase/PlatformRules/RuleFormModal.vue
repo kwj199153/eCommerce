@@ -2,7 +2,7 @@
   <a-modal
     v-model:open="open"
     :title="editingId ? '编辑规则' : '新增规则'"
-    width="600px"
+    :width="WINDOW_W.xl"
     :confirm-loading="saving"
     @ok="handleSubmit"
   >
@@ -127,6 +127,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { ref, reactive, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { usePlatformRulesStore, PLATFORMS, RULE_CATEGORIES, type PlatformRule, type PlatformRuleDoc } from '@/stores/platformRules'

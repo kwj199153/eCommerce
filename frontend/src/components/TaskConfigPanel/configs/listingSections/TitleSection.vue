@@ -30,6 +30,8 @@
         <span class="variant-text">{{ v }}</span>
       </div>
     </div>
+
+    <PromptTab v-model="draft.titlePrompt" placeholder="例如：标题里务必带上「wireless」「portable」两个词，突出便携卖点，控制在 160 字符内" />
   </div>
 </template>
 
@@ -37,6 +39,7 @@
 import { computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { useListingDraftStore } from '@/stores/listingDraft'
+import PromptTab from './PromptTab.vue'
 
 defineProps<{ genLoading: boolean; disabled?: boolean }>()
 defineEmits<{ (e: 'gen'): void }>()

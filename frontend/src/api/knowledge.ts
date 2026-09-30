@@ -86,3 +86,40 @@ export async function fetchKnowledgeDoc(id: string): Promise<KnowledgeDoc> {
 export async function deleteKnowledgeDoc(id: string): Promise<{ message: string; id: string }> {
   return del(`/knowledge-base/docs/${id}`)
 }
+
+// ====== 文档 → 话术草稿（第 288 轮：`knowledge_docs` 的出口）======
+
+/**
+ * 用 AI 从文档正文拆出话术条目，**以草稿状态落库**。
+ *
+ * ★ 草稿**不参与**客服检索（后端 `load_faq_items` 只查 active），
+ *   必须在话术列表里人工确认后点「发布」才生效 —— 这是刻意的：
+ *   LLM 可能把文档里的内部口径（成本价 / 供应商 / 仅对某站点生效的承诺）
+ *   写进答案，不能未经人看一眼就发给买家。
+ *
+ * ★ `degraded=true` 表示 AI 不可用 / 文档无正文 / 没提取到，
+ *   此时 `reason` 是可直接展示给用户的中文原因，且**不会**有编造的条目。
+ */
+export async function aiSplitFaqFromDoc(docId: string): Promise<{
+  extracted: number
+  added: number
+  duplicated: number
+  dropped: number
+  items: FaqItem[]
+  degraded: boolean
+  reason: string
+  message: string
+}> {
+  return post(`/knowledge-base/docs/${docId}/ai-split-faq`, {})
+}
+
+/** 发布草稿话术（draft → active）。只有草稿会被发布，其余进 `skipped` */
+export async function publishDraftFaqs(ids: string[]): Promise<{
+  published: number
+  ids: string[]
+  skipped: { id: string; status: string; reason: string }[]
+  not_found: string[]
+  items: FaqItem[]
+}> {
+  return post('/knowledge-base/faqs/publish', { ids })
+}

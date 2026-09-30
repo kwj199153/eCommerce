@@ -3,7 +3,7 @@
     :open="visible"
     @update:open="onOpenChange"
     title="记忆与进化"
-    :width="640"
+    :width="WINDOW_W.xl"
     placement="right"
     :closable="true"
     :maskClosable="true"
@@ -199,6 +199,12 @@
  * 渲染出来是**一张白页**（`a-drawer` 关闭时什么都不显示）。
  * 所以：显式传入 `open` ⇒ 听父组件的（抽屉）；没传 ⇒ 自行打开（页面）。
  *
+ * ★★ 第 323 轮补记：上面这条规则**曾经只写在注释里、从未生效** ——
+ *    `defineProps<{ open?: boolean }>()` 编译出的运行时类型是 `Boolean`，Vue 会把
+ *    「缺席」强制转成 `false`（**不是 `undefined`**）⇒ `props.open ?? true` 恒为 `false`
+ *    ⇒ `/memory` 直接访问一直是一张白页。必须 `withDefaults(..., { open: undefined })`
+ *    才能让「缺席」真的等于 `undefined`。
+ *
  * ★ 不写上限常量、不写失败类型名单、不写"每晚几点"：
  *   上限走 `GET /memory` 的 `limits`（后端真源，见 `ai_infra/memory/limits.py`），
  *   失败与否走时间线记录的 `is_failure`（后端算的），"上次整理"走
@@ -206,6 +212,7 @@
  *   任何东西变红，而界面会安静地显示错的数字。
  */
 
+import { WINDOW_W } from '@/config/layout'
 import { computed, ref, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
@@ -232,10 +239,17 @@ import {
   type MemorySnapshot,
 } from '@/api/memory'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   /** 抽屉可见性。★ 不传（路由模式）时本组件自行打开，见文件头注释。 */
   open?: boolean
-}>()
+}>(), { open: undefined })
+
+/**
+ * 路由模式判定（第 323 轮）。**必须配上面的 `{ open: undefined }`**：
+ * 只写 `open?: boolean` 时 Vue 会把「缺席」强制转成 `false`，
+ * `props.open` 永远拿不到 `undefined` ⇒ 路由模式判定恒假。
+ */
+const ROUTE_MODE = props.open === undefined
 const emit = defineEmits<{
   (e: 'update:open', val: boolean): void
 }>()
@@ -256,7 +270,7 @@ const md = new MarkdownIt({ html: false })
 
 // ====== 状态 ======
 
-const visible = ref(props.open ?? true)
+const visible = ref(ROUTE_MODE)
 const snapshot = ref<MemorySnapshot | null>(null)
 const logs = ref<MemoryLog[]>([])
 
@@ -545,6 +559,12 @@ function goLogin() {
 }
 
 function onOpenChange(val: boolean) {
+  // 路由模式：没有父组件接管「关闭」⇒ 关掉浮层就退回工作台，
+  // 否则用户会停在一条只剩背景色的空白路由上（第 323 轮修掉的东西）。
+  if (ROUTE_MODE && !val) {
+    router.push('/')
+    return
+  }
   visible.value = val
   emit('update:open', val)
 }
@@ -780,7 +800,12 @@ watch(
   gap: var(--space-6);
   font-size: var(--font-size-13);
   font-weight: 600;
-  color: var(--danger);
+  /* ★ 文字色用**深档** --danger-strong，不用 --danger：
+     `--danger`(#ff4d4f) 是"填充/描边"档，压在 --danger-bg 浅红底上只有
+     light 2.97:1 / macaron 2.91:1（本仓 <3:1 硬门槛）⇒ 标题几乎看不见。
+     `presets.ts` 对 --danger-strong 的注释已经把这条规则写死。
+     实测改后：light 5.08:1 / macaron 4.97:1；dark 两 token 同值，观感不变。 */
+  color: var(--danger-strong);
   margin-bottom: var(--space-6);
 }
 .error-detail {

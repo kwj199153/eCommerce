@@ -1,7 +1,7 @@
 <template>
   <div class="chat-panel">
     <!-- ===== 主内容区域（对话 + 结果共存） ===== -->
-    <div class="main-content" ref="mainContentRef">
+    <div class="main-content" ref="mainContentRef" data-tour="tour-chat-stream">
       <!-- 最近结果条：对话是线性流，结论会被后来的消息冲出视野、清空会话更会全丢；
            这里按 agentId 存一份最近结论，随时可找回（展开即为结论卡） -->
       <div v-if="recentForCurrentAgent" class="recent-result-bar">
@@ -51,10 +51,10 @@
           <div
             v-for="(msg, index) in messages"
             :key="index"
+            :data-msg-index="index"
           >
             <!-- ===== 工具结果消息（内联渲染，支持折叠/展开）===== -->
             <div v-if="msg.displayType === 'tool_result'" class="message-item tool-result-message">
-              <a-avatar style="background-color: var(--success)">AI</a-avatar>
               <div class="message-content tool-result-content">
                 <!-- 工具结果组件（各自带标题栏+关闭按钮） -->
                 <BlueOceanResult
@@ -118,93 +118,15 @@
                   :data="msg.data?.resultData"
                   @close="removeToolResult(index)"
                 />
-                <!-- 搜索词报告 -->
-                <SearchTermResult
-                  v-else-if="msg.data?.toolId === 'keyword-report'"
-                  :data="msg.data?.resultData"
-                  @close="removeToolResult(index)"
-                />
                 <!-- 出价建议 -->
                 <BidOptimizeResult
                   v-else-if="msg.data?.toolId === 'bid-suggest'"
                   :data="msg.data?.resultData"
                   @close="removeToolResult(index)"
                 />
-                <!-- 竞品广告 -->
-                <CompetitorAdResult
-                  v-else-if="msg.data?.toolId === 'competitor-ad'"
-                  :data="msg.data?.resultData"
-                  @close="removeToolResult(index)"
-                />
-                <!-- 预算分配 -->
-                <BudgetAllocResult
-                  v-else-if="msg.data?.toolId === 'budget-alloc'"
-                  :data="msg.data?.resultData"
-                  @close="removeToolResult(index)"
-                />
-                <!-- 异常检测 -->
-                <AnomalyDetectResult
-                  v-else-if="msg.data?.toolId === 'anomaly-detect'"
-                  :data="msg.data?.resultData"
-                  @close="removeToolResult(index)"
-                />
                 <!-- 订单追踪 -->
                 <OrderTrackResult
                   v-else-if="msg.data?.toolId === 'order-track'"
-                  :data="msg.data?.resultData"
-                  @close="removeToolResult(index)"
-                />
-                <!-- 工单创建 -->
-                <TicketCreateResult
-                  v-else-if="msg.data?.toolId === 'ticket-create'"
-                  :data="msg.data?.resultData"
-                  @close="removeToolResult(index)"
-                />
-                <!-- 监控仪表盘 -->
-                <MonitorDashboardResult
-                  v-else-if="msg.data?.toolId === 'monitor-dashboard'"
-                  :data="msg.data?.resultData"
-                  @close="removeToolResult(index)"
-                />
-                <!-- 价格追踪 -->
-                <PriceTrackResult
-                  v-else-if="msg.data?.toolId === 'price-track'"
-                  :data="msg.data?.resultData"
-                  @close="removeToolResult(index)"
-                />
-                <!-- 市场份额 -->
-                <MarketShareResult
-                  v-else-if="msg.data?.toolId === 'market-share'"
-                  :data="msg.data?.resultData"
-                  @close="removeToolResult(index)"
-                />
-                <!-- 定价策略 -->
-                <PricingAnalysisResult
-                  v-else-if="msg.data?.toolId === 'pricing-analysis'"
-                  :data="msg.data?.resultData"
-                  @close="removeToolResult(index)"
-                />
-                <!-- 评论侦探 -->
-                <ReviewSpyResult
-                  v-else-if="msg.data?.toolId === 'review-spy'"
-                  :data="msg.data?.resultData"
-                  @close="removeToolResult(index)"
-                />
-                <!-- 入侵者警报 -->
-                <IntruderAlertResult
-                  v-else-if="msg.data?.toolId === 'intruder-alert'"
-                  :data="msg.data?.resultData"
-                  @close="removeToolResult(index)"
-                />
-                <!-- Buy Box 分析 -->
-                <BuyBoxAnalysisResult
-                  v-else-if="msg.data?.toolId === 'buy-box-analysis'"
-                  :data="msg.data?.resultData"
-                  @close="removeToolResult(index)"
-                />
-                <!-- 多维对比 -->
-                <CompareGridResult
-                  v-else-if="msg.data?.toolId === 'compare-grid'"
                   :data="msg.data?.resultData"
                   @close="removeToolResult(index)"
                 />
@@ -226,11 +148,6 @@
                   :data="msg.data?.resultData"
                   @close="removeToolResult(index)"
                 />
-                <!-- 运营复盘师（周报/月度/广告/商品/库存/利润） -->
-                <div v-else-if="['weekly-report', 'monthly-review', 'ad-review', 'product-performance', 'inventory-health', 'profit-audit'].includes(msg.data?.toolId)" class="raw-result-fallback">
-                  <a-alert type="success" show-icon :message="`${msg.data?.toolName || '复盘'} 报告生成完成`" style="margin-bottom: var(--space-8)" />
-                  <pre class="result-json-preview">{{ JSON.stringify(msg.data?.resultData, null, 2) }}</pre>
-                </div>
                 <!-- 兜底 -->
                 <div v-else class="raw-result-fallback">
                   <a-alert type="warning" show-icon message="未知工具类型" />
@@ -243,12 +160,13 @@
               v-else
               :class="['message-item', msg.role, { 'has-conversation-result': !!resolveConversationResult(msg.displayType) }]"
             >
-            <a-avatar
-              :style="{ backgroundColor: msg.role === 'user' ? SEM.primary : SEM.success }"
-            >
-              {{ msg.role === 'user' ? 'U' : 'AI' }}
-            </a-avatar>
             <div class="message-content">
+              <!-- 思考过程（第 210 轮）：流光中默认展开、出结果后自动折叠。
+                   放在正文**之上**——时序上它先发生，折叠后也只是不打扰的一条。 -->
+              <ThinkingTrace
+                :steps="msg.thinkingSteps || []"
+                :loading="isLoading && index === messages.length - 1"
+              />
               <div class="message-text" v-html="renderMarkdown(msg.content)"></div>
 
               <!-- 会话结论卡：对话直接跑出的结构化结论（后端 SSE meta 下发），
@@ -260,19 +178,16 @@
                 :data="msg.data"
               />
 
-              <!-- 竞品监控员：推理证据联动卡（数据底座背书 AI 解读） -->
-              <CompetitorIntelEvidence
-                v-if="msg.displayType === 'competitor_intel_analysis' && msg.data?.per_asin?.length"
-                :data="msg.data"
-              />
-
             </div>
           </div>
           </div>
 
-          <!-- 加载中：tip 显示后端阶段进度 + 已用时长，长任务期间不再是干转圈 -->
-          <div v-if="isLoading" class="message-item assistant">
-            <a-avatar style="background-color: var(--success)">AI</a-avatar>
+          <!-- 加载中：tip 显示后端阶段进度 + 已用时长。
+               ★ 第 210 轮起它是**兜底**：一旦已有步骤可看（思考过程轨迹出现），
+                 就不再叠一个转圈 —— 老板的原话是「目前只是转圈显示几秒钟」，
+                 该退场的地方就得退场，而不是和轨迹各占一块。
+                 它仍然保留，是因为「第一秒还没有任何步骤」时总得有反馈。 -->
+          <div v-if="isLoading && !hasLiveTrace" class="message-item assistant">
             <div class="message-content">
               <a-spin :tip="loadingTip" />
             </div>
@@ -280,11 +195,26 @@
         </div>
     </div>
 
-      <!-- 竞品监控员·统一分析动作条（输入框上方）：
-           分析周期下拉 + 快入口 chips，联动右侧竞品选择器 -->
-      <div v-if="isCompetitorIntelAgent" class="intel-action-bar">
+      <!-- 技能卡动作条（第 189 轮「skill 当源」）：
+           卡片 = 技能（方法）· 右侧 tag = 上下文条（参数）。
+           四组旧硬编码 chip（竞品 3 / 选品 5 / 复盘 4 / 广告 2）已统一为「读技能列表」——
+           点卡 → 点名技能 → 后端 LLM（技能正文由后端注入 system prompt，不进用户消息）。
+           ★ 无技能时不渲染：一条空壳动作条比「没有动作条」更让人困惑。 -->
+      <div v-if="agentStore.currentAgent" class="intel-action-bar">
         <div class="iab-controls">
-          <div class="iab-period">
+          <!-- 管理技能入口（第 274 轮）：跳转 Skill 仓库。始终显示（只要有 Agent）——
+               没有技能卡时**更要**给一个进仓库增删的入口。侧栏虽有「能力」入口，
+               但对话窗口内的直达更顺手。 -->
+          <button
+            class="iab-manage-btn"
+            type="button"
+            title="管理技能（快捷卡片）"
+            @click="goSkillManager"
+          >
+            <SettingOutlined />
+          </button>
+          <!-- 分析周期是**竞品专属**的上下文参数，保留原下拉；其余 Agent 用隐藏占位保持同宽 -->
+          <div v-if="isCompetitorIntelAgent" class="iab-period">
             <span class="iab-period-label">分析周期</span>
             <a-select
               v-model:value="intelDays"
@@ -294,112 +224,68 @@
               :disabled="isLoading"
             />
           </div>
+          <div v-else class="iab-period" style="visibility:hidden">
+            <span class="iab-period-label">{{ agentScopeLabel }}</span>
+          </div>
           <div class="iab-chips">
             <button
-              v-for="c in intelChips"
+              v-for="c in skillCards"
               :key="c.id"
               class="iab-chip"
-              :class="{ active: activeIntelChip === c.id }"
-              :disabled="isLoading"
-              @click="runIntelChip(c)"
+              :class="{ 'rqa-loading': activeSkillCard === c.id }"
+              :disabled="isLoading || activeSkillCard !== null"
+              :title="c.description"
+              @click="runSkillCard(c)"
             >
-              <span class="iab-chip-icon">{{ c.icon }}</span>
-              <span>{{ c.name }}</span>
+              <span class="iab-chip-icon">{{ c.icon || '🧩' }}</span>
+              <span>{{ c.title }}</span>
             </button>
           </div>
         </div>
-        <a-tag :color="pool.selectedAsins.length ? 'blue' : 'orange'" class="iab-scope-float">
-          {{ pool.selectedAsins.length ? `已圈 ${pool.selectedAsins.length} 个竞品` : '未圈选·将分析全池' }}
-        </a-tag>
-      </div>
-
-      <!-- 选品分析师·候选评估动作条（输入框上方）：
-           评估对象 = 顶部【载入选品】选定的候选（未载入则提示先载入） -->
-      <div v-else-if="isProductResearchAgent" class="intel-action-bar">
-        <div class="iab-controls">
-          <div class="iab-period" style="visibility:hidden">
-            <span class="iab-period-label">评估对象</span>
-          </div>
-          <div class="iab-chips">
-            <button
-              v-for="c in candidateIntelChips"
-              :key="c.id"
-              class="iab-chip"
-              :class="{ active: activeIntelChip === c.id }"
-              :disabled="isLoading"
-              @click="runCandidateChip(c)"
-            >
-              <span class="iab-chip-icon">{{ c.icon }}</span>
-              <span>{{ c.name }}</span>
-            </button>
-          </div>
-        </div>
-        <a-tag :color="loadedCandidate ? 'geekblue' : 'orange'" class="iab-scope-float">
-          {{ loadedCandidate ? `评估 ${loadedCandidate.title?.slice(0, 10)}…` : '未载入选品·请先载入评估对象' }}
-        </a-tag>
-      </div>
-
-      <!-- Listing 优化师：输入框上方不再有 chip 动作条；
-           跳转/生成/保存都通过顶部 4 个工具按钮（关键词/标题/五点/长描述）触发 -->
-
-
-      <!-- 运营复盘师·统一分析动作条（输入框上方，与其他 Agent 布局一致）：
-           快捷 chips：周报 / 月度复盘 / 广告优化 / 行动计划 -->
-      <div v-else-if="isReviewAgent" class="intel-action-bar">
-        <div class="iab-controls">
-          <div class="iab-period" style="visibility:hidden">
-            <span class="iab-period-label">复盘范围</span>
-          </div>
-          <div class="iab-chips">
-            <button
-              v-for="action in REVIEW_ACTIONS"
-              :key="action.key"
-              class="iab-chip"
-              :class="{ 'rqa-loading': activeReviewAction === action.key }"
-              :disabled="isLoading || activeReviewAction !== null"
-              :title="action.desc"
-              @click="runReviewAction(action)"
-            >
-              <span class="iab-chip-icon">{{ action.icon }}</span>
-              <span>{{ action.name }}</span>
-            </button>
-          </div>
-        </div>
-        <a-tag :color="reviewScopeColor" class="iab-scope-float">
-          {{ reviewScopeText }}
-        </a-tag>
-      </div>
-
-      <!-- 广告分析师·快捷操作（输入框上方，出价建议 / 预算分配） -->
-      <div v-else-if="isAdAnalyst" class="intel-action-bar">
-        <div class="iab-controls">
-          <div class="iab-period" style="visibility:hidden">
-            <span class="iab-period-label">广告账户</span>
-          </div>
-          <div class="iab-chips">
-            <button
-              v-for="action in AD_QUICK_ACTIONS"
-              :key="action.key"
-              class="iab-chip"
-              :class="{ 'rqa-loading': activeAdAction === action.key }"
-              :disabled="isLoading || activeAdAction !== null"
-              :title="action.desc"
-              @click="runAdQuickAction(action)"
-            >
-              <span class="iab-chip-icon">{{ action.icon }}</span>
-              <span>{{ action.name }}</span>
-            </button>
-          </div>
-        </div>
-        <a-tag :color="shopStore.currentShop ? 'geekblue' : 'orange'" class="iab-scope-float">
-          {{ shopStore.currentShop ? `广告 ${shopStore.currentShop.name}` : '未选店铺·默认全账户' }}
+        <!-- 上下文条只在有技能卡时显示：无技能卡时这一行只剩管理入口，空 tag 反而突兀 -->
+        <a-tag v-if="skillCards.length" :color="agentScopeColor" class="iab-scope-float">
+          {{ agentScopeText }}
+          <!-- ★ 第 298 轮（老板 bug2）：「对象载得进来、出不去」的出口。
+               起因（老板原话）：「上下文被某条处置差评填入后，你没有给取消按钮」。
+               ★ 只在 `scopeTargetLoaded`（= `contextTarget` 真有值）时出现：
+                 它判的与请求体走的是**同一个** computed ⇒ 「界面有 ×」与
+                 「这轮真会带对象」不可能各说各话；取消完变 `null` ⇒ × 自己消失，
+                 不会留一个"点了没反应"的按钮。
+               ★ 与左边那个「本次对话使用：X ×」（`pending-skill-chip`，第 250 轮）
+                 同形态：**"还在生效"必须可见 + 必须能撤销**。 -->
+          <button
+            v-if="scopeTargetLoaded"
+            type="button"
+            class="iab-scope-clear"
+            :title="`取消本次作用对象（不再把这条${agentScopeLabel}带进对话）`"
+            aria-label="取消本次作用对象"
+            @click="clearScopeTarget()"
+          >×</button>
         </a-tag>
       </div>
 
 
       <!-- 输入区域（卡片式，冻结在底部） -->
-      <div class="input-area">
+      <div class="input-area" data-tour="tour-chat-input">
         <div class="input-card">
+          <!-- 「本次对话使用：X ×」chip（第 250 轮）。
+               ★ 为什么必须存在：点名（pendingSkill）在「本轮只出纯文本」时会留到下一轮
+                 —— 这是**故意**的（追问的答案必须还能用上点名）。但它对用户不可见 ⇒
+                 用户会以为「我没点名」，然后被一个看不见的点名改写结果，且无法撤销。
+               ★ 这里**不缩短窗口**，只把窗口**变可见**并给出显式撤销入口。
+               ★ v-if 只判 pendingSkillCard，**不与** skillCards.length 联动：
+                 点名生效与否跟"当前有没有卡片"无关，联动会让它在边界处静默消失。 -->
+          <div v-if="pendingSkillCard" class="pending-skill-chip">
+            <span class="psc-icon">{{ pendingSkillCard.icon || '🧩' }}</span>
+            <span class="psc-label">本次对话使用：</span>
+            <span class="psc-title">{{ pendingSkillCard.title }}</span>
+            <button
+              class="psc-close"
+              type="button"
+              title="撤销本次技能点名（不影响已发出的消息）"
+              @click="dismissPendingSkill()"
+            >×</button>
+          </div>
           <a-textarea
             v-model:value="inputMessage"
             :placeholder="inputPlaceholder"
@@ -410,20 +296,8 @@
           <div class="input-card-footer">
             <span class="input-hint">{{ footerHint }}</span>
             <div class="input-actions">
-              <!-- 增强提示词：把草稿扩写成更可执行的提示词 -->
-              <a-tooltip :title="enhanceTip">
-                <button
-                  class="input-action-btn"
-                  :disabled="enhancing || !inputMessage.trim()"
-                  @click="handleEnhance"
-                >
-                  <LoadingOutlined v-if="enhancing" />
-                  <svg v-else class="sparkle-icon" viewBox="0 0 22 22" width="16" height="16" aria-hidden="true">
-                    <path d="M9 3 C9.36 7.2 9.8 7.64 14 8 C9.8 8.36 9.36 8.8 9 13 C8.64 8.8 8.2 8.36 4 8 C8.2 7.64 8.64 7.2 9 3 Z" />
-                    <path d="M17 12.5 C17.2 14.8 17.45 15.05 19.75 15.25 C17.45 15.45 17.2 15.7 17 18 C16.8 15.7 16.55 15.45 14.25 15.25 C16.55 15.05 16.8 14.8 17 12.5 Z" />
-                  </svg>
-                </button>
-              </a-tooltip>
+              <!-- 增强提示词：唯一实现在 common/PromptEnhanceButton，别在这里再内联一份 -->
+              <PromptEnhanceButton v-model="inputMessage" context="ecommerce" />
               <!-- 语音输入：浏览器原生识别，不支持时点击给出原因（不静默失效） -->
               <a-tooltip :title="speechTip">
                 <button
@@ -437,19 +311,37 @@
                   <AudioOutlined />
                 </button>
               </a-tooltip>
-              <!-- 发送：Enter 亦可。圆形容器交给 antd —— 主色底上的前景色由算法决定，
-                   避免自己写死白字（presets 里 --text-inverse 深色下是深色，语义不符） -->
+              <!-- 发送 / 停止：同一位置二选一（第 241 轮）。
+                   ★ 生成中**不能**把一个禁用按钮留在原地 —— 店秘书 / 竞品等链路要跑
+                     十几秒到几十秒，用户唯一的出路是关掉页面。
+                   ★ 判定必须 `isStreaming || isLoading`：六条流式链在**首个 token**到达时
+                     就退掉 loading（spinner 让位给正文），此后只剩 `isStreaming` 为真；
+                     而结构化调用（广告诊断 / Listing 生成等）没有流，只有 `isLoading` 为真。
+                     两个都要看 —— 只看一个就会漏掉一半的"生成中"。
+                   ★ 圆形容器交给 antd —— 主色底上的前景色由算法决定，
+                     避免自己写死白字（presets 里 --text-inverse 深色下是深色，语义不符） -->
               <a-button
+                v-if="isStreaming || isLoading"
+                class="input-send-btn input-stop-btn"
+                shape="circle"
+                title="停止生成"
+                @click="handleCancel"
+              >
+                <template #icon>
+                  <StopOutlined />
+                </template>
+              </a-button>
+              <a-button
+                v-else
                 class="input-send-btn"
                 type="primary"
                 shape="circle"
                 title="发送（Enter）"
-                :disabled="!inputMessage.trim() || isLoading"
+                :disabled="!inputMessage.trim()"
                 @click="handleSend"
               >
                 <template #icon>
-                  <LoadingOutlined v-if="isLoading" />
-                  <ArrowUpOutlined v-else />
+                  <ArrowUpOutlined />
                 </template>
               </a-button>
             </div>
@@ -460,13 +352,12 @@
 </template>
 
 <script setup lang="ts">
-import { SEM } from '@/theme/semantic'
-import { ref, computed, watch, inject, type Ref } from 'vue'
+import { ref, computed, watch, inject, onMounted, onBeforeUnmount, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { RobotOutlined, AudioOutlined, ArrowUpOutlined, LoadingOutlined } from '@ant-design/icons-vue'
+import { RobotOutlined, AudioOutlined, ArrowUpOutlined, StopOutlined, SettingOutlined } from '@ant-design/icons-vue'
 
-// 输入框辅助：提示词增强（走后端 LLM）+ 语音输入（浏览器原生识别）
-import { enhancePrompt } from '@/api/aigcMedia'
+// 输入框辅助：提示词增强（公共组件，全站唯一实现）+ 语音输入（浏览器原生识别）
+import PromptEnhanceButton from '@/components/common/PromptEnhanceButton.vue'
 import {
   speechState,
   speechUnsupportedReason,
@@ -492,23 +383,12 @@ import SEODiagnostic from './results/SEODiagnostic.vue'
 import ABTestGenerator from './results/ABTestGenerator.vue'
 import DescriptionGenerator from './results/DescriptionGenerator.vue'
 import AdDiagnosisResult from './results/AdDiagnosisResult.vue'
-import SearchTermResult from './results/SearchTermResult.vue'
 import BidOptimizeResult from './results/BidOptimizeResult.vue'
-import CompetitorAdResult from './results/CompetitorAdResult.vue'
-import BudgetAllocResult from './results/BudgetAllocResult.vue'
-import AnomalyDetectResult from './results/AnomalyDetectResult.vue'
 import OrderTrackResult from './results/OrderTrackResult.vue'
-import TicketCreateResult from './results/TicketCreateResult.vue'
-import MonitorDashboardResult from './results/MonitorDashboardResult.vue'
-import CompetitorIntelEvidence from './results/CompetitorIntelEvidence.vue'
-import PriceTrackResult from './results/PriceTrackResult.vue'
-import MarketShareResult from './results/MarketShareResult.vue'
-import PricingAnalysisResult from './results/PricingAnalysisResult.vue'
-import ReviewSpyResult from './results/ReviewSpyResult.vue'
-import IntruderAlertResult from './results/IntruderAlertResult.vue'
-import BuyBoxAnalysisResult from './results/BuyBoxAnalysisResult.vue'
-import CompareGridResult from './results/CompareGridResult.vue'
 import AIGCMediaResult from './results/AIGCMediaResult.vue'
+
+// 思考过程轨迹（第 210 轮）：流光中展开、出结果后折叠可回看
+import ThinkingTrace from './ThinkingTrace.vue'
 
 // 店秘书「当前计划」条（第 155 轮 · 批 C3 的前端消费端）
 import PlanChecklist from './PlanChecklist.vue'
@@ -532,8 +412,24 @@ const intelDays = ref(30)
 // 2) 模板 ref —— 只在模板里声明
 const messageListRef = ref<HTMLElement>()
 const mainContentRef = ref<HTMLElement>()
-// 3) inject 注入值 —— 只能在组件 setup 中 inject（选品分析师评估主角）
+// 3) inject 注入值 —— 只能在组件 setup 中 inject
+//    ① 选品分析师的评估主角（`workingCandidate`）—— 第 251 轮接进「作用对象」
+//    ② Listing / AIGC 的工作商品（`workingProduct`）—— ★ 第 257 轮接进同一条通道
+//    ③ 智能客服当前处置的差评（`workingReview`）—— ★ 第 298 轮接进同一条通道
+//    ★ 三者的**默认值口径一致**（`ref(null)` = 没有对象），别让其中一个退化成
+//      `undefined`：`undefined` 在 `contextTarget` 里表示"本 Agent 不参与该机制"
+//      （见 `chat/types.ts` 的三态表），混用会让"工作区没 provide"伪装成"不参与"。
 const loadedCandidate = inject<Ref<any>>('workingCandidate', ref(null))
+const workingProduct = inject<Ref<any>>('workingProduct', ref(null))
+const workingReview = inject<Ref<any>>('workingReview', ref(null))
+// ★ 第 298 轮（老板 bug2）：与上面三个 `working*` **成对**的写口 ——
+//   `Workspace.vue` 的 `provide` 一直是成对给出的（`set*` / `clear*`），
+//   此前只打通了 `set*` ⇒ **对象载得进来、出不去**（老板原话：
+//   「上下文被某条处置差评填入后，你没有给取消按钮」）。
+//   默认 noop：`provide` 缺位时"点了没反应"，而不是抛错。
+const clearWorkingCandidate = inject<() => void>('clearWorkingCandidate', () => {})
+const clearWorkingProduct = inject<() => void>('clearWorkingProduct', () => {})
+const clearWorkingReview = inject<() => void>('clearWorkingReview', () => {})
 
 // ===== 会话结论卡 + 最近结果：对话结果的「卡片承托」与「找回入口」=====
 // 结论卡渲染在消息流内（与工具结果卡同区）；最近结果按 agentId 独立存活，
@@ -556,6 +452,50 @@ function clearRecentResult() {
   recentExpanded.value = false
 }
 
+/**
+ * 跳转 Skill 仓库（第 274 轮）：快捷卡片栏左侧的管理入口。
+ *
+ * ★ 走 `view-navigate` 事件，不在这里拼 `currentView`：视图切换、侧栏高亮、
+ *   关闭右面板，Workspace 已有一套唯一实现（`handleKnowledgeNavigate`），
+ *   这里再写一遍就是「同一切换两份实现」—— 加第三个视图时必然漏一处。
+ */
+function goSkillManager() {
+  window.dispatchEvent(new CustomEvent('view-navigate', { detail: { view: 'skills' } }))
+}
+
+/**
+ * 对话工具栏（查找 / 历史提问）的**跳转落点**（第 283 轮）。
+ *
+ * ★ 为什么落点只在这里：工具栏住在 Workspace 的顶栏，但它要跳的**消息 DOM**只在本组件
+ *   —— 滚动容器是 `.main-content`（本文件里唯一的滚动容器），而下标与
+ *   「工具结果 / 普通文本」两套渲染分支的对应关系也只有这里知道。让工具栏自己去
+ *   `document.querySelector`，它就得**复刻**这套下标口径 ⇒ 同一个下标两份实现，
+ *   将来加一种消息类型必然错位一处。
+ *
+ * ★ 下标取的是**消息数组下标**（`data-msg-index` 写在 v-for 的 wrapper 上），不是 DOM 序号：
+ *   两类消息在模板里是 `v-if / v-else` 两套分支，按 DOM 数会漏算或错位。
+ */
+function handleScrollToMessage(e: Event) {
+  const index = (e as CustomEvent).detail?.index
+  if (typeof index !== 'number') return
+  const root = messageListRef.value
+  if (!root) return
+  const el = root.querySelector<HTMLElement>(`[data-msg-index="${index}"]`)
+  // 找不到就什么都不做（不抛错、也不谎报成功）：工具栏那边已经把面板关掉了，
+  // 硬跳到一个不存在的位置只会让用户以为跳错了地方。
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.classList.add('msg-flash')
+  window.setTimeout(() => el.classList.remove('msg-flash'), 1800)
+}
+
+onMounted(() => {
+  window.addEventListener('chat-scroll-to-message', handleScrollToMessage as EventListener)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('chat-scroll-to-message', handleScrollToMessage as EventListener)
+})
+
 // 其余全部编排逻辑下沉到 composable，此处仅解构模板所需出口
 const {
   // 店秘书计划（第 155 轮）
@@ -563,6 +503,8 @@ const {
   // 状态
   messages,
   isLoading,
+  // 「生成中」只看活跃流 —— 首 token 到达后 isLoading 已是 false（见按钮处注释）
+  isStreaming,
   loadingTip,
   inputPlaceholder,
   // Agent 判定
@@ -571,36 +513,54 @@ const {
   isListingAgent,
   isReviewAgent,
   isAdAnalyst,
-  // 竞品监控动作条
-  intelChips,
+  // 技能卡动作条（第 189 轮）：卡片 = 技能（方法）；上下文条（参数）由 agentScope* 提供
+  skillCards,
+  activeSkillCard,
+  runSkillCard,
   periodOptions,
-  activeIntelChip,
-  runIntelChip,
-  // 选品分析动作条
-  candidateIntelChips,
-  runCandidateChip,
-  // 运营复盘动作条
-  REVIEW_ACTIONS,
-  activeReviewAction,
-  runReviewAction,
-  reviewScopeColor,
-  reviewScopeText,
-  // 广告分析动作条
-  AD_QUICK_ACTIONS,
-  activeAdAction,
-  runAdQuickAction,
+  agentScopeText,
+  agentScopeColor,
+  agentScopeLabel,
+  // 点名可见 chip（第 250 轮）：本轮生效的技能点名 + 用户撤销入口
+  pendingSkillCard,
+  dismissPendingSkill,
+  // 作用对象的取消入口（第 298 轮 · 老板 bug2）：上下文条上的 ×
+  scopeTargetLoaded,
+  clearScopeTarget,
   // 消息 / 输入 / 渲染
   removeToolResult,
   handleNavigateTo,
   renderMarkdown,
   handleKeyPress,
   handleSend,
+  // 「停止生成」（第 241 轮）
+  handleCancel,
 } = useChatOrchestrator({
   inputMessage,
   messageListRef,
   mainContentRef,
   intelDays,
   loadedCandidate,
+  // ★ 第 257 轮：Listing / AIGC 的工作商品 —— 对话链路与右栏工具此后看**同一个**对象
+  workingProduct,
+  // ★ 第 298 轮：客服的处置差评 —— 差评工作台「💬 在对话里处置这条」把对象送到这里
+  workingReview,
+  // ★ 第 298 轮（老板 bug2）：三个与 `set*` 成对的**取消写口**，供上下文条上的 × 用
+  clearWorkingCandidate,
+  clearWorkingProduct,
+  clearWorkingReview,
+})
+
+/**
+ * 本轮是否已经能看到思考过程（决定上面那个转圈要不要退场）。
+ *
+ * ★ 只认**最后一条**消息：轨迹写在「正在跑的那条」上。拿历史消息里的旧轨迹
+ *   来判断，会让转圈在该出现的时候不出现，而那一轮可能**压根没有工具调用**
+ *   ⇒ 用户面对零反馈。这里要问的正是「该出现的时候有没有出现」。
+ */
+const hasLiveTrace = computed(() => {
+  const last = messages.value[messages.value.length - 1]
+  return !!last?.thinkingSteps?.length
 })
 
 // AIGC 工具结果（静态素材 / 短视频脚本 / AI 视频）新进入消息流时，
@@ -625,44 +585,15 @@ watch(messages, (newMsgs, oldMsgs) => {
 // 两个入口的共同点是**不替用户做决定**：增强只补维度、不改原意，
 // 语音只做转写、不改字。所以它们都不自动发送，改完仍由用户按 Enter 决定。
 
-const enhancing = ref(false)
-
 /** 底部提示：收音中要让位给录音状态，否则用户不知道还在录 */
 const footerHint = computed(() =>
   speechState.listening ? '正在听… 说完点麦克风结束' : 'Enter 发送 · Shift+Enter 换行',
 )
 
-const enhanceTip = computed(() => {
-  if (enhancing.value) return '正在增强…'
-  if (!inputMessage.value.trim()) return '先写一句需求，再点这里增强'
-  return '增强提示词：补齐任务目标 / 约束条件 / 输出形式'
-})
-
 const speechTip = computed(() => {
   if (!speechState.supported) return speechUnsupportedReason.value
   return speechState.listening ? '结束录音' : '语音输入（说话转文字）'
 })
-
-async function handleEnhance() {
-  const draft = inputMessage.value.trim()
-  if (!draft || enhancing.value) return
-  enhancing.value = true
-  try {
-    const res = await enhancePrompt({ draft })
-    const data = res?.response
-    // 后端 LLM 不可用时显式给 degraded —— 此时**保持用户输入原样**，不覆盖
-    if (data?.degraded || !data?.enhanced) {
-      message.warning('提示词增强暂不可用，请稍后重试')
-      return
-    }
-    inputMessage.value = data.enhanced
-    message.success('已增强，可直接发送或继续修改')
-  } catch (e) {
-    message.warning('提示词增强暂不可用，请稍后重试')
-  } finally {
-    enhancing.value = false
-  }
-}
 
 function handleToggleSpeech() {
   if (!speechState.supported) {
@@ -834,25 +765,55 @@ watch(currentAgentId, () => {
   color: var(--text-disabled);
 }
 
-/* 消息项 */
+/* 消息项（第 212 轮：**对话区不再有头像**，对齐 WorkBuddy 的形态）。
+   ★ 左右归属改由 `justify-content` 表达，**不再用 `row-reverse`** ——
+     没有头像之后，`row-reverse` 会把用户气泡推到左边（读起来像 AI 说的），
+     而这个退化**零报错**、也没有任何测试会红。
+   ★ AI 回复**不带气泡**（无底色、占满宽度）：一是 WorkBuddy 的形态；
+     二是思考过程 / 结论卡这类结构化内容本来就需要横向空间。 */
 .message-item {
   display: flex;
-  gap: var(--space-12);
   margin-bottom: var(--space-20);
 }
 
 .message-item.user {
-  flex-direction: row-reverse;
+  justify-content: flex-end;
+}
+
+/* 从工具栏（查找 / 历史提问）跳过来时闪一下（第 283 轮）。
+   没有这个反馈，用户不知道「到底跳没跳到」—— 尤其目标消息本来就贴着视口边缘时，
+   滚动前后看起来几乎一样。 */
+.msg-flash {
+  border-radius: var(--radius-8);
+  animation: msg-flash 1.8s ease-out;
+}
+
+@keyframes msg-flash {
+  0% {
+    background: var(--bg-active-light);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg-flash {
+    animation: none;
+    background: var(--bg-active-light);
+  }
 }
 
 .message-content {
-  max-width: 70%;
-  padding: var(--space-12) var(--space-16);
-  border-radius: var(--radius-12);
-  background-color: var(--bg-hover-light);
+  max-width: 100%;
+  min-width: 0;
 }
 
+/* 用户消息：右对齐的浅色气泡（保留气泡的只有这一侧） */
 .message-item.user .message-content {
+  max-width: 76%;
+  padding: var(--space-10) var(--space-14);
+  border-radius: var(--radius-12);
   background-color: var(--bg-active-light);
 }
 
@@ -909,12 +870,53 @@ watch(currentAgentId, () => {
 }
 .iab-scope { margin: 0; font-size: var(--font-size-11); }
 .iab-scope-float { margin: 0; font-size: var(--font-size-11); }
+/* ★ 第 298 轮（老板 bug2）：作用对象的取消按钮。视觉与左邻的「本次对话使用 ×」
+   （`.psc-close`）同族 —— 两处都是"还在生效 -> 可撤销"，样式漂移会让其中一个
+   看起来像装饰。颜色跟随所在 a-tag 的色系（继承 currentColor），
+   不写死主色（tag 的底色是 `agentScopeColor` 给的，写死会撞色）。 */
+.iab-scope-clear {
+  flex: none;
+  margin-left: var(--space-4);
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: inherit;
+  font-size: var(--font-size-11);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.iab-scope-clear:hover { opacity: 1; text-decoration: underline; }
 .iab-controls {
   display: flex;
   align-items: center;
   gap: var(--space-16);
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+/* 管理技能入口（第 274 轮）：快捷卡片栏最左侧，跳转 Skill 仓库 */
+.iab-manage-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-8);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--font-size-14);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  padding: 0;
+  line-height: 1;
+}
+.iab-manage-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--bg-active-light);
 }
 .iab-period { display: flex; align-items: center; gap: var(--space-6); }
 .iab-period-label { font-size: var(--font-size-12); color: var(--text-tertiary); white-space: nowrap; }
@@ -965,6 +967,43 @@ watch(currentAgentId, () => {
   background-color: var(--bg-elevated);
 }
 
+/* 「本次对话使用：X ×」chip（第 250 轮）—— 点名可见化 + 显式撤销入口 */
+.pending-skill-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: var(--space-8);
+  padding: var(--space-4) var(--space-10);
+  border-radius: var(--radius-15);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-active-light);
+  color: var(--text-secondary);
+  font-size: var(--font-size-12);
+}
+.psc-icon { line-height: 1; font-size: var(--font-size-13); }
+.psc-label { color: var(--text-tertiary); white-space: nowrap; }
+.psc-title {
+  color: var(--text-primary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.psc-close {
+  flex-shrink: 0;
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-14);
+  line-height: 1;
+  cursor: pointer;
+}
+.psc-close:hover { color: var(--primary); background: var(--bg-elevated); }
+
 .input-card {
   background-color: var(--bg-elevated);
   border: 1px solid var(--border-base);
@@ -1002,7 +1041,7 @@ watch(currentAgentId, () => {
 
 .input-hint {
   font-size: var(--font-size-11);
-  color: var(--text-disabled);
+  color: var(--text-tertiary);
   user-select: none;
 }
 
@@ -1068,13 +1107,21 @@ watch(currentAgentId, () => {
   }
 }
 
-/* 星芒图标：路径不填色，跟随 button 的 color */
-.sparkle-icon {
-  fill: currentColor;
-}
 
 /* 发送按钮由 antd 提供配色（主色底 + 算法决定的前景色），这里只协调布局 */
 .input-send-btn {
   flex: none;
+}
+
+/* 「停止生成」（第 241 轮）：与发送按钮同位置同尺寸，用 antd 的 default 变体
+   （不指定 type ⇒ 底色/边框来自 default token，深浅主题自动跟随，不写死颜色）。
+   hover 转 danger 色，让"这是一个中断操作"一眼可辨，而不是又一个普通按钮。 */
+.input-send-btn.input-stop-btn {
+  color: var(--text-secondary);
+}
+
+.input-send-btn.input-stop-btn:hover {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 </style>

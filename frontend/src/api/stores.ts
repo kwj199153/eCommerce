@@ -94,7 +94,24 @@ export interface Store {
   fee_template_id: string | null
   discount_template_id: string
   is_active: boolean
+  /**
+   * 库里那一组凭据**是否已通过平台校验**。
+   *
+   * ★★ 第 318 轮：这个字段此前**永远读不到** —— 后端 `Store.is_connected` 是普通
+   *    `@property`，而 pydantic v2 不会把普通 property 序列化进 `model_dump()`
+   *    ⇒ JSON 里根本没有这个键 ⇒ 前端恒 `undefined` ⇒ 状态标签恒显示「未连接」。
+   *    后端已改为 `@computed_field`（见 `models/store.py`）。
+   *
+   * ⚠️ 它与 `has_credentials` 回答的是**两个不同的问题**，不能互相替代：
+   *   - `is_connected`    = 凭据已验证通过（绿灯）
+   *   - `has_credentials` = 库里有凭据，但**可能没验过**（网络不通 / 平台未接入校验）
+   *   只读前者 ⇒「已配置未验证」被显示成「未连接」，用户以为白填了；
+   *   只读后者 ⇒ 没验过的被显示成「已连接」，正是本轮要消灭的**空承诺**。
+   *   ⇒ 状态展示请走 `shopConnectState()`（本文件），别在组件里各拼一套。
+   */
   is_connected: boolean
+  /** 库里是否已存有加密凭据（**不代表**验证通过） */
+  has_credentials: boolean
   status: string
   connection_status: string
   /**
@@ -191,21 +208,147 @@ export async function deleteShop(shopId: string): Promise<void> {
   return del(`/stores/${shopId}`)
 }
 
+// ====== 平台连接（★ 第 318 轮：从「后端有个端点」变成「真的能用」）======
+//
+// ★★ 这一段的类型全部**由后端下发**驱动：前端不认识 `amazon` / `shopee`，
+//    只认识 `PlatformSchema` 这个结构。加平台 = 后端加几条声明，前端零改动。
+
+/** 输入控件类型。★ 刻意只有三种：多一种就多一个前端分支，而「每个平台写一套」正是从分支长出来的 */
+export type CredentialFieldType = 'text' | 'password' | 'select'
+
+/** 一个凭据字段的规格 */
+export interface CredentialField {
+  key: string
+  label: string
+  type: CredentialFieldType
+  required: boolean
+  placeholder: string
+  help: string
+  /** 敏感字段：回显一律掩码，永不回明文 */
+  secret: boolean
+  options: Array<{ value: string; label: string }>
+  default: string
+}
+
+/** 一个平台的连接表单规格 */
+export interface PlatformSchema {
+  platform: string
+  display_name: string
+  docs_url: string
+  fields: CredentialField[]
+  notes: string[]
+  /** 本平台是否已接入自动校验；false ⇒ 只会存凭据，不会标记「已验证」 */
+  verify_supported: boolean
+}
+
 /**
- * 连接平台 API
+ * 验证结论（★ 刻意是四态，不是布尔）。
+ *
+ * `invalid`（凭据被平台拒绝）与 `unreachable`（超时/DNS/5xx，凭据好坏**未知**）
+ * 必须分开 —— 合成一个 false 时，网络抖一下就会把用户正确的凭据判成错的，
+ * 用户会去反复改一个本来没错的东西。
+ */
+export type VerifyStatus = 'ok' | 'invalid' | 'unreachable' | 'unsupported'
+
+export interface VerifyCheck {
+  name: string
+  ok: boolean
+  message: string
+}
+
+/**
+ * 对外形态的验证报告。
+ *
+ * ★ 与后端 `VerifyResult` 的区别：这里**没有** `refreshed` ——
+ *   那里面装的是刚换到的新令牌明文，绝不能进响应体。
+ */
+export interface VerifyReport {
+  status: VerifyStatus
+  message: string
+  checks: VerifyCheck[]
+  detail: Record<string, any>
+  ok: boolean
+}
+
+/** `GET /stores/connect/schema`（全平台规格，弹窗打开时取一次） */
+export async function fetchConnectSchemas(): Promise<PlatformSchema[]> {
+  const r = await get<{ schemas: PlatformSchema[] }>('/stores/connect/schema')
+  return r?.schemas ?? []
+}
+
+/** 单店连接规格 + **掩码**回显（用户重开弹窗时知道自己配过什么） */
+export interface StoreConnectSpec {
+  spec: PlatformSchema
+  configured: Record<string, boolean>
+  /** 非敏感字段的原值 + 敏感字段的 `••••••`，**不含任何明文敏感值** */
+  values: Record<string, any>
+  any_configured: boolean
+  connection_status: string
+  is_connected: boolean
+  has_credentials: boolean
+}
+
+export async function fetchStoreConnectSpec(shopId: string): Promise<StoreConnectSpec> {
+  return get(`/stores/${shopId}/connect/schema`)
+}
+
+/** 连接结果 */
+export interface StoreConnectResult {
+  store_id: string
+  platform: string
+  family: string
+  message: string
+  verify: VerifyReport
+  connection_status: string
+  is_connected: boolean
+  has_credentials: boolean
+}
+
+/**
+ * 连接平台：**后端会真去平台验一次**，通过后才置「已连接」。
+ *
+ * ★ 请求体是**扁平的凭据 dict**（不是 `{credentials: {...}}`）—— 与后端契约一致。
+ *
+ * ★ 失败的三种形态（前端必须分开处理，别一律弹「连接失败」）：
+ *   - `400` + `detail` 是**对象** `{message, status, checks}` ⇒ 凭据被平台拒绝，
+ *     展开 `checks` 告诉用户是**哪一步**断了（换 token 还是签名）；
+ *   - `400` + `detail` 是**字符串** ⇒ 输入问题（缺必填字段，文案已带中文字段名）；
+ *   - `503` ⇒ 服务端未配加密密钥（原因可读，不是用户的问题）。
  */
 export async function connectPlatform(
   shopId: string,
   credentials?: Record<string, any>,
-): Promise<void> {
-  return post(`/stores/${shopId}/connect`, credentials)
+): Promise<StoreConnectResult> {
+  return post<StoreConnectResult>(`/stores/${shopId}/connect`, credentials)
 }
 
 /**
- * 断开平台 API
+ * 断开平台 API（后端会**真的清除**已存的加密凭据）
  */
 export async function disconnectPlatform(shopId: string): Promise<void> {
   return post(`/stores/${shopId}/disconnect`)
+}
+
+/** 连接状态的展示档位 */
+export type ShopConnectState = 'connected' | 'configured' | 'disconnected'
+
+/**
+ * 把「两个布尔」收敛成**一个三态** —— 界面文案的唯一来源。
+ *
+ * ★ 为什么必须有这个函数（而不是在组件里各写一个三元表达式）：
+ *   同一个判定写在两处，改一处漏一处时，两个界面会对同一家店显示不同的状态，
+ *   而两边都不会报错。
+ *
+ * `connected`    已通过平台校验 → 绿灯「已连接」
+ * `configured`   有凭据但**未验证**（网络不通 / 平台未接入校验）→ 黄灯「已配置（未验证）」
+ * `disconnected` 库里没有凭据 → 灰灯「未连接」
+ */
+export function shopConnectState(
+  shop: Pick<Store, 'is_connected' | 'has_credentials'>,
+): ShopConnectState {
+  if (shop?.is_connected) return 'connected'
+  if (shop?.has_credentials) return 'configured'
+  return 'disconnected'
 }
 
 /**

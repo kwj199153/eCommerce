@@ -2,7 +2,7 @@
   <a-modal
     v-model:open="visible"
     title="归档到营销素材库"
-    width="720px"
+    :width="WINDOW_W.xxl"
     okText="确认归档"
     cancelText="取消"
     :okLoading="submitting"
@@ -110,6 +110,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { ref, reactive, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { CheckOutlined, CheckCircleFilled, PlusOutlined } from '@ant-design/icons-vue'

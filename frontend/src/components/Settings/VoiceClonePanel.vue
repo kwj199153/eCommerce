@@ -68,6 +68,23 @@
         :message="lastError"
       />
 
+      <!-- ★★ 「删除音色」置于**面板最上**（第 322 轮老板口径）：
+           业务顺序是「先删旧音色 → 才能创建新音色」，所以删除入口必须出现在
+           创建流程**之前**。改前它挂在步骤 3（创建音色）卡片的最下方，
+           而那张卡自己的提示语写着「请先删除」—— 按提示找入口得先滚过整张卡。
+           ★ 仍保留 `.vc-danger-row` 类名：既有安全探针
+             `scripts/cdp-vc-step-layout-probe.mjs` 用它当作
+             「确认是带二次确认的新版本」的标记，没看到它就拒绝点击（防误删真音色）。 -->
+      <div v-if="record.exists" class="vc-danger-row">
+        <a-popconfirm
+          title="删除后远端配额一并释放，需重新录制样本并克隆"
+          @confirm="handleDelete"
+        >
+          <a-button danger :loading="deleting">删除音色</a-button>
+        </a-popconfirm>
+        <span class="vc-danger-hint">当前店铺只能有一个音色，删除后才能创建新的</span>
+      </div>
+
       <!-- ============ 步骤 1：录制 / 上传样本 ============ -->
       <a-card :bordered="false" class="vc-card">
         <template #title>
@@ -201,18 +218,9 @@
           {{ enrollBlockReason }}
         </div>
 
-        <!-- ★ 「删除音色」归步骤 3（音色生命周期管理），不归步骤 4（试听）。
-             ★★ 硬证据：上面 enrollBlockReason 的文案就是「已有可用音色…请先删除」——
-                按提示去找删除入口，却在上一步的另一张卡片里。
-             与主操作分行 + 二次确认：紧邻 primary 的不可逆操作（连带释放远端配额）误点代价高。 -->
-        <div v-if="record.exists" class="vc-danger-row">
-          <a-popconfirm
-            title="删除后远端配额一并释放，需重新录制样本并克隆"
-            @confirm="handleDelete"
-          >
-            <a-button danger :loading="deleting">删除音色</a-button>
-          </a-popconfirm>
-        </div>
+        <!-- ★ 「删除音色」已上移到**面板最上方**（第 322 轮）：业务顺序是先删后建，
+             且 enrollBlockReason 那句「请先删除」必须指向一个够近的入口。
+             二次确认仍在（不可逆 + 连带释放远端配额）。 -->
 
         <a-alert
           v-if="lastError && errorScope === 'enroll'"
@@ -247,7 +255,7 @@
             :disabled="!record.ready"
             @click="handlePreview"
           >
-            <SoundOutlined /> 生成试听
+            <SoundOutlined /> 试听
           </a-button>
         </a-space>
 
@@ -256,7 +264,9 @@
         </div>
 
         <div v-if="previewUrl" class="vc-preview">
-          <audio :src="previewUrl" controls class="vc-audio" />
+          <!-- ★ ref 用于「生成完直接出声」：老板口径是不要让人生成后再点一次播放。
+               保留 controls —— 重播 / 拖进度仍然要用它。 -->
+          <audio ref="previewAudioEl" :src="previewUrl" controls class="vc-audio" />
           <div class="vc-hint">{{ previewHint }}</div>
         </div>
 
@@ -274,7 +284,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { AudioOutlined, InboxOutlined, SoundOutlined, StopOutlined } from '@ant-design/icons-vue'
 import {
@@ -319,6 +329,12 @@ const authorized = ref(false)
 const targetModel = ref('')
 const previewText = ref('')
 const previewUrl = ref('')
+/**
+ * ★ 试听播放器的真实 DOM 引用。生成完**直接 play()**，不再要求用户
+ *   在生成之后再点一次播放键（第 322 轮老板口径：「生成试听改为试听，
+ *   不要让用户生成试听后再点一次播放」）。
+ */
+const previewAudioEl = ref<HTMLAudioElement | null>(null)
 const previewHint = ref('')
 const lastError = ref('')
 /**
@@ -383,7 +399,8 @@ const enrollBlockReason = computed(() => {
   }
   if (!sample.value) return '请先上传音频样本。'
   if (!authorized.value) return '请先勾选授权确认。'
-  if (record.value.status === 'ready') return '当前店铺已有可用音色（单店铺单音色），请先删除。'
+  if (record.value.status === 'ready')
+    return '当前店铺已有可用音色（单店铺单音色），请先在页面顶部删除。'
   return ''
 })
 
@@ -591,10 +608,36 @@ async function handlePreview(): Promise<void> {
     previewUrl.value = r.audio_url
     previewHint.value = r.expires_hint || ''
     previewText.value = r.text
+    await autoplayPreview()
   } catch (e: any) {
     setError('preview', e?.response?.data?.detail || e?.message || '试听合成失败')
   } finally {
     previewing.value = false
+  }
+}
+
+/**
+ * 合成完**直接出声**（第 322 轮老板口径：不要再点一次播放）。
+ *
+ * ★ 只负责省掉「再点一次」：`<audio controls>` 原样保留，重播/拖进度照旧。
+ * ★ 不静默失败：浏览器自动播放策略若拒绝，如实告诉用户去点播放键 ——
+ *   本场景由点击触发、处于粘性用户激活期，正常都会放行，真被拦必须能看见。
+ */
+async function autoplayPreview(): Promise<void> {
+  await nextTick()
+  const el = previewAudioEl.value
+  if (!el) return
+  try {
+    // 同一 URL 重播时不会重新加载，需手动回到起点；元数据尚未就绪时会抛，忽略即可
+    el.currentTime = 0
+  } catch {
+    /* 忽略：play() 会从头开始 */
+  }
+  try {
+    await el.play()
+  } catch (err) {
+    message.warning('浏览器拦截了自动播放，请点播放器上的播放键')
+    console.warn('[voice-clone] 试听自动播放被拒：', err)
   }
 }
 
@@ -658,8 +701,8 @@ onMounted(async () => {
 .vc-card {
   margin-bottom: 16px;
   background: var(--bg-elevated, transparent);
-  border: 1px solid var(--border-color, #f0f0f0);
-  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-8);
 }
 .vc-step {
   display: inline-flex;
@@ -686,8 +729,17 @@ onMounted(async () => {
   gap: 12px;
 }
 .vc-danger-row {
-  /* 与主操作分行摆放：不可逆操作不紧贴 primary，降低误点概率 */
-  margin-top: 12px;
+  /* ★ 位置 = 面板最上方（业务顺序：先删旧音色才能建新的）。
+     改前它在步骤 3 卡内、靠 `margin-top` 与 primary 分行；现在上方是状态条
+     （`.vc-alert` 自带 margin-bottom: 16px），所以只留向下的间距。 */
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.vc-danger-hint {
+  font-size: 12px;
+  color: var(--text-tertiary, #999);
 }
 .vc-audio {
   /* ★ 不要写 `flex: 1`（等价 flex-basis:0%）：本 class 被两个容器复用 ——
@@ -703,8 +755,8 @@ onMounted(async () => {
 .vc-agreement {
   padding: 10px 12px;
   margin-bottom: 12px;
-  border-radius: var(--radius-sm, 6px);
-  background: var(--bg-layout, #fafafa);
+  border-radius: var(--radius-6);
+  background: var(--bg-hover-light);
   border-left: 3px solid var(--warning, #faad14);
   font-size: 12px;
   line-height: 1.7;
@@ -737,9 +789,9 @@ onMounted(async () => {
 .vc-rec {
   margin-bottom: 16px;
   padding: 12px 14px;
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg-layout, #fafafa);
-  border: 1px solid var(--border-color, #f0f0f0);
+  border-radius: var(--radius-8);
+  background: var(--bg-hover-light);
+  border: 1px solid var(--border-base);
 }
 .vc-rec-label {
   font-size: 12px;
@@ -757,7 +809,7 @@ onMounted(async () => {
 .vc-rec-sentence.is-current {
   color: var(--text-primary, #222);
   font-weight: 500;
-  background: var(--primary-bg, rgba(22, 119, 255, 0.12));
+  background: var(--bg-active-light);
   border-radius: 3px;
   padding: 1px 3px;
 }
@@ -775,7 +827,7 @@ onMounted(async () => {
   min-width: 0;
   height: 6px;
   border-radius: 99px;
-  background: var(--border-color, #f0f0f0);
+  background: var(--border-base);
   overflow: hidden;
 }
 .vc-rec-meter-fill {

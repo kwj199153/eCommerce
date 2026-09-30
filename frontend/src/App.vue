@@ -1,12 +1,17 @@
 <template>
   <a-config-provider :locale="zhCN" :theme="themeStore.antdTheme">
     <router-view />
+    <!-- 新手引导：全局**只挂一次**，且只挂在应用根上。
+         放在这里而不是某个视图里，是因为它讲的是整个工作台，
+         换路由也不该被卸载（一半操作跨视图：讲完对话再讲资料库，中间会切一次 view）。 -->
+    <TourHost />
   </a-config-provider>
 </template>
 
 <script setup lang="ts">
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import { useThemeStore } from '@/stores/theme'
+import TourHost from '@/components/Tour/TourHost.vue'
 
 const themeStore = useThemeStore()
 </script>

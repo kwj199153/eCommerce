@@ -9,7 +9,13 @@ import type { ThemeMode } from '@/theme/presets'
 export interface SecretaryAction {
   action: 'switch_agent' | 'navigate' | 'select_product' | 'open_drawer' | 'account_menu' | 'handoff' | 'set_theme' | 'switch_shop'
   agentId?: string
-  /** switch_agent 专属：老板原话（路由带参）。非空时子 Agent 切换后自动续跑 */
+  /**
+   * 老板**原话**，两个动作共用：
+   * - `switch_agent`：路由带参 —— 非空时子 Agent 切换后**自动续跑**；
+   * - `handoff`：原话随交接一并带下去（后端 `_handoff_to_agent` 的 query 参数），
+   *   前端回显到子 Agent 对话区。handoff 只切页、**不续跑**，原话不落地就只剩一句
+   *   概括 —— 链接 / ASIN 这类只在原话里的信息会永久丢失（实测事故）。
+   */
   query?: string
   view?: string
   /** select_product 专属：选中的产品（id 用于前端从 productLibrary 定位完整对象） */
@@ -86,6 +92,22 @@ export interface SecretaryResponse {
    */
   plan?: PlanSummary | null
 }
+
+/**
+ * 流式 `meta` 事件的载荷（`POST /orchestrator/chat/stream`）。
+ *
+ * ★ 它与其余 5 家流式 Agent 的 meta **形状不同**：那 5 家发的是
+ *   `{ display_type, data }` 信封，而店秘书的 meta 就是**整份 `/chat` 响应对象**
+ *   （外加 `session_id`）—— 后端 `modules/secretary/agent.py::_meta_event`
+ *   把整份 `result` 原样下发，不逐字段挑（挑就会漏，而漏一个**不报错**，
+ *   只是前端少一种能力：少个动作 / 计划不落库 / 会话不持久化）。
+ *
+ * 所以这里用 `&` 把它声明成 **`SecretaryResponse` + `session_id`**，
+ * 而不是再造一个信封类型 —— 那会变成同一份契约的第二个描述点。
+ * 后端那侧的形状由 `backend/tests/test_secretary_stream.py` 钉住
+ * （断言 meta 里有 route_mode / actions / session_id，且短路路径**不带** plan 键）。
+ */
+export type SecretaryMeta = SecretaryResponse & { session_id?: string | null }
 
 export interface HistoryMessage {
   role: 'user' | 'assistant'

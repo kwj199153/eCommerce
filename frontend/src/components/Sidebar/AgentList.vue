@@ -1,7 +1,8 @@
 <template>
-  <div class="agent-list">
-    <div class="section-title">Agent 群</div>
+  <div class="agent-list" data-tour="tour-agent-list">
+    <div class="sidebar-section-title">Agent 群</div>
     <a-menu
+      class="sidebar-nav-menu"
       mode="inline"
       :selectedKeys="[currentAgentId]"
       @click="handleSelectAgent"
@@ -57,26 +58,16 @@ const handleSelectAgent = ({ key }: { key: string }) => {
 </script>
 
 <style scoped>
+/* ★ 第 260 轮：分组标题与菜单项的**行高 / 间距**不再在这里定义 ——
+   唯一真源是 `src/styles/sidebar-nav.css`
+   （`.sidebar-section-title` 与 `.sidebar-nav-menu`）。
+   原先这里的两条 `:deep()` 规则与 KnowledgeBase.vue 里那份**逐字重复**，
+   而两份容器的纵向 padding 叠加后，让三个分组标题的上间距实测为 8 / 18 / 2
+   —— 看起来就是「三个标题行高度不一致」。
+   容器纵向 padding 清零：分组之间的留白改由标题自身的 margin-top 统一决定。
+   结构由 scripts/check-sidebar-layout.cjs 钉住，几何由
+   scripts/cdp-sidebar-layout-probe.mjs 在真实浏览器里钉住。 */
 .agent-list {
-  padding: var(--space-8) 0;
-}
-
-.section-title {
-  padding: var(--space-12) var(--space-16) var(--space-8);
-  font-size: var(--font-size-13);
-  font-weight: 500;
-  color: var(--text-tertiary);
-}
-
-:deep(.ant-menu-item) {
-  height: 40px;
-  line-height: 40px;
-  margin: var(--space-2) var(--space-8);
-  border-radius: var(--radius-6);
-}
-
-:deep(.ant-menu-item .anticon) {
-  font-size: var(--font-size-16);
-  margin-right: var(--space-10);
+  padding: 0;
 }
 </style>

@@ -28,10 +28,33 @@
 
     <!-- ====== AIGC 大屏模式：顶部工具 Tab 栏（对齐复盘师大屏 rv-tabs） ======
          对话模式由 Workspace 顶部工具栏 6 个工具按钮承担切换；
-         大屏模式下顶部工具按钮已隐藏，改由这里的 Tab 栏切换三个工具。 -->
-    <div v-if="isAigcAgent && isDataMode" class="aigc-tool-tabs">
+         大屏模式下顶部工具按钮已隐藏，改由这里的 Tab 栏切换三个工具。
+         ★ 显示条件 = Workspace 注入的 `isWideBoardDataMode`（整页大屏布局**真的生效**），
+           不是 `reviewMode === 'data'`（那只是"用户偏好"）。两者不一致时会出现
+           「中间退回对话模式、右栏却还挂着这排 Tab」的错位 —— 第 313 轮故障。 -->
+    <div v-if="isAigcAgent && isWideBoardDataMode" class="aigc-tool-tabs">
       <button
         v-for="tab in aigcTabs"
+        :key="tab.id"
+        class="aigc-tool-tab"
+        :class="{ active: currentTool?.id === tab.id }"
+        @click="setSelectedTool(tab)"
+      >
+        <span class="tab-icon">{{ tab.icon }}</span>
+        <span>{{ tab.name }}</span>
+      </button>
+    </div>
+
+    <!-- ====== 选品分析师大屏模式：顶部工具 Tab 栏（第 312 轮对齐 AIGC 范式）======
+         选品分析师是工具级双模式（选中任一选品工具才显示 mode-switch），
+         大屏下三个工具（选品大盘 / 蓝海挖掘 / 利润测算）复用同一 Tab 栏切换。
+         ★ 显示条件同 AIGC：Workspace 注入的 `isWideBoardDataMode`。
+           第 313 轮故障原样：这里曾只认 `reviewMode === 'data'`，而 Workspace 那边
+           的整页大屏判据漏了蓝海/利润 ⇒ 点这两个工具时「布局退回对话模式、
+           右栏却还挂着这排 Tab」（老板 09-29 截图）。 -->
+    <div v-if="isProductResearchAgent && isWideBoardDataMode" class="aigc-tool-tabs">
+      <button
+        v-for="tab in productResearchTabs"
         :key="tab.id"
         class="aigc-tool-tab"
         :class="{ active: currentTool?.id === tab.id }"
@@ -112,6 +135,11 @@
         @startAnalysis="handleStartAnalysis"
       />
 
+      <!-- ★ 选品市场洞察大盘云图（第 305 轮）：选品分析师功能栏「选品大盘」落点。
+           工具级双模式（对话/大屏），面板直调 GET /product-research/market-insight/treemap，
+           演示账号看 mock 快照（degraded=true），真实账号空态 fail-closed。 -->
+      <MarketInsightConfig v-else-if="currentTool.id === 'market-insight'" />
+
       <!-- ====== Listing 优化师（按工作流顺序） ====== -->
 
       <!-- 关键词挖掘配置 -->
@@ -154,13 +182,21 @@
         @startAnalysis="handleStartAnalysis"
       />
 
-      <!-- ====== 广告分析师：统一大面板，6 个工具共用（:key 强制切换时重建） ====== -->
+      <!-- ====== 广告分析师：统一大面板，4 个工具共用（:key 强制切换时重建） ====== -->
+      <!-- ★ 第 316 轮：`budget-alloc` / `anomaly-detect` 两张卡已退役，白名单同步收窄 -->
       <AdDashboardConfig
-        v-else-if="['ad-diagnosis','keyword-report','bid-suggest','competitor-ad','budget-alloc','anomaly-detect'].includes(currentTool.id)"
+        v-else-if="['ad-diagnosis','keyword-report','bid-suggest','competitor-ad'].includes(currentTool.id)"
         :key="'ad-' + currentTool.id"
         :current-tool-id="currentTool.id"
         @startAnalysis="handleStartAnalysis"
       />
+
+      <!-- ★ 差评工作台（第 289 轮 P1 / 第 291 轮收敛）：客服 Agent 功能栏
+           「差评台账」按钮的落点，内含 近期差评 / 未关联产品 / 处置台账 三视图。
+           ★★ 它是 approve / reject / issue 这三个**不可逆人审动作的唯一出口**
+           —— 资料库那个同名入口（DispositionLibrary）已在第 291 轮删除。
+           再加第二个带这些按钮的面板前，先读 ReviewDeskConfig.vue 头部的说明。 -->
+      <ReviewDeskConfig v-else-if="currentTool.id === 'review-desk'" />
 
       <!-- 订单追踪配置 -->
       <OrderTrackConfig
@@ -168,66 +204,11 @@
         @startAnalysis="handleStartAnalysis"
       />
 
-      <!-- 创建工单配置 -->
-      <TicketCreateConfig
-        v-else-if="currentTool.id === 'ticket-create'"
-        @startAnalysis="handleStartAnalysis"
-      />
-
-      <!-- 竞品监控员：智能推理（读监控池，问答/周报/异动/策略共用） -->
-      <IntelAnalysisConfig
-        v-else-if="['intel-chat', 'intel-weekly', 'intel-anomaly', 'intel-strategy'].includes(currentTool.id)"
-        :key="'intel-' + currentTool.id"
-        :current-tool-id="currentTool.id"
-        @startAnalysis="handleStartAnalysis"
-      />
-
-      <!-- 监控仪表盘：与大屏是同一件事，落点直接给大屏（原表单已被大屏覆盖） -->
-      <IntelBoardConfig
-        v-else-if="currentTool.id === 'monitor-dashboard'"
-        :key="'intel-board-' + currentTool.id"
-        :current-tool-id="currentTool.id"
-      />
-
-      <!-- 价格追踪配置 -->
-      <PriceTrackConfig
-        v-else-if="currentTool.id === 'price-track'"
-        @startAnalysis="handleStartAnalysis"
-      />
-
-      <!-- 市场份额配置 -->
-      <MarketShareConfig
-        v-else-if="currentTool.id === 'market-share'"
-        @startAnalysis="handleStartAnalysis"
-      />
-
-      <!-- 定价策略配置 -->
-      <PricingAnalysisConfig
-        v-else-if="currentTool.id === 'pricing-analysis'"
-        @startAnalysis="handleStartAnalysis"
-      />
-
-      <!-- 入侵者警报配置 -->
-      <IntruderAlertConfig
-        v-else-if="currentTool.id === 'intruder-alert'"
-        @startAnalysis="handleStartAnalysis"
-      />
-
-      <!-- Buy Box 分析配置 -->
-      <BuyBoxAnalysisConfig
-        v-else-if="currentTool.id === 'buy-box-analysis'"
-        @startAnalysis="handleStartAnalysis"
-      />
-
-      <!-- 多维对比配置 -->
-      <CompareGridConfig
-        v-else-if="currentTool.id === 'compare-grid'"
-        @startAnalysis="handleStartAnalysis"
-      />
-
       <!-- ====== AIGC 媒体生成器（3 工具各自独立配置面板） ======
            大屏/对话切换走 Workspace 顶栏 mode-switch（reviewMode），
-           三个 config 通过 inject('reviewMode') 读 isDataMode 渲染「预览窗口 / 表单」。 -->
+           三个 config 通过 inject('reviewMode') 自算「是否 data」渲染「预览窗口 / 表单」。
+           （config 层自算点与 `hasWideBoard` 的等价性说明，见 Workspace 里
+            `isWideBoardDataMode` 的注释 —— 别在这里再展开第二份。） -->
       <StaticAssetConfig
         v-else-if="currentTool.id === 'static-asset-gen'"
         @startAnalysis="handleStartAnalysis"
@@ -241,9 +222,9 @@
         @startAnalysis="handleStartAnalysis"
       />
 
-      <!-- ====== 运营复盘师（统一大面板，7个工具共用，:key 强制切换时重建） ====== -->
+      <!-- ====== 运营复盘师（统一大面板，5个工具共用，:key 强制切换时重建） ====== -->
       <ReviewConfig
-        v-else-if="['weekly-report','monthly-review','ad-review','product-performance','inventory-health','profit-audit','action-plan'].includes(currentTool.id)"
+        v-else-if="['weekly-report','monthly-review','product-performance','inventory-health','profit-audit'].includes(currentTool.id)"
         :key="'review-' + currentTool.id"
         :current-tool-id="currentTool.id"
         @startAnalysis="handleStartAnalysis"
@@ -260,7 +241,7 @@
 </template>
 
 <script setup lang="ts">
-import { inject, provide, computed, ref, type Ref, onMounted, onUnmounted, watch } from 'vue'
+import { inject, provide, computed, ref, type Ref, onMounted, onUnmounted } from 'vue'
 import {
   LeftOutlined,
   RightOutlined,
@@ -279,19 +260,8 @@ import BulletConfig from './configs/BulletConfig.vue'
 import SEOConfig from './configs/SEOConfig.vue'
 import ABTestConfig from './configs/ABTestConfig.vue'
 import DescConfig from './configs/DescConfig.vue'
-import AdDiagnosisConfig from './configs/AdDiagnosisConfig.vue'
-import SearchTermReportConfig from './configs/SearchTermReportConfig.vue'
-import BidSuggestConfig from './configs/BidSuggestConfig.vue'
-import CompetitorAdConfig from './configs/CompetitorAdConfig.vue'
-import BudgetAllocConfig from './configs/BudgetAllocConfig.vue'
 import OrderTrackConfig from './configs/OrderTrackConfig.vue'
-import TicketCreateConfig from './configs/TicketCreateConfig.vue'
-import PriceTrackConfig from './configs/PriceTrackConfig.vue'
-import MarketShareConfig from './configs/MarketShareConfig.vue'
-import PricingAnalysisConfig from './configs/PricingAnalysisConfig.vue'
-import IntruderAlertConfig from './configs/IntruderAlertConfig.vue'
-import BuyBoxAnalysisConfig from './configs/BuyBoxAnalysisConfig.vue'
-import CompareGridConfig from './configs/CompareGridConfig.vue'
+import ReviewDeskConfig from './configs/ReviewDeskConfig.vue'
 import ListingOptimConfig from './configs/ListingOptimConfig.vue'
 import StaticAssetConfig from './configs/StaticAssetConfig.vue'
 import VideoScriptConfig from './configs/VideoScriptConfig.vue'
@@ -300,10 +270,10 @@ import KeywordMinerConfig from './configs/KeywordMinerConfig.vue'
 import ReviewConfig from './configs/ReviewConfig.vue'
 import AdDashboardConfig from './configs/AdDashboardConfig.vue'
 import ListingBoard from './configs/ListingBoard.vue'
+import MarketInsightConfig from './configs/MarketInsightConfig.vue'
 
 // Listing 优化师：这些工具不再各自开配置面板，统一落到商品详情页的对应模块
 const LISTING_TOOL_IDS = ['keyword-miner', 'title-gen', 'bullet-gen', 'desc-gen']
-import IntelAnalysisConfig from './configs/IntelAnalysisConfig.vue'
 import IntelBoardConfig from './configs/IntelBoardConfig.vue'
 
 const props = defineProps<{
@@ -312,10 +282,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'startAnalysis', params: any): void
-  (e: 'clearTool'): void
 }>()
 
-// 内核级防护：直接监听 Agent 变化，确保切换时清空工具选择
 const agentStore = useAgentStore()
 // 竞品监控员：无工具时右侧默认显示「竞品监控大屏」
 const isCompetitorIntel = computed(() => agentStore.currentAgent?.id === 'competitor-intel')
@@ -330,6 +298,9 @@ const isAdAnalyst = computed(() => agentStore.currentAgent?.id === 'ad-analysis'
 // AIGC 媒体生成器：大屏模式顶部提供「工具 Tab 栏」切换三个工具（对齐复盘师大屏 rv-tabs）
 const isAigcAgent = computed(() => agentStore.currentAgent?.id === 'aigc-media')
 
+// 选品分析师：大屏模式顶部提供「工具 Tab 栏」切换三个选品工具（第 312 轮对齐 AIGC 范式）
+const isProductResearchAgent = computed(() => agentStore.currentAgent?.id === 'product-research')
+
 // 面板图标/标题（拆成 computed 避免模板内嵌套三元过长导致 Vite 解析失败）
 const panelIcon = computed(() =>
   props.currentTool?.icon || (isCompetitorIntel.value ? '🎯' : isReviewAgent.value ? '📊' : isListingAgent.value ? '🧩' : isAdAnalyst.value ? '📈' : '⚙️')
@@ -337,12 +308,12 @@ const panelIcon = computed(() =>
 const panelTitle = computed(() =>
   props.currentTool?.name || (isCompetitorIntel.value ? '竞品监控' : isReviewAgent.value ? '经营概览' : isListingAgent.value ? '商品详情页' : isAdAnalyst.value ? '账户总览' : '任务配置')
 )
-watch(() => agentStore.currentAgent, (newAgent) => {
-  if (newAgent && props.currentTool) {
-    // Agent 切换了但 currentTool 还残留 → 强制通知父组件清空
-    emit('clearTool')
-  }
-})
+// 注：这里原先还有一份「Agent 变了且 currentTool 还没清 ⇒ emit('clearTool')」的兜底 watcher，
+// 第 252 轮删除。它与 Workspace 切 Agent 的 watch 是**同一判定的第二份实现**，
+// 而父组件那边更强：每次切 Agent 都**无条件**先 `currentSelectedTool = null`，
+// 再按 `AGENT_DEFAULT_TOOL` 挂默认工具（父 watch 的触发源 ⊇ 子 watch，见 toolDefinitions.ts）。
+// 保留它的唯一可观测后果是**子 watcher 后跑、把父刚挂上的默认工具又清掉**，
+// 表现为「点 Agent 右栏落回空态」。判定归父组件一处，子组件不再插手。
 
 // 从 Workspace 注入收缩控制（WorkBuddy 风格：外层 Sider 统一管理）
 const collapsed = inject<Ref<boolean>>('rightPanelCollapsed')
@@ -354,14 +325,38 @@ const workingProduct = inject<Ref<any>>('workingProduct', ref(null))
 // 从 Workspace 注入当前「对话/文案(数据)」模式（Listing 工作区据此切换单模块/完整视图）
 const reviewMode = inject<Ref<'chat' | 'data'>>('reviewMode', ref('chat') as Ref<'chat' | 'data'>)
 
-// AIGC 大屏模式：读 reviewMode 判断是否 data 模式
-const isDataMode = computed(() => reviewMode.value === 'data')
+// ★ 第 313 轮：大屏工具 Tab 栏的显示条件改用 Workspace 注入的
+//   「**整页大屏布局是否真的生效**」（= Workspace 的 `isReviewDataMode`）。
+//   此前是 `reviewMode.value === 'data'` —— 只看用户偏好，与 Workspace 的判定
+//   是**两份实现**。两者不一致时（选品三工具曾漏在 `hasWideBoard` 之外）就出现：
+//   中间退回对话模式大小、右栏顶部却还挂着工具 Tab 栏（老板 09-29 截图）。
+//   注：`reviewMode` 仍要 inject —— 下面 provide 透传给各 config 用。
+const isWideBoardDataMode = inject<Ref<boolean>>('isWideBoardDataMode', ref(false))
 
 // 从 Workspace 注入「设置当前工具」（AIGC 大屏工具 Tab 栏切换工具用）
 const setSelectedTool = inject<(tool: ToolDefinition | null) => void>('setSelectedTool', () => {})
 
+// ====== 选品大盘 → 蓝海挖掘 预填通道（第 306 轮）======
+// 选品大盘点色块（类目粒度）时，把类目 slug 预填进蓝海挖掘表单，让用户
+// 再细化价格/竞争条件去挖产品。这里 provide 一个带时间戳的 payload，
+// 蓝海表单 watch 它，命中同一时间戳即消费（避免重复消费 / 丢信号）。
+interface BlueOceanPrefill {
+  categoryPath: string
+  categoryName: string
+  site: string
+  ts: number
+}
+const blueOceanPrefill = ref<BlueOceanPrefill | null>(null)
+provide('blueOceanPrefill', blueOceanPrefill)
+provide('prefillBlueOcean', (payload: { categoryPath: string; categoryName: string; site: string }) => {
+  blueOceanPrefill.value = { ...payload, ts: Date.now() }
+})
+
 // AIGC 三个工具（大屏 Tab 栏数据源，直接读 toolDefinitions 保证与顶部工具栏一致）
 const aigcTabs = computed(() => getAgentTools('aigc-media'))
+
+// 选品分析师三个工具（大屏 Tab 栏数据源，同读 toolDefinitions 保证与顶部工具栏一致）
+const productResearchTabs = computed(() => getAgentTools('product-research'))
 
 // 透传给所有子组件（确保孙组件 inject 能稳定获取响应式值）
 // 必须提供默认值 ref(null)，防止上游 provide 失败时子组件 inject 崩溃
@@ -499,11 +494,11 @@ const handleStartAnalysis = (params: any) => {
 }
 .aigc-tool-tab:hover {
   color: var(--text-primary);
-  background: var(--bg-hover, rgba(0, 0, 0, 0.04));
+  background: var(--bg-hover-light);
 }
 .aigc-tool-tab.active {
   color: var(--primary);
-  background: var(--primary-soft, rgba(24, 144, 255, 0.1));
+  background: var(--bg-active-light);
   border-color: var(--primary);
   font-weight: 600;
 }

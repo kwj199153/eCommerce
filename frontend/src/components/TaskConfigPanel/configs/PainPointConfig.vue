@@ -396,8 +396,8 @@ const onProductSelect = (product: any) => {
 
 /* 已识别商品卡片 */
 .product-card {
-  background: linear-gradient(135deg, #f0f9ff 0%, #e6f7ff 100%);
-  border: 1px solid #bae7ff;
+  background: linear-gradient(135deg, var(--primary-bg-subtle) 0%, var(--info-bg) 100%);
+  border: 1px solid var(--info-border);
   border-radius: var(--radius-8);
   overflow: hidden;
 }

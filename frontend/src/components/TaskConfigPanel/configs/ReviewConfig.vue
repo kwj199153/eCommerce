@@ -1,6 +1,6 @@
 <template>
   <div class="rv-config">
-    <!-- ====== 顶部：6 个数据视图 Tab 导航（仅大屏模式显示；对话模式由顶部工具栏 6 个工具按钮承担切换） ====== -->
+    <!-- ====== 顶部：5 个数据视图 Tab 导航（仅大屏模式显示；对话模式由顶部工具栏 5 个工具按钮承担切换） ====== -->
     <div v-if="isDataMode" class="rv-tabs">
       <button
         v-for="tab in DATA_VIEW_TABS"
@@ -14,51 +14,59 @@
       </button>
     </div>
 
+    <!-- ====== 全局状态条 ======
+         第 167 轮（#725）：此前本组件读的是**内联常量**，结构上不可能失败，
+         因此也没有任何失败出口 —— 新店铺的第一眼就是满屏别人家的数字。
+         接真源后必须把「未选店铺 / 加载中 / 取数失败」三种状态显式说出来。 -->
+    <div v-if="banner" class="rv-banner" :class="banner.kind">
+      <span class="rv-banner-text">{{ banner.text }}</span>
+      <button v-if="banner.retry" class="rv-retry" @click="reload">重试</button>
+    </div>
+
     <!-- ① 经营概览 -->
     <section v-if="activeTab === 'overview'" class="rv-pane">
       <div class="pane-head">
         <div>
           <div class="pane-title">经营概览 <a-tag color="default" class="mini-tag">近 7 天</a-tag></div>
-          <div class="pane-sub">全店核心指标 + 日趋势 + ASIN 排行 + 流量结构（浏览后点「生成本周周报」让 AI 出文字总结）</div>
+          <div class="pane-sub">全店核心指标 + ASIN 销量排行（数据来自 <code>/review/weekly-report</code> 与 <code>/review/product-performance</code>）</div>
         </div>
       </div>
 
       <div class="kpi-grid">
-        <div v-for="k in ovKPIs" :key="k.key" class="kpi-card">
-          <div class="kpi-label">{{ k.label }}</div>
-          <div class="kpi-value" :class="k.kind">{{ k.value }}</div>
-          <div class="kpi-change">
-            <span v-if="k.delta !== undefined" :class="k.delta >= 0 ? 'up' : 'down'">
-              {{ k.delta >= 0 ? '▲' : '▼' }} {{ Math.abs(k.delta).toFixed(1) }}% <em>环比</em>
+        <div v-for="m in metricsOf(weekly)" :key="m.label" class="kpi-card">
+          <div class="kpi-label">{{ m.label }}</div>
+          <div class="kpi-value" :class="kpiClass(m.status)">{{ formatMetric(m) }}</div>
+          <div v-if="m.delta_pct != null" class="kpi-change">
+            <span :class="m.delta_pct >= 0 ? 'up' : 'down'">
+              {{ m.delta_pct >= 0 ? '▲' : '▼' }} {{ Math.abs(m.delta_pct).toFixed(1) }}% <em>环比</em>
             </span>
-            <span v-else class="muted">—</span>
           </div>
+          <div v-else class="kpi-change"><span class="muted">—</span></div>
         </div>
       </div>
 
-      <div class="panel-card chart-card">
+      <div class="panel-card">
         <div class="card-head">每日销量 / 销售额走势</div>
-        <LineChart :series="dailyRevenueSeries" :labels="DAY_7" :legend="true" />
+        <UnsupportedNote label="逐日销售序列" />
       </div>
 
       <div class="two-col flex-block">
         <div class="panel-card">
-          <div class="card-head">ASIN 销量排行</div>
-          <div class="rank-list">
+          <div class="card-head">ASIN 销量排行（近 7 天）</div>
+          <div v-if="rankRows.length" class="rank-list">
             <div v-for="(r, i) in rankRows" :key="r.asin" class="rank-row">
               <span class="rank-idx" :class="'idx-' + (i + 1)">{{ i + 1 }}</span>
-              <span class="rank-name">
-                <span class="rank-asin">{{ r.asin }}</span>{{ r.name }}
-              </span>
-              <span class="rank-orders">{{ r.sales }} 单</span>
+              <span class="rank-name"><span class="rank-asin">{{ r.asin }}</span></span>
+              <span class="rank-orders">{{ r.units }} 件</span>
               <span class="rank-bar-track"><i class="rank-bar" :style="{ width: r.pct + '%', background: rankColor(i) }"></i></span>
               <span class="rank-share">{{ r.pct.toFixed(1) }}%</span>
             </div>
           </div>
+          <div v-else class="rv-unsupported"><span class="rv-unsupported-icon">∅</span><span>该店铺在所选周期内没有商品销量记录。</span></div>
         </div>
-        <div class="panel-card chart-card">
+        <div class="panel-card">
           <div class="card-head">流量占比</div>
-          <DonutChart :segments="TRAFFIC_MIX" :center-value="'100%'" center-title="流量构成" />
+          <UnsupportedNote label="自然 / 广告 / 关联流量的拆分口径" />
         </div>
       </div>
     </section>
@@ -68,108 +76,44 @@
       <div class="pane-head">
         <div>
           <div class="pane-title">月度数据 <a-tag color="default" class="mini-tag">近 30 天</a-tag></div>
-          <div class="pane-sub">目标达成 + 整月趋势 + 周对比 + 利润汇总（浏览后点「生成月度复盘」让 AI 出完整复盘）</div>
+          <div class="pane-sub">月 GMV / 净利率 / 退货率 / 广告占比 + 利润口径（数据来自 <code>/review/monthly-review</code>）</div>
         </div>
       </div>
 
       <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">月 GMV</div><div class="kpi-value">${{ fmtMoney(TOTAL_MONTH_REV) }}</div><div class="kpi-change"><span class="up">▲ 15.2% <em>环比</em></span></div></div>
-        <div class="kpi-card"><div class="kpi-label">目标完成率</div><div class="kpi-value">{{ targetRate.toFixed(0) }}%</div><div class="goal-track"><i class="goal-fill" :style="{ width: targetRate + '%' }"></i></div></div>
-        <div class="kpi-card"><div class="kpi-label">月订单</div><div class="kpi-value">8,920</div><div class="kpi-change"><span class="up">▲ 11.0% <em>环比</em></span></div></div>
-        <div class="kpi-card"><div class="kpi-label">月净利润</div><div class="kpi-value success">${{ fmtMoney(NET_MONTH) }}</div><div class="kpi-change"><span class="up">▲ 9.1% <em>环比</em></span></div></div>
-      </div>
-
-      <div class="panel-card chart-card">
-        <div class="card-head">整月每日销售趋势（GMV）</div>
-        <LineChart :series="[{ name: '销售额', color: 'var(--chart-1)', data: MONTH_DAILY_REVENUE }]" :labels="dayTicks(30)" :legend="false" />
-      </div>
-
-      <div class="two-col flex-block">
-        <div class="panel-card chart-card">
-          <div class="card-head">周维度对比</div>
-          <BarChart :groups="[{ name: 'GMV', color: 'var(--chart-2)', data: WEEK_GMV.map(w => w.value) }]" :categories="WEEK_GMV.map(w => w.name)" :legend="false" />
-        </div>
-        <div class="panel-card">
-          <div class="card-head">利润汇总（口径）</div>
-          <div class="kv-list">
-            <div class="kv-row"><span>销售额</span><span>${{ fmtMoney(TOTAL_MONTH_REV) }}</span></div>
-            <div class="kv-row"><span>采购成本</span><span>-{{ fmtMoney(COGS_MONTH) }}</span></div>
-            <div class="kv-row"><span>平台佣金</span><span>-{{ fmtMoney(COMMISSION_MONTH) }}</span></div>
-            <div class="kv-row"><span>FBA 费用</span><span>-{{ fmtMoney(FBA_MONTH) }}</span></div>
-            <div class="kv-row"><span>广告花费</span><span>-{{ fmtMoney(ADSPEND_MONTH) }}</span></div>
-            <div class="kv-row"><span>仓储/退货</span><span>-{{ fmtMoney(OTHER_COST) }}</span></div>
-            <div class="kv-row total"><span>净利润</span><span>${{ fmtMoney(NET_MONTH) }}</span></div>
-            <div class="kv-row total"><span>净利率</span><span>{{ (NET_MONTH / TOTAL_MONTH_REV * 100).toFixed(1) }}%</span></div>
+        <div v-for="m in metricsOf(monthly)" :key="m.label" class="kpi-card">
+          <div class="kpi-label">{{ m.label }}</div>
+          <div class="kpi-value" :class="kpiClass(m.status)">{{ formatMetric(m) }}</div>
+          <div v-if="m.delta_pct != null" class="kpi-change">
+            <span :class="m.delta_pct >= 0 ? 'up' : 'down'">
+              {{ m.delta_pct >= 0 ? '▲' : '▼' }} {{ Math.abs(m.delta_pct).toFixed(1) }}% <em>环比</em>
+            </span>
           </div>
+          <div v-else class="kpi-change"><span class="muted">—</span></div>
         </div>
-      </div>
-    </section>
-
-    <!-- ③ 广告复盘 -->
-    <section v-else-if="activeTab === 'ads'" class="rv-pane">
-      <div class="pane-head">
-        <div>
-          <div class="pane-title">广告复盘 <a-tag color="default" class="mini-tag">近 7 天</a-tag></div>
-          <div class="pane-sub">整体指标 + SP/SB/SD + 广告组/关键词明细（浏览后点「广告优化」让 AI 出调价/否词文案）</div>
-        </div>
-      </div>
-
-      <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">广告花费</div><div class="kpi-value">${{ fmtMoney(AD_OVERALL.spend) }}</div></div>
-        <div class="kpi-card"><div class="kpi-label">广告销售额</div><div class="kpi-value">${{ fmtMoney(AD_OVERALL.sales) }}</div></div>
-        <div class="kpi-card"><div class="kpi-label">ACoS</div><div class="kpi-value warning">{{ AD_OVERALL.acos }}%</div></div>
-        <div class="kpi-card"><div class="kpi-label">ROAS</div><div class="kpi-value success">{{ AD_OVERALL.roas }}</div></div>
-        <div class="kpi-card"><div class="kpi-label">曝光</div><div class="kpi-value">{{ (AD_OVERALL.imp / 1e6).toFixed(2) }}M</div></div>
-        <div class="kpi-card"><div class="kpi-label">CVR</div><div class="kpi-value">{{ AD_OVERALL.cvr }}%</div></div>
-      </div>
-
-      <div class="panel-card chart-card">
-        <div class="card-head">SP / SB / SD 花费对比</div>
-        <BarChart :groups="[{ name: '花费', color: 'var(--chart-4)', data: AD_TYPE.spend }, { name: '销售额', color: 'var(--chart-1)', data: AD_TYPE.sales }]" :categories="AD_TYPE.labels" :legend="true" />
       </div>
 
       <div class="panel-card">
-        <div class="card-head">广告组表现</div>
-        <div class="tbl">
-          <div class="tbl-head">
-            <span class="c-role">广告组</span><span class="c-num">花费</span><span class="c-num">销售额</span>
-            <span class="c-num">ACoS</span><span class="c-num">ROAS</span><span class="c-badge">评级</span>
-          </div>
-          <div v-for="g in AD_GROUPS" :key="g.id" class="tbl-row">
-            <span class="c-role"><a-tag color="blue" class="type-tag">{{ g.type }}</a-tag>{{ g.name }}</span>
-            <span class="c-num">${{ fmtMoney(g.spend) }}</span>
-            <span class="c-num">${{ fmtMoney(g.sales) }}</span>
-            <span class="c-num" :class="bandOf('acos', g.acos)">{{ g.acos.toFixed(1) }}%</span>
-            <span class="c-num">{{ g.roas.toFixed(2) }}</span>
-            <span class="c-badge"><a-tag :color="g.status === '优' ? 'green' : g.status === '中' ? 'orange' : 'red'">{{ g.status }}</a-tag></span>
-          </div>
-        </div>
+        <div class="card-head">整月每日销售趋势（GMV）</div>
+        <UnsupportedNote label="30 天逐日 GMV 序列" />
       </div>
 
-      <div class="two-col">
+      <div class="two-col flex-block">
         <div class="panel-card">
-          <div class="card-head ok">好词（低 ACoS）</div>
-          <div class="tbl sm">
-            <div class="tbl-head"><span class="c-role">关键词</span><span class="c-num">ACoS</span><span class="c-num">CVR</span></div>
-            <div v-for="k in KEYWORDS_GOOD" :key="k.kw" class="tbl-row">
-              <span class="c-role">{{ k.kw }}</span><span class="c-num ok">{{ k.acos.toFixed(1) }}%</span><span class="c-num">{{ k.cvr.toFixed(1) }}%</span>
-            </div>
-          </div>
+          <div class="card-head">周维度对比</div>
+          <UnsupportedNote label="按自然周聚合的 GMV 对比" />
         </div>
         <div class="panel-card">
-          <div class="card-head danger">高花费词（待否）</div>
-          <div class="tbl sm">
-            <div class="tbl-head"><span class="c-role">关键词</span><span class="c-num">花费</span><span class="c-num">ACoS</span></div>
-            <div v-for="k in KEYWORDS_BURN" :key="k.kw" class="tbl-row">
-              <span class="c-role">{{ k.kw }}</span><span class="c-num">${{ fmtMoney(k.spend) }}</span><span class="c-num danger">{{ k.acos.toFixed(1) }}%</span>
-            </div>
+          <div class="card-head">利润汇总（后端可提供项）</div>
+          <div class="kv-list">
+            <div class="kv-row"><span>销售额</span><span>${{ fmtMoney(sales(monthly)?.revenue) }}</span></div>
+            <div class="kv-row"><span>退款</span><span>-{{ fmtMoney(sales(monthly)?.refunds) }}</span></div>
+            <div class="kv-row"><span>净收入</span><span>${{ fmtMoney(sales(monthly)?.net_revenue) }}</span></div>
+            <div class="kv-row"><span>广告花费</span><span>-{{ fmtMoney(ad(monthly)?.spend) }}</span></div>
+            <div class="kv-row total"><span>预估利润</span><span>${{ fmtMoney(sales(monthly)?.estimated_profit) }}</span></div>
           </div>
+          <div class="rv-mini-note">采购成本 / FBA 费用 / 仓储的逐项拆分后端不提供，故不列出（旧版本的这几个数字是内联编造的）。</div>
         </div>
-      </div>
-
-      <div class="panel-card chart-card">
-        <div class="card-head">7 天广告趋势</div>
-        <LineChart :series="[{ name: '花费', color: 'var(--chart-4)', data: AD_TREND_7.spend }, { name: '广告销售额', color: 'var(--chart-1)', data: AD_TREND_7.sales }]" :labels="DAY_7" />
       </div>
     </section>
 
@@ -177,52 +121,47 @@
     <section v-else-if="activeTab === 'products'" class="rv-pane">
       <div class="pane-head">
         <div>
-          <div class="pane-title">商品表现 <a-tag color="default" class="mini-tag">纯分析看板</a-tag></div>
-          <div class="pane-sub">ASIN 表现总览 + 单品趋势 + 评价变动记录</div>
+          <div class="pane-title">商品表现 <a-tag color="default" class="mini-tag">近 7 天</a-tag></div>
+          <div class="pane-sub">ASIN 级销量 / 销售额 / 利润 / 评分 / BSR / 可售天数（数据来自 <code>/review/product-performance</code>）</div>
         </div>
       </div>
 
       <div class="panel-card">
         <div class="card-head">ASIN 表现总览</div>
-        <div class="tbl">
+        <div v-if="products.length" class="tbl">
           <div class="tbl-head">
-            <span class="c-role">商品</span><span class="c-num">BSR</span><span class="c-num">售价</span>
-            <span class="c-num">评分</span><span class="c-num">销量7d</span><span class="c-num">CVR</span>
+            <span class="c-role">ASIN</span><span class="c-num">销量</span><span class="c-num">销售额</span>
+            <span class="c-num">利润</span><span class="c-num">评分</span><span class="c-num">BSR</span>
+            <span class="c-num">可售天数</span><span class="c-badge">健康</span>
           </div>
-          <div v-for="p in PRODUCT_PERF" :key="p.asin" class="tbl-row">
-            <span class="c-role">
-              <span class="pt-name"><span class="rank-asin">{{ p.asin }}</span>{{ p.name }}</span>
-            </span>
-            <span class="c-num">#{{ p.bsr }}</span>
-            <span class="c-num">${{ p.price.toFixed(2) }}</span>
-            <span class="c-num">{{ p.rating }}<span class="star">★</span><span class="rev"> ({{ p.reviews }})</span></span>
-            <span class="c-num">{{ p.sales7 }}</span>
-            <span class="c-num" :class="p.cvr < 5 ? 'danger' : 'ok'">{{ p.cvr.toFixed(1) }}%</span>
+          <div v-for="p in products" :key="p.asin" class="tbl-row">
+            <span class="c-role"><span class="rank-asin">{{ p.asin }}</span></span>
+            <span class="c-num">{{ p.units }}</span>
+            <span class="c-num">${{ fmtMoney(p.revenue) }}</span>
+            <span class="c-num" :class="p.profit >= 0 ? 'ok' : 'danger'">${{ fmtMoney(p.profit) }}</span>
+            <span class="c-num">{{ p.rating != null ? p.rating.toFixed(1) + '★' : '—' }}</span>
+            <span class="c-num">{{ p.bsr_rank != null ? '#' + p.bsr_rank : '—' }}</span>
+            <span class="c-num" :class="p.days_supply != null ? bandOf('restockDays', p.days_supply) : ''">{{ p.days_supply != null ? p.days_supply + '天' : '—' }}</span>
+            <span class="c-badge"><a-tag :color="healthTag(p.health_status).color">{{ healthTag(p.health_status).label }}</a-tag></span>
           </div>
         </div>
+        <div v-else class="rv-unsupported"><span class="rv-unsupported-icon">∅</span><span>该店铺在所选周期内没有商品销量记录。</span></div>
       </div>
 
       <div class="two-col flex-block">
-        <div class="panel-card chart-card">
-          <div class="card-head">爆款单品销量趋势（Smart Plug）</div>
-          <LineChart :series="[{ name: '销量', color: 'var(--chart-1)', data: TOP_ASIN_TREND.sales }]" :labels="DAY_7" :legend="false" />
+        <div class="panel-card">
+          <div class="card-head">爆款单品销量趋势</div>
+          <UnsupportedNote label="单品逐日销量序列" />
         </div>
-        <div class="panel-card chart-card">
+        <div class="panel-card">
           <div class="card-head">BSR 排名走势（越低越好）</div>
-          <LineChart :series="[{ name: 'BSR', color: 'var(--chart-3)', data: TOP_ASIN_TREND.bsr }]" :labels="DAY_7" :legend="false" />
+          <UnsupportedNote label="单品逐日 BSR 序列" />
         </div>
       </div>
 
       <div class="panel-card">
         <div class="card-head">评价变动记录</div>
-        <div class="rv-log">
-          <div v-for="c in REVIEW_CHANGES" :key="c.date + c.note" class="rv-log-row">
-            <span class="rv-log-date">{{ c.date }}</span>
-            <span class="rv-log-asin">{{ c.asin }}</span>
-            <a-tag :color="c.delta >= 0 ? 'green' : 'red'" class="rv-log-delta">{{ c.delta >= 0 ? '+' + c.delta : c.delta }}</a-tag>
-            <span class="rv-log-note">{{ c.note }}</span>
-          </div>
-        </div>
+        <UnsupportedNote label="评论增减事件流" />
       </div>
     </section>
 
@@ -230,32 +169,43 @@
     <section v-else-if="activeTab === 'inventory'" class="rv-pane">
       <div class="pane-head">
         <div>
-          <div class="pane-title">库存健康度 <a-tag color="default" class="mini-tag">纯分析看板</a-tag></div>
-          <div class="pane-sub">库存水位 + 周转 + 风险标签（断货预警 / 滞销）</div>
+          <div class="pane-title">库存健康度 <a-tag color="default" class="mini-tag">当前快照</a-tag></div>
+          <div class="pane-sub">可售水位 + 在途 + 周转天数 + 风险标签（数据来自 <code>/review/inventory-health</code>）</div>
         </div>
       </div>
 
       <div class="panel-card chart-card">
         <div class="card-head">可售库存水位</div>
-        <BarChart :groups="[{ name: '可售', color: 'var(--chart-1)', data: INVENTORY_LEVEL.map(i => i.level) }]" :categories="INVENTORY_LEVEL.map(i => i.name)" :legend="false" />
+        <BarChart
+          v-if="inventory.length"
+          :groups="[{ name: '可售', color: 'var(--chart-1)', data: inventory.map(i => i.fulfillable) }]"
+          :categories="inventory.map(i => i.asin)"
+          :legend="false"
+        />
+        <div v-else class="rv-unsupported"><span class="rv-unsupported-icon">∅</span><span>该店铺没有库存记录。</span></div>
       </div>
 
       <div class="panel-card">
         <div class="card-head">ASIN 库存明细</div>
-        <div class="tbl">
+        <div v-if="inventory.length" class="tbl">
           <div class="tbl-head">
-            <span class="c-role">商品</span><span class="c-num">可售</span><span class="c-num">在途</span>
-            <span class="c-num">日销</span><span class="c-num">周转天数</span><span class="c-badge">风险</span>
+            <span class="c-role">ASIN / SKU</span><span class="c-num">可售</span><span class="c-num">在途</span>
+            <span class="c-num">周转天数</span><span class="c-badge">风险</span>
           </div>
-          <div v-for="it in INVENTORY" :key="it.asin" class="tbl-row">
-            <span class="c-role"><span class="rank-asin">{{ it.asin }}</span>{{ it.name }}</span>
+          <div v-for="it in inventory" :key="it.asin" class="tbl-row">
+            <span class="c-role">
+              <span class="pt-name">
+                <span class="rank-asin">{{ it.asin }}</span>
+                <span class="rev">{{ it.sku }}</span>
+              </span>
+            </span>
             <span class="c-num">{{ it.fulfillable }}</span>
             <span class="c-num">{{ it.inbound }}</span>
-            <span class="c-num">{{ it.daily }}</span>
-            <span class="c-num" :class="bandOf('restockDays', it.days)">{{ it.days }}天</span>
-            <span class="c-badge"><a-tag :color="it.riskColor">{{ it.risk }}</a-tag></span>
+            <span class="c-num" :class="bandOf('restockDays', it.days_supply)">{{ it.days_supply }}天</span>
+            <span class="c-badge"><a-tag :color="healthTag(it.health_status).color">{{ healthTag(it.health_status).label }}</a-tag></span>
           </div>
         </div>
+        <div v-else class="rv-unsupported"><span class="rv-unsupported-icon">∅</span><span>该店铺没有库存记录。</span></div>
       </div>
     </section>
 
@@ -263,45 +213,48 @@
     <section v-else-if="activeTab === 'profit'" class="rv-pane">
       <div class="pane-head">
         <div>
-          <div class="pane-title">利润统计 <a-tag color="default" class="mini-tag">纯分析看板</a-tag></div>
-          <div class="pane-sub">分 ASIN 利润明细 + 盈亏分类 + 成本结构</div>
+          <div class="pane-title">利润统计 <a-tag color="default" class="mini-tag">近 30 天</a-tag></div>
+          <div class="pane-sub">利润构成 + 分 ASIN 利润（数据来自 <code>/review/profit-audit</code> 与 <code>/review/monthly-review</code> 的 SKU 贡献）</div>
         </div>
       </div>
 
       <div class="two-col flex-block">
-        <div class="panel-card chart-card">
-          <div class="card-head">成本结构（全店占比）</div>
-          <DonutChart :segments="COST_STRUCTURE" center-title="成本结构" :center-value="'$' + fmtMoney(TOTAL_COST)" />
+        <div class="panel-card">
+          <div class="card-head">利润构成（后端可提供项）</div>
+          <div class="kv-list">
+            <div class="kv-row"><span>销售额</span><span>${{ fmtMoney(sales(profit)?.revenue) }}</span></div>
+            <div class="kv-row"><span>平台佣金（后端按 15% 估）</span><span>-{{ fmtMoney(profit?.details?.commission) }}</span></div>
+            <div class="kv-row"><span>广告花费</span><span>-{{ fmtMoney(ad(profit)?.spend) }}</span></div>
+            <div class="kv-row"><span>退款</span><span>-{{ fmtMoney(sales(profit)?.refunds) }}</span></div>
+            <div class="kv-row total"><span>净利润</span><span>${{ fmtMoney(sales(profit)?.estimated_profit) }}</span></div>
+          </div>
+          <div class="rv-mini-note">采购成本 / FBA 费用的分项拆分后端不提供，故不列出。</div>
         </div>
         <div class="panel-card">
-          <div class="card-head">盈亏分类</div>
+          <div class="card-head">盈亏分类（按 SKU）</div>
           <div class="cat-blocks">
             <div class="cat-block good"><div class="cat-num">{{ profitCats.good }}</div><div class="cat-label">盈利</div></div>
             <div class="cat-block warn"><div class="cat-num">{{ profitCats.breakEven }}</div><div class="cat-label">保本</div></div>
             <div class="cat-block bad"><div class="cat-num">{{ profitCats.loss }}</div><div class="cat-label">亏损</div></div>
           </div>
+          <div class="rv-mini-note">按 SKU 贡献排名的利润正负号统计；共 {{ skuRank.length }} 个 SKU。</div>
         </div>
       </div>
 
       <div class="panel-card">
         <div class="card-head">分 ASIN 利润明细（近 30 天）</div>
-        <div class="tbl">
+        <div v-if="skuRank.length" class="tbl">
           <div class="tbl-head">
-            <span class="c-role">商品</span><span class="c-num">销量</span><span class="c-num">销售额</span>
-            <span class="c-num">采购</span><span class="c-num">佣金</span><span class="c-num">FBA</span>
-            <span class="c-num">广告分摊</span><span class="c-num">净利</span>
+            <span class="c-role">ASIN</span><span class="c-num">销量</span><span class="c-num">销售额</span><span class="c-num">利润</span>
           </div>
-          <div v-for="p in profitRows" :key="p.asin" class="tbl-row">
-            <span class="c-role"><span class="rank-asin">{{ p.asin }}</span>{{ p.name }}</span>
-            <span class="c-num">{{ p.units }}</span>
-            <span class="c-num">${{ fmtMoney(p.rev) }}</span>
-            <span class="c-num">-{{ fmtMoney(p.cogs) }}</span>
-            <span class="c-num">-{{ fmtMoney(p.comm) }}</span>
-            <span class="c-num">-{{ fmtMoney(p.fba) }}</span>
-            <span class="c-num">-{{ fmtMoney(p.ad) }}</span>
-            <span class="c-num" :class="p.net >= 0 ? 'ok' : 'danger'">${{ fmtMoney(p.net) }}</span>
+          <div v-for="r in skuRank" :key="r.asin" class="tbl-row">
+            <span class="c-role"><span class="rank-asin">{{ r.asin }}</span></span>
+            <span class="c-num">{{ r.units }}</span>
+            <span class="c-num">${{ fmtMoney(r.revenue) }}</span>
+            <span class="c-num" :class="r.profit >= 0 ? 'ok' : 'danger'">${{ fmtMoney(r.profit) }}</span>
           </div>
         </div>
+        <div v-else class="rv-unsupported"><span class="rv-unsupported-icon">∅</span><span>该店铺在所选周期内没有 SKU 贡献记录。</span></div>
       </div>
     </section>
   </div>
@@ -310,29 +263,38 @@
 <script setup lang="ts">
 import { CHART_VARS } from '@/theme/semantic'
 import { bandOf } from '@/theme/bands'
-import { ref, computed, watch, inject } from 'vue'
+import { ref, computed, watch, inject, reactive } from 'vue'
 import type { Ref } from 'vue'
-import LineChart from '@/components/charts/LineChart.vue'
+// ★ 只留 BarChart：LineChart / DonutChart 的图位全部是「后端不提供该维度」的
+//   占位（逐日序列、流量占比、成本结构拆分），旧版本那几张图画的都是内联假数据。
 import BarChart from '@/components/charts/BarChart.vue'
-import DonutChart from '@/components/charts/DonutChart.vue'
+import UnsupportedNote from './ReviewUnsupportedNote.vue'
+import { useShopStore } from '@/stores/shop'
 import {
-  REVIEW_ASINS, DAILY_SALES, DAY_7, MONTH_DAILY_REVENUE, WEEK_GMV,
-  AD_TREND_7, AD_TYPE, AD_GROUPS, KEYWORDS_GOOD, KEYWORDS_BURN, AD_OVERALL, TRAFFIC_MIX,
-  PRODUCT_PERF, TOP_ASIN_TREND, REVIEW_CHANGES,
-  INVENTORY, INVENTORY_LEVEL, PROFIT_DETAIL, COST_STRUCTURE, TOTAL_MONTH_REV,
-} from '@/mock/reviewDashboard'
+  REVIEW_FETCHERS,
+  type ReviewAdSum,
+  type ReviewInventoryItem,
+  type ReviewMetric,
+  type ReviewProductPerf,
+  type ReviewReport,
+  type ReviewResponse,
+  type ReviewSalesSum,
+  type ReviewSkuRank,
+  type ReviewToolId,
+} from '@/api/review'
 
 const props = defineProps<{ currentToolId?: string }>()
 defineEmits<{ (e: 'startAnalysis', params: any): void }>()
 
-// 从 Workspace 注入「对话/大屏」模式：大屏模式才显示顶部 6 个 Tab（对话模式由顶部工具栏工具按钮承担切换）
+// 从 Workspace 注入「对话/大屏」模式：大屏模式才显示顶部 5 个 Tab（对话模式由顶部工具栏工具按钮承担切换）
 const reviewMode = inject<Ref<'chat' | 'data'>>('reviewMode', ref('chat') as Ref<'chat' | 'data'>)
 const isDataMode = computed(() => reviewMode.value === 'data')
+
+const shopStore = useShopStore()
 
 const DATA_VIEW_TABS = [
   { key: 'overview', label: '经营概览', icon: '📊' },
   { key: 'monthly', label: '月度数据', icon: '📅' },
-  { key: 'ads', label: '广告复盘', icon: '📈' },
   { key: 'products', label: '商品表现', icon: '🛒' },
   { key: 'inventory', label: '库存健康', icon: '📦' },
   { key: 'profit', label: '利润统计', icon: '💰' },
@@ -340,95 +302,192 @@ const DATA_VIEW_TABS = [
 const TOOL_TAB_MAP: Record<string, string> = {
   'weekly-report': 'overview',
   'monthly-review': 'monthly',
-  'ad-review': 'ads',
   'product-performance': 'products',
   'inventory-health': 'inventory',
   'profit-audit': 'profit',
 }
-const activeTab = ref<string>(TOOL_TAB_MAP[props.currentToolId || ''] || 'overview')
+
+type TabKey = 'overview' | 'monthly' | 'products' | 'inventory' | 'profit'
+
+/**
+ * 每个 Tab 需要哪些端点、用哪个周期。
+ *
+ * ★ 为什么 overview 也拉 `product-performance`：概览要显示「ASIN 销量排行」，
+ *   而后端的 `weekly-report` 只给**汇总**（`details.sales` 一个对象），
+ *   没有任何 per-ASIN 拆分 —— 唯一能出这张表的端点就是 `product-performance`。
+ * ★ 为什么 profit 也拉 `monthly-review`：`profit-audit` 只给全店汇总，
+ *   分 ASIN 的 revenue/profit 只有 `monthly-review` 的 `sku_rank` 有。
+ *   （这两处都是**实测后端返回**得出的，不是照抄旧 mock 的字段想象。）
+ */
+const TAB_DEFS: Record<TabKey, { days: number; loads: ReviewToolId[] }> = {
+  overview: { days: 7, loads: ['weekly-report', 'product-performance'] },
+  monthly: { days: 30, loads: ['monthly-review'] },
+  products: { days: 7, loads: ['product-performance'] },
+  inventory: { days: 7, loads: ['inventory-health'] },
+  profit: { days: 30, loads: ['profit-audit', 'monthly-review'] },
+}
+
+// ====== 取数状态 ======
+const reports = reactive<Record<string, ReviewReport | null>>({})
+const loading = ref(false)
+const loadError = ref('')
+
+const activeTab = ref<TabKey>((TOOL_TAB_MAP[props.currentToolId || ''] as TabKey) || 'overview')
 watch(
   () => props.currentToolId,
-  (tid) => { const m = TOOL_TAB_MAP[tid || '']; if (m) activeTab.value = m }
+  (tid) => { const m = TOOL_TAB_MAP[tid || '']; if (m) activeTab.value = m as TabKey }
 )
-function switchTab(key: string) { activeTab.value = key }
 
-// ====== 工具函数 ======
-function fmtMoney(v: number): string { return Math.round(v).toLocaleString() }
-function asinOf(code: string) { return REVIEW_ASINS.find((a) => a.asin === code)! }
-const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0)
+const noShop = computed(() => !shopStore.currentShopId)
 
-// ====== 经营概览派生 ======
-const ovOrders = computed(() => Object.values(DAILY_SALES).reduce((a, s) => a + sum(s), 0))
-const ovGmv = computed(() =>
-  Object.entries(DAILY_SALES).reduce((a, [asin, arr]) => a + sum(arr) * asinOf(asin).price, 0)
-)
-const ovCogs = computed(() =>
-  Object.entries(DAILY_SALES).reduce((a, [asin, arr]) => a + sum(arr) * asinOf(asin).unitCost, 0)
-)
-const ovGross = computed(() =>
-  ovGmv.value - ovCogs.value
-    - Object.entries(DAILY_SALES).reduce((a, [asin, arr]) => a + sum(arr) * asinOf(asin).price * asinOf(asin).commissionRate, 0)
-    - Object.entries(DAILY_SALES).reduce((a, [asin, arr]) => a + sum(arr) * asinOf(asin).fbaFee, 0)
-    - AD_OVERALL.spend * (7 / 30)
-)
-const ovKPIs = computed(() => [
-  { key: 'gmv', label: '销售额(GMV)', value: '$' + fmtMoney(ovGmv.value), delta: 12.3 },
-  { key: 'orders', label: '订单数', value: ovOrders.value.toLocaleString(), delta: 8.1 },
-  { key: 'aov', label: '客单价', value: '$' + (ovGmv.value / ovOrders.value).toFixed(2), delta: 3.9 },
-  { key: 'gross', label: '毛利', value: '$' + fmtMoney(ovGross.value), delta: 6.5 },
-  { key: 'margin', label: '毛利率', value: (ovGross.value / ovGmv.value * 100).toFixed(1) + '%', delta: -0.8, kind: 'soft' },
-])
-const dailyRevenueSeries = computed(() => {
-  // 每一天：各 ASIN 当日销量 × 售价 累加 = 当日销售额
-  const perDay = DAY_7.map((_, i) =>
-    Object.entries(DAILY_SALES).reduce((acc, [asin, arr]) => acc + arr[i] * asinOf(asin).price, 0)
-  )
-  return [{ name: '销售额', color: 'var(--chart-1)', data: perDay }]
+const banner = computed<{ kind: string; text: string; retry: boolean } | null>(() => {
+  if (noShop.value) {
+    return {
+      kind: 'warn',
+      text: '尚未选择店铺 —— 复盘数据一律按店铺维度取数，请先在界面左上角选择一个店铺。',
+      retry: false,
+    }
+  }
+  if (loadError.value) return { kind: 'error', text: loadError.value, retry: true }
+  if (loading.value) return { kind: 'info', text: '正在加载复盘数据…', retry: false }
+  return null
 })
+
+async function loadTab(tab: TabKey) {
+  if (noShop.value) return
+  const def = TAB_DEFS[tab]
+  const missing = def.loads.filter((id) => !reports[id])
+  if (!missing.length) return
+  loading.value = true
+  loadError.value = ''
+  try {
+    const results: ReviewResponse[] = await Promise.all(
+      missing.map((id) => REVIEW_FETCHERS[id](def.days))
+    )
+    results.forEach((res, i) => {
+      const id = missing[i]
+      if (res?.success && res.data) {
+        reports[id] = res.data
+      } else {
+        // 200 但 success=false：**不许**当成「没数据所以空着」——
+        // 那是本仓「降级路径禁用全 0 兜底」的同一类错误：假数据冒充实测。
+        //
+        // ★ 不读 `res.message`（第 268 轮 B 档）：信封里的 `message` 是**成功回执**
+        //   （「周报已生成」），不是失败原因。拿它当报错，红条上会写「周报已生成」
+        //   这种自相矛盾的话。这 6 个端点走 router 的 `_report` ⇒ 恒 `success=True`，
+        //   失败一律 4xx/5xx（走下面的 catch）⇒ 真走到这里就说明契约破了，必须说出来。
+        loadError.value = '后端返回了失败标记（success=false），但未提供报告数据。'
+      }
+    })
+  } catch (e: any) {
+    const status = e?.response?.status
+    loadError.value =
+      e?.response?.data?.detail ||
+      (status === 403
+        ? '当前账号无权访问该店铺的复盘数据，请切换店铺后重试。'
+        : '复盘数据加载失败，请稍后重试。')
+  } finally {
+    loading.value = false
+  }
+}
+
+function reload() {
+  Object.keys(reports).forEach((k) => { reports[k] = null })
+  void loadTab(activeTab.value)
+}
+
+watch(activeTab, (t) => { void loadTab(t) })
+
+// ★ 换店铺必须**清缓存**：否则会把上一个店铺的复盘数字继续显示在新店铺名下
+//   —— 那是跨租户串数据，比「没数据」严重得多（本仓「上下文不变量按写入点收口」那条）。
+watch(
+  () => shopStore.currentShopId,
+  (id) => {
+    if (!id) return
+    Object.keys(reports).forEach((k) => { reports[k] = null })
+    loadError.value = ''
+    void loadTab(activeTab.value)
+  },
+  { immediate: true }
+)
+
+function switchTab(key: string) {
+  activeTab.value = key as TabKey
+}
+
+// ====== 报告 / 明细取用 ======
+const weekly = computed(() => reports['weekly-report'] ?? null)
+const monthly = computed(() => reports['monthly-review'] ?? null)
+const prods = computed(() => reports['product-performance'] ?? null)
+const profit = computed(() => reports['profit-audit'] ?? null)
+
+const inventory = computed<ReviewInventoryItem[]>(
+  () => (reports['inventory-health']?.details?.items ?? []) as ReviewInventoryItem[]
+)
+const products = computed<ReviewProductPerf[]>(
+  () => (prods.value?.details?.products ?? []) as ReviewProductPerf[]
+)
+const skuRank = computed<ReviewSkuRank[]>(
+  () => (monthly.value?.details?.sku_rank ?? []) as ReviewSkuRank[]
+)
+
+function metricsOf(rep: ReviewReport | null): ReviewMetric[] {
+  return rep?.metrics ?? []
+}
+function sales(rep: ReviewReport | null): ReviewSalesSum | undefined {
+  return rep?.details?.sales as ReviewSalesSum | undefined
+}
+function ad(rep: ReviewReport | null): ReviewAdSum | undefined {
+  return rep?.details?.ad as ReviewAdSum | undefined
+}
+
+// ====== 格式化 ======
+function fmtMoney(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(v)) return '—'
+  return Math.round(v).toLocaleString()
+}
+function formatMetric(m: ReviewMetric): string {
+  if (m.unit === 'USD') return '$' + fmtMoney(m.value)
+  if (m.unit === '%') return m.value + '%'
+  const num = Number.isInteger(m.value) ? m.value.toLocaleString() : m.value.toFixed(2)
+  return num + (m.unit || '')
+}
+function kpiClass(status?: string): string {
+  if (status === 'good') return 'success'
+  if (status === 'warning') return 'warning'
+  if (status === 'critical') return 'danger'
+  return ''
+}
+const HEALTH_TAG: Record<string, { color: string; label: string }> = {
+  HEALTHY: { color: 'green', label: '健康' },
+  WARNING: { color: 'orange', label: '预警' },
+  CRITICAL: { color: 'red', label: '断货风险' },
+  STAGNANT: { color: 'default', label: '滞销' },
+  UNKNOWN: { color: 'default', label: '未知' },
+}
+function healthTag(status: string): { color: string; label: string } {
+  return HEALTH_TAG[status] || HEALTH_TAG.UNKNOWN
+}
+
+// ====== 派生 ======
 const rankRows = computed(() => {
-  const rows = Object.entries(DAILY_SALES).map(([asin, arr]) => {
-    const s = sum(arr); const rev = s * asinOf(asin).price
-    return { asin, name: asinOf(asin).name, sales: s, rev }
-  }).sort((a, b) => b.sales - a.sales)
-  const total = rows.reduce((a, r) => a + r.sales, 0)
-  return rows.map((r) => ({ ...r, pct: (r.sales / total) * 100 }))
+  const rows = products.value.slice().sort((a, b) => b.units - a.units)
+  const total = rows.reduce((a, r) => a + r.units, 0)
+  return rows.map((r) => ({
+    asin: r.asin,
+    units: r.units,
+    pct: total ? (r.units / total) * 100 : 0,
+  }))
 })
 function rankColor(i: number): string {
   return CHART_VARS[i % CHART_VARS.length]
 }
 
-// ====== 月度派生 ======
-const targetRate = 92.4
-const COGS_MONTH = 68890
-const COMMISSION_MONTH = 34376
-const FBA_MONTH = 14308
-const ADSPEND_MONTH = 35336
-const OTHER_COST = 9420
-const NET_MONTH = 49290
-function dayTicks(len: number) {
-  const out: string[] = []
-  for (let i = 0; i < len; i += 5) out.push((i + 1) + '日')
-  out.push(len + '日')
-  return out
-}
-
-// ====== 利润派生 ======
-const TOTAL_COST = TOTAL_MONTH_REV - NET_MONTH
-const profitRows = computed(() =>
-  PROFIT_DETAIL.map((p) => {
-    const a = asinOf(p.asin)
-    const cogs = p.units * a.unitCost
-    const comm = p.rev * a.commissionRate
-    const fba = p.units * a.fbaFee
-    const net = p.rev - cogs - comm - fba - p.adSpend
-    return { asin: p.asin, name: p.name, units: p.units, rev: p.rev, cogs, comm, fba, ad: p.adSpend, net }
-  })
-)
-// ====== 引用（防树摇误判，聚合导出常量）======
 const profitCats = computed(() => {
-  const good = profitRows.value.filter((r) => r.net > 0).length
-  const loss = profitRows.value.filter((r) => r.net < 0).length
-  return { good, breakEven: profitRows.value.length - good - loss, loss }
+  const rows = skuRank.value
+  const good = rows.filter((r) => r.profit > 0).length
+  const loss = rows.filter((r) => r.profit < 0).length
+  return { good, loss, breakEven: rows.length - good - loss }
 })
 </script>
 
@@ -489,6 +548,17 @@ const profitCats = computed(() => {
 .card-head.danger { color: var(--danger); }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-12); }
 @media (max-width: 480px) { .two-col { grid-template-columns: 1fr; } }
+
+/* ====== 状态条与「后端未提供」占位（第 167 轮 #725 新增） ====== */
+.rv-banner { display: flex; align-items: center; gap: var(--space-8); padding: var(--space-8) var(--space-12); border-radius: var(--radius-8); border: 1px solid transparent; font-size: var(--font-size-12); flex-shrink: 0; }
+.rv-banner.info { background: var(--bg-hover-light); color: var(--text-secondary); border-color: var(--border-base); }
+.rv-banner.warn { background: rgba(250,173,20,.1); color: var(--warning); border-color: rgba(250,173,20,.35); }
+.rv-banner.error { background: rgba(255,77,79,.1); color: var(--danger); border-color: rgba(255,77,79,.35); }
+.rv-banner-text { flex: 1; min-width: 0; line-height: 1.5; }
+.rv-retry { border: 1px solid currentColor; background: transparent; color: inherit; border-radius: var(--radius-8); padding: 2px 10px; font-size: var(--font-size-11); cursor: pointer; white-space: nowrap; }
+.rv-unsupported { display: flex; align-items: center; gap: var(--space-6); min-height: 56px; padding: var(--space-12) var(--space-14); border: 1px dashed var(--border-base); border-radius: var(--radius-10); background: var(--bg-hover-light); color: var(--text-tertiary); font-size: var(--font-size-11-5); line-height: 1.6; }
+.rv-unsupported-icon { font-size: var(--font-size-15); opacity: .7; }
+.rv-mini-note { margin-top: var(--space-8); font-size: var(--font-size-10-5); color: var(--text-tertiary); line-height: 1.6; }
 
 /* ASIN 排行 */
 .rank-list { display: flex; flex-direction: column; gap: var(--space-8); }

@@ -5,12 +5,6 @@
          右侧预览仅在大屏模式渲染。 -->
     <div class="content" :class="{ 'data-layout': isDataMode }">
       <div class="form-body">
-        <!-- 工作商品横幅 -->
-        <div v-if="workingProduct" class="product-banner">
-          <span class="banner-icon">📦</span>
-          <span class="banner-text">{{ workingProduct.title?.slice(0, 30) }}{{ workingProduct.title?.length > 30 ? '…' : '' }}</span>
-        </div>
-
         <!-- ====== 第一层：选择生成模式（2 张大卡片，互斥） ====== -->
         <div class="section-title">生成模式</div>
         <div class="mode-cards">
@@ -39,128 +33,139 @@
              AI 生成分镜表 → 每个镜头单独选择素材来源
         ================================================================ -->
         <template v-if="form.mode === 'storyboard-pro'">
-          <a-divider style="margin: 12px 0" />
+          <a-divider style="margin: 10px 0" />
 
-          <!-- 未生成：引导按钮 -->
-          <div v-if="!storyboardGenerated" class="gen-storyboard-panel">
-            <p class="panel-desc">
-              由 AI 根据产品卖点自动生成 5-6 个镜头的分镜表；生成后可为每个镜头选择素材来源
-              （<b>产品素材库 / 手动上传</b>）。
-            </p>
-            <a-button type="primary" block :loading="storyboardLoading" @click="generateStoryboard">
-              <RobotOutlined /> AI 自动生成分镜表
-            </a-button>
-
-            <!-- 已有带货脚本 → 一键导入复用（避免重复生成） -->
-            <div v-if="videoScriptsStore.lastScript" class="import-script-tip">
-              <span>📄 检测到「短视频带货脚本」结果（{{ videoScriptsStore.sceneCount() }} 镜）</span>
-              <a-button size="small" type="primary" ghost block @click="importScript" style="margin-top: 6px">
-                <ImportOutlined /> 导入带货脚本
+          <!-- 工具栏：生成 / 导入 入口收成一行，纵向空间尽量留给脚本表 -->
+          <div class="script-toolbar">
+            <span class="section-title" style="margin: 0">
+              分镜脚本<template v-if="form.storyboardScenes.length">（{{ form.storyboardScenes.length }} 镜）</template>
+            </span>
+            <div class="toolbar-actions">
+              <a-button type="primary" size="small" :loading="storyboardLoading" @click="generateStoryboard">
+                <RobotOutlined /> {{ form.storyboardScenes.length ? '重新生成' : 'AI 自动生成分镜表' }}
               </a-button>
-              <a-button size="small" type="link" danger block @click="clearScriptImport">清除已有脚本</a-button>
-            </div>
-            <div v-else class="import-script-empty">
-              💡 还没有带货脚本？可先到「短视频带货脚本」工具生成，再回来一键导入复用。
+              <a-tooltip v-if="videoScriptsStore.lastScript" title="复用「短视频带货脚本」最近一次结果">
+                <a-button size="small" @click="importScript">
+                  <ImportOutlined /> 导入带货脚本（{{ videoScriptsStore.sceneCount() }} 镜）
+                </a-button>
+              </a-tooltip>
             </div>
           </div>
 
-          <!-- 已生成：镜头编辑 -->
-          <template v-else>
-            <div class="section-head-row">
-              <span class="section-title" style="margin-top: 0">分镜镜头（{{ form.storyboardScenes.length }}）</span>
-              <a-button type="text" size="small" @click="resetStoryboard">重新生成</a-button>
-            </div>
-
-            <div class="frames-list">
-              <div v-for="(scene, idx) in form.storyboardScenes" :key="idx" class="frame-card">
-                <div class="frame-header">
-                  <span class="frame-num">镜头 {{ idx + 1 }}</span>
-                  <span v-if="scene.desc" class="scene-desc" :title="scene.desc">{{ scene.desc }}</span>
+          <!-- 分镜表：就地可编辑，形态对齐「短视频带货脚本」结果表 -->
+          <a-table
+            v-if="form.storyboardScenes.length"
+            class="storyboard-table"
+            :data-source="form.storyboardScenes"
+            :columns="sceneColumns"
+            size="small"
+            :pagination="false"
+            :scroll="{ x: 800 }"
+            row-key="_uid"
+          >
+            <template #bodyCell="{ column, record, index }">
+              <template v-if="column.key === 'idx'">
+                <span class="scene-num">{{ index + 1 }}</span>
+              </template>
+              <template v-else-if="column.key === 'duration'">
+                <a-input-number
+                  v-model:value="record.duration"
+                  :min="1" :max="15" size="small" style="width: 100%"
+                  addon-after="s"
+                />
+              </template>
+              <template v-else-if="column.key === 'desc'">
+                <a-textarea
+                  v-model:value="record.desc"
+                  :auto-size="{ minRows: 1, maxRows: 3 }"
+                  size="small" placeholder="画面描述"
+                />
+              </template>
+              <template v-else-if="column.key === 'narration'">
+                <a-textarea
+                  v-model:value="record.narration"
+                  :auto-size="{ minRows: 1, maxRows: 3 }"
+                  size="small" placeholder="文案 / 旁白"
+                />
+              </template>
+              <template v-else-if="column.key === 'source'">
+                <a-select
+                  :value="record.source"
+                  size="small" style="width: 100%"
+                  :options="SOURCE_OPTIONS"
+                  @change="(v: any) => setSceneSource(index, v)"
+                />
+              </template>
+              <template v-else-if="column.key === 'frame'">
+                <div class="frame-pick">
+                  <img
+                    v-if="record.imageUrl"
+                    :src="record.imageUrl"
+                    class="frame-thumb"
+                    title="点击更换首帧"
+                    @error="onImgError"
+                    @click="openSourcePicker('scene', index)"
+                  />
+                  <button
+                    v-else
+                    class="frame-folder-btn"
+                    title="从素材库选取 / 本地上传"
+                    @click="openSourcePicker('scene', index)"
+                  ><FolderOpenOutlined /></button>
+                </div>
+              </template>
+              <template v-else-if="column.key === 'camera'">
+                <a-select
+                  v-model:value="record.cameraMovement"
+                  size="small" style="width: 100%"
+                  :options="CAMERA_OPTIONS"
+                />
+              </template>
+              <template v-else-if="column.key === 'ops'">
+                <a-space :size="0">
                   <a-button
-                    v-if="form.storyboardScenes.length > 1"
-                    type="text"
-                    size="small"
-                    danger
-                    @click="removeScene(idx)"
-                  >删除</a-button>
-                </div>
+                    size="small" type="text" title="上移"
+                    :disabled="index === 0"
+                    @click="moveScene(index, -1)"
+                  ><ArrowUpOutlined /></a-button>
+                  <a-button
+                    size="small" type="text" title="下移"
+                    :disabled="index === form.storyboardScenes.length - 1"
+                    @click="moveScene(index, 1)"
+                  ><ArrowDownOutlined /></a-button>
+                  <a-button
+                    size="small" type="text" danger title="删除"
+                    :disabled="form.storyboardScenes.length <= 1"
+                    @click="removeScene(index)"
+                  ><DeleteOutlined /></a-button>
+                </a-space>
+              </template>
+            </template>
+          </a-table>
 
-                <!-- 旁白文案（从带货脚本带入） -->
-                <div v-if="scene.narration" class="scene-narration" :title="scene.narration">
-                  💬 {{ scene.narration }}
-                </div>
+          <!-- 空态：不放虚构默认数据（空状态优于虚构默认） -->
+          <div v-else class="storyboard-empty">
+            <span class="empty-icon">🎬</span>
+            <span class="empty-text">
+              由 AI 根据产品卖点自动生成 5-6 个镜头的分镜表；生成后可为每个镜头选择素材来源（产品素材库 / 手动上传）。
+            </span>
+            <span v-if="!videoScriptsStore.lastScript" class="empty-hint">
+              💡 也可先到「短视频带货脚本」工具生成，再回来一键导入复用。
+            </span>
+          </div>
 
-                <!-- 该镜头的素材来源（子步骤） -->
-                <div class="scene-source-row">
-                  <span class="src-label">素材来源</span>
-                  <a-radio-group
-                    :value="scene.source"
-                    size="small"
-                    @change="(e: any) => setSceneSource(idx, e.target.value)"
-                  >
-                    <a-radio-button value="library">📁 产品素材库</a-radio-button>
-                    <a-radio-button value="upload">📤 手动上传</a-radio-button>
-                  </a-radio-group>
-                </div>
+          <a-button size="small" type="dashed" block style="margin-top: 6px" @click="addScene">
+            <PlusOutlined /> 添加镜头
+          </a-button>
 
-                <!-- 首帧图区 -->
-                <div class="frame-image-area" @click="openSourcePicker('scene', idx)">
-                  <div v-if="!scene.imageUrl" class="frame-placeholder">
-                    <PlusOutlined style="font-size: 20px; color: #d9d9d9" />
-                    <span style="font-size: 11px; color: #bfbfbf">
-                      点击从{{ scene.source === 'upload' ? '本地上传' : '产品素材库' }}选取
-                    </span>
-                  </div>
-                  <div v-else class="frame-image-wrapper">
-                    <img :src="scene.imageUrl" alt="首帧图" class="frame-preview-img" />
-                    <div class="frame-img-overlay">
-                      <a-button type="text" size="small" @click.stop="openSourcePicker('scene', idx)">
-                        <SwapOutlined /> 更换
-                      </a-button>
-                      <a-button type="text" size="small" danger @click.stop="clearSceneImage(idx)">
-                        <DeleteOutlined />
-                      </a-button>
-                    </div>
-                    <span class="frame-source-tag">{{ sourceLabel(scene.source) }}</span>
-                  </div>
-                </div>
-
-                <div class="form-row" style="margin-top: 6px">
-                  <div class="form-group flex-1">
-                    <label>运镜指令</label>
-                    <a-select
-                      :model-value="scene.cameraMovement"
-                      @change="(v: string) => updateScene(idx, 'cameraMovement', v)"
-                      size="small"
-                      style="width: 100%"
-                    >
-                      <a-select-option value="static">固定机位</a-select-option>
-                      <a-select-option value="push-in-slow">缓慢推近</a-select-option>
-                      <a-select-option value="pull-out-reveal">拉远揭示</a-select-option>
-                      <a-select-option value="pan-left-right">左右横扫</a-select-option>
-                      <a-select-option value="rotate-360">环绕 360°</a-select-option>
-                      <a-select-option value="zoom-dolly">变焦推轨</a-select-option>
-                      <a-select-option value="ken-burns">Ken Burns</a-select-option>
-                    </a-select>
-                  </div>
-                  <div class="form-group flex-1">
-                    <label>时长（秒）</label>
-                    <a-input-number
-                      :model-value="scene.duration"
-                      @change="(v: number) => updateScene(idx, 'duration', v || 3)"
-                      :min="1" :max="15" size="small" style="width: 100%"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="frame-actions">
-              <a-button size="small" block @click="addScene">
-                <PlusOutlined /> 添加镜头
-              </a-button>
-            </div>
-          </template>
+          <div v-if="form.storyboardScenes.length" class="table-foot-row">
+            <a-button type="text" size="small" @click="resetStoryboard">清空分镜</a-button>
+            <a-button
+              v-if="videoScriptsStore.lastScript"
+              type="text" size="small" danger
+              @click="clearScriptImport"
+            >清除脚本缓存</a-button>
+          </div>
         </template>
 
         <!-- ================================================================
@@ -264,7 +269,11 @@
         <a-collapse ghost size="small" style="margin-top: 4px">
           <a-collapse-panel key="advanced" header="高级选项">
             <div class="form-group">
-              <label>额外指令（可选）</label>
+              <!-- 提示词增强：这段额外指令会直接拼进视频生成的要求里 -->
+              <div class="label-row">
+                <label>额外指令（可选）</label>
+                <PromptEnhanceButton v-model="form.extraPrompt" context="aigc-video" size="sm" />
+              </div>
               <a-textarea
                 v-model:value="form.extraPrompt"
                 :rows="2"
@@ -321,7 +330,7 @@
       v-model:open="pickerVisible"
       :title="pickerTitle"
       placement="right"
-      :width="560"
+      :width="WINDOW_W.lg"
       :closable="true"
       :mask-closable="true"
     >
@@ -369,6 +378,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { reactive, ref, computed, watch, inject, type Ref } from 'vue'
 import { useAigcResultsStore } from '@/stores/aigcResults'
 import { useAssetLibraryStore } from '@/stores/assetLibrary'
@@ -379,13 +389,16 @@ import {
   PlusOutlined,
   DeleteOutlined,
   VideoCameraAddOutlined,
-  SwapOutlined,
   CloudUploadOutlined,
   ImportOutlined,
+  FolderOpenOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useVideoScriptsStore } from '@/stores/videoScripts'
 import AIGCMediaResult from '@/components/ChatPanel/results/AIGCMediaResult.vue'
+import PromptEnhanceButton from '@/components/common/PromptEnhanceButton.vue'
 
 const emit = defineEmits<{
   (e: 'startAnalysis', params: any): void
@@ -418,6 +431,7 @@ const isGenerating = computed<boolean>({
 
 // ====== 类型 ======
 interface Scene {
+  _uid: string          // 行标识（表格 row-key；增删/排序时保证 Vue 复用正确，不会串行）
   duration: number
   desc: string          // 画面描述（AI 生成画面用 / 展示用）
   narration: string     // 旁白文案（AI 生成）
@@ -428,6 +442,49 @@ interface Scene {
 }
 
 const sourceLabel = (s: string) => ({ library: '素材库', upload: '上传' })[s] || s
+
+// 分镜表列定义 —— 形态对齐「短视频带货脚本」结果表（竞品对话流的同一范式）
+const sceneColumns = [
+  { title: '镜', dataIndex: '_uid', key: 'idx', width: 40 },
+  { title: '时长', dataIndex: 'duration', key: 'duration', width: 74 },
+  { title: '画面描述', dataIndex: 'desc', key: 'desc', width: 170 },
+  { title: '文案/旁白', dataIndex: 'narration', key: 'narration', width: 142 },
+  { title: '素材来源', dataIndex: 'source', key: 'source', width: 100 },
+  { title: '首帧', dataIndex: 'imageUrl', key: 'frame', width: 54 },
+  { title: '运镜', dataIndex: 'cameraMovement', key: 'camera', width: 114 },
+  { title: '操作', key: 'ops', width: 106 },
+]
+
+const CAMERA_OPTIONS = [
+  { value: 'static', label: '固定机位' },
+  { value: 'push-in-slow', label: '缓慢推近' },
+  { value: 'pull-out-reveal', label: '拉远揭示' },
+  { value: 'pan-left-right', label: '左右横扫' },
+  { value: 'rotate-360', label: '环绕 360°' },
+  { value: 'zoom-dolly', label: '变焦推轨' },
+  { value: 'ken-burns', label: 'Ken Burns' },
+]
+
+const SOURCE_OPTIONS = [
+  { value: 'library', label: '📁 产品素材库' },
+  { value: 'upload', label: '📤 手动上传' },
+]
+
+// 镜头工厂：三处创建点（AI 生成 / 导入脚本 / 手动添加）共用，保证 _uid 唯一
+let _sceneSeq = 0
+function makeScene(partial: Partial<Omit<Scene, '_uid'>> = {}): Scene {
+  return {
+    _uid: `scene-${++_sceneSeq}`,
+    duration: 4,
+    desc: '',
+    narration: '',
+    source: 'library',
+    imageUrl: '',
+    cameraMovement: 'static',
+    transition: 'fade',
+    ...partial,
+  }
+}
 
 // ====== 表单 ======
 const defaultForm = () => ({
@@ -507,12 +564,12 @@ function generateStoryboard() {
     const bullets = p.bullet_points || []
     const featLine = selling[0] || bullets[0]?.title || ''
     const scenes: Scene[] = [
-      { duration: 3, desc: '开篇钩子：产品特写 + 痛点字幕（前3秒抓住注意力）', narration: '', source: 'library', imageUrl: '', cameraMovement: 'push-in-slow', transition: 'fade' },
-      { duration: 4, desc: '产品外观 360° 展示（白底三视图氛围）', narration: `${name} 惊艳登场`, source: 'library', imageUrl: '', cameraMovement: 'rotate-360', transition: 'fade' },
-      { duration: 4, desc: '核心卖点场景演示（自动运镜跟随产品）', narration: featLine ? `核心亮点：${featLine}` : '', source: 'library', imageUrl: '', cameraMovement: 'zoom-dolly', transition: 'slide' },
-      { duration: 4, desc: '使用场景 / 生活方式画面', narration: '怎么用都顺手', source: 'library', imageUrl: '', cameraMovement: 'pan-left-right', transition: 'slide' },
-      { duration: 3, desc: '细节/材质特写（Ken Burns 缩放营造质感）', narration: '', source: 'library', imageUrl: '', cameraMovement: 'ken-burns', transition: 'fade' },
-      { duration: 3, desc: '结尾 CTA：价格 + 行动号召', narration: '限时优惠，快来下单！', source: 'library', imageUrl: '', cameraMovement: 'static', transition: 'fade' },
+      makeScene({ duration: 3, desc: '开篇钩子：产品特写 + 痛点字幕（前3秒抓住注意力）', cameraMovement: 'push-in-slow' }),
+      makeScene({ duration: 4, desc: '产品外观 360° 展示（白底三视图氛围）', narration: `${name} 惊艳登场`, cameraMovement: 'rotate-360' }),
+      makeScene({ duration: 4, desc: '核心卖点场景演示（自动运镜跟随产品）', narration: featLine ? `核心亮点：${featLine}` : '', cameraMovement: 'zoom-dolly', transition: 'slide' }),
+      makeScene({ duration: 4, desc: '使用场景 / 生活方式画面', narration: '怎么用都顺手', cameraMovement: 'pan-left-right', transition: 'slide' }),
+      makeScene({ duration: 3, desc: '细节/材质特写（Ken Burns 缩放营造质感）', cameraMovement: 'ken-burns' }),
+      makeScene({ duration: 3, desc: '结尾 CTA：价格 + 行动号召', narration: '限时优惠，快来下单！', cameraMovement: 'static' }),
     ]
     form.storyboardScenes = scenes
     storyboardGenerated.value = true
@@ -526,12 +583,15 @@ function resetStoryboard() {
   form.storyboardScenes = []
 }
 function addScene() {
-  form.storyboardScenes.push({
-    duration: 4, desc: '', narration: '',
-    source: 'library', imageUrl: '', cameraMovement: 'static', transition: 'fade',
-  })
+  form.storyboardScenes.push(makeScene())
 }
 function removeScene(idx: number) { form.storyboardScenes.splice(idx, 1) }
+function moveScene(idx: number, dir: -1 | 1) {
+  const arr = form.storyboardScenes
+  const target = idx + dir
+  if (target < 0 || target >= arr.length) return
+  ;[arr[idx], arr[target]] = [arr[target], arr[idx]]
+}
 function updateScene(idx: number, field: keyof Scene, value: any) {
   ;(form.storyboardScenes[idx] as any)[field] = value
 }
@@ -555,14 +615,11 @@ function importScript() {
     message.warning('还没有可导入的带货脚本，请先到「短视频带货脚本」工具生成')
     return
   }
-  form.storyboardScenes = script.storyboard.map((s) => ({
+  form.storyboardScenes = script.storyboard.map((s) => makeScene({
     duration: s.duration || 3,
     desc: s.visual || '',
     narration: s.narration || '',
-    source: 'library' as Scene['source'],
-    imageUrl: '',
     cameraMovement: CAMERA_COMPAT[s.cameraMovement] || s.cameraMovement || 'static',
-    transition: 'fade',
   }))
   storyboardGenerated.value = true
   message.success(`已导入「${script.productName}」的 ${form.storyboardScenes.length} 镜分镜表，下一步为每个镜头选素材来源`)
@@ -704,9 +761,11 @@ function assetTypeLabel(type: string): string {
   min-height: 0;
   overflow: hidden;
 }
+/* 左栏（配置 + 分镜表）吃主要宽度：分镜表要 8 列才装得下（第 248 轮实测）。
+   右栏只放视频结果，窄一点够用；窄屏由 minmax 保底不塌陷。 */
 .content.data-layout {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(280px, 1.3fr);
+  grid-template-columns: minmax(380px, 2fr) minmax(240px, 1fr);
   gap: var(--space-12);
 }
 
@@ -753,104 +812,84 @@ function assetTypeLabel(type: string): string {
 .frame-meta { padding: 4px 6px; display: flex; align-items: center; gap: 4px; }
 .frame-desc { font-size: 10px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.product-banner {
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px 10px; background: #e6f7ff; border: 1px solid #91d5ff;
-  border-radius: 6px; font-size: 12px; color: #1890ff;
-}
-.banner-icon { font-size: 14px; }
-.banner-text { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.section-title { font-size: 12px; font-weight: 600; color: #262626; margin-top: 4px; }
+/* ★ 第 319 轮 · 真机探针实测补漏：原为写死 `#262626`。
+   本会话早前的深色改造把它的**容器底**换成了 `var(--bg-elevated)` /
+   `var(--bg-hover-light)`（见未提交 diff 里 `- background: #fff` → `+ var(--bg-elevated)`），
+   却没动这里的字色 ⇒ 深色下 `#262626` 压在 `rgb(31,31,31)` 上 = **1.09:1**
+   （实测：`div.section-title`「生成模式」「分镜脚本」「视频参数」「字幕 & 文字叠加」，
+   4 条同时命中 P1 与 P2）。这就是判据里那条「**只改底会把写死的深字落在暗底 = 当场造新缺陷**」。
+   ⇒ 成对改成 `--text-primary`：浅色 `--text-primary` 就是 `#262626`（逐字相同，浅色零变化），
+     深色自动变 `rgba(255,255,255,.92)`。 */
+.section-title { font-size: 12px; font-weight: 600; color: var(--text-primary); margin-top: 4px; }
 .section-head-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 
 /* ===== 第一层：模式大卡片 ===== */
-.mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* 模式卡片：图标与名称同行、说明单行省略 —— 高度压到 ~44px，把纵向空间留给脚本表 */
+.mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .mode-card {
-  display: flex; flex-direction: column; align-items: flex-start;
-  padding: 12px 10px; border: 2px solid #f0f0f0; border-radius: 10px;
+  display: grid; grid-template-columns: auto 1fr; align-items: center;
+  column-gap: 6px; row-gap: 2px;
+  padding: 6px 8px; border: 2px solid var(--border-base); border-radius: 8px;
   cursor: pointer; transition: all 0.2s; text-align: left;
-  background: #fff;
+  /* ★ 这一块的底色与字色必须**成对**改成主题变量：只把 #fff 换掉的话，
+     写死的 #262626 深字会落在深色卡上 ⇒ 当场造出一个新的「看不见」。 */
+  background: var(--bg-elevated);
 }
-.mode-card:hover { border-color: #bae7ff; box-shadow: 0 2px 8px rgba(24,144,255,0.08); }
-.mode-card.active { border-color: #1890ff; background: #e6f7ff; }
-.mode-icon { font-size: 22px; }
-.mode-name { font-size: 13px; font-weight: 700; margin: 4px 0 2px; color: #262626; }
-.mode-card small { font-size: 11px; color: #8c8c8c; line-height: 1.5; }
-
-/* ===== 生成分镜引导 ===== */
-.gen-storyboard-panel {
-  border: 1px dashed #d9d9d9; border-radius: 8px; padding: 12px;
-  background: #fafafa; display: flex; flex-direction: column; gap: 10px;
-}
-.panel-desc { margin: 0; font-size: 12px; color: #595959; line-height: 1.7; }
-.panel-desc b { color: #262626; }
-
-/* ===== 镜头列表 ===== */
-.frames-list { display: flex; flex-direction: column; gap: 10px; max-height: 420px; overflow-y: auto; padding-right: 4px; }
-.frame-card { border: 1px solid #f0f0f0; border-radius: 8px; padding: 10px; background: #fff; }
-.frame-header {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
-  padding-bottom: 6px; border-bottom: 1px dashed #f0f0f0;
-}
-.frame-num {
-  font-size: 12px; font-weight: 700; color: #1890ff;
-  background: #e6f7ff; padding: 1px 8px; border-radius: 10px; flex-shrink: 0;
-}
-.scene-desc {
-  flex: 1; font-size: 11px; color: #8c8c8c; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap;
+.mode-card:hover { border-color: var(--info-border); box-shadow: 0 2px 8px rgba(24,144,255,0.08); }
+.mode-card.active { border-color: var(--primary); background: var(--info-bg); }
+.mode-icon { font-size: 15px; grid-row: 1; }
+.mode-name { font-size: 12px; font-weight: 700; color: var(--text-primary); grid-row: 1; }
+.mode-card small {
+  grid-column: 1 / -1; font-size: 10px; color: var(--text-tertiary); line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.scene-narration {
-  font-size: 11px; color: #595959; background: #f6ffed; border-radius: 4px;
-  padding: 3px 6px; margin-bottom: 6px; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; border-left: 2px solid #52c41a;
+/* ===== 脚本工具栏（生成 / 导入 入口收成一行） ===== */
+.script-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-8); flex-wrap: wrap; margin-bottom: var(--space-6);
 }
+.toolbar-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.toolbar-actions :deep(.ant-btn) { font-size: var(--font-size-11); }
 
-/* 导入脚本提示 */
-.import-script-tip {
-  margin-top: 10px; padding: 8px 10px; background: #fff7e6;
-  border: 1px solid #ffd591; border-radius: 6px;
-  font-size: 12px; color: #d48806;
+/* ===== 分镜表（形态对齐「短视频带货脚本」结果表） ===== */
+.storyboard-table :deep(.ant-table-cell) { vertical-align: middle; }
+.storyboard-table :deep(.ant-input-number),
+.storyboard-table :deep(.ant-input-number-group-wrapper) { width: 100%; }
+.scene-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: var(--radius-circle);
+  background: var(--purple); color: #fff;
+  font-size: var(--font-size-11); font-weight: 600;
 }
-.import-script-empty {
-  margin-top: 8px; font-size: 11px; color: #8c8c8c; line-height: 1.6;
-  text-align: center; padding: 8px; background: #fafafa; border-radius: 6px;
+.frame-pick { display: flex; align-items: center; justify-content: center; }
+.frame-thumb {
+  width: 40px; height: 40px; object-fit: cover;
+  border-radius: var(--radius-4); border: 1px solid var(--border-base);
+  cursor: pointer; transition: opacity 0.15s;
 }
+.frame-thumb:hover { opacity: 0.75; }
+.frame-folder-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; padding: 0; cursor: pointer;
+  color: var(--text-tertiary); font-size: 18px;
+  background: var(--bg-hover-light, transparent);
+  border: 1px dashed var(--border-base); border-radius: var(--radius-4);
+}
+.frame-folder-btn:hover { color: var(--primary); border-color: var(--primary); }
 
-/* 素材来源（子步骤） */
-.scene-source-row {
-  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+/* 空态：不放虚构默认数据 */
+.storyboard-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 18px 14px; text-align: center;
+  background: var(--bg-hover-light, #fafafa);
+  border: 1px dashed var(--border-base); border-radius: var(--radius-8);
 }
-.src-label { font-size: 11px; color: #8c8c8c; flex-shrink: 0; }
-.scene-source-row :deep(.ant-radio-button-wrapper) { font-size: 11px; padding: 0 7px; }
+.storyboard-empty .empty-icon { font-size: 22px; }
+.storyboard-empty .empty-text { font-size: var(--font-size-12); color: var(--text-secondary); line-height: 1.7; }
+.storyboard-empty .empty-hint { font-size: var(--font-size-11); color: var(--text-tertiary); }
 
-.frame-image-area { min-height: 80px; cursor: pointer; }
-.frame-placeholder {
-  border: 2px dashed #d9d9d9; border-radius: 6px; height: 80px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 2px; transition: border-color 0.2s;
-}
-.frame-placeholder:hover { border-color: #1890ff; }
-.frame-image-wrapper { position: relative; }
-.frame-preview-img {
-  width: 100%; max-height: 120px; object-fit: contain;
-  border-radius: 6px; border: 1px solid #f0f0f0;
-}
-.frame-img-overlay {
-  position: absolute; inset: 0; background: rgba(0,0,0,0.45);
-  display: flex; align-items: center; justify-content: center; gap: 4px;
-  opacity: 0; transition: opacity 0.2s; border-radius: 6px;
-}
-.frame-image-wrapper:hover .frame-img-overlay { opacity: 1; }
-.frame-source-tag {
-  position: absolute; top: 4px; left: 4px; background: rgba(24,144,255,0.85);
-  color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px;
-}
-
-.frame-actions { display: flex; gap: 6px; margin-top: 8px; }
-
+.table-foot-row { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: 2px; }
 /* ===== 单图极速 ===== */
 .single-image-picker {
   border: 2px dashed #d9d9d9; border-radius: 10px; overflow: hidden;
@@ -869,12 +908,15 @@ function assetTypeLabel(type: string): string {
 }
 
 /* ===== 表单通用 ===== */
-.form-group > label { display: block; font-size: 12px; color: #595959; margin-bottom: 3px; font-weight: 500; }
+.form-group > label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 3px; font-weight: 500; }
+/* 字段名 + 右侧「提示词增强」按钮同排（★ 别放进 <label>：button 是 labelable ⇒ 点标签会触发增强） */
+.label-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.label-row > label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 0; font-weight: 500; }
 .form-row { display: flex; gap: 8px; }
 .flex-1 { flex: 1; }
 .text-options-row { display: flex; flex-wrap: wrap; gap: 4px 10px; }
-.archive-section { margin-top: 8px; padding: 8px; background: #f6ffed; border-radius: 6px; border: 1px solid #b7eb8f; }
-.action-bar { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding-top: 10px; border-top: 1px solid #f0f0f0; }
+.archive-section { margin-top: 8px; padding: 8px; background: var(--success-bg); border-radius: 6px; border: 1px solid var(--success-border); }
+.action-bar { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border-base); }
 
 /* ===== 素材库选择网格（弹窗内） ===== */
 .picker-asset-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; max-height: 300px; overflow-y: auto; }

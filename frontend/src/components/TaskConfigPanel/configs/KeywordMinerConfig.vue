@@ -398,11 +398,11 @@ const handleReset = () => {
 }
 .kw-type-card:hover {
   border-color: var(--primary);
-  background: #f0f7ff;
+  background: var(--primary-bg-subtle);
 }
 .kw-type-card.active {
   border-color: var(--primary);
-  background: #e6f4ff;
+  background: var(--bg-active-light);
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
 }
 .kw-icon {

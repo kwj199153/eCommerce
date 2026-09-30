@@ -255,44 +255,19 @@ export const useShopStore = defineStore('shop', () => {
     }
   }
 
-  /**
-   * 连接平台 API
-   */
-  async function connectPlatform(
-    shopId: string,
-    credentials?: Record<string, any>
-  ): Promise<void> {
-    try {
-      await post(`/stores/${shopId}/connect`, credentials)
-
-      // 更新连接状态
-      const shop = shops.value.find((s) => s.id === shopId)
-      if (shop) {
-        shop.is_connected = true
-      }
-    } catch (error) {
-      console.error('连接平台失败:', error)
-      throw error
-    }
-  }
-
-  /**
-   * 断开平台 API
-   */
-  async function disconnectPlatform(shopId: string): Promise<void> {
-    try {
-      await post(`/stores/${shopId}/disconnect`)
-
-      // 更新连接状态
-      const shop = shops.value.find((s) => s.id === shopId)
-      if (shop) {
-        shop.is_connected = false
-      }
-    } catch (error) {
-      console.error('断开平台失败:', error)
-      throw error
-    }
-  }
+  // ★★ 第 318 轮：这里原有 `connectPlatform` / `disconnectPlatform` 两个 action，
+  //    已**整体删除**。两条理由都不是风格问题：
+  //
+  //    ① 它们是**第二份实现** —— `@/api/stores` 里已经有一份 `connectPlatform`，
+  //       而这里绕过 api 层直接 `post()`。两份各自演进 ⇒ 改一处漏一处，
+  //       且不会有任何报错。
+  //    ② 更要命的是它们**自己编状态**：请求成功后写 `shop.is_connected = true`，
+  //       完全不看后端返回什么。而在这个改动之前，后端**压根不返回**
+  //       `is_connected`（普通 `@property` 不进 `model_dump`）——
+  //       界面上那个绿灯是前端凭空点亮的，典型的「前端推算后端判据」。
+  //
+  //    ⇒ 连接/断开的**唯一入口**是 `@/api/stores` 的两个函数；
+  //      状态一律以服务端返回为准（`shopConnectState()`），前端不猜。
 
   return {
     // State
@@ -315,7 +290,5 @@ export const useShopStore = defineStore('shop', () => {
     createNewShop,
     updateShop,
     deleteShop: deleteShopById,
-    connectPlatform,
-    disconnectPlatform,
   }
 })

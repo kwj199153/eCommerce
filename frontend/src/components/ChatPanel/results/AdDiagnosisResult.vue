@@ -134,7 +134,7 @@ export default {
   padding: var(--space-20); border-radius: var(--radius-12); margin-bottom: var(--space-16);
 }
 .score-header.grade-A { background: linear-gradient(135deg, var(--success-bg), var(--success-bg-2)); border: 1px solid var(--success-border); }
-.score-header.grade-B { background: linear-gradient(135deg, #e6f7ff, #bae7ff); border: 1px solid var(--info-border); }
+.score-header.grade-B { background: linear-gradient(135deg, var(--info-bg), var(--info-bg-2)); border: 1px solid var(--info-border); }
 .score-header.grade-C { background: linear-gradient(135deg, var(--warning-bg), var(--warning-border)); border: 1px solid var(--orange-border); }
 .score-header.grade-D, .score-header.grade-F { background: linear-gradient(135deg, var(--danger-bg), var(--danger-border)); border: 1px solid var(--danger-border-strong); }
 

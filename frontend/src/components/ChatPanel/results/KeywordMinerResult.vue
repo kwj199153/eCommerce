@@ -287,7 +287,7 @@ const handleSaveToProduct = async () => {
 .header-actions :deep(.ant-btn-primary) { background: var(--primary); }
 
 .stats-row { display: flex; gap: var(--space-10); padding: var(--space-12) var(--space-20); flex-wrap: wrap; }
-.stat-card { flex: 1; min-width: 100px; background: #f7f9fc; border-radius: var(--radius-6); padding: var(--space-8) var(--space-12); text-align: center; }
+.stat-card { flex: 1; min-width: 100px; background: var(--bg-subtle); border-radius: var(--radius-6); padding: var(--space-8) var(--space-12); text-align: center; }
 .stat-value { font-size: var(--font-size-18); font-weight: 700; }
 .stat-card.stat-low .stat-value { color: var(--success); }
 .stat-card.stat-good .stat-value { color: var(--primary); }
@@ -305,11 +305,11 @@ const handleSaveToProduct = async () => {
 .kw-input:focus { border: 1px solid #13c2c2 !important; box-shadow: 0 0 0 2px rgba(19, 194, 194, 0.1); }
 .kw-badge { font-size: var(--font-size-11); padding: 0 var(--space-5); border-radius: var(--radius-3); margin-left: var(--space-6); }
 .kw-badge.comp { background: var(--danger-bg); color: var(--danger-strong); }
-.kw-badge.expand { background: #f0f5ff; color: #2f54eb; }
+.kw-badge.expand { background: var(--geekblue-bg); color: #2f54eb; }
 .kw-badge.tail { background: var(--success-bg); color: var(--success); }
 .kw-badge.manual { background: var(--bg-hover-light); color: var(--text-secondary); }
 .rel-val { margin-left: var(--space-6); font-size: var(--font-size-12); font-weight: 600; }
 
-.summary-box { margin: 0 var(--space-20) var(--space-16); background: #f7f9fc; border-radius: var(--radius-6); padding: var(--space-12) var(--space-16); font-size: var(--font-size-13); }
+.summary-box { margin: 0 var(--space-20) var(--space-16); background: var(--bg-subtle); border-radius: var(--radius-6); padding: var(--space-12) var(--space-16); font-size: var(--font-size-13); }
 .summary-body :deep(p) { margin: 0 0 var(--space-4); }
 </style>

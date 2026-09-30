@@ -178,7 +178,7 @@
       v-model:open="successModalVisible"
       title="📦 已加入选品库"
       :footer="null"
-      :width="420"
+      :width="WINDOW_W.sm"
       centered
     >
       <div class="success-modal-body">
@@ -212,7 +212,7 @@
     <a-modal
       v-model:open="poolModalVisible"
       title="📦 保存到选品库"
-      :width="520"
+      :width="WINDOW_W.md"
       centered
     >
       <div class="pool-modal-body">
@@ -294,6 +294,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { bandColor } from '@/theme/bands'
 import { ref, computed } from 'vue'
 import { CloseOutlined, SaveOutlined, ExportOutlined, PlusOutlined } from '@ant-design/icons-vue'

@@ -26,6 +26,8 @@ import {
   createKnowledgeDoc,
   fetchKnowledgeDoc,
   deleteKnowledgeDoc,
+  aiSplitFaqFromDoc as apiAiSplitFaqFromDoc,
+  publishDraftFaqs as apiPublishDraftFaqs,
 } from '@/api/knowledge'
 
 // ====== 类型定义 ======
@@ -93,15 +95,24 @@ export interface FaqCategory {
 }
 
 // ====== 内置分类 ======
+//
+// ★ 这一份必须与后端真源**键集合恒等**：`knowledge_faqs.category` 的合法取值由
+//   `backend/modules/knowledge_base/ai_split_faq.py::FAQ_CATEGORY_CODES` 收口
+//   （它与 `customer_service/faq_source.py::CATEGORY_LABELS` 已由后端测试断言恒等）。
+//   第 293 轮实测：此前这里少 `order` / `aftersale` 两类 ⇒ 库里 48 行话术在列表里
+//   显示成英文 code、且筛选下拉里选不到它们。根因是**门禁只钉了后端↔后端**。
+//   ⇒ 现由 `scripts/check-faq-categories.cjs` 断言两边键集合相等，改一侧必须改另一侧。
 
 export const FAQ_CATEGORIES: FaqCategory[] = [
   { key: 'shipping', label: '物流配送', icon: '📦', color: 'var(--primary)' },
   { key: 'return', label: '退换货', icon: '🔄', color: 'var(--warning)' },
+  { key: 'order', label: '订单', icon: '🧾', color: 'var(--chart-1)' },
+  { key: 'aftersale', label: '售后', icon: '🔧', color: 'var(--chart-3)' },
   { key: 'product', label: '商品咨询', icon: '📦', color: 'var(--success)' },
   { key: 'payment', label: '支付问题', icon: '💳', color: 'var(--purple)' },
   { key: 'account', label: '账户相关', icon: '👤', color: 'var(--cyan)' },
   { key: 'policy', label: '平台政策', icon: '⚖️', color: 'var(--chart-7)' },
-  { key: 'review', label: '差评处理', icon: '💢', color: 'var(--danger)' },
+  { key: 'review', label: '评价', icon: '💢', color: 'var(--danger)' },
   { key: 'other', label: '其他', icon: '❓', color: '#8c8c8c' },
 ]
 
@@ -375,6 +386,43 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     }
   }
 
+  /**
+   * 用 AI 从文档正文拆出话术**草稿**（第 288 轮：文档的出口）。
+   *
+   * ★ 后端已经落库（status=draft），这里只把返回的条目补进本地 `items`，
+   *   让用户在话术列表里**立刻看见**「待确认」的那批行 —— 否则拆完后面板
+   *   毫无变化，用户会以为按钮没生效。
+   *
+   * ★ 草稿不进检索，必须再走一次 `publishDrafts`，这条链才闭环。
+   */
+  async function aiSplitFaqFromDoc(docId: string) {
+    const res = await apiAiSplitFaqFromDoc(docId)
+    if (res.items?.length) {
+      const known = new Set(items.value.map(i => i.id))
+      items.value.push(...res.items.filter(i => !known.has(i.id)))
+    }
+    await refreshKbCounts()
+    return res
+  }
+
+  /**
+   * 发布草稿话术（draft → active），**发布后才被客服检索命中**。
+   *
+   * 后端只转草稿，其余（已发布 / 已归档 / 不存在）分类返回在
+   * `skipped` / `not_found` 里 —— 调用方要逐类提示，不能一句"已发布"盖过去。
+   */
+  async function publishDrafts(ids: string[]) {
+    const res = await apiPublishDraftFaqs(ids)
+    const publishedIds = new Set(res.ids || [])
+    if (publishedIds.size) {
+      items.value = items.value.map(
+        i => (publishedIds.has(i.id) ? { ...i, status: 'active' as const } : i),
+      )
+    }
+    await refreshKbCounts()
+    return res
+  }
+
   /** 删除文档 */
   async function deleteDoc(docId: string): Promise<void> {
     await deleteKnowledgeDoc(docId)
@@ -528,5 +576,9 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     uploadDoc,
     loadDocContent,
     deleteDoc,
+    aiSplitFaqFromDoc,
+
+    // 话术草稿 Actions
+    publishDrafts,
   }
 })

@@ -61,6 +61,46 @@ const FIELD_QUESTIONS: Record<string, { label: string; question: string; example
     question: '{product}图片背景怎么安排？',
     examples: ['纯白底', '白底但允许柔光阴影', '场景图：厨房台面', '渐变灰'],
   },
+  // —— 选品 / 商品分析追问字段（★ 第 215 轮补）——
+  //   为什么必须补：这些字段名是**后端 LLM 自己编**的（`handoff_to_agent` 的
+  //   missing_fields 没有枚举约束），实测编出过 asin / title / price /
+  //   review_count / rating / category。表里没有就落到「未识别字段」兜底，
+  //   老板看到一句裸的「请补充「review_count」的信息」（实测事故）。
+  asin: {
+    label: '商品 ASIN',
+    question: '这个商品的 ASIN 是多少？',
+    examples: ['商品页链接里 /dp/ 后面那串就是，如 B09V9TXTKK', '直接贴商品链接也行'],
+  },
+  title: {
+    label: '商品标题',
+    question: '{product}的商品标题是什么？',
+    examples: ['把商品页上的标题整条贴过来'],
+  },
+  price: {
+    label: '售价',
+    question: '{product}现在卖多少钱？',
+    examples: ['$29.99', '19.9 美元'],
+  },
+  review_count: {
+    label: '评论数',
+    question: '{product}大概有多少条评论？',
+    examples: ['1200 条', '不多，几十条'],
+  },
+  rating: {
+    label: '评分',
+    question: '{product}的评分是多少？',
+    examples: ['4.5', '4.2 星'],
+  },
+  category: {
+    label: '类目',
+    question: '{product}属于哪个类目？',
+    examples: ['Kitchen & Dining', 'Sports & Outdoors'],
+  },
+  url: {
+    label: '商品链接',
+    question: '把{product}的商品页链接发我一下？',
+    examples: ['https://www.amazon.com/dp/...'],
+  },
   // —— Listing 文案追问字段（预留）——
   target_market: {
     label: '目标市场',
@@ -104,6 +144,20 @@ const ALIASES: Record<string, string> = {
   核心关键词: 'keywords',
   品牌名: 'brand',
   文案语气: 'tone',
+  // —— 选品 / 商品分析字段（★ 第 215 轮补；LLM 编出来的中文标签也兜住）——
+  商品asin: 'asin',
+  商品标题: 'title',
+  标题: 'title',
+  售价: 'price',
+  价格: 'price',
+  评论数: 'review_count',
+  评价数: 'review_count',
+  评分: 'rating',
+  星级: 'rating',
+  类目: 'category',
+  分类: 'category',
+  商品链接: 'url',
+  链接: 'url',
   // 英文 key → key（直通）
   material: 'material',
   shape: 'shape',
@@ -115,6 +169,14 @@ const ALIASES: Record<string, string> = {
   target_audience: 'target_audience',
   keywords: 'keywords',
   brand: 'brand',
+  asin: 'asin',
+  title: 'title',
+  price: 'price',
+  review_count: 'review_count',
+  rating: 'rating',
+  category: 'category',
+  url: 'url',
+  link: 'url',
   tone: 'tone',
 }
 
@@ -167,6 +229,24 @@ export function extractProductName(intent: string): string | undefined {
 }
 
 /**
+ * `intent` 是不是「退化的意图标签」—— 例如后端只给了工具代号 `add`。
+ *
+ * ★ 为什么需要：`handleSecretaryHandoff` 会拿 intent 提取产品名去做个性化提问。
+ *   当 intent 恰好是一个动作代号（`add` / `generate` / `save`）时，
+ *   `extractProductName` 会把它当成产品名，渲染出「好的，**add** 这事儿我接住了」
+ *   —— 实测老板就是这样收到一条荒谬文案的（他发的是商品链接）。
+ * ★ 判据刻意保守：只挡「**纯 ASCII 字母构成、无空格、不带中文**」的短串。
+ *   中文产品名 / 带空格的英文短语（`water bottle`）/ 完整句子一律照旧通过。
+ */
+export function isDegenerateIntent(intent?: string): boolean {
+  if (!intent) return true
+  const s = intent.trim()
+  if (!s) return true
+  if (s.length > 24) return false
+  return /^[A-Za-z][A-Za-z0-9_.-]*$/.test(s)
+}
+
+/**
  * 渲染接管语 + 追问列表（口语化、含产品名）
  */
 export function renderClarification(input: RenderInput): { greeting: string; questions: ClarificationItem[] } {
@@ -190,11 +270,15 @@ export function renderClarification(input: RenderInput): { greeting: string; que
         examples: tmpl.examples,
       })
     } else {
-      // 未识别字段：原样展示为「请补充 XXX」
+      // 未识别字段：原样展示。
+      // ★ 第 215 轮改口吻：原文案是「请补充「X」的信息」—— 那是一句**像 Agent 在
+      //   追问的祈使句**，而这条路径上的问题其实是**前端模板**生成的（子 Agent 压根
+      //   没运行，见 useChatEventBridge 的 handleSecretaryHandoff）。改成陈述式，
+      //   配合调用方的来源标注，避免"模板冒充 Agent"。
       questions.push({
         key: trimmed,
         label: trimmed,
-        question: `请补充「${trimmed}」的信息`,
+        question: `${trimmed}：这项还没给我`,
       })
     }
   }

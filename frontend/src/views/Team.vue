@@ -1,12 +1,21 @@
 <template>
   <div class="team-page">
     <div class="team-head">
-      <div>
-        <h1 class="team-title">团队成员</h1>
-        <p class="team-sub">
-          一个团队下可以有多名成员，成员按角色共享团队下的店铺。
-          成员数只有 1 时它就是"你自己的"团队（也是默认的建店落点）。
-        </p>
+      <div class="team-head-left">
+        <!-- ★ 返回按钮（第 322 轮老板口径：「订阅有返回按钮，但是团队没有」）。
+             订阅页走的是 `<a-page-header @back>` 自带的返回；本页是自绘表头，
+             此前**没有任何返回入口** —— 从侧栏账户菜单进来后只能按浏览器后退键。
+             语义与订阅页保持一致：`router.back()`。 -->
+        <a-button type="text" class="team-back" aria-label="返回" @click="router.back()">
+          <ArrowLeftOutlined />
+        </a-button>
+        <div>
+          <h1 class="team-title">团队成员</h1>
+          <p class="team-sub">
+            一个团队下可以有多名成员，成员按角色共享团队下的店铺。
+            成员数只有 1 时它就是"你自己的"团队（也是默认的建店落点）。
+          </p>
+        </div>
       </div>
       <a-space>
         <!-- ★ C 档 2026-09-17：`:value` 而非 `v-model` —— 当前账户已提升为
@@ -163,7 +172,7 @@
       </template>
     </a-spin>
 
-    <a-modal
+    <a-modal :width="WINDOW_W.md"
       v-model:open="showInvite"
       title="邀请成员"
       :confirm-loading="inviting"
@@ -187,7 +196,7 @@
       </a-form>
     </a-modal>
 
-    <a-modal
+    <a-modal :width="WINDOW_W.md"
       v-model:open="showCreateAccount"
       title="新建团队"
       :confirm-loading="creatingAccount"
@@ -213,9 +222,11 @@
  * ★ 页面上的禁用与隐藏都只是**提示**，真正的授权判定在后端
  *   （`require_account_permission`）—— 前端从不替后端做结论。
  */
+import { WINDOW_W } from '@/config/layout'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
+import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { useUserStore } from '@/stores/user'
 // ★ C 档（2026-09-17）：当前账户已提升为应用级状态（account store）。
@@ -454,6 +465,23 @@ onMounted(loadAccounts)
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 16px;
+}
+.team-head-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+/* 自绘的返回按钮：对齐 antd `a-page-header` 自带 back 的观感
+   （无边框、图标 16px、悬停变主色）。不写 height —— antd 文本按钮默认 32px，
+   图标中心落在 16px，而 h1 行盒中心约 15.5px，天然对齐。 */
+.team-back {
+  padding: 0 6px;
+  color: var(--text-secondary);
+  font-size: 16px;
+}
+.team-back:hover {
+  color: var(--primary);
 }
 .team-title {
   font-size: 20px;

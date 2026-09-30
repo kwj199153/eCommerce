@@ -218,7 +218,7 @@
     </a-table>
 
     <!-- ================= 添加竞品 ================= -->
-    <a-modal v-model:open="addModalOpen" title="➕ 添加竞品到监控池" :width="440" centered :footer="null">
+    <a-modal v-model:open="addModalOpen" title="➕ 添加竞品到监控池" :width="WINDOW_W.sm" centered :footer="null">
       <a-form layout="vertical">
         <a-form-item label="ASIN">
           <a-input v-model:value="addForm.asin" placeholder="如 B0XXXXXXXXX" @press-enter="submitAdd" />
@@ -241,7 +241,7 @@
     </a-modal>
 
     <!-- ================= 分组管理 ================= -->
-    <a-modal v-model:open="groupModalOpen" title="🗂️ 分组管理" :width="500" centered :footer="null">
+    <a-modal v-model:open="groupModalOpen" title="🗂️ 分组管理" :width="WINDOW_W.md" centered :footer="null">
       <a-form layout="vertical">
         <a-form-item label="新建分组">
           <a-space-compact style="width: 100%">
@@ -283,6 +283,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {

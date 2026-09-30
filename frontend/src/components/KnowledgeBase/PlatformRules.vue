@@ -264,7 +264,7 @@
     <a-modal
       v-model:open="showImportModal"
       title="批量导入规则"
-      width="520px"
+      :width="WINDOW_W.md"
       :footer="null"
     >
       <div class="import-area">
@@ -307,7 +307,7 @@
     <a-modal
       v-model:open="docUploadModalVisible"
       title="上传规则文档"
-      width="440px"
+      :width="WINDOW_W.sm"
       ok-text="确认上传"
       @ok="confirmDocUpload"
     >
@@ -336,7 +336,7 @@
     <a-modal
       v-model:open="aiConfirmVisible"
       :title="aiConfirmDoc ? `🤖 AI 拆分结果 — ${aiConfirmDoc.filename}` : 'AI 拆分确认'"
-      width="720px"
+      :width="WINDOW_W.xxl"
       ok-text="确认添加选中项"
       cancel-text="取消"
       :confirm-loading="aiConfirmLoading"
@@ -550,7 +550,7 @@
     <a-modal
       v-model:open="aiForceAddVisible"
       title="⚠ 检测到高度重复规则"
-      width="480px"
+      :width="WINDOW_W.sm"
       ok-text="仍要添加"
       cancel-text="返回修改"
       :confirm-loading="aiConfirmLoading"
@@ -580,7 +580,7 @@
       v-model:open="detailVisible"
       :title="detailItem?.title"
       :footer="null"
-      width="680px"
+      :width="WINDOW_W.xxl"
     >
       <div v-if="detailItem" class="detail-body">
         <div class="detail-meta">
@@ -630,7 +630,7 @@
       v-model:open="sourceDocVisible"
       :title="sourceDocItem ? `📄 ${sourceDocItem.filename}` : '来源文档'"
       :footer="null"
-      width="720px"
+      :width="WINDOW_W.xxl"
       :body-style="{ maxHeight: '70vh', overflow: 'auto', padding: '0' }"
     >
       <div v-if="sourceDocItem" class="source-doc-body">
@@ -694,6 +694,7 @@
 </template>
 
 <script setup lang="ts">
+import { WINDOW_W } from '@/config/layout'
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {

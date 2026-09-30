@@ -59,12 +59,19 @@
             <span class="doc-size">{{ formatSize(doc.size) }}</span>
             <span v-if="doc.description" class="doc-desc">— {{ doc.description }}</span>
           </div>
+          <!-- ★ 第 288 轮：文档的出口。拆出来的条目是**草稿**，
+               不进检索，需在下方话术列表确认后点「发布」。 -->
+          <a-tooltip title="用 AI 从文档正文拆出话术（存为草稿，确认后发布才进客服检索）">
+            <a-button type="text" size="small" :loading="splittingDocId === doc.id" @click="handleAiSplit(doc)">
+              <ExperimentOutlined />
+            </a-button>
+          </a-tooltip>
           <a-popconfirm title="删除此文档？" @confirm="handleDeleteDoc(doc.id)">
             <a-button type="text" size="small" danger><DeleteOutlined /></a-button>
           </a-popconfirm>
         </div>
       </div>
-      <a-empty v-else description="暂无补充文档，上传 PDF/MD/Excel 作为 RAG 检索素材" :image-style="{ height: '40px' }" />
+      <a-empty v-else description="暂无文档。上传后可一键拆成话术草稿（文档本身不参与检索）" :image-style="{ height: '40px' }" />
     </div>
 
     <!-- ====== 顶部操作栏 ====== -->
@@ -75,6 +82,9 @@
         </h3>
         <span class="count-badge">共 {{ store.totalCount }} 条</span>
         <span class="active-badge">活跃 {{ store.activeCount }}</span>
+        <!-- ★ 草稿必须**看得见**：它是「待人工确认」的那批，
+             藏起来就等于取消了这道确认 -->
+        <a-tag v-if="draftCount > 0" color="warning">草稿 {{ draftCount }} 待确认</a-tag>
       </div>
       <div class="header-actions">
         <!-- 导出当前话术库配置（多格式，可选目标文件夹） -->
@@ -89,6 +99,9 @@
             <UploadOutlined /> 导入话术
           </a-button>
         </a-tooltip>
+        <a-button v-if="draftCount > 0" @click="handlePublishAllDrafts">
+          <CheckCircleOutlined /> 发布草稿（{{ draftCount }}）
+        </a-button>
         <a-button type="primary" @click="openAddModal">
           <PlusOutlined /> 新增话术
         </a-button>
@@ -172,6 +185,11 @@
 
         <template v-else-if="column.dataIndex === 'actions'">
           <a-space>
+            <a-tooltip v-if="record.status === 'draft'" title="发布后才会被客服检索命中">
+              <a-button type="text" size="small" @click="handlePublish([record.id])">
+                <CheckCircleOutlined />
+              </a-button>
+            </a-tooltip>
             <a-tooltip title="编辑">
               <a-button type="text" size="small" @click="openEditModal(record)">
                 <EditOutlined />
@@ -193,7 +211,7 @@
     <a-modal
       v-model:open="modalVisible"
       :title="editingId ? '编辑话术' : '新增话术'"
-      width="640px"
+      :width="WINDOW_W.xl"
       @ok="handleSubmit"
       :okLoading="submitting"
       cancelText="取消"
@@ -241,7 +259,7 @@
     <a-modal
       v-model:open="showImportModal"
       title="批量导入话术"
-      width="520px"
+      :width="WINDOW_W.md"
       :footer="null"
     >
       <div class="import-area">
@@ -284,7 +302,7 @@
     <a-modal
       v-model:open="showCreateKbModal"
       title="新建话术库"
-      width="480px"
+      :width="WINDOW_W.sm"
       @ok="handleCreateKb"
       :okLoading="creatingKb"
       okText="创建"
@@ -332,7 +350,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { WINDOW_W } from '@/config/layout'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   MessageOutlined,
@@ -344,8 +363,13 @@ import {
   DeleteOutlined,
   InboxOutlined,
   FileTextOutlined,
+  ExperimentOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons-vue'
-import { useKnowledgeStore, FAQ_CATEGORIES, type FaqItem } from '@/stores/knowledge'
+import {
+  useKnowledgeStore, FAQ_CATEGORIES,
+  type FaqItem, type KnowledgeDoc,
+} from '@/stores/knowledge'
 import { todayStamp } from '@/utils/download'
 import ExportModal from '@/components/common/ExportModal.vue'
 
@@ -425,6 +449,57 @@ function handleDeleteDoc(docId: string) {
   store.deleteDoc(docId)
     .then(() => message.success('已删除文档'))
     .catch((e: unknown) => message.error(`删除失败：${e instanceof Error ? e.message : '未知错误'}`))
+}
+
+// ====== 文档 → 话术草稿 → 发布（第 288 轮）======
+const splittingDocId = ref<string | null>(null)
+
+/** 当前库里待确认的草稿条数（顶部徽标与「一键发布」共用同一个口径） */
+const draftCount = computed(
+  () => store.currentItems.filter(i => i.status === 'draft').length,
+)
+
+async function handleAiSplit(doc: KnowledgeDoc) {
+  splittingDocId.value = doc.id
+  try {
+    const res = await store.aiSplitFaqFromDoc(doc.id)
+    if (res.degraded) {
+      // ★ 后端绝不在 AI 不可用时编造条目 ⇒ 原样把原因转给用户
+      message.warning(res.reason || 'AI 拆分暂不可用')
+      return
+    }
+    message.success(
+      `已拆出 ${res.added} 条草稿话术，确认后点「发布」才会被客服检索命中`
+      + (res.duplicated ? `（跳过 ${res.duplicated} 条重复问题）` : ''),
+    )
+  } catch (e) {
+    message.error(`AI 拆分失败：${e instanceof Error ? e.message : '未知错误'}`)
+  } finally {
+    splittingDocId.value = null
+  }
+}
+
+async function handlePublish(ids: string[]) {
+  if (!ids.length) return
+  try {
+    const res = await store.publishDrafts(ids)
+    if (res.published === 0) {
+      // ★ 一条都没发布时**必须**说清为什么，不能一句"已发布"把失败盖过去
+      const why = res.skipped[0]?.reason || '所选条目不是草稿，或不存在'
+      message.warning(`没有条目被发布：${why}`)
+      return
+    }
+    message.success(
+      `已发布 ${res.published} 条话术，客服检索现在可以命中它们`
+      + (res.skipped.length ? `（跳过 ${res.skipped.length} 条：${res.skipped[0].reason}）` : ''),
+    )
+  } catch (e) {
+    message.error(`发布失败：${e instanceof Error ? e.message : '未知错误'}`)
+  }
+}
+
+function handlePublishAllDrafts() {
+  handlePublish(store.currentItems.filter(i => i.status === 'draft').map(i => i.id))
 }
 
 function getDocIcon(type: string): string {
