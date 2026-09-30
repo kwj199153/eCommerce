@@ -42,6 +42,7 @@
     · `_make_room` 去掉 `if not st.is_dirty`          → A 组「脏容器不驱逐」转红
     · `invoke` 的 `try/finally` 改成直线代码          → C/D 组形态与异常路径转红
     · `_invoke_impl` 里再 `_bind_context` 一次        → C 组「实现体不绑上下文」转红
+    · 薄壳漏传 `bind_context=` 给 hitl 层              → C 组「两端同查」转红
     · `_UPSERT_CONSTRAINT` 改成不存在的名字           → B 组约束名转红；E 组真库落盘转红
     · `SessionState.__setitem__` 去掉 `_changed` 判断  → A 组「同值不置脏」转红
 """
@@ -69,6 +70,7 @@ MODULES = BACKEND / "modules"
 AI_INFRA = BACKEND / "ai_infra"
 AGENT_PY = MODULES / "product_research" / "agent_product_research.py"
 STATE_PY = AI_INFRA / "session_state.py"
+HITL_PY = MODULES / "product_research" / "agent_hitl.py"
 STORE_PY = MODULES / "conversation" / "state_store.py"
 
 _TABLE = "agent_session_state"
@@ -116,6 +118,21 @@ def _cmp_operands(node: ast.AST) -> set[str]:
             out.add(_dotted(n.left))
             out.update(_dotted(c) for c in n.comparators)
     return out
+
+
+def _name_calls(node: ast.AST, name: str) -> list[ast.Call]:
+    """该子树里所有**裸名**调用 `name(...)`（不是 `xxx.name(...)`）。
+
+    ★ 与 `_attr_calls` 的区别是必须的，不是风格：HITL 层是**模块级函数**，
+      调用形态写作 `bind_context(...)`；用 `_attr_calls` 去找恒空 ⇒ 形态断言假绿。
+    """
+    return [
+        n
+        for n in ast.walk(node)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == name
+    ]
 
 
 def _attr_uses(node: ast.AST, attr: str) -> list[ast.Attribute]:
@@ -825,10 +842,9 @@ def test_resume_approval_rebinds_identity_and_hydrates():
     被中断的工具会**重新执行**，而它靠 ContextVar 拿会话与归属。
     漏 `user_id` ⇒ 它在另一个作用域里找会话状态（「第 1 个」解析不出来）。
     """
-    tree = _tree(AGENT_PY)
-    fn = _funcdefs(tree, "resume_approval")[0]
+    hitl_fn = _funcdefs(_tree(HITL_PY), "resume_approval")[0]
 
-    binds = _attr_calls(fn, "_bind_context")
+    binds = _name_calls(hitl_fn, "bind_context")
     assert binds, "`resume_approval` 没有重新绑定上下文 ⇒ 被中断的工具拿不到归属"
     call = binds[0]
     passed = [getattr(a, "id", None) for a in call.args] + [
@@ -837,7 +853,20 @@ def test_resume_approval_rebinds_identity_and_hydrates():
     assert len(passed) == 3 and "user_id" in passed, (
         f"`_bind_context` 的实参不完整：{passed} —— 必须带上身份"
     )
-    assert _attr_calls(fn, "_hydrate_state"), "`resume_approval` 没有 hydrate 会话状态"
+    assert _name_calls(hitl_fn, "hydrate_state"), "`resume_approval` 没有 hydrate 会话状态"
+
+    # ★ 另一端：主文件薄壳必须把这两件事**作为依赖传进去**。
+    #   只查一端会漏：漏传 ⇒ 传进来的是 None ⇒ 真调用时才炸；
+    #   传了但没调 ⇒ 续跑时 ContextVar 是空的 ⇒ 静默取不到归属（不报错）。
+    shell_fn = _funcdefs(_tree(AGENT_PY), "resume_approval")[0]
+    passed_kwargs: set[str] = set()
+    for c in ast.walk(shell_fn):
+        if isinstance(c, ast.Call):
+            passed_kwargs |= {kw.arg for kw in c.keywords if kw.arg}
+    missing = {"bind_context", "hydrate_state"} - passed_kwargs
+    assert not missing, (
+        f"主文件薄壳没把 {sorted(missing)} 传给 `agent_hitl.resume_approval`"
+    )
 
 
 def test_state_module_line_endings_stay_lf():
