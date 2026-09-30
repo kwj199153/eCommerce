@@ -165,13 +165,15 @@ MAX_LOG_SAMPLE_CHARS = 120
 #   不能有缺口。宁可与上一轮重叠（重复读到的内容会被 `dedup_key` 去重，
 #   代价只是一点 token），也不能漏读 —— 漏掉的消息**永远不会**再被看到。
 
-#: beat 每天在几点触发（本地时区：`celery_app.conf.timezone` = Asia/Shanghai）。
-#: 取凌晨：这是唯一一个用户不太可能正在对话的时刻，整理导致的
-#: "记忆条数突然变化"不会与他正在进行的操作撞在一起。
-DISTILL_HOUR = 3
-#: beat 触发的分钟。★ 与 `DISTILL_HOUR` 一起构成 crontab；单独抽出来是为了
-#: 让测试里把触发点设到"下一分钟"时不必改小时数（那会连带改掉语义）。
-DISTILL_MINUTE = 0
+# ★ 2026-09-30（P0-7 分层修复）：原先这里定义 `DISTILL_HOUR` / `DISTILL_MINUTE`，
+#   已上移到 `core/config.py` 的 `MEMORY_DISTILL_HOUR` / `MEMORY_DISTILL_MINUTE`。
+#   原因：它们的唯一消费方是 `core/redis.py` 的 `beat_schedule`，留在本模块会让
+#   `core → ai_infra → core` 形成**环**（ai_infra 有 12 处 import core）。
+#   语义上它们属于**部署侧调度时刻**（与 core/config 的 `BILLING_SWEEP_HOUR` 同类），
+#   而本模块保留的 `DISTILL_PERIOD_HOURS` / `DISTILL_COOLDOWN_HOURS` /
+#   `DISTILL_LOOKBACK_HOURS` 才是**业务口径**（多久整理一次 / 冷却多久 / 回溯多远）。
+#   上面「两个消费方」的说法据此收敛为：调度时刻 → core/config；
+#   运行侧判据 → `modules/memory/service.py` 读本模块的节奏常量。
 #: beat 的**周期**（小时）。目前等于每日一次（crontab 的粒度是「天」）。
 #: ★ 它是一个**恒定值**而不是可调参数：唯一用途是让下面两条不变量
 #:   可以被断言（`DISTILL_COOLDOWN_HOURS < 周期 < DISTILL_LOOKBACK_HOURS`）。
@@ -306,10 +308,8 @@ __all__ = [
     "DEFAULT_SOURCE_WEIGHT",
     "DISTILL_BATCH_LIMIT",
     "DISTILL_COOLDOWN_HOURS",
-    "DISTILL_HOUR",
     "DISTILL_LOOKBACK_HOURS",
     "DISTILL_MANUAL_GAP_SECONDS",
-    "DISTILL_MINUTE",
     "DISTILL_PERIOD_HOURS",
     "FAILURE_LOG_KINDS",
     "KIND_DISTILL",

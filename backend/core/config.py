@@ -98,6 +98,21 @@ BILLING_SWEEP_MINUTE = 20
 BILLING_RECONCILE_HOUR = 4
 BILLING_RECONCILE_MINUTE = 30
 
+#: 长期记忆「自动整理（蒸馏）」的时刻（每天）。
+#: ★ 语义是**部署侧**（beat 在几点触发），与上面的 BILLING_* 同类；
+#:   而 `ai_infra/memory/limits.py` 里的 `DISTILL_PERIOD_HOURS` /
+#:   `DISTILL_COOLDOWN_HOURS` / `DISTILL_LOOKBACK_HOURS` 是**业务口径**
+#:   （多久整理一次 / 冷却多久 / 回溯多远），仍住在 limits.py，不搬。
+#: ★ 为什么这两个常量必须住 core（P0-7 分层修复）：
+#:   原先定义在 `ai_infra/memory/limits.py`，而唯一消费方是
+#:   `core/redis.py` 的 `beat_schedule` ⇒ 形成 `core → ai_infra → core` 的**环**
+#:   （ai_infra 有 12 处 import core，方向本是 `ai_infra → core`）。
+#:   上移后依赖单向，且 `limits.py` 得以保持「零依赖纯常量模块」的自我承诺。
+#: ★ 取凌晨 3 点：唯一一个用户不太可能正在对话的时刻，整理导致的
+#:   "记忆条数突然变化"不会与他正在进行的操作撞在一起。
+MEMORY_DISTILL_HOUR = 3
+MEMORY_DISTILL_MINUTE = 0
+
 #: 对账回看的窗口（天）。★ 不能只对"昨天"：
 #:   支付宝的通知最长重投约 24 小时，而我们的服务可能连续几天没跑 beat
 #:   （重启、维护窗口）。窗口太窄会把那几天的漏单永久漏掉。

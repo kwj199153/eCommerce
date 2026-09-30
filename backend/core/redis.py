@@ -8,13 +8,14 @@ import redis.asyncio as aioredis
 from celery import Celery
 from celery.schedules import crontab
 
-from ai_infra.memory.limits import DISTILL_HOUR, DISTILL_MINUTE
 from core.config import (
     BILLING_EXPIRE_PENDING_INTERVAL_MINUTES,
     BILLING_RECONCILE_HOUR,
     BILLING_RECONCILE_MINUTE,
     BILLING_SWEEP_HOUR,
     BILLING_SWEEP_MINUTE,
+    MEMORY_DISTILL_HOUR,
+    MEMORY_DISTILL_MINUTE,
     config,
 )
 
@@ -157,12 +158,13 @@ IDENTITY_PURGE_MINUTE = 17
 #   写在任务模块里的话，beat 就得先 import 业务代码才能知道"该调度什么" ——
 #   一个语法错误会让整晚的调度一起消失。
 #
-# ★ 这里 import 的是一个**叶子常量模块**（`ai_infra/memory/limits.py` 零依赖，
-#   不 import 任何 core / modules）⇒ 不构成 `core → ai_infra → core` 的环。
-#   `test_core_internal_layering.py` 只登记 `core → core` 的边，本行不在它的网内。
-#
-# ★ 触发时刻与冷却窗口共用同一份真源（见 limits 的「蒸馏节奏」一节）：
-#   两者写在同一个文件里，"改周期"不会漏改冷却。
+# ★ 2026-09-30（P0-7 分层修复）：触发时刻原先 import 自
+#   `ai_infra/memory/limits.py`（一个零依赖叶子模块），已上移到
+#   `core/config.py` 的 `MEMORY_DISTILL_HOUR` / `MEMORY_DISTILL_MINUTE`。
+#   原因：即便 limits 零依赖、不构成环，`core → ai_infra` 仍与分层方向相反；
+#   把"部署侧调度时刻"收到 core/config 后，core 层不再 import ai_infra / modules。
+#   ⇒ 触发时刻（core/config）与冷却窗口（ai_infra/memory/limits.py）现分居两处，
+#   二者的一致性由 `tests/test_memory_distill.py` 断言（不再靠"同一文件"提醒）。
 #
 # ★★ 任务名是**字面量**，这是刻意的（core 不得 import modules）——
 #   于是它与 `modules/memory/tasks.py::TASK_DISTILL_ALL` 构成了"同一事实两份写法"。
@@ -173,7 +175,9 @@ celery_app.conf.beat_schedule = {
         "task": "memory.distill_all_owners",
         # 用 crontab 而不是 timedelta：crontab 每次按**当前时间**重算下次触发点，
         # 不依赖调度文件的 last_run_at ⇒ 调度文件丢失/重建时不会漏掉一整天。
-        "schedule": crontab(hour=DISTILL_HOUR, minute=DISTILL_MINUTE),
+        "schedule": crontab(
+            hour=MEMORY_DISTILL_HOUR, minute=MEMORY_DISTILL_MINUTE
+        ),
         # 明确投 default 队列（worker.py 的 --queues 已含它）。
         "options": {"queue": "default"},
     },

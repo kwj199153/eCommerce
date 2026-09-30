@@ -377,7 +377,10 @@ def test_beat_schedule_is_crontab_pinned_to_limits():
     """
     from celery.schedules import crontab
 
-    from ai_infra.memory import limits as L
+    # ★ P0-7：调度时刻的真源已从 `ai_infra.memory.limits` 上移到 `core.config`
+    #   （`MEMORY_DISTILL_HOUR` / `MEMORY_DISTILL_MINUTE`）—— 原先留在 limits 会让
+    #   `core → ai_infra → core` 成环。断言口径不变：调度必须与真源一致。
+    from core.config import MEMORY_DISTILL_HOUR, MEMORY_DISTILL_MINUTE
     from core.redis import celery_app
 
     celery_app.finalize()
@@ -386,13 +389,13 @@ def test_beat_schedule_is_crontab_pinned_to_limits():
         "调度不是 crontab 而是 %s —— schedule 文件丢失后会漏掉一整天"
         % type(sch).__name__
     )
-    assert _as_set(sch.hour) == {L.DISTILL_HOUR}, (
-        "调度小时 %r 与 limits.DISTILL_HOUR=%r 不一致（两份写法）"
-        % (_as_set(sch.hour), L.DISTILL_HOUR)
+    assert _as_set(sch.hour) == {MEMORY_DISTILL_HOUR}, (
+        "调度小时 %r 与 core.config.MEMORY_DISTILL_HOUR=%r 不一致（两份写法）"
+        % (_as_set(sch.hour), MEMORY_DISTILL_HOUR)
     )
-    assert _as_set(sch.minute) == {L.DISTILL_MINUTE}, (
-        "调度分钟 %r 与 limits.DISTILL_MINUTE=%r 不一致"
-        % (_as_set(sch.minute), L.DISTILL_MINUTE)
+    assert _as_set(sch.minute) == {MEMORY_DISTILL_MINUTE}, (
+        "调度分钟 %r 与 core.config.MEMORY_DISTILL_MINUTE=%r 不一致"
+        % (_as_set(sch.minute), MEMORY_DISTILL_MINUTE)
     )
 
 
@@ -424,7 +427,10 @@ def test_rhythm_invariants_hold():
     )
     assert L.DISTILL_MANUAL_GAP_SECONDS > 0, "手动整理的最小间隔必须是正数（防连点）"
     assert L.DISTILL_BATCH_LIMIT > 0, "批次上限必须是正数（否则活跃用户一个都不处理）"
-    assert 0 <= L.DISTILL_HOUR <= 23 and 0 <= L.DISTILL_MINUTE <= 59
+    # ★ P0-7：调度时刻真源已上移到 core.config（见上一个测试的说明）。
+    from core.config import MEMORY_DISTILL_HOUR, MEMORY_DISTILL_MINUTE
+
+    assert 0 <= MEMORY_DISTILL_HOUR <= 23 and 0 <= MEMORY_DISTILL_MINUTE <= 59
 
 
 def test_beat_entry_starts_beat_not_worker():
