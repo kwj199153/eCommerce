@@ -12,41 +12,96 @@
          （不发声、也不报错）—— 这正是本项目反复防过的「看着像坏了、其实是被拦了」的形态。
          点「开始」这个动作同时解封音频链路。
        ★ 位置刻意放在右下：左侧边栏与顶栏工具条是既有 CDP 几何探针的测量区，别去压它们。 -->
-  <div v-if="offering" class="tour-offer" role="dialog" aria-label="新手引导入口">
+  <div
+    v-if="offering"
+    class="tour-offer"
+    role="dialog"
+    aria-label="新手引导入口"
+  >
     <div class="to-head">
       <span class="to-icon">👋</span>
       <span class="to-title">第一次来？</span>
-      <button class="to-close" type="button" title="不再提示" @click="decline">×</button>
+      <button
+        class="to-close"
+        type="button"
+        title="不再提示"
+        @click="decline"
+      >
+        ×
+      </button>
     </div>
     <div class="to-body">
       花一分钟，我把界面上各处功能指着讲一遍，还可以一边听语音解说。
     </div>
     <div class="to-foot">
-      <button class="to-btn" type="button" @click="decline">跳过</button>
-      <button class="to-btn to-primary" type="button" @click="begin">开始引导</button>
+      <button
+        class="to-btn"
+        type="button"
+        @click="decline"
+      >
+        跳过
+      </button>
+      <button
+        class="to-btn to-primary"
+        type="button"
+        @click="begin"
+      >
+        开始引导
+      </button>
     </div>
   </div>
 
   <!-- 走完之后：把**被跳过的步骤**如实列出来。
        ★ 不能让用户自己去发现「好像有几块没讲过」——那样他只会以为是自己漏看了。 -->
-  <div v-if="summaryOpen" class="tour-offer tour-summary" role="dialog" aria-label="引导小结">
+  <div
+    v-if="summaryOpen"
+    class="tour-offer tour-summary"
+    role="dialog"
+    aria-label="引导小结"
+  >
     <div class="to-head">
       <span class="to-icon">✅</span>
       <span class="to-title">引导结束</span>
-      <button class="to-close" type="button" title="关闭" @click="summaryOpen = false">×</button>
+      <button
+        class="to-close"
+        type="button"
+        title="关闭"
+        @click="summaryOpen = false"
+      >
+        ×
+      </button>
     </div>
-    <div v-if="store.skips.length" class="to-body">
+    <div
+      v-if="store.skips.length"
+      class="to-body"
+    >
       有 {{ store.skips.length }} 步当时没讲（那一刻它们不在界面上）：
       <ul class="ts-list">
-        <li v-for="s in store.skips" :key="s.stepId">
+        <li
+          v-for="s in store.skips"
+          :key="s.stepId"
+        >
           <b>{{ s.title }}</b> —— {{ s.reason }}
         </li>
       </ul>
-      <div class="ts-hint">等它们出现之后，随时可以从账户菜单里「重看新手引导」。</div>
+      <div class="ts-hint">
+        等它们出现之后，随时可以从账户菜单里「重看新手引导」。
+      </div>
     </div>
-    <div v-else class="to-body">七处都讲到了。随时可以从账户菜单里「重看新手引导」。</div>
+    <div
+      v-else
+      class="to-body"
+    >
+      七处都讲到了。随时可以从账户菜单里「重看新手引导」。
+    </div>
     <div class="to-foot">
-      <button class="to-btn to-primary" type="button" @click="summaryOpen = false">知道了</button>
+      <button
+        class="to-btn to-primary"
+        type="button"
+        @click="summaryOpen = false"
+      >
+        知道了
+      </button>
     </div>
   </div>
 

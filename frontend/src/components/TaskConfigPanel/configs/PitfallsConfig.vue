@@ -16,21 +16,42 @@
       </template>
     </a-alert>
 
-    <a-collapse v-model:activeKey="activeKeys" ghost>
-
+    <a-collapse
+      v-model:active-key="activeKeys"
+      ghost
+    >
       <!-- ====== 输入来源 ====== -->
-      <a-collapse-panel key="input" header="📥 输入来源">
-        <a-form layout="vertical" :model="form">
-          <a-form-item label="输入方式" required>
-            <a-radio-group v-model:value="form.input_mode" @change="onInputModeChange; saveForm()">
-              <a-radio-button value="product">📦 产品库载入</a-radio-button>
-              <a-radio-button value="manual">✏️ 手动输入</a-radio-button>
+      <a-collapse-panel
+        key="input"
+        header="📥 输入来源"
+      >
+        <a-form
+          layout="vertical"
+          :model="form"
+        >
+          <a-form-item
+            label="输入方式"
+            required
+          >
+            <a-radio-group
+              v-model:value="form.input_mode"
+              @change="onInputModeChange; saveForm()"
+            >
+              <a-radio-button value="product">
+                📦 产品库载入
+              </a-radio-button>
+              <a-radio-button value="manual">
+                ✏️ 手动输入
+              </a-radio-button>
             </a-radio-group>
           </a-form-item>
 
           <!-- 模式1：从产品库载入 -->
           <template v-if="form.input_mode === 'product'">
-            <a-form-item label="目标商品" required>
+            <a-form-item
+              label="目标商品"
+              required
+            >
               <div class="input-with-picker">
                 <a-input
                   :value="productTitle || '未选择产品'"
@@ -44,27 +65,51 @@
                   @select="onProductSelect"
                 />
               </div>
-              <div v-if="productTitle" class="seed-preview">
-                <a-tag color="blue">📦 {{ productTitle }}</a-tag>
-                <span v-if="productAsin" class="text-hint">ASIN: {{ productAsin }}</span>
+              <div
+                v-if="productTitle"
+                class="seed-preview"
+              >
+                <a-tag color="blue">
+                  📦 {{ productTitle }}
+                </a-tag>
+                <span
+                  v-if="productAsin"
+                  class="text-hint"
+                >ASIN: {{ productAsin }}</span>
               </div>
             </a-form-item>
 
             <!-- 产品库自动读取的字段预览 -->
-            <div v-if="workingProduct" class="auto-fields-preview">
-              <div class="preview-title">📋 自动读取字段</div>
+            <div
+              v-if="workingProduct"
+              class="auto-fields-preview"
+            >
+              <div class="preview-title">
+                📋 自动读取字段
+              </div>
               <div class="preview-grid">
-                <div class="preview-item"><span class="label">关键词：</span><span class="value">{{ workingProduct.keywords?.join(', ') || '-' }}</span></div>
-                <div class="preview-item"><span class="label">竞品ASIN：</span><span class="value">{{ workingProduct.competitor_asins?.join(', ') || '-' }}</span></div>
-                <div class="preview-item"><span class="label">尺寸重量：</span><span class="value">{{ workingProduct.dimensions || workingProduct.package_size || '-' }}</span></div>
-                <div class="preview-item"><span class="label">售价区间：</span><span class="value">¥{{ workingProduct.cost || '-' }} ~ ¥{{ workingProduct.price || '-' }}</span></div>
+                <div class="preview-item">
+                  <span class="label">关键词：</span><span class="value">{{ workingProduct.keywords?.join(', ') || '-' }}</span>
+                </div>
+                <div class="preview-item">
+                  <span class="label">竞品ASIN：</span><span class="value">{{ workingProduct.competitor_asins?.join(', ') || '-' }}</span>
+                </div>
+                <div class="preview-item">
+                  <span class="label">尺寸重量：</span><span class="value">{{ workingProduct.dimensions || workingProduct.package_size || '-' }}</span>
+                </div>
+                <div class="preview-item">
+                  <span class="label">售价区间：</span><span class="value">¥{{ workingProduct.cost || '-' }} ~ ¥{{ workingProduct.price || '-' }}</span>
+                </div>
               </div>
             </div>
           </template>
 
           <!-- 模式2：手动输入 -->
           <template v-if="form.input_mode === 'manual'">
-            <a-form-item label="产品关键词" required>
+            <a-form-item
+              label="产品关键词"
+              required
+            >
               <a-input
                 v-model:value="form.manual_keyword"
                 placeholder="例：portable humidifier, mini humidifier, bedroom"
@@ -72,16 +117,20 @@
                 @change="saveForm"
               />
             </a-form-item>
-            <a-form-item label="竞品 ASIN 列表（3-5 个）" required>
+            <a-form-item
+              label="竞品 ASIN 列表（3-5 个）"
+              required
+            >
               <a-select
                 v-model:value="form.manual_asins"
                 mode="tags"
                 placeholder="输入竞品 ASIN，回车添加"
                 style="width: 100%"
                 @change="saveForm"
-              >
-              </a-select>
-              <div class="field-hint">输入 3-5 个同类竞品 ASIN 用于对标分析</div>
+              />
+              <div class="field-hint">
+                输入 3-5 个同类竞品 ASIN 用于对标分析
+              </div>
             </a-form-item>
             <a-form-item label="目标类目（可选）">
               <a-input
@@ -95,8 +144,14 @@
       </a-collapse-panel>
 
       <!-- ====== 风险扫描维度（5大类） ====== -->
-      <a-collapse-panel key="dimensions" header="🔍 风险扫描维度（5大类）">
-        <a-form layout="vertical" :model="form">
+      <a-collapse-panel
+        key="dimensions"
+        header="🔍 风险扫描维度（5大类）"
+      >
+        <a-form
+          layout="vertical"
+          :model="form"
+        >
           <a-form-item label="选择要检测的风险类别">
             <div class="risk-category-list">
               <div
@@ -110,9 +165,15 @@
                   <span class="cat-icon">{{ cat.icon }}</span>
                   <span class="cat-name">{{ cat.name }}</span>
                 </div>
-                <div class="cat-desc">{{ cat.desc }}</div>
+                <div class="cat-desc">
+                  {{ cat.desc }}
+                </div>
                 <div class="cat-items">
-                  <span v-for="item in cat.items" :key="item" class="cat-item-tag">{{ item }}</span>
+                  <span
+                    v-for="item in cat.items"
+                    :key="item"
+                    class="cat-item-tag"
+                  >{{ item }}</span>
                 </div>
               </div>
             </div>
@@ -139,31 +200,60 @@
       </a-collapse-panel>
 
       <!-- ====== 扫描深度 ====== -->
-      <a-collapse-panel key="depth" header="⚙️ 扫描设置">
-        <a-form layout="vertical" :model="form">
+      <a-collapse-panel
+        key="depth"
+        header="⚙️ 扫描设置"
+      >
+        <a-form
+          layout="vertical"
+          :model="form"
+        >
           <a-form-item label="最低告警级别">
-            <a-radio-group v-model:value="form.min_severity" @change="saveForm">
-              <a-radio-button value="high">🔴 仅高危</a-radio-button>
-              <a-radio-button value="medium">🔴+🟡 高危+中风险</a-radio-button>
-              <a-radio-button value="low">全部显示</a-radio-button>
+            <a-radio-group
+              v-model:value="form.min_severity"
+              @change="saveForm"
+            >
+              <a-radio-button value="high">
+                🔴 仅高危
+              </a-radio-button>
+              <a-radio-button value="medium">
+                🔴+🟡 高危+中风险
+              </a-radio-button>
+              <a-radio-button value="low">
+                全部显示
+              </a-radio-button>
             </a-radio-group>
           </a-form-item>
 
           <a-form-item label="报告输出选项">
-            <a-checkbox-group v-model:value="form.output_options" @change="saveForm">
+            <a-checkbox-group
+              v-model:value="form.output_options"
+              @change="saveForm"
+            >
               <div class="output-options">
-                <a-checkbox value="summary">📊 风险汇总总览（高危/中/低 统计 + 开发建议）</a-checkbox>
-                <a-checkbox value="actionable">✅ 可执行规避方案清单</a-checkbox>
-                <a-checkbox value="cert_map">📜 认证要求清单（含预估成本与周期）</a-checkbox>
-                <a-checkbox value="market_analysis">📈 市场饱和度与竞争格局分析</a-checkbox>
-                <a-checkbox value="alternative">💡 替代品类建议</a-checkbox>
-                <a-checkbox value="save_archive">💾 保存归档到产品库</a-checkbox>
+                <a-checkbox value="summary">
+                  📊 风险汇总总览（高危/中/低 统计 + 开发建议）
+                </a-checkbox>
+                <a-checkbox value="actionable">
+                  ✅ 可执行规避方案清单
+                </a-checkbox>
+                <a-checkbox value="cert_map">
+                  📜 认证要求清单（含预估成本与周期）
+                </a-checkbox>
+                <a-checkbox value="market_analysis">
+                  📈 市场饱和度与竞争格局分析
+                </a-checkbox>
+                <a-checkbox value="alternative">
+                  💡 替代品类建议
+                </a-checkbox>
+                <a-checkbox value="save_archive">
+                  💾 保存归档到产品库
+                </a-checkbox>
               </div>
             </a-checkbox-group>
           </a-form-item>
         </a-form>
       </a-collapse-panel>
-
     </a-collapse>
 
     <!-- 操作按钮 -->
@@ -172,13 +262,18 @@
         type="primary"
         block
         size="large"
-        @click="handleScan"
         :loading="scanning"
         :disabled="!canSubmit"
+        @click="handleScan"
       >
         ⚠️ 开始风险评估
       </a-button>
-      <a-button block @click="handleReset"><ReloadOutlined /> 重置</a-button>
+      <a-button
+        block
+        @click="handleReset"
+      >
+        <ReloadOutlined /> 重置
+      </a-button>
     </div>
   </div>
 </template>

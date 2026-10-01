@@ -3,9 +3,9 @@
     v-model:open="visible"
     title="归档到营销素材库"
     :width="WINDOW_W.xxl"
-    okText="确认归档"
-    cancelText="取消"
-    :okLoading="submitting"
+    ok-text="确认归档"
+    cancel-text="取消"
+    :ok-loading="submitting"
     @ok="handleConfirm"
   >
     <!-- 说明 -->
@@ -16,7 +16,10 @@
       style="margin-bottom: var(--space-12)"
     />
 
-    <div v-if="candidates.length" class="amc-body">
+    <div
+      v-if="candidates.length"
+      class="amc-body"
+    >
       <!-- 可归档素材列表（勾选） -->
       <div class="amc-section">
         <div class="amc-section-head">
@@ -25,7 +28,9 @@
             :checked="allChecked"
             :indeterminate="someChecked"
             @change="toggleAll"
-          >全选</a-checkbox>
+          >
+            全选
+          </a-checkbox>
         </div>
         <div class="amc-grid">
           <div
@@ -35,21 +40,38 @@
             :class="{ selected: form.checked[i] && !isDisabled(i), archived: isDisabled(i) }"
             @click="!isDisabled(i) && toggleOne(i)"
           >
-            <img :src="c.url" alt="" loading="lazy" @error="onImgError" />
+            <img
+              :src="c.url"
+              alt=""
+              loading="lazy"
+              @error="onImgError"
+            >
             <div class="amc-item-overlay">
               <CheckOutlined v-if="form.checked[i]" />
-              <CheckCircleFilled v-else-if="isDisabled(i)" class="archived-icon" />
+              <CheckCircleFilled
+                v-else-if="isDisabled(i)"
+                class="archived-icon"
+              />
             </div>
-            <span v-if="c.kind === 'video'" class="amc-video-badge">🎥</span>
+            <span
+              v-if="c.kind === 'video'"
+              class="amc-video-badge"
+            >🎥</span>
             <span class="amc-item-label">{{ isDisabled(i) ? '已归档' : c.name }}</span>
           </div>
         </div>
       </div>
 
       <!-- 归档设置 -->
-      <a-form layout="vertical" class="amc-form">
+      <a-form
+        layout="vertical"
+        class="amc-form"
+      >
         <div class="amc-form-row">
-          <a-form-item label="归档到分组" class="flex-1">
+          <a-form-item
+            label="归档到分组"
+            class="flex-1"
+          >
             <a-select
               v-model:value="form.groupIds"
               mode="multiple"
@@ -59,17 +81,27 @@
               :options="groupOptions"
             />
             <!-- 内联新建分组（保持弹窗紧凑） -->
-            <div v-if="!inlineCreateOpen" class="amc-add-group">
-              <a-button type="link" size="small" @click="openInlineCreate">
+            <div
+              v-if="!inlineCreateOpen"
+              class="amc-add-group"
+            >
+              <a-button
+                type="link"
+                size="small"
+                @click="openInlineCreate"
+              >
                 <PlusOutlined /> 新建分组
               </a-button>
             </div>
-            <div v-else class="amc-inline-create">
+            <div
+              v-else
+              class="amc-inline-create"
+            >
               <a-input
                 v-model:value="inlineCreate.name"
                 placeholder="分组名称，如 Q4 主图素材"
                 size="small"
-                @pressEnter="submitInlineCreate"
+                @press-enter="submitInlineCreate"
               />
               <div class="amc-color-row">
                 <span
@@ -79,15 +111,29 @@
                   :class="{ active: inlineCreate.color === c }"
                   :style="{ background: c }"
                   @click="inlineCreate.color = c"
-                ></span>
+                />
               </div>
               <a-space :size="6">
-                <a-button size="small" type="primary" @click="submitInlineCreate">创建并选中</a-button>
-                <a-button size="small" @click="cancelInlineCreate">取消</a-button>
+                <a-button
+                  size="small"
+                  type="primary"
+                  @click="submitInlineCreate"
+                >
+                  创建并选中
+                </a-button>
+                <a-button
+                  size="small"
+                  @click="cancelInlineCreate"
+                >
+                  取消
+                </a-button>
               </a-space>
             </div>
           </a-form-item>
-          <a-form-item label="绑定产品" class="flex-1">
+          <a-form-item
+            label="绑定产品"
+            class="flex-1"
+          >
             <a-select
               v-model:value="form.productId"
               placeholder="选择绑定产品（可选）"
@@ -100,12 +146,20 @@
             />
           </a-form-item>
         </div>
-        <a-form-item v-if="productLocked" label="">
-          <a-tag color="blue">已绑定：{{ productLocked }}</a-tag>
+        <a-form-item
+          v-if="productLocked"
+          label=""
+        >
+          <a-tag color="blue">
+            已绑定：{{ productLocked }}
+          </a-tag>
         </a-form-item>
       </a-form>
     </div>
-    <a-empty v-else description="没有可归档的素材" />
+    <a-empty
+      v-else
+      description="没有可归档的素材"
+    />
   </a-modal>
 </template>
 

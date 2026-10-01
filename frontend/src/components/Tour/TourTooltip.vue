@@ -21,25 +21,61 @@
       >
         <span class="tt-mute-icon">{{ muted ? '🔇' : '🔊' }}</span>
       </button>
-      <button class="tt-close" type="button" title="退出引导（Esc）" @click="$emit('skip')">×</button>
+      <button
+        class="tt-close"
+        type="button"
+        title="退出引导（Esc）"
+        @click="$emit('skip')"
+      >
+        ×
+      </button>
     </div>
 
-    <div class="tt-body">{{ step.body }}</div>
+    <div class="tt-body">
+      {{ step.body }}
+    </div>
 
     <!-- 谁在念。★ 降级不许静默：克隆音色不可用时这里会写明「系统语音（原因）」，
          否则用户听到一个陌生嗓门，只会以为功能坏了。 -->
-    <div v-if="channelLabel" class="tt-voice">{{ channelLabel }}</div>
+    <div
+      v-if="channelLabel"
+      class="tt-voice"
+    >
+      {{ channelLabel }}
+    </div>
 
     <!-- 语音不可用时的**显式说明**。
          ★ 不留空 / 不静默置灰：用户点过「播报」却没声音又毫无线索，
            是最难归因的一类问题（看着像功能坏了，其实是系统没装语音包）。 -->
-    <div v-if="reason" class="tt-reason">⚠️ {{ reason }}</div>
+    <div
+      v-if="reason"
+      class="tt-reason"
+    >
+      ⚠️ {{ reason }}
+    </div>
 
     <div class="tt-foot">
-      <button class="tt-btn tt-ghost" type="button" @click="$emit('skip')">跳过</button>
+      <button
+        class="tt-btn tt-ghost"
+        type="button"
+        @click="$emit('skip')"
+      >
+        跳过
+      </button>
       <span class="tt-spacer" />
-      <button class="tt-btn" type="button" :disabled="!canPrev" @click="$emit('prev')">上一步</button>
-      <button class="tt-btn tt-primary" type="button" @click="$emit('next')">
+      <button
+        class="tt-btn"
+        type="button"
+        :disabled="!canPrev"
+        @click="$emit('prev')"
+      >
+        上一步
+      </button>
+      <button
+        class="tt-btn tt-primary"
+        type="button"
+        @click="$emit('next')"
+      >
         {{ isLast ? '完成' : '下一步' }}
       </button>
     </div>

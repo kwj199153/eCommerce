@@ -1,62 +1,83 @@
 <template>
   <div class="lc-wrap chart-root">
-    <div v-if="legend" class="lc-legend">
-      <span v-for="s in series" :key="s.name" class="lc-legend-item">
-        <i class="lc-dot" :style="{ background: s.color }"></i>{{ s.name }}
+    <div
+      v-if="legend"
+      class="lc-legend"
+    >
+      <span
+        v-for="s in series"
+        :key="s.name"
+        class="lc-legend-item"
+      >
+        <i
+          class="lc-dot"
+          :style="{ background: s.color }"
+        />{{ s.name }}
       </span>
     </div>
-    <div ref="plotEl" class="lc-plot">
-    <svg :viewBox="`0 0 ${VB_W} ${VB_H}`" class="lc-svg" role="img" :aria-label="title">
-      <title v-if="title">{{ title }}</title>
-      <!-- 横向网格线 -->
-      <line
-        v-for="g in gridLines"
-        :key="g.y"
-        :x1="PAD_L"
-        :y1="g.y"
-        :x2="VB_W - PAD_R"
-        :y2="g.y"
-        class="lc-grid"
-      />
-      <text
-        v-for="g in gridLines"
-        :key="'t' + g.y"
-        :x="PAD_L - 6"
-        :y="g.y + 4"
-        class="lc-y-label"
-      >{{ g.label }}</text>
-
-      <!-- 数据系列折线 -->
-      <g v-for="(s, si) in renderedSeries" :key="s.name">
-        <polyline
-          :points="s.points"
-          fill="none"
-          :stroke="s.color"
-          stroke-width="2"
-          stroke-linejoin="round"
-          stroke-linecap="round"
-          class="lc-line"
+    <div
+      ref="plotEl"
+      class="lc-plot"
+    >
+      <svg
+        :viewBox="`0 0 ${VB_W} ${VB_H}`"
+        class="lc-svg"
+        role="img"
+        :aria-label="title"
+      >
+        <title v-if="title">{{ title }}</title>
+        <!-- 横向网格线 -->
+        <line
+          v-for="g in gridLines"
+          :key="g.y"
+          :x1="PAD_L"
+          :y1="g.y"
+          :x2="VB_W - PAD_R"
+          :y2="g.y"
+          class="lc-grid"
         />
-        <circle
-          v-for="pt in s.pts"
-          :key="pt.x + '-' + si"
-          :cx="pt.x"
-          :cy="pt.y"
-          r="3"
-          :fill="s.color"
-          class="lc-point"
-        />
-      </g>
+        <text
+          v-for="g in gridLines"
+          :key="'t' + g.y"
+          :x="PAD_L - 6"
+          :y="g.y + 4"
+          class="lc-y-label"
+        >{{ g.label }}</text>
 
-      <!-- 底部类目刻度 -->
-      <text
-        v-for="c in xTicks"
-        :key="'x' + c.x"
-        :x="c.x"
-        :y="VB_H - 8"
-        class="lc-x-label"
-      >{{ c.text }}</text>
-    </svg>
+        <!-- 数据系列折线 -->
+        <g
+          v-for="(s, si) in renderedSeries"
+          :key="s.name"
+        >
+          <polyline
+            :points="s.points"
+            fill="none"
+            :stroke="s.color"
+            stroke-width="2"
+            stroke-linejoin="round"
+            stroke-linecap="round"
+            class="lc-line"
+          />
+          <circle
+            v-for="pt in s.pts"
+            :key="pt.x + '-' + si"
+            :cx="pt.x"
+            :cy="pt.y"
+            r="3"
+            :fill="s.color"
+            class="lc-point"
+          />
+        </g>
+
+        <!-- 底部类目刻度 -->
+        <text
+          v-for="c in xTicks"
+          :key="'x' + c.x"
+          :x="c.x"
+          :y="VB_H - 8"
+          class="lc-x-label"
+        >{{ c.text }}</text>
+      </svg>
     </div>
   </div>
 </template>

@@ -8,30 +8,61 @@
   >
     <div class="pf-grid">
       <div class="pf-cell">
-        <div class="pf-k">售价</div>
-        <div class="pf-v">{{ money(analysis?.selling_price) }}</div>
+        <div class="pf-k">
+          售价
+        </div>
+        <div class="pf-v">
+          {{ money(analysis?.selling_price) }}
+        </div>
       </div>
       <div class="pf-cell">
-        <div class="pf-k">总成本</div>
-        <div class="pf-v">{{ money(analysis?.total_cost) }}</div>
+        <div class="pf-k">
+          总成本
+        </div>
+        <div class="pf-v">
+          {{ money(analysis?.total_cost) }}
+        </div>
       </div>
       <div class="pf-cell">
-        <div class="pf-k">净利润</div>
-        <div class="pf-v" :class="profitClass">{{ money(analysis?.net_profit) }}</div>
+        <div class="pf-k">
+          净利润
+        </div>
+        <div
+          class="pf-v"
+          :class="profitClass"
+        >
+          {{ money(analysis?.net_profit) }}
+        </div>
       </div>
       <div class="pf-cell">
-        <div class="pf-k">回本件数</div>
-        <div class="pf-v">{{ analysis?.break_even_quantity ?? '—' }}</div>
+        <div class="pf-k">
+          回本件数
+        </div>
+        <div class="pf-v">
+          {{ analysis?.break_even_quantity ?? '—' }}
+        </div>
       </div>
     </div>
 
-    <div v-if="feeRows.length" class="pf-fees">
-      <div v-for="row in feeRows" :key="row.name" class="pf-fee-row">
+    <div
+      v-if="feeRows.length"
+      class="pf-fees"
+    >
+      <div
+        v-for="row in feeRows"
+        :key="row.name"
+        class="pf-fee-row"
+      >
         <span class="pf-fee-name">{{ row.name }}</span>
         <span class="pf-fee-amount">{{ money(row.amount) }}</span>
       </div>
     </div>
-    <div v-else class="pf-empty">{{ summary || '未获取到费用明细。' }}</div>
+    <div
+      v-else
+      class="pf-empty"
+    >
+      {{ summary || '未获取到费用明细。' }}
+    </div>
   </ConversationCard>
 </template>
 

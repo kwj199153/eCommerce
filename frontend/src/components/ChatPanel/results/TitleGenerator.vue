@@ -6,7 +6,9 @@
         <span class="result-icon">📝</span>
         <div>
           <h3>{{ isSimplified ? '短标题生成' : '标题生成' }}</h3>
-          <p class="subtitle">{{ sourceMode === 'product' ? '基于当前产品生成 / 修改标题' : '基于手动输入生成标题' }}</p>
+          <p class="subtitle">
+            {{ sourceMode === 'product' ? '基于当前产品生成 / 修改标题' : '基于手动输入生成标题' }}
+          </p>
         </div>
       </div>
       <div class="header-actions">
@@ -15,8 +17,8 @@
           v-if="sourceMode === 'product' && productId"
           type="primary"
           size="small"
-          @click="handleSaveToProduct"
           :loading="saving"
+          @click="handleSaveToProduct"
         >
           <SaveOutlined /> 应用到当前产品 Listing
         </a-button>
@@ -24,12 +26,15 @@
         <a-button
           v-else-if="sourceMode === 'manual'"
           size="small"
-          @click="handleSaveAsDraft"
           :loading="saving"
+          @click="handleSaveAsDraft"
         >
           <PlusOutlined /> 保存为草稿
         </a-button>
-        <a-button size="small" @click="$emit('close')">
+        <a-button
+          size="small"
+          @click="$emit('close')"
+        >
           <CloseOutlined /> 关闭
         </a-button>
       </div>
@@ -39,8 +44,18 @@
     <div class="main-title-section">
       <div class="section-label">
         <CrownOutlined /> {{ isSimplified ? '推荐短标题' : '推荐主标题' }}
-        <a-tag v-if="isSimplified" color="orange">{{ platformLabel }}</a-tag>
-        <a-tag v-else color="blue">A9 优化</a-tag>
+        <a-tag
+          v-if="isSimplified"
+          color="orange"
+        >
+          {{ platformLabel }}
+        </a-tag>
+        <a-tag
+          v-else
+          color="blue"
+        >
+          A9 优化
+        </a-tag>
       </div>
       <div class="title-display">
         <a-textarea
@@ -61,60 +76,107 @@
 
       <!-- 操作按钮 -->
       <div class="title-actions">
-        <a-button type="primary" size="small" ghost @click="copyTitle">
+        <a-button
+          type="primary"
+          size="small"
+          ghost
+          @click="copyTitle"
+        >
           <CopyOutlined /> 复制标题
         </a-button>
-        <a-button size="small" @click="regenerateTitle">
+        <a-button
+          size="small"
+          @click="regenerateTitle"
+        >
           <ReloadOutlined /> 重新生成
         </a-button>
-        <a-button size="small" @click="resetEditingTitle" :disabled="!isTitleEdited">
+        <a-button
+          size="small"
+          :disabled="!isTitleEdited"
+          @click="resetEditingTitle"
+        >
           <UndoOutlined /> 还原推荐
         </a-button>
       </div>
     </div>
 
     <!-- 商品详情（Temu/Shopee 简化模式） -->
-    <div class="detail-desc-section" v-if="isSimplified && resultData.detail_desc">
+    <div
+      v-if="isSimplified && resultData.detail_desc"
+      class="detail-desc-section"
+    >
       <div class="section-label">
         <FileTextOutlined /> 商品详情
       </div>
       <div class="detail-desc-list">
-        <div v-for="(sec, idx) in resultData.detail_desc.sections" :key="idx" class="detail-desc-item">
-          <div class="detail-desc-heading">{{ sec.heading }}</div>
-          <div class="detail-desc-content">{{ sec.content }}</div>
+        <div
+          v-for="(sec, idx) in resultData.detail_desc.sections"
+          :key="idx"
+          class="detail-desc-item"
+        >
+          <div class="detail-desc-heading">
+            {{ sec.heading }}
+          </div>
+          <div class="detail-desc-content">
+            {{ sec.content }}
+          </div>
         </div>
       </div>
     </div>
 
     <!-- 五点描述（如有，仅亚马逊模式） -->
-    <div class="bullets-section" v-if="!isSimplified && resultData.bullets?.length">
+    <div
+      v-if="!isSimplified && resultData.bullets?.length"
+      class="bullets-section"
+    >
       <div class="section-label">
         <OrderedListOutlined /> 五点描述 (Bullet Points)
       </div>
       <div class="bullets-list">
-        <div v-for="(bullet, idx) in resultData.bullets" :key="idx" class="bullet-item">
-          <div class="bullet-emoji">{{ getBulletEmoji(idx) }}</div>
+        <div
+          v-for="(bullet, idx) in resultData.bullets"
+          :key="idx"
+          class="bullet-item"
+        >
+          <div class="bullet-emoji">
+            {{ getBulletEmoji(idx) }}
+          </div>
           <div class="bullet-content">
-            <div class="bullet-title">{{ bullet.title }}</div>
-            <div class="bullet-text">{{ bullet.content }}</div>
+            <div class="bullet-title">
+              {{ bullet.title }}
+            </div>
+            <div class="bullet-text">
+              {{ bullet.content }}
+            </div>
           </div>
         </div>
       </div>
     </div>
 
     <!-- A+ Content（如有，仅亚马逊模式） -->
-    <div class="aplus-section" v-if="!isSimplified && resultData.a_plus_content">
+    <div
+      v-if="!isSimplified && resultData.a_plus_content"
+      class="aplus-section"
+    >
       <div class="section-label">
         <FileTextOutlined /> A+ Content / EBC
       </div>
       <div class="aplus-preview">
-        <div class="aplus-header">{{ resultData.a_plus_content.header || '产品故事' }}</div>
-        <div class="aplus-body" v-html="resultData.a_plus_content.body"></div>
+        <div class="aplus-header">
+          {{ resultData.a_plus_content.header || '产品故事' }}
+        </div>
+        <div
+          class="aplus-body"
+          v-html="resultData.a_plus_content.body"
+        />
       </div>
     </div>
 
     <!-- 标题变体 -->
-    <div class="variants-section" v-if="resultData.variants?.length">
+    <div
+      v-if="resultData.variants?.length"
+      class="variants-section"
+    >
       <div class="section-label">
         <SwapOutlined /> {{ isSimplified ? '短标题变体' : '标题变体' }}（{{ resultData.variants.length }} 个备选）
         <a-tooltip title="备选参考，不会自动替换主标题。如需采纳请点击「采纳为主标题」">
@@ -127,8 +189,12 @@
           :key="idx"
           class="variant-item"
         >
-          <div class="variant-rank">#{{ idx + 1 }}</div>
-          <div class="variant-text">{{ variant.title }}</div>
+          <div class="variant-rank">
+            #{{ idx + 1 }}
+          </div>
+          <div class="variant-text">
+            {{ variant.title }}
+          </div>
           <div class="variant-score">
             <a-progress
               :percent="variant.seo_score"
@@ -138,7 +204,11 @@
             />
             <span>{{ variant.seo_score }}</span>
           </div>
-          <a-button size="small" type="link" @click="adoptVariant(idx)">
+          <a-button
+            size="small"
+            type="link"
+            @click="adoptVariant(idx)"
+          >
             <DownloadOutlined /> 采纳为主标题
           </a-button>
         </div>
@@ -148,8 +218,12 @@
     <!-- SEO 分析卡片 -->
     <div class="seo-analysis-grid">
       <div class="analysis-card">
-        <div class="card-title">关键词覆盖</div>
-        <div class="card-value">{{ resultData.keyword_coverage }}%</div>
+        <div class="card-title">
+          关键词覆盖
+        </div>
+        <div class="card-value">
+          {{ resultData.keyword_coverage }}%
+        </div>
         <div class="card-detail">
           覆盖 {{ resultData.keywords_matched }} / {{ resultData.keywords_total }} 个目标词
         </div>
@@ -161,18 +235,34 @@
       </div>
 
       <div class="analysis-card">
-        <div class="card-title">可读性评分</div>
-        <div class="card-value">{{ resultData.readability_score }}/10</div>
-        <div class="card-detail">{{ getReadabilityLabel(resultData.readability_score) }}</div>
-        <a-rate :value="Math.round(resultData.readability_score / 2)" disabled />
+        <div class="card-title">
+          可读性评分
+        </div>
+        <div class="card-value">
+          {{ resultData.readability_score }}/10
+        </div>
+        <div class="card-detail">
+          {{ getReadabilityLabel(resultData.readability_score) }}
+        </div>
+        <a-rate
+          :value="Math.round(resultData.readability_score / 2)"
+          disabled
+        />
       </div>
 
       <div class="analysis-card">
-        <div class="card-title">搜索排名潜力</div>
-        <div class="card-value" :style="{ color: getScoreColor(resultData.rank_potential) }">
+        <div class="card-title">
+          搜索排名潜力
+        </div>
+        <div
+          class="card-value"
+          :style="{ color: getScoreColor(resultData.rank_potential) }"
+        >
           {{ getRankLabel(resultData.rank_potential) }}
         </div>
-        <div class="card-detail">基于竞品对比分析</div>
+        <div class="card-detail">
+          基于竞品对比分析
+        </div>
         <a-badge
           :status="RANK_STATUS[bandIndex('score', resultData.rank_potential)]"
           :text="getRankLabel(resultData.rank_potential)"
@@ -180,9 +270,15 @@
       </div>
 
       <div class="analysis-card">
-        <div class="card-title">品牌露出</div>
-        <div class="card-value">{{ resultData.brand_position === 'front' ? '前置' : '后置' }}</div>
-        <div class="card-detail">{{ resultData.brand_position === 'front' ? '利于品牌认知' : '利于 SEO 权重' }}</div>
+        <div class="card-title">
+          品牌露出
+        </div>
+        <div class="card-value">
+          {{ resultData.brand_position === 'front' ? '前置' : '后置' }}
+        </div>
+        <div class="card-detail">
+          {{ resultData.brand_position === 'front' ? '利于品牌认知' : '利于 SEO 权重' }}
+        </div>
         <a-switch
           :checked="resultData.brand_position === 'front'"
           checked-children="前置"
@@ -198,20 +294,30 @@
         <KeyOutlined /> 核心关键词分布
       </div>
       <div class="keyword-tags">
-        <a-tooltip v-for="(kw, idx) in resultData.core_keywords" :key="idx" :title="`搜索量: ${kw.search_volume} | 竞争: ${kw.competition}`">
+        <a-tooltip
+          v-for="(kw, idx) in resultData.core_keywords"
+          :key="idx"
+          :title="`搜索量: ${kw.search_volume} | 竞争: ${kw.competition}`"
+        >
           <a-tag
             :color="kw.placed_in_title ? 'blue' : 'default'"
             :class="{ 'not-placed': !kw.placed_in_title }"
           >
             {{ kw.word }}
-            <span v-if="kw.placed_in_title" class="check-icon">✓</span>
+            <span
+              v-if="kw.placed_in_title"
+              class="check-icon"
+            >✓</span>
           </a-tag>
         </a-tooltip>
       </div>
     </div>
 
     <!-- 改进建议 -->
-    <div class="suggestions-section" v-if="resultData.suggestions?.length">
+    <div
+      v-if="resultData.suggestions?.length"
+      class="suggestions-section"
+    >
       <div class="section-label">
         <BulbOutlined /> 优化建议
       </div>
@@ -244,8 +350,15 @@
         >
           <template #extra>
             <a-space>
-              <a-button @click="saveSuccessVisible = false">继续编辑</a-button>
-              <a-button type="primary" @click="goToProductLibrary">去产品库查看</a-button>
+              <a-button @click="saveSuccessVisible = false">
+                继续编辑
+              </a-button>
+              <a-button
+                type="primary"
+                @click="goToProductLibrary"
+              >
+                去产品库查看
+              </a-button>
             </a-space>
           </template>
         </a-result>

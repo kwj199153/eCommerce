@@ -1,20 +1,36 @@
 <template>
-  <div v-if="plan && plan.total" class="plan-bar" :class="{ 'is-open': expanded }">
+  <div
+    v-if="plan && plan.total"
+    class="plan-bar"
+    :class="{ 'is-open': expanded }"
+  >
     <!-- 头：一行摘要 + 进度，点一下折叠/展开 -->
-    <div class="plan-head" @click="expanded = !expanded">
+    <div
+      class="plan-head"
+      @click="expanded = !expanded"
+    >
       <span class="plan-label">
         <UnorderedListOutlined />
         当前计划
       </span>
       <span class="plan-progress">{{ plan.completed }} / {{ plan.total }} 已完成</span>
-      <span class="plan-track" aria-hidden="true">
-        <span class="plan-fill" :style="{ width: pctText }" />
+      <span
+        class="plan-track"
+        aria-hidden="true"
+      >
+        <span
+          class="plan-fill"
+          :style="{ width: pctText }"
+        />
       </span>
       <span class="plan-toggle">{{ expanded ? '收起' : '展开' }}</span>
     </div>
 
     <!-- 明细：状态图标 + 编号 + 内容 +（可选）补充说明 -->
-    <ul v-if="expanded" class="plan-items">
+    <ul
+      v-if="expanded"
+      class="plan-items"
+    >
       <li
         v-for="item in plan.items"
         :key="item.id"
@@ -28,7 +44,10 @@
         />
         <span class="plan-id">{{ item.id }}</span>
         <span class="plan-content">{{ item.content }}</span>
-        <span v-if="item.note" class="plan-note">—— {{ item.note }}</span>
+        <span
+          v-if="item.note"
+          class="plan-note"
+        >—— {{ item.note }}</span>
       </li>
     </ul>
   </div>

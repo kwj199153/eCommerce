@@ -17,10 +17,15 @@
           alt=""
           loading="lazy"
           @error="onImgError"
-        />
-        <span v-else class="detail-hero-ph">🖼️</span>
+        >
+        <span
+          v-else
+          class="detail-hero-ph"
+        >🖼️</span>
         <div class="detail-hero-info">
-          <div class="detail-hero-title">{{ record.title }}</div>
+          <div class="detail-hero-title">
+            {{ record.title }}
+          </div>
           <div class="detail-hero-sub">
             <span class="detail-brand">{{ record.brand || '-' }}</span>
             <a
@@ -36,105 +41,211 @@
       <!-- 综合指标头图 -->
       <div class="detail-kpis">
         <div class="dkpi">
-          <div class="dkpi-label">蓝海评分</div>
-          <div class="dkpi-val" :style="{ color: getScoreColor(record.blue_ocean_score) }">{{ record.blue_ocean_score }}</div>
+          <div class="dkpi-label">
+            蓝海评分
+          </div>
+          <div
+            class="dkpi-val"
+            :style="{ color: getScoreColor(record.blue_ocean_score) }"
+          >
+            {{ record.blue_ocean_score }}
+          </div>
         </div>
         <div class="dkpi">
-          <div class="dkpi-label">售价</div>
-          <div class="dkpi-val mono">${{ money(record.price) }}</div>
+          <div class="dkpi-label">
+            售价
+          </div>
+          <div class="dkpi-val mono">
+            ${{ money(record.price) }}
+          </div>
         </div>
         <div class="dkpi">
-          <div class="dkpi-label">月销</div>
-          <div class="dkpi-val mono">{{ record.estimated_monthly_sales ? Number(record.estimated_monthly_sales).toLocaleString() : '-' }}</div>
+          <div class="dkpi-label">
+            月销
+          </div>
+          <div class="dkpi-val mono">
+            {{ record.estimated_monthly_sales ? Number(record.estimated_monthly_sales).toLocaleString() : '-' }}
+          </div>
         </div>
         <div class="dkpi">
-          <div class="dkpi-label">ROI</div>
-          <div class="dkpi-val" :class="roiClass(record.roi_estimated)">{{ record.roi_estimated }}%</div>
+          <div class="dkpi-label">
+            ROI
+          </div>
+          <div
+            class="dkpi-val"
+            :class="roiClass(record.roi_estimated)"
+          >
+            {{ record.roi_estimated }}%
+          </div>
         </div>
       </div>
 
       <!-- 合规 / 风险标签 -->
       <div class="detail-section">
-        <div class="detail-section-title">🏷️ 判定标签</div>
+        <div class="detail-section-title">
+          🏷️ 判定标签
+        </div>
         <div class="detail-tags">
-          <a-tag v-for="(t, i) in complianceTags(record)" :key="i" :color="t.type">{{ t.text }}</a-tag>
+          <a-tag
+            v-for="(t, i) in complianceTags(record)"
+            :key="i"
+            :color="t.type"
+          >
+            {{ t.text }}
+          </a-tag>
         </div>
       </div>
 
       <!-- AI 洞察 -->
       <div class="detail-section">
-        <div class="detail-section-title">🤖 AI 洞察</div>
-        <div class="detail-insight">{{ aiInsight(record) }}</div>
+        <div class="detail-section-title">
+          🤖 AI 洞察
+        </div>
+        <div class="detail-insight">
+          {{ aiInsight(record) }}
+        </div>
       </div>
 
       <!-- 基本信息 -->
       <div class="detail-section">
-        <div class="detail-section-title">📋 基本信息</div>
+        <div class="detail-section-title">
+          📋 基本信息
+        </div>
         <div class="detail-rows">
-          <div class="drow"><span>站点</span><b>{{ record.marketplace || 'Amazon US' }}</b></div>
-          <div class="drow"><span>完整类目</span><b>{{ (record.category_path || []).join(' › ') || record.category_l2 || '-' }}</b></div>
-          <div class="drow"><span>上架时间</span><b>{{ record.listed_date || '-' }}</b></div>
-          <div class="drow"><span>上架时长</span><b>{{ listedAge(record) }}</b></div>
-          <div class="drow"><span>重量 / 尺寸</span><b>{{ record.weight_lbs ? record.weight_lbs + ' lb' : '-' }} / {{ record.dimensions || '-' }} in</b></div>
-          <div class="drow"><span>卖家数</span><b>{{ record.seller_count ?? '-' }}</b></div>
+          <div class="drow">
+            <span>站点</span><b>{{ record.marketplace || 'Amazon US' }}</b>
+          </div>
+          <div class="drow">
+            <span>完整类目</span><b>{{ (record.category_path || []).join(' › ') || record.category_l2 || '-' }}</b>
+          </div>
+          <div class="drow">
+            <span>上架时间</span><b>{{ record.listed_date || '-' }}</b>
+          </div>
+          <div class="drow">
+            <span>上架时长</span><b>{{ listedAge(record) }}</b>
+          </div>
+          <div class="drow">
+            <span>重量 / 尺寸</span><b>{{ record.weight_lbs ? record.weight_lbs + ' lb' : '-' }} / {{ record.dimensions || '-' }} in</b>
+          </div>
+          <div class="drow">
+            <span>卖家数</span><b>{{ record.seller_count ?? '-' }}</b>
+          </div>
         </div>
       </div>
 
       <!-- 市场指标 -->
       <div class="detail-section">
-        <div class="detail-section-title">📈 市场指标</div>
+        <div class="detail-section-title">
+          📈 市场指标
+        </div>
         <div class="detail-rows">
-          <div class="drow"><span>BSR 排名</span><b>#{{ record.bsr_rank ? Number(record.bsr_rank).toLocaleString() : '-' }} <span class="muted">{{ record.bsr_category || '' }}</span></b></div>
-          <div class="drow"><span>商品星级</span><b :class="ratingClass(record.rating)">★ {{ record.rating ? Number(record.rating).toFixed(1) : '-' }}</b></div>
-          <div class="drow"><span>评论数</span><b>{{ record.review_count ? Number(record.review_count).toLocaleString() : '-' }}</b></div>
-          <div class="drow"><span>变体数量</span><b>{{ record.variation_count ?? 1 }}</b></div>
-          <div class="drow"><span>30天价格波动</span><b :class="(record.price_trend_30d ?? 0) >= 0 ? 'trend-up' : 'trend-down'">{{ record.price_trend_30d ?? 0 }}%</b></div>
-          <div class="drow"><span>30天销量波动</span><b :class="(record.sales_trend_30d ?? 0) >= 0 ? 'trend-up' : 'trend-down'">{{ record.sales_trend_30d ?? 0 }}%</b></div>
+          <div class="drow">
+            <span>BSR 排名</span><b>#{{ record.bsr_rank ? Number(record.bsr_rank).toLocaleString() : '-' }} <span class="muted">{{ record.bsr_category || '' }}</span></b>
+          </div>
+          <div class="drow">
+            <span>商品星级</span><b :class="ratingClass(record.rating)">★ {{ record.rating ? Number(record.rating).toFixed(1) : '-' }}</b>
+          </div>
+          <div class="drow">
+            <span>评论数</span><b>{{ record.review_count ? Number(record.review_count).toLocaleString() : '-' }}</b>
+          </div>
+          <div class="drow">
+            <span>变体数量</span><b>{{ record.variation_count ?? 1 }}</b>
+          </div>
+          <div class="drow">
+            <span>30天价格波动</span><b :class="(record.price_trend_30d ?? 0) >= 0 ? 'trend-up' : 'trend-down'">{{ record.price_trend_30d ?? 0 }}%</b>
+          </div>
+          <div class="drow">
+            <span>30天销量波动</span><b :class="(record.sales_trend_30d ?? 0) >= 0 ? 'trend-up' : 'trend-down'">{{ record.sales_trend_30d ?? 0 }}%</b>
+          </div>
         </div>
       </div>
 
       <!-- 成本拆解 -->
       <div class="detail-section">
-        <div class="detail-section-title">💰 成本拆解（单件）</div>
+        <div class="detail-section-title">
+          💰 成本拆解（单件）
+        </div>
         <div class="cost-box">
-          <div class="cost-row"><span>售价</span><b>${{ money(record.price) }}</b></div>
-          <div class="cost-row"><span>采购成本</span><b>${{ money(record.cost_price) }}</b></div>
-          <div class="cost-row"><span>头程物流</span><b>${{ money(record.freight_cost ?? estFreight(record)) }}</b></div>
-          <div class="cost-row"><span>平台佣金</span><b>${{ money(commission(record)) }}</b></div>
-          <div class="cost-row"><span>FBA 配送费</span><b>${{ money(record.fba_fees) }}</b></div>
-          <div class="cost-divider"></div>
-          <div class="cost-row net"><span>预估净利</span><b>${{ money(record.net_profit ?? estNet(record)) }}</b></div>
-          <div class="cost-row total"><span>ROI</span><b :class="roiClass(record.roi_estimated)">{{ record.roi_estimated }}%</b></div>
+          <div class="cost-row">
+            <span>售价</span><b>${{ money(record.price) }}</b>
+          </div>
+          <div class="cost-row">
+            <span>采购成本</span><b>${{ money(record.cost_price) }}</b>
+          </div>
+          <div class="cost-row">
+            <span>头程物流</span><b>${{ money(record.freight_cost ?? estFreight(record)) }}</b>
+          </div>
+          <div class="cost-row">
+            <span>平台佣金</span><b>${{ money(commission(record)) }}</b>
+          </div>
+          <div class="cost-row">
+            <span>FBA 配送费</span><b>${{ money(record.fba_fees) }}</b>
+          </div>
+          <div class="cost-divider" />
+          <div class="cost-row net">
+            <span>预估净利</span><b>${{ money(record.net_profit ?? estNet(record)) }}</b>
+          </div>
+          <div class="cost-row total">
+            <span>ROI</span><b :class="roiClass(record.roi_estimated)">{{ record.roi_estimated }}%</b>
+          </div>
         </div>
       </div>
 
       <!-- Listing 卖点 -->
-      <div v-if="record.selling_points?.length" class="detail-section">
-        <div class="detail-section-title">💡 核心卖点</div>
+      <div
+        v-if="record.selling_points?.length"
+        class="detail-section"
+      >
+        <div class="detail-section-title">
+          💡 核心卖点
+        </div>
         <ul class="detail-points">
-          <li v-for="(sp, i) in record.selling_points" :key="i">{{ sp }}</li>
+          <li
+            v-for="(sp, i) in record.selling_points"
+            :key="i"
+          >
+            {{ sp }}
+          </li>
         </ul>
       </div>
 
       <!-- Listing 质量评分 -->
       <div class="detail-section">
-        <div class="detail-section-title">📊 Listing 质量</div>
+        <div class="detail-section-title">
+          📊 Listing 质量
+        </div>
         <div class="lq-rows">
           <div class="lq-row">
             <span>标题</span>
-            <a-progress :percent="record.title_score" :stroke-color="getScoreColor(record.title_score)" size="small" />
+            <a-progress
+              :percent="record.title_score"
+              :stroke-color="getScoreColor(record.title_score)"
+              size="small"
+            />
           </div>
           <div class="lq-row">
             <span>五点</span>
-            <a-progress :percent="record.bullet_score" :stroke-color="getScoreColor(record.bullet_score)" size="small" />
+            <a-progress
+              :percent="record.bullet_score"
+              :stroke-color="getScoreColor(record.bullet_score)"
+              size="small"
+            />
           </div>
           <div class="lq-row">
             <span>图片</span>
-            <a-progress :percent="record.image_score" :stroke-color="getScoreColor(record.image_score)" size="small" />
+            <a-progress
+              :percent="record.image_score"
+              :stroke-color="getScoreColor(record.image_score)"
+              size="small"
+            />
           </div>
           <div class="lq-row">
             <span>综合</span>
-            <a-progress :percent="record.overall_listing_score" :stroke-color="getScoreColor(record.overall_listing_score)" size="small" />
+            <a-progress
+              :percent="record.overall_listing_score"
+              :stroke-color="getScoreColor(record.overall_listing_score)"
+              size="small"
+            />
           </div>
         </div>
       </div>

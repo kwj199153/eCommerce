@@ -4,9 +4,15 @@
       <div class="header-left">
         <span class="result-icon">🔍</span>
         <span class="result-title">痛点分析结果</span>
-        <a-tag color="blue">{{ data.pain_points?.length || 0 }} 个痛点</a-tag>
+        <a-tag color="blue">
+          {{ data.pain_points?.length || 0 }} 个痛点
+        </a-tag>
       </div>
-      <a-button type="text" size="small" @click="$emit('close')">
+      <a-button
+        type="text"
+        size="small"
+        @click="$emit('close')"
+      >
         <CloseOutlined />
       </a-button>
     </div>
@@ -14,27 +20,39 @@
     <!-- 概览卡片 -->
     <div class="overview-cards">
       <div class="overview-card">
-        <div class="card-value">{{ data.total_reviews_analyzed }}</div>
-        <div class="card-label">分析评论</div>
+        <div class="card-value">
+          {{ data.total_reviews_analyzed }}
+        </div>
+        <div class="card-label">
+          分析评论
+        </div>
       </div>
       <div class="overview-card negative">
-        <div class="card-value">{{ data.negative_review_count }}</div>
-        <div class="card-label">差评数</div>
+        <div class="card-value">
+          {{ data.negative_review_count }}
+        </div>
+        <div class="card-label">
+          差评数
+        </div>
       </div>
       <div class="overview-card">
-        <div class="card-value">{{ data.market_gap_score }}</div>
-        <div class="card-label">市场空白分</div>
+        <div class="card-value">
+          {{ data.market_gap_score }}
+        </div>
+        <div class="card-label">
+          市场空白分
+        </div>
       </div>
     </div>
 
     <!-- 痛点排行表 -->
     <a-table
-      :dataSource="data.pain_points"
+      :data-source="data.pain_points"
       :columns="columns"
       size="small"
       :pagination="{ pageSize: 6, size: 'small' }"
       :scroll="{ y: 200 }"
-      rowKey="pain_point"
+      row-key="pain_point"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'percentage'">
@@ -45,7 +63,10 @@
           />
         </template>
         <template v-else-if="column.key === 'severity'">
-          <a-tag :color="getSeverityTagColor(record.severity)" size="small">
+          <a-tag
+            :color="getSeverityTagColor(record.severity)"
+            size="small"
+          >
             {{ record.severity === 'high' ? '严重' : record.severity === 'medium' ? '中等' : '轻微' }}
           </a-tag>
         </template>
@@ -53,10 +74,20 @@
     </a-table>
 
     <!-- 改进建议 -->
-    <div v-if="data.improvement_suggestions?.length" class="suggestions">
-      <div class="section-title">💡 改进建议</div>
+    <div
+      v-if="data.improvement_suggestions?.length"
+      class="suggestions"
+    >
+      <div class="section-title">
+        💡 改进建议
+      </div>
       <ul class="suggestion-list">
-        <li v-for="(s, i) in data.improvement_suggestions.slice(0, 4)" :key="i">{{ s }}</li>
+        <li
+          v-for="(s, i) in data.improvement_suggestions.slice(0, 4)"
+          :key="i"
+        >
+          {{ s }}
+        </li>
       </ul>
     </div>
   </div>

@@ -1,5 +1,8 @@
 <template>
-  <a-config-provider :locale="zhCN" :theme="themeStore.antdTheme">
+  <a-config-provider
+    :locale="zhCN"
+    :theme="themeStore.antdTheme"
+  >
     <router-view />
     <!-- 新手引导：全局**只挂一次**，且只挂在应用根上。
          放在这里而不是某个视图里，是因为它讲的是整个工作台，

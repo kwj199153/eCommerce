@@ -19,12 +19,25 @@
               type="text"
               placeholder="在本次对话中查找…"
               @keydown.esc="findOpen = false"
-            />
-            <span v-if="findQuery.trim()" class="ctp-count">{{ findRows.length }} 条</span>
+            >
+            <span
+              v-if="findQuery.trim()"
+              class="ctp-count"
+            >{{ findRows.length }} 条</span>
           </div>
           <div class="ctp-list">
-            <p v-if="!hasMessages" class="ctp-empty">本次对话还没有内容</p>
-            <p v-else-if="!findRows.length" class="ctp-empty">没有包含「{{ findQuery.trim() }}」的消息</p>
+            <p
+              v-if="!hasMessages"
+              class="ctp-empty"
+            >
+              本次对话还没有内容
+            </p>
+            <p
+              v-else-if="!findRows.length"
+              class="ctp-empty"
+            >
+              没有包含「{{ findQuery.trim() }}」的消息
+            </p>
             <template v-else>
               <button
                 v-for="row in findRows"
@@ -33,27 +46,47 @@
                 class="ctp-row"
                 @click="jumpTo(row.index)"
               >
-                <span class="ctp-role" :class="row.role">{{ row.role === 'user' ? '我' : 'AI' }}</span>
-                <span class="ctp-snippet" v-html="row.snippet"></span>
+                <span
+                  class="ctp-role"
+                  :class="row.role"
+                >{{ row.role === 'user' ? '我' : 'AI' }}</span>
+                <span
+                  class="ctp-snippet"
+                  v-html="row.snippet"
+                />
               </button>
             </template>
           </div>
         </div>
       </template>
-      <button type="button" class="ct-btn" :class="{ 'is-open': findOpen }" title="查找对话内容">
+      <button
+        type="button"
+        class="ct-btn"
+        :class="{ 'is-open': findOpen }"
+        title="查找对话内容"
+      >
         <SearchOutlined />
       </button>
     </a-popover>
 
     <!-- ② 分享：复制为 Markdown / 下载 .md（没有对话时禁用，不留一个点了没反应的按钮） -->
-    <a-dropdown trigger="click" placement="bottomRight">
+    <a-dropdown
+      trigger="click"
+      placement="bottomRight"
+    >
       <template #overlay>
         <a-menu @click="onShare">
-          <a-menu-item key="copy" :disabled="!hasMessages">
+          <a-menu-item
+            key="copy"
+            :disabled="!hasMessages"
+          >
             <CopyOutlined />
             <span class="ctm-label">复制为 Markdown</span>
           </a-menu-item>
-          <a-menu-item key="download" :disabled="!hasMessages">
+          <a-menu-item
+            key="download"
+            :disabled="!hasMessages"
+          >
             <DownloadOutlined />
             <span class="ctm-label">下载 .md 文件</span>
           </a-menu-item>
@@ -85,7 +118,12 @@
             <span class="ctp-count">{{ questions.length }} 条</span>
           </div>
           <div class="ctp-list">
-            <p v-if="!questions.length" class="ctp-empty">本次对话还没有提问</p>
+            <p
+              v-if="!questions.length"
+              class="ctp-empty"
+            >
+              本次对话还没有提问
+            </p>
             <template v-else>
               <button
                 v-for="q in questions"
@@ -96,13 +134,21 @@
               >
                 <span class="ctp-no">{{ q.no }}</span>
                 <span class="ctp-q">{{ q.text }}</span>
-                <span v-if="q.time" class="ctp-time">{{ q.time }}</span>
+                <span
+                  v-if="q.time"
+                  class="ctp-time"
+                >{{ q.time }}</span>
               </button>
             </template>
           </div>
         </div>
       </template>
-      <button type="button" class="ct-btn" :class="{ 'is-open': historyOpen }" title="历史提问">
+      <button
+        type="button"
+        class="ct-btn"
+        :class="{ 'is-open': historyOpen }"
+        title="历史提问"
+      >
         <HistoryOutlined />
       </button>
     </a-popover>

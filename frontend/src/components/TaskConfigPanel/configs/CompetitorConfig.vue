@@ -3,7 +3,10 @@
     <!-- 入口3：维护当前载入主品(选品)的竞品池，供本次对比直接带出 -->
     <div class="pool-entry">
       <div class="pool-entry-main">
-        <a-button size="small" @click="openPoolManager">
+        <a-button
+          size="small"
+          @click="openPoolManager"
+        >
           <TeamOutlined /> 维护对标竞品池
         </a-button>
         <span class="pool-entry-hint">
@@ -17,50 +20,102 @@
       <label>本次对比竞品（自动取自主品竞品池 · 最多 5 个）</label>
       <template v-if="poolEnabledList.length">
         <div class="compare-source-list">
-          <div v-for="c in poolEnabledList" :key="c.asin" class="compare-source-item">
-            <img v-if="c.main_image" class="thumb" :src="c.main_image" alt="" @error="onImgError" />
-            <span v-else class="thumb-ph">🖼️</span>
+          <div
+            v-for="c in poolEnabledList"
+            :key="c.asin"
+            class="compare-source-item"
+          >
+            <img
+              v-if="c.main_image"
+              class="thumb"
+              :src="c.main_image"
+              alt=""
+              @error="onImgError"
+            >
+            <span
+              v-else
+              class="thumb-ph"
+            >🖼️</span>
             <div class="info">
-              <div class="title">{{ c.title || c.asin }}</div>
+              <div class="title">
+                {{ c.title || c.asin }}
+              </div>
               <div class="meta">
                 <span class="asin">{{ c.asin }}</span>
-                <a-tag color="blue" size="small" style="margin-inline-end:0">对标</a-tag>
+                <a-tag
+                  color="blue"
+                  size="small"
+                  style="margin-inline-end:0"
+                >
+                  对标
+                </a-tag>
               </div>
             </div>
           </div>
-          <div v-if="poolEnabledList.length > compareLimit" class="overflow-hint">
+          <div
+            v-if="poolEnabledList.length > compareLimit"
+            class="overflow-hint"
+          >
             池内已启用 {{ poolEnabledList.length }} 个，一次仅对比前 {{ compareLimit }} 个
           </div>
         </div>
       </template>
-      <div v-else class="compare-empty">
+      <div
+        v-else
+        class="compare-empty"
+      >
         <InboxOutlined style="font-size:22px; color:#d9d9d9" />
-        <p v-if="loadedOwner">该主品暂无启用的对标竞品。点上方「维护对标竞品池」先添加</p>
-        <p v-else>请先「载入选品 / 载入产品」选定主品，再维护它的对标竞品池</p>
+        <p v-if="loadedOwner">
+          该主品暂无启用的对标竞品。点上方「维护对标竞品池」先添加
+        </p>
+        <p v-else>
+          请先「载入选品 / 载入产品」选定主品，再维护它的对标竞品池
+        </p>
       </div>
     </div>
 
     <div class="form-group">
       <label>对比维度</label>
-      <a-checkbox-group v-model:value="form.dimensions" style="width: 100%">
+      <a-checkbox-group
+        v-model:value="form.dimensions"
+        style="width: 100%"
+      >
         <div class="checkbox-row">
-          <a-checkbox value="price">价格定位</a-checkbox>
-          <a-checkbox value="rating">评分评论</a-checkbox>
+          <a-checkbox value="price">
+            价格定位
+          </a-checkbox>
+          <a-checkbox value="rating">
+            评分评论
+          </a-checkbox>
         </div>
         <div class="checkbox-row">
-          <a-checkbox value="listing">Listing质量</a-checkbox>
-          <a-checkbox value="bsr">BSR排名</a-checkbox>
+          <a-checkbox value="listing">
+            Listing质量
+          </a-checkbox>
+          <a-checkbox value="bsr">
+            BSR排名
+          </a-checkbox>
         </div>
         <div class="checkbox-row">
-          <a-checkbox value="swot">SWOT分析</a-checkbox>
-          <a-checkbox value="positioning">市场定位</a-checkbox>
+          <a-checkbox value="swot">
+            SWOT分析
+          </a-checkbox>
+          <a-checkbox value="positioning">
+            市场定位
+          </a-checkbox>
         </div>
       </a-checkbox-group>
     </div>
 
     <!-- 操作按钮 -->
     <div class="action-bar">
-      <a-button type="primary" block @click="handleSubmit" :loading="loading" :disabled="poolEnabledList.length < 2">
+      <a-button
+        type="primary"
+        block
+        :loading="loading"
+        :disabled="poolEnabledList.length < 2"
+        @click="handleSubmit"
+      >
         <SearchOutlined /> 开始对比分析（{{ poolEnabledList.length }} 个竞品）
       </a-button>
     </div>

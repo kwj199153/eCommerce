@@ -84,20 +84,14 @@ export const LEGACY_DEBT_OFF = {
   "@typescript-eslint/no-unused-expressions": 'off',  // 存量 1 条
   "@typescript-eslint/no-unused-vars": 'off',  // 存量 103 条
 
-  // ---- eslint-plugin-vue（13 条）----
-  "vue/attribute-hyphenation": 'off',  // 存量 77 条
-  "vue/attributes-order": 'off',  // 存量 154 条
-  "vue/first-attribute-linebreak": 'off',  // 存量 9 条
-  "vue/html-closing-bracket-newline": 'off',  // 存量 3 条
-  "vue/html-closing-bracket-spacing": 'off',  // 存量 10 条
-  "vue/html-indent": 'off',  // 存量 1529 条
-  "vue/html-self-closing": 'off',  // 存量 132 条
-  "vue/max-attributes-per-line": 'off',  // 存量 2607 条
-  "vue/multi-word-component-names": 'off',  // 存量 7 条
-  "vue/multiline-html-element-content-newline": 'off',  // 存量 83 条
-  "vue/no-v-html": 'off',  // 存量 8 条
-  "vue/singleline-html-element-content-newline": 'off',  // 存量 2522 条
-  "vue/v-on-event-hyphenation": 'off',  // 存量 31 条
+  // ---- eslint-plugin-vue（2 条）----
+  // ★ 第 348 轮 F-2：11 条「全可自动修」的 vue 规则已清空并移出本表（合计 6285 处）——
+  //   html-indent / max-attributes-per-line / singleline&multiline-html-element-content-newline /
+  //   attributes-order / html-self-closing / attribute-hyphenation / v-on-event-hyphenation /
+  //   html-closing-bracket-spacing & -newline / first-attribute-linebreak。
+  //   实测：清理后「清空欠账」口径下这 11 条均为 0，无残留。
+  "vue/multi-word-component-names": 'off',  // 存量 7 条（要人工改组件名，不可自动修）
+  "vue/no-v-html": 'off',  // 存量 8 条（安全审计项，不可自动修）
 }
 
 export default tseslint.config(

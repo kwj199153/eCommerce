@@ -2,7 +2,11 @@
   <div class="auth-page">
     <div class="auth-card">
       <!-- ===== 校验中 ===== -->
-      <a-spin v-if="phase === 'verifying'" size="large" tip="正在验证邮箱…">
+      <a-spin
+        v-if="phase === 'verifying'"
+        size="large"
+        tip="正在验证邮箱…"
+      >
         <div class="spin-holder" />
       </a-spin>
 
@@ -14,7 +18,11 @@
         :sub-title="message || '该邮箱已通过验证'"
       >
         <template #extra>
-          <a-button type="primary" size="large" @click="goNext">
+          <a-button
+            type="primary"
+            size="large"
+            @click="goNext"
+          >
             {{ userStore.isLoggedIn ? '返回工作台' : '去登录' }}
           </a-button>
         </template>
@@ -50,7 +58,12 @@
           >
             重新发送验证邮件
           </a-button>
-          <p v-if="resendNote" class="note">{{ resendNote }}</p>
+          <p
+            v-if="resendNote"
+            class="note"
+          >
+            {{ resendNote }}
+          </p>
         </template>
         <template v-else>
           <a-alert
@@ -60,11 +73,24 @@
             message="登录后才能重发验证邮件"
             description="验证邮件的收件人由服务端从你的登录态里取，所以需要先登录。登录后在「账号设置 → 安全设置」也可以重发。"
           />
-          <a-button type="primary" block size="large" @click="goLogin">去登录</a-button>
+          <a-button
+            type="primary"
+            block
+            size="large"
+            @click="goLogin"
+          >
+            去登录
+          </a-button>
         </template>
 
         <p class="foot">
-          <a-button type="link" size="small" @click="goLogin">返回登录</a-button>
+          <a-button
+            type="link"
+            size="small"
+            @click="goLogin"
+          >
+            返回登录
+          </a-button>
         </p>
       </template>
     </div>

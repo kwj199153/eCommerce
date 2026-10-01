@@ -98,10 +98,21 @@ const ENTRY_MARKERS = ['class="rd-act-chat"', 'class="rd-item-chat"', '@click="s
 
 // ---------------------------------------------------------------- 工具
 
+/** 只折叠**标签内部**的空白：`<div\n  a="1"\n>` → `<div a="1">`。
+ *  ★ 为什么要：自动格式化（F-2 的 `vue/max-attributes-per-line` 等）会把单行开标签
+ *    拆成多行，而本文件的分支锚点是**单行字面量** ⇒ 拆行后一律失配。
+ *    症状是「找不到锚点」，与「两侧字段分叉」毫无关系，会把人往错方向带。
+ *  ★ 只折叠标签内部 ⇒ **标签之外的缩进保留**，靠缩进区分的锚点（如 TPL_END）不受影响。 */
+function collapseTagWs(s) {
+  return s.replace(/<[^>]*>/g, (t) => t.replace(/\s+/g, ' ').replace(/\s+>$/, '>'))
+}
+
 function readSrc(rel) {
   const p = path.join(SRC_ROOT, rel)
   if (!fs.existsSync(p)) return null
-  return fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
+  const txt = fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
+  // ★ 折叠只对 .vue 生效：.ts 里的 `<T>` 泛型跨行折叠不值得冒险（判据面越小越稳）。
+  return rel.endsWith('.vue') ? collapseTagWs(txt) : txt
 }
 
 /** 剥注释（字符串内的 `//` 不能误伤；与 `check-agent-scope-lifecycle.cjs` 同构） */

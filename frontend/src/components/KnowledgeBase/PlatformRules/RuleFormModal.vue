@@ -9,28 +9,57 @@
     <a-form layout="vertical">
       <a-row :gutter="12">
         <a-col :span="12">
-          <a-form-item label="平台" required>
-            <a-select v-model:value="editForm.platform" placeholder="选择平台">
-              <a-select-option v-for="p in PLATFORMS" :key="p.key" :value="p.key">
+          <a-form-item
+            label="平台"
+            required
+          >
+            <a-select
+              v-model:value="editForm.platform"
+              placeholder="选择平台"
+            >
+              <a-select-option
+                v-for="p in PLATFORMS"
+                :key="p.key"
+                :value="p.key"
+              >
                 {{ p.icon }} {{ p.label }}
               </a-select-option>
             </a-select>
           </a-form-item>
         </a-col>
         <a-col :span="12">
-          <a-form-item label="规则分类" required>
-            <a-select v-model:value="editForm.category" placeholder="选择分类">
-              <a-select-option v-for="c in RULE_CATEGORIES" :key="c.key" :value="c.key">
+          <a-form-item
+            label="规则分类"
+            required
+          >
+            <a-select
+              v-model:value="editForm.category"
+              placeholder="选择分类"
+            >
+              <a-select-option
+                v-for="c in RULE_CATEGORIES"
+                :key="c.key"
+                :value="c.key"
+              >
                 {{ c.icon }} {{ c.label }}
               </a-select-option>
             </a-select>
           </a-form-item>
         </a-col>
       </a-row>
-      <a-form-item label="规则标题" required>
-        <a-input v-model:value="editForm.title" placeholder="如：商品标题字符数限制" />
+      <a-form-item
+        label="规则标题"
+        required
+      >
+        <a-input
+          v-model:value="editForm.title"
+          placeholder="如：商品标题字符数限制"
+        />
       </a-form-item>
-      <a-form-item label="规则内容" required>
+      <a-form-item
+        label="规则内容"
+        required
+      >
         <a-textarea
           v-model:value="editForm.content"
           :rows="5"
@@ -39,7 +68,10 @@
       </a-form-item>
       <a-row :gutter="12">
         <a-col :span="12">
-          <a-form-item label="生效日期" required>
+          <a-form-item
+            label="生效日期"
+            required
+          >
             <a-date-picker
               v-model:value="editForm.effective_date"
               value-format="YYYY-MM-DD"
@@ -62,51 +94,83 @@
       <!-- 有效期快捷选择 -->
       <div class="validity-quick-select">
         <span class="vqs-label">快捷设置有效期：</span>
-        <a-space :size="6" wrap>
+        <a-space
+          :size="6"
+          wrap
+        >
           <a-button
             size="small"
             :type="!expDateStr ? 'primary' : 'default'"
             @click="setExpiryDate(null)"
-          >♾️ 永久</a-button>
+          >
+            ♾️ 永久
+          </a-button>
           <a-button
             size="small"
             :type="isExpiryMatch(3) ? 'primary' : 'default'"
             @click="setExpiryDate(3)"
-          >3 个月</a-button>
+          >
+            3 个月
+          </a-button>
           <a-button
             size="small"
             :type="isExpiryMatch(6) ? 'primary' : 'default'"
             @click="setExpiryDate(6)"
-          >6 个月</a-button>
+          >
+            6 个月
+          </a-button>
           <a-button
             size="small"
             :type="isExpiryMatch(12) ? 'primary' : 'default'"
             @click="setExpiryDate(12)"
-          >1 年</a-button>
+          >
+            1 年
+          </a-button>
           <a-button
             size="small"
             :type="isExpiryMatch(24) ? 'primary' : 'default'"
             @click="setExpiryDate(24)"
-          >2 年</a-button>
+          >
+            2 年
+          </a-button>
         </a-space>
-        <span v-if="expDateStr && effDateStr" class="vqs-preview">
+        <span
+          v-if="expDateStr && effDateStr"
+          class="vqs-preview"
+        >
           （有效期 {{ calcDurationDays }} 天）
         </span>
       </div>
       <a-form-item label="状态">
         <a-select v-model:value="editForm.status">
-          <a-select-option value="auto">🤖 自动（根据日期计算，推荐）</a-select-option>
-          <a-select-option value="active">🟢 强制生效中</a-select-option>
-          <a-select-option value="upcoming">🟡 强制即将生效</a-select-option>
-          <a-select-option value="expired">⚪ 强制已失效</a-select-option>
+          <a-select-option value="auto">
+            🤖 自动（根据日期计算，推荐）
+          </a-select-option>
+          <a-select-option value="active">
+            🟢 强制生效中
+          </a-select-option>
+          <a-select-option value="upcoming">
+            🟡 强制即将生效
+          </a-select-option>
+          <a-select-option value="expired">
+            ⚪ 强制已失效
+          </a-select-option>
         </a-select>
-        <div class="form-hint">选择「自动」时，系统根据生效/失效日期实时判定状态；手动选项用于特殊场景覆盖（如提前失效）</div>
+        <div class="form-hint">
+          选择「自动」时，系统根据生效/失效日期实时判定状态；手动选项用于特殊场景覆盖（如提前失效）
+        </div>
       </a-form-item>
       <a-form-item label="标签（逗号分隔）">
-        <a-input v-model:value="editForm.tagsText" placeholder="如：标题, 字符限制, Listing" />
+        <a-input
+          v-model:value="editForm.tagsText"
+          placeholder="如：标题, 字符限制, Listing"
+        />
       </a-form-item>
       <a-form-item label="来源链接">
-        <a-input v-model:value="editForm.source" placeholder="https://..." />
+        <a-input
+          v-model:value="editForm.source"
+          placeholder="https://..."
+        />
       </a-form-item>
       <a-form-item label="来源文档">
         <a-select
@@ -115,12 +179,18 @@
           allow-clear
           style="width: 100%"
         >
-          <a-select-option v-for="doc in store.docs" :key="doc.id" :value="doc.id">
+          <a-select-option
+            v-for="doc in store.docs"
+            :key="doc.id"
+            :value="doc.id"
+          >
             {{ getDocIcon(doc.file_type) }} {{ doc.filename }}
             <span class="select-doc-platform">({{ platformMeta(doc.platform).label }})</span>
           </a-select-option>
         </a-select>
-        <div class="form-hint">选择后可在规则详情中一键跳转到完整原文</div>
+        <div class="form-hint">
+          选择后可在规则详情中一键跳转到完整原文
+        </div>
       </a-form-item>
     </a-form>
   </a-modal>

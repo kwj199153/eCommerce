@@ -1,13 +1,16 @@
 <template>
   <!-- 确认框：批准 / 驳回 / 核准 / 登记回执都是人的不可逆动作 -->
-  <a-modal :width="WINDOW_W.md"
+  <a-modal
     v-model:open="confirmOpen"
+    :width="WINDOW_W.md"
     :title="confirmTitle"
     :confirm-loading="acting"
     @ok="emit('act')"
     @cancel="confirmOpen = false"
   >
-    <p class="rd-confirm-text">{{ confirmText }}</p>
+    <p class="rd-confirm-text">
+      {{ confirmText }}
+    </p>
     <a-textarea
       v-if="pendingAct === 'reject'"
       v-model:value="rejectNotes"
@@ -50,24 +53,44 @@
       </div>
       <div class="rd-rule-field">
         <span class="rd-rule-label">名称</span>
-        <a-input v-model:value="ruleForm.name" placeholder="留空用 code" />
+        <a-input
+          v-model:value="ruleForm.name"
+          placeholder="留空用 code"
+        />
       </div>
       <div class="rd-rule-field">
         <span class="rd-rule-label">针对归因</span>
-        <a-select v-model:value="ruleForm.cause" :options="CAUSE_OPTIONS" style="width: 100%" />
+        <a-select
+          v-model:value="ruleForm.cause"
+          :options="CAUSE_OPTIONS"
+          style="width: 100%"
+        />
       </div>
       <div class="rd-rule-field">
         <span class="rd-rule-label">优先级（小者先）</span>
-        <a-input-number v-model:value="ruleForm.priority" :min="0" style="width: 100%" />
+        <a-input-number
+          v-model:value="ruleForm.priority"
+          :min="0"
+          style="width: 100%"
+        />
       </div>
       <div class="rd-rule-field">
         <span class="rd-rule-label">命中条件</span>
         <div class="rd-rule-cond-grid">
           <span class="rd-rule-cond-item">
-            星级 ≤ <a-input-number v-model:value="ruleForm.max_rating" :min="1" :max="5" placeholder="不限" />
+            星级 ≤ <a-input-number
+              v-model:value="ruleForm.max_rating"
+              :min="1"
+              :max="5"
+              placeholder="不限"
+            />
           </span>
           <span class="rd-rule-cond-item">
-            延迟 ≥ <a-input-number v-model:value="ruleForm.min_delay_days" :min="0" placeholder="不限" /> 天
+            延迟 ≥ <a-input-number
+              v-model:value="ruleForm.min_delay_days"
+              :min="0"
+              placeholder="不限"
+            /> 天
           </span>
           <span class="rd-rule-cond-item">
             <a-checkbox v-model:checked="ruleForm.verified_purchase">仅已购</a-checkbox>
@@ -77,7 +100,11 @@
       <div class="rd-rule-field">
         <span class="rd-rule-label">补偿方案</span>
         <div class="rd-rule-action-grid">
-          <a-select v-model:value="ruleForm.action_type" :options="ACTION_TYPE_OPTIONS" style="width: 160px" />
+          <a-select
+            v-model:value="ruleForm.action_type"
+            :options="ACTION_TYPE_OPTIONS"
+            style="width: 160px"
+          />
           <a-input-number
             v-if="ruleForm.action_type !== 'none'"
             v-model:value="ruleForm.amount"
@@ -94,7 +121,11 @@
       </div>
       <div class="rd-rule-field">
         <span class="rd-rule-label">单笔硬上限（≤0 未设）</span>
-        <a-input-number v-model:value="ruleForm.budget_cap" :min="0" style="width: 100%" />
+        <a-input-number
+          v-model:value="ruleForm.budget_cap"
+          :min="0"
+          style="width: 100%"
+        />
       </div>
       <div class="rd-rule-field">
         <span class="rd-rule-label">启用</span>
@@ -102,7 +133,11 @@
       </div>
       <div class="rd-rule-field">
         <span class="rd-rule-label">备注</span>
-        <a-textarea v-model:value="ruleForm.notes" :rows="2" placeholder="可选" />
+        <a-textarea
+          v-model:value="ruleForm.notes"
+          :rows="2"
+          placeholder="可选"
+        />
       </div>
       <div class="rd-tip">
         ★ 金额由这里唯一算出：处置草稿按「归因 + 命中规则」现算，改了这里下次生成才生效。
@@ -123,15 +158,28 @@
     @ok="emit('attr-ok')"
     @cancel="attrOpen = false"
   >
-    <div v-if="attrTarget" class="rd-attr-form">
-      <div class="rd-body-full">{{ attrTarget.body || '（无正文）' }}</div>
+    <div
+      v-if="attrTarget"
+      class="rd-attr-form"
+    >
+      <div class="rd-body-full">
+        {{ attrTarget.body || '（无正文）' }}
+      </div>
       <div class="rd-rule-field">
         <span class="rd-rule-label">主要成因</span>
-        <a-select v-model:value="attrCause" :options="CAUSE_OPTIONS" style="width: 100%" />
+        <a-select
+          v-model:value="attrCause"
+          :options="CAUSE_OPTIONS"
+          style="width: 100%"
+        />
       </div>
       <div class="rd-rule-field">
         <span class="rd-rule-label">依据 / 备注</span>
-        <a-textarea v-model:value="attrNotes" :rows="3" placeholder="例如：买家说晚到了 5 天，属物流延迟" />
+        <a-textarea
+          v-model:value="attrNotes"
+          :rows="3"
+          placeholder="例如：买家说晚到了 5 天，属物流延迟"
+        />
       </div>
       <div class="rd-tip">
         ★ 落 <code>method=manual</code>：自动同步**不会**把它冲回「未判定」。

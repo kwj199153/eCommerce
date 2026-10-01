@@ -5,7 +5,12 @@
       <div class="mph-text">
         <h2 class="mph-title">
           🎯 竞品监控池
-          <a-tag color="default" class="mph-count">{{ pool.totalCount }} 个 ASIN</a-tag>
+          <a-tag
+            color="default"
+            class="mph-count"
+          >
+            {{ pool.totalCount }} 个 ASIN
+          </a-tag>
         </h2>
         <div class="mph-sub">
           持续盯盘的竞品清单 —— 与「自有产品库」里内嵌的<b>对标竞品</b>区分：这里是长期监控的对手池，
@@ -13,28 +18,54 @@
         </div>
       </div>
       <a-space :size="8">
-        <a-button @click="openGroupModal"><AppstoreOutlined /> 分组管理</a-button>
-        <a-button type="primary" @click="openAddModal"><PlusOutlined /> 添加竞品</a-button>
+        <a-button @click="openGroupModal">
+          <AppstoreOutlined /> 分组管理
+        </a-button>
+        <a-button
+          type="primary"
+          @click="openAddModal"
+        >
+          <PlusOutlined /> 添加竞品
+        </a-button>
       </a-space>
     </div>
 
     <!-- ================= 统计卡 ================= -->
     <div class="stat-cards">
       <div class="stat-card">
-        <div class="stat-value">{{ pool.totalCount }}</div>
-        <div class="stat-label">在池竞品</div>
+        <div class="stat-value">
+          {{ pool.totalCount }}
+        </div>
+        <div class="stat-label">
+          在池竞品
+        </div>
       </div>
       <div class="stat-card">
-        <div class="stat-value blue">{{ pool.selectedAsins.length }}</div>
-        <div class="stat-label">已圈选</div>
+        <div class="stat-value blue">
+          {{ pool.selectedAsins.length }}
+        </div>
+        <div class="stat-label">
+          已圈选
+        </div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">{{ pool.groupCount }}</div>
-        <div class="stat-label">分组</div>
+        <div class="stat-value">
+          {{ pool.groupCount }}
+        </div>
+        <div class="stat-label">
+          分组
+        </div>
       </div>
       <div class="stat-card">
-        <div class="stat-value" :class="{ red: alertTotal > 0 }">{{ alertTotal }}</div>
-        <div class="stat-label">待关注</div>
+        <div
+          class="stat-value"
+          :class="{ red: alertTotal > 0 }"
+        >
+          {{ alertTotal }}
+        </div>
+        <div class="stat-label">
+          待关注
+        </div>
       </div>
     </div>
 
@@ -57,19 +88,42 @@
           style="width: 240px"
           allow-clear
         >
-          <template #prefix><SearchOutlined /></template>
+          <template #prefix>
+            <SearchOutlined />
+          </template>
         </a-input-search>
 
-        <a-radio-group v-model:value="ownershipModel" size="small" button-style="solid">
-          <a-radio-button value="all">全部 {{ pool.ownershipCount.all }}</a-radio-button>
-          <a-radio-button value="owned">有归属 {{ pool.ownershipCount.owned }}</a-radio-button>
-          <a-radio-button value="free">游离 {{ pool.ownershipCount.free }}</a-radio-button>
+        <a-radio-group
+          v-model:value="ownershipModel"
+          size="small"
+          button-style="solid"
+        >
+          <a-radio-button value="all">
+            全部 {{ pool.ownershipCount.all }}
+          </a-radio-button>
+          <a-radio-button value="owned">
+            有归属 {{ pool.ownershipCount.owned }}
+          </a-radio-button>
+          <a-radio-button value="free">
+            游离 {{ pool.ownershipCount.free }}
+          </a-radio-button>
         </a-radio-group>
 
-        <a-select v-model:value="groupModel" style="width: 168px">
-          <a-select-option value="">全部分组</a-select-option>
-          <a-select-option value="__ungrouped__">未分组 ({{ ungroupedCount }})</a-select-option>
-          <a-select-option v-for="g in pool.groups" :key="g.id" :value="g.id">
+        <a-select
+          v-model:value="groupModel"
+          style="width: 168px"
+        >
+          <a-select-option value="">
+            全部分组
+          </a-select-option>
+          <a-select-option value="__ungrouped__">
+            未分组 ({{ ungroupedCount }})
+          </a-select-option>
+          <a-select-option
+            v-for="g in pool.groups"
+            :key="g.id"
+            :value="g.id"
+          >
             {{ g.name }} ({{ countInGroup(g.id) }})
           </a-select-option>
         </a-select>
@@ -81,11 +135,19 @@
             <a-button><FolderAddOutlined /> 加入分组 ({{ pool.selectedAsins.length }})</a-button>
             <template #overlay>
               <a-menu @click="onAssignMenuClick">
-                <a-menu-item v-for="g in pool.groups" :key="g.id">
-                  <span class="grp-dot" :style="{ background: g.color }"></span>{{ g.name }}
+                <a-menu-item
+                  v-for="g in pool.groups"
+                  :key="g.id"
+                >
+                  <span
+                    class="grp-dot"
+                    :style="{ background: g.color }"
+                  />{{ g.name }}
                 </a-menu-item>
                 <a-menu-divider v-if="pool.groups.length" />
-                <a-menu-item key="__manage__"><SettingOutlined /> 管理分组…</a-menu-item>
+                <a-menu-item key="__manage__">
+                  <SettingOutlined /> 管理分组…
+                </a-menu-item>
               </a-menu>
             </template>
           </a-dropdown>
@@ -93,29 +155,67 @@
             :title="`确认把选中的 ${pool.selectedAsins.length} 个竞品移出监控池？`"
             @confirm="handleBatchRemove"
           >
-            <a-button danger><DeleteOutlined /> 移出监控池</a-button>
+            <a-button danger>
+              <DeleteOutlined /> 移出监控池
+            </a-button>
           </a-popconfirm>
-          <a-button type="text" @click="pool.clearSelected()">取消选择</a-button>
+          <a-button
+            type="text"
+            @click="pool.clearSelected()"
+          >
+            取消选择
+          </a-button>
         </template>
-        <a-button v-else type="link" size="small" :disabled="!filtered.length" @click="handleSelectAllFiltered">
+        <a-button
+          v-else
+          type="link"
+          size="small"
+          :disabled="!filtered.length"
+          @click="handleSelectAllFiltered"
+        >
           全选当前 {{ filtered.length }} 条
         </a-button>
       </div>
     </div>
 
     <!-- ================= 活跃过滤 chip ================= -->
-    <div v-if="hasLocalFilters" class="active-filters">
+    <div
+      v-if="hasLocalFilters"
+      class="active-filters"
+    >
       <span class="af-label"><FilterOutlined /> 已启用过滤</span>
-      <a-tag v-if="pool.currentGroupId" closable class="af-chip" @close="pool.selectGroup(null)">
+      <a-tag
+        v-if="pool.currentGroupId"
+        closable
+        class="af-chip"
+        @close="pool.selectGroup(null)"
+      >
         {{ currentGroupLabel }}
       </a-tag>
-      <a-tag v-if="pool.currentOwnership !== 'all'" closable class="af-chip" @close="pool.selectOwnership('all')">
+      <a-tag
+        v-if="pool.currentOwnership !== 'all'"
+        closable
+        class="af-chip"
+        @close="pool.selectOwnership('all')"
+      >
         归属：{{ OWNERSHIP_LABEL[pool.currentOwnership] }}
       </a-tag>
-      <a-tag v-if="searchQuery.trim()" closable class="af-chip" @close="searchQuery = ''">
+      <a-tag
+        v-if="searchQuery.trim()"
+        closable
+        class="af-chip"
+        @close="searchQuery = ''"
+      >
         搜索：“{{ searchQuery }}”
       </a-tag>
-      <a-button type="link" size="small" danger @click="clearLocalFilters">清空全部</a-button>
+      <a-button
+        type="link"
+        size="small"
+        danger
+        @click="clearLocalFilters"
+      >
+        清空全部
+      </a-button>
     </div>
 
     <!-- ================= 表格 ================= -->
@@ -136,15 +236,24 @@
             <span class="asin-main">{{ record.asin }}</span>
             <span class="asin-sub">
               <span v-if="record.brand">{{ record.brand }}</span>
-              <em v-else class="muted">无品牌</em>
-              <em class="origin-badge" :class="record.origin">{{ ORIGIN_LABEL[record.origin || 'manual'] }}</em>
+              <em
+                v-else
+                class="muted"
+              >无品牌</em>
+              <em
+                class="origin-badge"
+                :class="record.origin"
+              >{{ ORIGIN_LABEL[record.origin || 'manual'] }}</em>
             </span>
           </div>
         </template>
 
         <!-- 标题 -->
         <template v-else-if="column.key === 'title'">
-          <a-tooltip :title="record.title" placement="topLeft">
+          <a-tooltip
+            :title="record.title"
+            placement="topLeft"
+          >
             <span class="ttl-text">{{ record.title }}</span>
           </a-tooltip>
         </template>
@@ -156,7 +265,10 @@
 
         <!-- 7 日价格变化（涨红跌绿，与调度层既有约定一致） -->
         <template v-else-if="column.key === 'price_delta'">
-          <span class="num" :class="deltaClass(record.price_change_7d)">
+          <span
+            class="num"
+            :class="deltaClass(record.price_change_7d)"
+          >
             {{ record.price_change_7d > 0 ? '+' : '' }}{{ record.price_change_7d }}%
           </span>
         </template>
@@ -165,7 +277,10 @@
         <template v-else-if="column.key === 'bsr'">
           <div class="bsr-cell">
             <span class="num">#{{ record.latest_bsr.toLocaleString() }}</span>
-            <span class="bsr-delta" :class="record.bsr_change_7d < 0 ? 'up' : record.bsr_change_7d > 0 ? 'down' : 'muted'">
+            <span
+              class="bsr-delta"
+              :class="record.bsr_change_7d < 0 ? 'up' : record.bsr_change_7d > 0 ? 'down' : 'muted'"
+            >
               {{ record.bsr_change_7d > 0 ? '↓' : record.bsr_change_7d < 0 ? '↑' : '·' }}{{ Math.abs(record.bsr_change_7d) }}
             </span>
           </div>
@@ -181,31 +296,60 @@
 
         <!-- 库存 -->
         <template v-else-if="column.key === 'stock'">
-          <a-tag :color="stockColor(record.stock_status)" class="mini-tag">{{ stockLabel(record.stock_status) }}</a-tag>
+          <a-tag
+            :color="stockColor(record.stock_status)"
+            class="mini-tag"
+          >
+            {{ stockLabel(record.stock_status) }}
+          </a-tag>
         </template>
 
         <!-- 分组 -->
         <template v-else-if="column.key === 'groups'">
           <div class="grp-chips">
-            <a-tag v-for="gid in record.group_ids" :key="gid" :color="groupColor(gid)" class="grp-chip">
+            <a-tag
+              v-for="gid in record.group_ids"
+              :key="gid"
+              :color="groupColor(gid)"
+              class="grp-chip"
+            >
               {{ groupName(gid) }}
             </a-tag>
-            <span v-if="!record.group_ids.length" class="muted">—</span>
+            <span
+              v-if="!record.group_ids.length"
+              class="muted"
+            >—</span>
           </div>
         </template>
 
         <!-- 归属 -->
         <template v-else-if="column.key === 'owner'">
-          <a-tag v-if="record.owned_by" class="ow-tag" :title="record.owned_by.title || record.owned_by.asin">
+          <a-tag
+            v-if="record.owned_by"
+            class="ow-tag"
+            :title="record.owned_by.title || record.owned_by.asin"
+          >
             {{ record.owned_by.type === 'product' ? '主品' : '候选' }} · {{ record.owned_by.asin }}
           </a-tag>
-          <span v-else class="ow-free">游离</span>
+          <span
+            v-else
+            class="ow-free"
+          >游离</span>
         </template>
 
         <!-- 操作 -->
         <template v-else-if="column.key === 'action'">
-          <a-popconfirm title="把该竞品移出监控池？" @confirm="pool.removeRecords([record.asin])">
-            <a-button type="text" size="small" danger><DeleteOutlined /></a-button>
+          <a-popconfirm
+            title="把该竞品移出监控池？"
+            @confirm="pool.removeRecords([record.asin])"
+          >
+            <a-button
+              type="text"
+              size="small"
+              danger
+            >
+              <DeleteOutlined />
+            </a-button>
           </a-popconfirm>
         </template>
       </template>
@@ -218,48 +362,114 @@
     </a-table>
 
     <!-- ================= 添加竞品 ================= -->
-    <a-modal v-model:open="addModalOpen" title="➕ 添加竞品到监控池" :width="WINDOW_W.sm" centered :footer="null">
+    <a-modal
+      v-model:open="addModalOpen"
+      title="➕ 添加竞品到监控池"
+      :width="WINDOW_W.sm"
+      centered
+      :footer="null"
+    >
       <a-form layout="vertical">
         <a-form-item label="ASIN">
-          <a-input v-model:value="addForm.asin" placeholder="如 B0XXXXXXXXX" @press-enter="submitAdd" />
+          <a-input
+            v-model:value="addForm.asin"
+            placeholder="如 B0XXXXXXXXX"
+            @press-enter="submitAdd"
+          />
         </a-form-item>
         <a-form-item label="标题 / 备注">
-          <a-input v-model:value="addForm.title" placeholder="可先留空，抓取后自动回填" />
+          <a-input
+            v-model:value="addForm.title"
+            placeholder="可先留空，抓取后自动回填"
+          />
         </a-form-item>
         <a-form-item label="归入分组">
-          <a-select v-model:value="addForm.groupId" allow-clear placeholder="可不选" style="width: 100%">
-            <a-select-option v-for="g in pool.groups" :key="g.id" :value="g.id">
-              <span class="grp-dot" :style="{ background: g.color }"></span>{{ g.name }}
+          <a-select
+            v-model:value="addForm.groupId"
+            allow-clear
+            placeholder="可不选"
+            style="width: 100%"
+          >
+            <a-select-option
+              v-for="g in pool.groups"
+              :key="g.id"
+              :value="g.id"
+            >
+              <span
+                class="grp-dot"
+                :style="{ background: g.color }"
+              />{{ g.name }}
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-button type="primary" block :disabled="!addForm.asin.trim()" @click="submitAdd">
+        <a-button
+          type="primary"
+          block
+          :disabled="!addForm.asin.trim()"
+          @click="submitAdd"
+        >
           加入监控池
         </a-button>
-        <div class="add-hint">纯前端原型：录入后本池可见，抓取 / 时间序列待后端接入后补齐。</div>
+        <div class="add-hint">
+          纯前端原型：录入后本池可见，抓取 / 时间序列待后端接入后补齐。
+        </div>
       </a-form>
     </a-modal>
 
     <!-- ================= 分组管理 ================= -->
-    <a-modal v-model:open="groupModalOpen" title="🗂️ 分组管理" :width="WINDOW_W.md" centered :footer="null">
+    <a-modal
+      v-model:open="groupModalOpen"
+      title="🗂️ 分组管理"
+      :width="WINDOW_W.md"
+      centered
+      :footer="null"
+    >
       <a-form layout="vertical">
         <a-form-item label="新建分组">
           <a-space-compact style="width: 100%">
-            <a-input v-model:value="newGroup.name" placeholder="分组名，如：Q4 重点盯防" @press-enter="submitGroup" />
-            <a-select v-model:value="newGroup.kind" style="width: 118px">
-              <a-select-option value="custom">自定义</a-select-option>
-              <a-select-option value="product">对标产品</a-select-option>
-              <a-select-option value="store">对标店铺</a-select-option>
-              <a-select-option value="brand">对标品牌</a-select-option>
+            <a-input
+              v-model:value="newGroup.name"
+              placeholder="分组名，如：Q4 重点盯防"
+              @press-enter="submitGroup"
+            />
+            <a-select
+              v-model:value="newGroup.kind"
+              style="width: 118px"
+            >
+              <a-select-option value="custom">
+                自定义
+              </a-select-option>
+              <a-select-option value="product">
+                对标产品
+              </a-select-option>
+              <a-select-option value="store">
+                对标店铺
+              </a-select-option>
+              <a-select-option value="brand">
+                对标品牌
+              </a-select-option>
             </a-select>
-            <a-button type="primary" :disabled="!newGroup.name.trim()" @click="submitGroup">创建</a-button>
+            <a-button
+              type="primary"
+              :disabled="!newGroup.name.trim()"
+              @click="submitGroup"
+            >
+              创建
+            </a-button>
           </a-space-compact>
         </a-form-item>
       </a-form>
 
       <div class="grp-list">
-        <div v-for="g in pool.groups" :key="g.id" class="grp-row">
-          <span class="grp-dot" :style="{ background: g.color }"></span>
+        <div
+          v-for="g in pool.groups"
+          :key="g.id"
+          class="grp-row"
+        >
+          <span
+            class="grp-dot"
+            :style="{ background: g.color }"
+          />
           <a-input
             class="grp-name-input"
             size="small"
@@ -268,16 +478,36 @@
             @press-enter="onRenameGroup(g.id, $event)"
           />
           <span class="grp-count">{{ countInGroup(g.id) }} 个</span>
-          <a-button type="text" size="small" title="只看该分组" @click="focusGroup(g.id)">
+          <a-button
+            type="text"
+            size="small"
+            title="只看该分组"
+            @click="focusGroup(g.id)"
+          >
             <FilterOutlined />
           </a-button>
-          <a-popconfirm title="删除该分组？组内 ASIN 不会被删除" @confirm="pool.deleteGroup(g.id)">
-            <a-button type="text" danger size="small"><DeleteOutlined /></a-button>
+          <a-popconfirm
+            title="删除该分组？组内 ASIN 不会被删除"
+            @confirm="pool.deleteGroup(g.id)"
+          >
+            <a-button
+              type="text"
+              danger
+              size="small"
+            >
+              <DeleteOutlined />
+            </a-button>
           </a-popconfirm>
         </div>
-        <a-empty v-if="!pool.groups.length" description="还没有分组" :image-style="{ height: '48px' }" />
+        <a-empty
+          v-if="!pool.groups.length"
+          description="还没有分组"
+          :image-style="{ height: '48px' }"
+        />
       </div>
-      <div class="grp-hint">分组名可直接点击修改，失焦即保存。</div>
+      <div class="grp-hint">
+        分组名可直接点击修改，失焦即保存。
+      </div>
     </a-modal>
   </div>
 </template>

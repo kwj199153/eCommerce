@@ -4,9 +4,15 @@
       <div class="header-left">
         <span class="result-icon">⚔️</span>
         <span class="result-title">竞品对比结果</span>
-        <a-tag color="blue">{{ data.competitors?.length || 0 }} 个竞品</a-tag>
+        <a-tag color="blue">
+          {{ data.competitors?.length || 0 }} 个竞品
+        </a-tag>
       </div>
-      <a-button type="text" size="small" @click="$emit('close')">
+      <a-button
+        type="text"
+        size="small"
+        @click="$emit('close')"
+      >
         <CloseOutlined />
       </a-button>
     </div>
@@ -21,12 +27,12 @@
 
     <!-- 对比表格 -->
     <a-table
-      :dataSource="data.competitors"
+      :data-source="data.competitors"
       :columns="columns"
       size="small"
       :pagination="false"
       :scroll="{ y: 220 }"
-      rowKey="asin"
+      row-key="asin"
     >
       <template #bodyCell="{ column, record }">
         <!-- 性价比：后端 comparison.value_score 真值。★ 该分数量纲不是 0–100
@@ -51,14 +57,24 @@
     </a-table>
 
     <!-- 结论（后端 comparison.recommendations，含 LLM 生成的竞争结论） -->
-    <div v-if="data.recommendation" class="conclusion">
-      <div class="conclusion-title">📋 分析结论</div>
+    <div
+      v-if="data.recommendation"
+      class="conclusion"
+    >
+      <div class="conclusion-title">
+        📋 分析结论
+      </div>
       <p>{{ data.recommendation }}</p>
     </div>
 
     <!-- 差异化分析（后端 comparison.differentiation_analysis 真值） -->
-    <div v-if="differentiationText" class="conclusion">
-      <div class="conclusion-title">🔍 差异化分析</div>
+    <div
+      v-if="differentiationText"
+      class="conclusion"
+    >
+      <div class="conclusion-title">
+        🔍 差异化分析
+      </div>
       <p>{{ differentiationText }}</p>
     </div>
   </div>

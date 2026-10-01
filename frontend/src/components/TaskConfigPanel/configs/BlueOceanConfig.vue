@@ -1,11 +1,24 @@
 <template>
-  <div class="blue-ocean-config" :class="{ 'data-mode': isDataMode }">
+  <div
+    class="blue-ocean-config"
+    :class="{ 'data-mode': isDataMode }"
+  >
     <!-- 大屏模式：左表单 + 右产品清单结果窗口（第 312 轮对齐 AIGC 范式） -->
-    <div class="bo-content" :class="{ 'data-layout': isDataMode }">
+    <div
+      class="bo-content"
+      :class="{ 'data-layout': isDataMode }"
+    >
       <div class="bo-form">
         <!-- 市场基础 -->
-        <a-collapse v-model:activeKey="activeKeys" :bordered="false" default-active-key="1,2">
-          <a-collapse-panel key="1" header="📍 市场基础">
+        <a-collapse
+          v-model:active-key="activeKeys"
+          :bordered="false"
+          default-active-key="1,2"
+        >
+          <a-collapse-panel
+            key="1"
+            header="📍 市场基础"
+          >
             <div class="form-group">
               <label>目标站点</label>
               <a-select
@@ -14,10 +27,18 @@
                 size="small"
                 style="width: 100%"
               >
-                <a-select-option value="us">🇺🇸 美国 (US)</a-select-option>
-                <a-select-option value="uk">🇬🇧 英国 (UK)</a-select-option>
-                <a-select-option value="de">🇩🇪 德国 (DE)</a-select-option>
-                <a-select-option value="jp">🇯🇵 日本 (JP)</a-select-option>
+                <a-select-option value="us">
+                  🇺🇸 美国 (US)
+                </a-select-option>
+                <a-select-option value="uk">
+                  🇬🇧 英国 (UK)
+                </a-select-option>
+                <a-select-option value="de">
+                  🇩🇪 德国 (DE)
+                </a-select-option>
+                <a-select-option value="jp">
+                  🇯🇵 日本 (JP)
+                </a-select-option>
               </a-select>
             </div>
 
@@ -31,11 +52,17 @@
                 style="width: 100%"
                 change-on-select
               />
-              <span v-if="prefillHint" class="form-hint prefill-hint">{{ prefillHint }}</span>
+              <span
+                v-if="prefillHint"
+                class="form-hint prefill-hint"
+              >{{ prefillHint }}</span>
             </div>
           </a-collapse-panel>
 
-          <a-collapse-panel key="2" header="💰 价格区间">
+          <a-collapse-panel
+            key="2"
+            header="💰 价格区间"
+          >
             <div class="form-row">
               <div class="form-group flex-1">
                 <label>最低售价 ($)</label>
@@ -63,7 +90,10 @@
             </div>
           </a-collapse-panel>
 
-          <a-collapse-panel key="3" header="🎯 竞争筛选（蓝海核心）">
+          <a-collapse-panel
+            key="3"
+            header="🎯 竞争筛选（蓝海核心）"
+          >
             <div class="form-group">
               <label>评论数上限</label>
               <a-input-number
@@ -104,7 +134,11 @@
             </div>
           </a-collapse-panel>
 
-          <a-collapse-panel key="4" header="⚙️ 高级筛选" :show-arrow="false">
+          <a-collapse-panel
+            key="4"
+            header="⚙️ 高级筛选"
+            :show-arrow="false"
+          >
             <div class="checkbox-group">
               <a-checkbox v-model:checked="form.excludeSeasonal">
                 🚫 排除季节性商品
@@ -121,20 +155,36 @@
 
         <!-- 操作按钮 -->
         <div class="action-bar">
-          <a-button @click="handleReset" block>
+          <a-button
+            block
+            @click="handleReset"
+          >
             <ReloadOutlined /> 重置条件
           </a-button>
-          <a-button type="primary" @click="handleSubmit" block :loading="loading">
+          <a-button
+            type="primary"
+            block
+            :loading="loading"
+            @click="handleSubmit"
+          >
             <SearchOutlined /> 开始挖掘分析
           </a-button>
         </div>
       </div>
 
       <!-- 大屏模式：右栏产品清单结果窗口（复用 BlueOceanResult，结果不进对话流） -->
-      <div v-if="isDataMode" class="bo-result">
-        <div v-if="isGenerating" class="preview-loading">
+      <div
+        v-if="isDataMode"
+        class="bo-result"
+      >
+        <div
+          v-if="isGenerating"
+          class="preview-loading"
+        >
           <a-spin size="large" />
-          <p class="preview-loading-title">正在挖掘蓝海产品…</p>
+          <p class="preview-loading-title">
+            正在挖掘蓝海产品…
+          </p>
         </div>
         <BlueOceanResult
           v-else-if="latestResult"

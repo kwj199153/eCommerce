@@ -115,10 +115,19 @@ function stripHtmlComments(src) {
  *   反向注入（第 193 轮）实测：副本被写成 CRLF 后，连**基线**都报
  *   「找不到列表分支的收尾」—— 门禁自己的脆弱前提被当成代码问题。
  */
+/** 只折叠**标签内部**的空白：`<div\n  a="1"\n>` → `<div a="1">`。
+ *  ★ 为什么要：自动格式化（F-2 的 `vue/max-attributes-per-line` 等）会把单行开标签
+ *    拆成多行，而本文件的分支锚点是**单行字面量** ⇒ 拆行后一律失配。
+ *    症状是「找不到锚点」，与「两侧字段分叉」毫无关系，会把人往错方向带。
+ *  ★ 只折叠标签内部 ⇒ **标签之外的缩进保留**，靠缩进区分的锚点（如 TPL_END）不受影响。 */
+function collapseTagWs(s) {
+  return s.replace(/<[^>]*>/g, (t) => t.replace(/\s+/g, ' ').replace(/\s+>$/, '>'))
+}
+
 function readTarget() {
   const p = path.join(SRC_ROOT, TARGET)
   if (!fs.existsSync(p)) throw new Error('文件不存在：' + TARGET)
-  return fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
+  return collapseTagWs(fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n'))
 }
 
 /** 切出两个分支的源码（**先剥注释再切片**；锚点因此不能用注释） */

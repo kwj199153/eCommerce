@@ -4,7 +4,11 @@
     <div class="pl-sidebar">
       <div class="pl-sidebar-header">
         <span class="pl-sidebar-title">产品分组</span>
-        <a-button type="text" size="small" @click="openCreateGroup">
+        <a-button
+          type="text"
+          size="small"
+          @click="openCreateGroup"
+        >
           <PlusOutlined />
         </a-button>
       </div>
@@ -15,7 +19,10 @@
         :class="{ active: store.currentGroupId === null }"
         @click="store.selectGroup(null)"
       >
-        <span class="pl-color-dot" style="background: var(--text-disabled)"></span>
+        <span
+          class="pl-color-dot"
+          style="background: var(--text-disabled)"
+        />
         <span class="pl-group-name">全部产品</span>
         <span class="pl-group-count">{{ store.totalCount }}</span>
       </div>
@@ -28,27 +35,54 @@
         :class="{ active: store.currentGroupId === g.id }"
         @click="store.selectGroup(g.id)"
       >
-        <span class="pl-color-dot" :style="{ background: g.color }"></span>
+        <span
+          class="pl-color-dot"
+          :style="{ background: g.color }"
+        />
         <span class="pl-group-name">{{ g.name }}</span>
         <span class="pl-group-count">{{ store.groupProductCount[g.id] || 0 }}</span>
-        <a-dropdown :trigger="['click']" @click.stop>
-          <a-button type="text" size="small" class="pl-group-more" @click.stop>
+        <a-dropdown
+          :trigger="['click']"
+          @click.stop
+        >
+          <a-button
+            type="text"
+            size="small"
+            class="pl-group-more"
+            @click.stop
+          >
             <MoreOutlined />
           </a-button>
           <template #overlay>
             <a-menu @click="handleGroupMenuClick($event, g)">
-              <a-menu-item key="rename">重命名</a-menu-item>
-              <a-menu-item key="color">改颜色</a-menu-item>
-              <a-menu-item key="up">上移</a-menu-item>
-              <a-menu-item key="down">下移</a-menu-item>
+              <a-menu-item key="rename">
+                重命名
+              </a-menu-item>
+              <a-menu-item key="color">
+                改颜色
+              </a-menu-item>
+              <a-menu-item key="up">
+                上移
+              </a-menu-item>
+              <a-menu-item key="down">
+                下移
+              </a-menu-item>
               <a-menu-divider />
-              <a-menu-item key="delete" style="color: var(--danger)">删除分组</a-menu-item>
+              <a-menu-item
+                key="delete"
+                style="color: var(--danger)"
+              >
+                删除分组
+              </a-menu-item>
             </a-menu>
           </template>
         </a-dropdown>
       </div>
 
-      <div v-if="store.groups.length === 0" class="pl-group-empty">
+      <div
+        v-if="store.groups.length === 0"
+        class="pl-group-empty"
+      >
         暂无分组，点击右上角 + 新建
       </div>
 
@@ -59,7 +93,10 @@
         :class="{ active: store.currentGroupId === '__ungrouped__' }"
         @click="store.selectGroup('__ungrouped__')"
       >
-        <span class="pl-color-dot" style="background: var(--text-disabled)"></span>
+        <span
+          class="pl-color-dot"
+          style="background: var(--text-disabled)"
+        />
         <span class="pl-group-name">未分组</span>
         <span class="pl-group-count">{{ store.ungroupedCount }}</span>
       </div>
@@ -67,742 +104,1234 @@
 
     <!-- 右侧内容区 -->
     <div class="pl-content">
-    <!-- 统计卡片 -->
-    <div class="stat-cards">
-      <div class="stat-card">
-        <div class="stat-value">{{ store.totalCount }}</div>
-        <div class="stat-label">产品总数</div>
-      </div>
-      <div class="stat-card stat-draft">
-        <div class="stat-value orange">{{ draftCount }}</div>
-        <div class="stat-label">草稿待完善</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">${{ formatNumber(store.totalValue) }}</div>
-        <div class="stat-label">库存总价值</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{{ store.avgMargin }}%</div>
-        <div class="stat-label">平均利润率</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value green">{{ activeCount }}</div>
-        <div class="stat-label">在售 Listing</div>
-      </div>
-    </div>
-
-    <!-- 操作栏 -->
-    <div class="toolbar">
-      <div class="toolbar-left">
-        <a-radio-group v-model:value="viewMode" size="small" button-style="solid" class="view-switch">
-          <a-radio-button value="flat">
-            <AppstoreOutlined /> 平铺
-          </a-radio-button>
-          <a-radio-button value="tree">
-            <UnorderedListOutlined /> 树形
-          </a-radio-button>
-        </a-radio-group>
-        <a-input-search
-          v-model:value="store.searchQuery"
-          placeholder="搜索标题、ASIN、SKU、品牌..."
-          style="width: 280px"
-          allow-clear
-        >
-          <template #prefix><SearchOutlined /></template>
-        </a-input-search>
-        <a-select
-          v-model:value="store.filterCategory"
-          style="width: 140px"
-          placeholder="全部分类"
-          allow-clear
-        >
-          <a-select-option v-for="cat in CATEGORIES" :key="cat.key" :value="cat.key">
-            {{ cat.icon }} {{ cat.label }}
-            <span v-if="store.categoryStats[cat.key]" class="cat-count">({{ store.categoryStats[cat.key] }})</span>
-          </a-select-option>
-        </a-select>
-        <a-select
-          v-model:value="store.filterStatus"
-          style="width: 120px"
-          placeholder="全部状态"
-          allow-clear
-        >
-          <a-select-option value="draft">📝 草稿 ({{ draftCount }})</a-select-option>
-          <a-select-option value="active">✅ 在售</a-select-option>
-          <a-select-option value="archived">📦 归档</a-select-option>
-        </a-select>
-        <a-select
-          v-model:value="store.sortBy"
-          style="width: 140px"
-        >
-          <a-select-option value="updated_at">最近更新</a-select-option>
-          <a-select-option value="price_asc">价格 ↑</a-select-option>
-          <a-select-option value="price">价格 ↓</a-select-option>
-          <a-select-option value="sales">日均销量</a-select-option>
-          <a-select-option value="rating">评分</a-select-option>
-          <a-select-option value="margin">利润率</a-select-option>
-          <a-select-option value="bsr">BSR 排名</a-select-option>
-        </a-select>
-      </div>
-      <div class="toolbar-right">
-        <a-tooltip title="从 CSV/JSON 文件批量导入产品数据">
-          <a-button @click="showImportModal = true">
-            <UploadOutlined /> 导入
-          </a-button>
-        </a-tooltip>
-        <a-button type="primary" @click="openAddModal">
-          <PlusOutlined /> 新增产品
-        </a-button>
-      </div>
-    </div>
-
-    <!-- 产品列表表格（树形：SPU下挂SKU，SKU缩进） -->
-    <a-table
-      :columns="columns"
-      :data-source="viewMode === 'flat' ? store.flatSpuRows : store.treeItems"
-      :loading="store.isLoading"
-      row-key="id"
-      :pagination="{ pageSize: 12, size: 'small', showTotal: (t: number) => `共 ${t} 个产品` }"
-      size="middle"
-      :scroll="{ x: 1040, y: 'calc(100vh - 380px)' }"
-      :default-expand-all-rows="true"
-      :expand-row-by-click="false"
-      :indent-size="20"
-      :children-column-name="'children'"
-      :row-class-name="rowClassName"
-    >
-      <!-- ★ 表格自带空态是「暂无数据」，与「加载失败」自相矛盾；换成统一组件
-           （失败 ⇒ 说失败 + 重试；无错且空 ⇒ 说空）。 -->
-      <template #emptyText>
-        <AsyncEmpty
-          :error="store.loadError"
-          label="产品库"
-          empty-description="产品库为空，点击右上角添加产品"
-          @retry="store.fetchItems()"
-        />
-      </template>
-      <template #bodyCell="{ column, record }">
-        <!-- 产品信息 -->
-        <template v-if="column.dataIndex === 'title'">
-          <a-popover placement="rightTop" trigger="hover" :overlayStyle="{ width: '340px' }">
-            <template #content>
-              <div class="hp-preview">
-                <img v-if="record.main_image" :src="record.main_image" alt="" class="hp-img" @error="(e: Event) => (e.target as HTMLImageElement).style.display = 'none'" />
-                <div class="hp-body">
-                  <div class="hp-title">{{ record.title }}</div>
-                  <a-tag v-if="record.status === 'draft'" :color="productStatusColor(record.status)" size="small">草稿</a-tag>
-                  <div class="hp-meta">
-                    <code class="hp-asin">{{ record.asin || '（SPU 无 ASIN）' }}</code>
-                    <span class="hp-sku">SKU: {{ record.sku }}</span>
-                    <span v-if="record.brand" class="hp-brand">{{ record.brand }}</span>
-                  </div>
-                  <template v-if="record.is_spu">
-                    <div class="hp-parent-note">
-                      规格主题：{{ record.spu_theme || '未设置' }} · 共 {{ store.getChildren(record.id).length }} 个 SKU
-                    </div>
-                  </template>
-                  <template v-else>
-                  <div class="hp-stats">
-                    <div class="hp-stat"><span class="hp-label">售价</span><strong>${{ record.price.toFixed(2) }}</strong></div>
-                    <div class="hp-stat"><span class="hp-label">成本</span><strong>${{ record.cost.toFixed(2) }}</strong></div>
-                    <div class="hp-stat"><span class="hp-label">利润率</span><strong :class="'margin-' + bandOf('margin', record.margin)">{{ record.margin }}%</strong></div>
-                  </div>
-                  <div class="hp-row">
-                    <span class="hp-label">评分</span>
-                    <span class="stars">{{ '★'.repeat(Math.floor(record.rating)) }}{{ '☆'.repeat(5 - Math.floor(record.rating)) }}</span>
-                    <strong>{{ record.rating }}</strong>
-                    <span class="hp-sub">({{ formatNumber(record.review_count) }})</span>
-                    <span v-if="record.bsr" class="hp-bsr">BSR #{{ record.bsr.toLocaleString() }}</span>
-                  </div>
-                  <div class="hp-row">
-                    <span class="hp-label">库存</span>
-                    <strong style="color: var(--primary);">FBA {{ record.fba_stock }}</strong>
-                    <span v-if="record.fbm_stock > 0" style="color: var(--text-tertiary); margin-left: var(--space-8);">FBM {{ record.fbm_stock }}</span>
-                    <span class="hp-sub" style="margin-left: auto;">日销 <strong>{{ record.daily_sales_avg }}/天</strong></span>
-                  </div>
-                  <div v-if="record.selling_points" class="hp-points">
-                    <div v-for="(sp, i) in record.selling_points.split(' | ').slice(0, 3)" :key="i" class="hp-point">{{ sp }}</div>
-                  </div>
-                  </template>
-                </div>
-              </div>
-            </template>
-            <div class="product-cell">
-            <div class="product-cell-head">
-              <div class="product-thumb">
-                <img v-if="record.main_image" :src="record.main_image" alt="" loading="lazy" @error="onImgError" />
-                <div v-else class="thumb-placeholder">🖼️</div>
-              </div>
-              <div class="product-cell-body">
-                <div class="product-title">
-                  <span class="pt-text">{{ record.title }}</span>
-                  <button
-                    class="title-translate-btn"
-                    type="button"
-                    title="翻译标题"
-                    data-stl-trigger=""
-                    @click.stop="translateFromEvent(record.title, $event)"
-                  >译</button>
-                  <a-tag v-if="record.status === 'draft'" :color="productStatusColor(record.status)" size="small">草稿</a-tag>
-                  <span v-if="record.is_spu" class="var-parent-badge">👪 SPU · {{ store.getChildren(record.id).length }} SKU</span>
-                  <span v-else-if="record.spu_id" class="var-child-badge">
-                    {{ record.spec_value || 'SKU' }}
-                  </span>
-                </div>
-                <div class="product-meta">
-                  <span class="asin">{{ record.asin || '-' }}</span>
-                  <a-divider type="vertical" :margin="4" />
-                  <span class="sku">{{ record.sku }}</span>
-                  <a-divider type="vertical" :margin="4" />
-                  <span class="brand">{{ record.brand || '-' }}</span>
-                </div>
-                <div class="tags-row" v-if="record.tags.length || (record.groups && record.groups.length)">
-                  <a-tag v-for="tag in record.tags" :key="tag" size="small" :color="productTagColor(tag)">{{ tag }}</a-tag>
-                  <a-tag
-                    v-for="gid in (record.groups || [])"
-                    :key="'g-' + gid"
-                    size="small"
-                    :color="getGroupById(gid)?.color || 'default'"
-                  >
-                    📁 {{ getGroupById(gid)?.name || '未知分组' }}
-                  </a-tag>
-                </div>
-              </div>
-            </div>
+      <!-- 统计卡片 -->
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div class="stat-value">
+            {{ store.totalCount }}
           </div>
-          </a-popover>
-        </template>
-
-        <!-- 价格/成本 -->
-        <template v-else-if="column.dataIndex === 'price'">
-          <!-- 单品：投影唯一 SKU 的售价/成本 -->
-          <div v-if="isSingleSkuSpu(record)" class="price-cell price-cell-projected">
-            <span class="price">${{ singleSkuOf(record)!.price.toFixed(2) }}</span>
-            <span class="cost">成本 ${{ singleSkuOf(record)!.cost.toFixed(2) }}</span>
-          </div>
-          <!-- 多变体：价格区间 + SKU 数量 -->
-          <div v-else-if="record.is_spu" class="spu-summary-cell">
-            <span class="price">{{ spuPriceRange(record) }}</span>
-            <span class="sku-count">× {{ spuSkus(record).length }} SKU</span>
-          </div>
-          <div v-else class="price-cell">
-            <span class="price">${{ record.price.toFixed(2) }}</span>
-            <span class="cost">成本 ${{ record.cost.toFixed(2) }}</span>
-          </div>
-        </template>
-
-        <!-- 利润率 -->
-        <template v-else-if="column.dataIndex === 'margin'">
-          <span v-if="isSingleSkuSpu(record)" :class="['margin-badge', 'projected', bandOf('margin', singleSkuOf(record)!.margin)]">
-            {{ singleSkuOf(record)!.margin }}%
-          </span>
-          <span v-else-if="record.is_spu" class="cell-placeholder">—</span>
-          <span v-else :class="['margin-badge', bandOf('margin', record.margin)]">
-            {{ record.margin }}%
-          </span>
-        </template>
-
-        <!-- BSR -->
-        <template v-else-if="column.dataIndex === 'bsr'">
-          <span v-if="isSingleSkuSpu(record)" class="projected">
-            <template v-if="singleSkuOf(record)!.bsr">#{{ singleSkuOf(record)!.bsr!.toLocaleString() }}</template>
-            <template v-else>-</template>
-          </span>
-          <span v-else-if="record.is_spu" class="cell-placeholder">—</span>
-          <span v-else-if="record.bsr">#{{ record.bsr.toLocaleString() }}</span>
-          <span v-else class="text-muted">-</span>
-        </template>
-
-        <!-- 评分 -->
-        <template v-else-if="column.dataIndex === 'rating'">
-          <div v-if="isSingleSkuSpu(record)" class="rating-cell projected">
-            <span class="stars">{{ '★'.repeat(Math.floor(singleSkuOf(record)!.rating)) }}{{ '☆'.repeat(5 - Math.floor(singleSkuOf(record)!.rating)) }}</span>
-            <span class="rating-num">{{ singleSkuOf(record)!.rating }}</span>
-            <span class="review-count">({{ formatNumber(singleSkuOf(record)!.review_count) }})</span>
-          </div>
-          <div v-else-if="record.is_spu" class="cell-placeholder">—</div>
-          <div v-else class="rating-cell">
-            <span class="stars">{{ '★'.repeat(Math.floor(record.rating)) }}{{ '☆'.repeat(5 - Math.floor(record.rating)) }}</span>
-            <span class="rating-num">{{ record.rating }}</span>
-            <span class="review-count">({{ formatNumber(record.review_count) }})</span>
-          </div>
-        </template>
-
-        <!-- 库存 -->
-        <template v-else-if="column.dataIndex === 'stock'">
-          <!-- 单品：投影唯一 SKU 库存 -->
-          <div v-if="isSingleSkuSpu(record)" class="stock-cell projected">
-            <span class="fba-stock">FBA: {{ singleSkuOf(record)!.fba_stock }}</span>
-            <span v-if="singleSkuOf(record)!.fbm_stock > 0" class="fbm-stock">FBM: {{ singleSkuOf(record)!.fbm_stock }}</span>
-          </div>
-          <!-- 多变体：总库存汇总 -->
-          <div v-else-if="record.is_spu" class="spu-summary-cell">
-            <span class="fba-stock">总库存 {{ spuTotalStock(record) }}</span>
-            <span class="sku-count">× {{ spuSkus(record).length }} SKU</span>
-          </div>
-          <div v-else class="stock-cell">
-            <span class="fba-stock">FBA: {{ record.fba_stock }}</span>
-            <span v-if="record.fbm_stock > 0" class="fbm-stock">FBM: {{ record.fbm_stock }}</span>
-          </div>
-        </template>
-
-        <!-- 日均销量 -->
-        <template v-else-if="column.dataIndex === 'daily_sales_avg'">
-          <template v-if="isSingleSkuSpu(record)"><strong class="projected">{{ singleSkuOf(record)!.daily_sales_avg }}</strong><span class="unit">/天</span></template>
-          <span v-else-if="record.is_spu" class="cell-placeholder">—</span>
-          <template v-else><strong>{{ record.daily_sales_avg }}</strong><span class="unit">/天</span></template>
-        </template>
-
-        <!-- Listing 状态 -->
-        <template v-else-if="column.dataIndex === 'listing_status'">
-          <a-tag v-if="record.is_spu" size="small" color="purple">SPU</a-tag>
-          <a-badge
-            v-else
-            :status="listingStatusMap[record.listing_status]?.status || 'default'"
-            :text="listingStatusMap[record.listing_status]?.text || record.listing_status"
-          />
-        </template>
-
-        <!-- 操作 -->
-        <template v-else-if="column.dataIndex === 'actions'">
-          <a-space>
-            <!-- SPU：新增SKU + AIGC + Listing 优化 + 详情 + 编辑 + 删除 -->
-            <template v-if="record.is_spu">
-              <a-tooltip title="新增SKU">
-                <a-button type="text" size="small" class="aigc-btn" @click="openAddChild(record)">
-                  <PlusOutlined />
-                </a-button>
-              </a-tooltip>
-              <!-- AIGC 媒体生成：SPU也可触发，用SPU公共文案作为模板 -->
-              <a-tooltip title="AIGC 媒体生成">
-                <a-button type="text" size="small" class="aigc-btn" @click="handleAigcLaunch(record)">
-                  <PictureOutlined />
-                </a-button>
-              </a-tooltip>
-              <!-- Listing 优化：SPU可基于公共文案模板生成 Listing -->
-              <a-tooltip title="Listing 优化">
-                <a-button type="text" size="small" class="listing-opt-btn" @click="handleListingOptimize(record)">
-                  <FileTextOutlined />
-                </a-button>
-              </a-tooltip>
-              <a-tooltip title="查看详情">
-                <a-button type="text" size="small" @click="openDetailDrawer(record)">
-                  <EyeOutlined />
-                </a-button>
-              </a-tooltip>
-              <a-tooltip title="编辑SPU">
-                <a-button type="text" size="small" @click="openEditModal(record)">
-                  <EditOutlined />
-                </a-button>
-              </a-tooltip>
-              <a-popconfirm title="删除SPU将同时删除其全部SKU，确定？" @confirm="handleDeleteParent(record)">
-                <a-tooltip title="删除">
-                  <a-button type="text" size="small" danger>
-                    <DeleteOutlined />
-                  </a-button>
-                </a-tooltip>
-              </a-popconfirm>
-            </template>
-            <!-- 独立产品（非父非子）：自我组化 + AIGC + Listing 优化 + 详情 + 编辑 + 删除 -->
-            <template v-else-if="!record.spu_id">
-              <a-tooltip title="提升为SPU（本产品将成为第一个 SKU）">
-                <a-button type="text" size="small" class="aigc-btn" @click="openPromoteToGroup(record)">
-                  <PlusOutlined />
-                </a-button>
-              </a-tooltip>
-              <a-tooltip title="AIGC 媒体生成">
-                <a-button type="text" size="small" class="aigc-btn" @click="handleAigcLaunch(record)">
-                  <PictureOutlined />
-                </a-button>
-              </a-tooltip>
-              <a-tooltip :title="record.status === 'draft' ? 'Listing 优化（草稿）' : 'Listing 优化'">
-                <a-button type="text" size="small" :class="['listing-opt-btn', { 'is-draft': record.status === 'draft' }]" @click="handleListingOptimize(record)">
-                  <FileTextOutlined />
-                </a-button>
-              </a-tooltip>
-              <a-tooltip title="查看详情">
-                <a-button type="text" size="small" @click="openDetailDrawer(record)">
-                  <EyeOutlined />
-                </a-button>
-              </a-tooltip>
-              <a-tooltip title="编辑">
-                <a-button type="text" size="small" @click="openEditModal(record)">
-                  <EditOutlined />
-                </a-button>
-              </a-tooltip>
-              <a-popconfirm title="确定删除此产品？" @confirm="handleDelete(record.id)">
-                <a-tooltip title="删除">
-                  <a-button type="text" size="small" danger>
-                    <DeleteOutlined />
-                  </a-button>
-                </a-tooltip>
-              </a-popconfirm>
-            </template>
-            <!-- SKU：图片 + 详情 + 编辑 + 删除（SKU 无文案，无 Listing） -->
-            <template v-else>
-              <a-tooltip title="AIGC 媒体生成">
-                <a-button type="text" size="small" class="aigc-btn" @click="handleAigcLaunch(record)">
-                  <PictureOutlined />
-                </a-button>
-              </a-tooltip>
-              <a-tooltip title="查看详情">
-                <a-button type="text" size="small" @click="openDetailDrawer(record)">
-                  <EyeOutlined />
-                </a-button>
-              </a-tooltip>
-              <a-tooltip title="编辑">
-                <a-button type="text" size="small" @click="openEditModal(record)">
-                  <EditOutlined />
-                </a-button>
-              </a-tooltip>
-              <a-popconfirm title="确定删除此产品？" @confirm="handleDelete(record.id)">
-                <a-tooltip title="删除">
-                  <a-button type="text" size="small" danger>
-                    <DeleteOutlined />
-                  </a-button>
-                </a-tooltip>
-              </a-popconfirm>
-            </template>
-          </a-space>
-        </template>
-      </template>
-    </a-table>
-
-    <!-- 新增/编辑产品弹窗 -->
-    <ProductFormModal v-model:open="modalVisible" :editing-id="editingId" @saved="onSaved" />
-
-    <!-- SKU 增删弹窗 -->
-    <SkuFormModal v-model:open="childModalVisible" :editing-id="childEditingId" :parent-id="childParentId" @saved="onSaved" />
-
-    <!-- 提升为 SPU 弹窗 -->
-    <PromoteSkuModal v-model:open="promoteModalVisible" :product-id="promoteTargetId" @saved="onSaved" />
-
-    <!-- 详情抽屉 -->
-    <a-drawer
-      v-model:open="drawerVisible"
-      :title="currentDetail?.title || '产品详情'"
-      :width="WINDOW_W.md"
-      placement="right"
-    >
-      <template v-if="currentDetail">
-        <!-- ★ 详情 / 差评 双 tab（第 289 轮 P0）：默认停在「详情」，
-             不打扰既有阅读路径；差评 tab 上有条数 / 缺口角标。 -->
-        <a-tabs v-model:activeKey="detailTab" size="small" class="pl-detail-tabs">
-          <a-tab-pane key="detail">
-            <template #tab><span>🗂 详情</span></template>
-        <!-- 主图 -->
-        <div class="detail-main-image">
-          <img v-if="currentDetail.main_image" :src="currentDetail.main_image" alt="主图" @error="onImgError" />
-          <div v-else class="detail-image-placeholder">🖼️ 暂无主图</div>
-          <div v-if="currentDetail.images?.length" class="detail-thumbs">
-            <img
-              v-for="(img, i) in currentDetail.images"
-              :key="i"
-              :src="img"
-              alt="附图"
-              loading="lazy"
-              @error="onImgError"
-            />
+          <div class="stat-label">
+            产品总数
           </div>
         </div>
-
-        <!-- 竞品管理入口（产品详情维护对标竞品；监控驱动统一在下方"关联竞品·定向监控"区） -->
-        <div style="margin-bottom: var(--space-12); display:flex; gap:var(--space-8); flex-wrap:wrap; align-items:center">
-          <a-button type="primary" size="small" @click="openCompetitorManager">
-            <TeamOutlined /> 对标竞品管理
-          </a-button>
-        </div>
-
-        <a-descriptions :column="1" bordered size="small">
-          <a-descriptions-item label="ASIN"><code>{{ detailDisplay.asin || '-' }}</code></a-descriptions-item>
-          <a-descriptions-item label="SKU">{{ detailDisplay.sku }}</a-descriptions-item>
-          <a-descriptions-item label="品牌">{{ detailDisplay.brand || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="售价">${{ detailDisplay.price.toFixed(2) }}</a-descriptions-item>
-          <a-descriptions-item label="成本">${{ detailDisplay.cost.toFixed(2) }}</a-descriptions-item>
-          <a-descriptions-item label="利润率">
-            <span :class="['margin-badge', bandOf('margin', detailDisplay.margin)]">
-              {{ detailDisplay.margin }}%
-            </span>
-          </a-descriptions-item>
-          <a-descriptions-item label="ROI">{{ detailDisplay.roi }}%</a-descriptions-item>
-          <a-descriptions-item label="BSR">#{{ detailDisplay.bsr?.toLocaleString() || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="评分">{{ detailDisplay.rating }} ({{ detailDisplay.review_count }} 评论)</a-descriptions-item>
-          <a-descriptions-item label="FBA 库存">{{ detailDisplay.fba_stock }}</a-descriptions-item>
-          <a-descriptions-item label="FBM 库存">{{ detailDisplay.fbm_stock }}</a-descriptions-item>
-          <a-descriptions-item label="日均销量">{{ detailDisplay.daily_sales_avg }}/天</a-descriptions-item>
-          <a-descriptions-item label="配送">{{ detailDisplay.fulfillment_type }}</a-descriptions-item>
-          <a-descriptions-item label="标签">
-            <a-tag v-for="t in detailDisplay.tags" :key="t">{{ t }}</a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="备注">{{ detailDisplay.notes || '-' }}</a-descriptions-item>
-        </a-descriptions>
-
-        <!-- Listing 信息 -->
-        <div
-          v-if="detailDisplay.generated_title || detailDisplay.generated_bullets?.length || detailDisplay.description || detailDisplay.seo_score"
-          class="detail-section"
-        >
-          <h4>
-            📝 Listing 信息
-            <a-tag v-if="detailDisplay.seo_score" :color="getSeoScoreColor(detailDisplay.seo_score)" size="small">
-              SEO {{ detailDisplay.seo_score }}
-            </a-tag>
-            <a-tag v-if="detailDisplay.listing_version" color="default" size="small">v{{ detailDisplay.listing_version }}</a-tag>
-          </h4>
-
-          <!-- 标题对比 -->
-          <div v-if="detailDisplay.generated_title" class="listing-block">
-            <div class="listing-label">产品标题</div>
-            <div class="listing-title">{{ detailDisplay.generated_title }}</div>
+        <div class="stat-card stat-draft">
+          <div class="stat-value orange">
+            {{ draftCount }}
           </div>
-
-          <!-- 五点描述 -->
-          <div v-if="detailDisplay.generated_bullets?.length" class="listing-block">
-            <div class="listing-label">五点描述 (Bullet Points)</div>
-            <div
-              v-for="(b, i) in detailDisplay.generated_bullets"
-              :key="i"
-              class="bullet-item"
-            >
-              <div class="bullet-title">▸ {{ b.title }}</div>
-              <div class="bullet-content">{{ b.content }}</div>
-            </div>
-          </div>
-
-          <!-- 商品描述 -->
-          <div v-if="detailDisplay.description" class="listing-block">
-            <div class="listing-label">商品描述 (Description)</div>
-            <div class="listing-desc">{{ detailDisplay.description }}</div>
-          </div>
-
-          <!-- 竞品 ASIN + 定向监控态（监控驱动统一在此：单行/批量） -->
-          <div v-if="detailDisplay.competitor_asins?.length" class="listing-block">
-            <div class="cm-section-head">
-              <div class="listing-label">关联竞品 · 定向监控</div>
-              <a-button
-                size="small"
-                type="link"
-                class="cm-batch-btn"
-                :loading="inheritingMonitor"
-                :disabled="!unmonitoredCompetitorCount"
-                @click="inheritMonitorFromCompetitors(currentDetail)"
-              >
-                <FundOutlined /> 全部开启监控{{ unmonitoredCompetitorCount ? `（${unmonitoredCompetitorCount}）` : '（已全监控）' }}
-              </a-button>
-            </div>
-            <div class="competitor-mon-list">
-              <div v-for="c in detailDisplay.competitor_asins" :key="c" class="competitor-mon-row">
-                <img
-                  v-if="productCompetitorMap[c]?.main_image"
-                  class="cm-img"
-                  :src="productCompetitorMap[c]?.main_image"
-                  :alt="c"
-                  loading="lazy"
-                  @error="(e: Event) => { (e.target as HTMLImageElement).style.display = 'none'; const fb = (e.target as HTMLImageElement).nextElementSibling as HTMLElement | null; if (fb) fb.style.display = 'inline-flex'; }"
-                />
-                <span class="cm-img-fb" :style="{ display: productCompetitorMap[c]?.main_image ? 'none' : 'inline-flex' }">🏷️</span>
-                <span class="cm-asin">{{ c }}</span>
-                <a-button
-                  v-if="mpStore.isAsinInPool(c)"
-                  type="link"
-                  size="small"
-                  danger
-                  class="cm-mon-act"
-                  @click="removeMonitoredCompetitor(c)"
-                >停止监控</a-button>
-                <a-button
-                  v-else
-                  type="link"
-                  size="small"
-                  class="cm-mon-act"
-                  @click="monitorOneCompetitor(c)"
-                >开启监控</a-button>
-              </div>
-            </div>
+          <div class="stat-label">
+            草稿待完善
           </div>
         </div>
+        <div class="stat-card">
+          <div class="stat-value">
+            ${{ formatNumber(store.totalValue) }}
+          </div>
+          <div class="stat-label">
+            库存总价值
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">
+            {{ store.avgMargin }}%
+          </div>
+          <div class="stat-label">
+            平均利润率
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value green">
+            {{ activeCount }}
+          </div>
+          <div class="stat-label">
+            在售 Listing
+          </div>
+        </div>
+      </div>
 
-        <!-- SKU 列表（SPU 详情） -->
-        <div v-if="currentDetail.is_spu && detailSkus.length" style="margin-top: var(--space-16)">
-          <h4>SKU ({{ currentDetail.spu_theme || '未设置规格主题' }})</h4>
-          <a-table
-            :columns="variationColumns"
-            :data-source="detailSkus"
-            :pagination="false"
+      <!-- 操作栏 -->
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <a-radio-group
+            v-model:value="viewMode"
             size="small"
-            row-key="asin"
-          />
-        </div>
-          </a-tab-pane>
-
-          <!-- ★ 差评 tab：SPU 只是聚合壳，真正的键在 SKU 的 ASIN 上 -->
-          <a-tab-pane key="reviews">
-            <template #tab>
-              <span>
-                📉 差评
-                <span v-if="reviewResult?.total" class="pl-tab-count">{{ reviewResult.total }}</span>
-                <span
-                  v-else-if="reviewResult && reviewResult.empty_state && reviewResult.empty_state !== 'no_reviews'"
-                  class="pl-tab-warn"
-                  title="关联有缺口，进去看说明"
-                >!</span>
-              </span>
-            </template>
-
-            <div class="pl-review-bar">
-              <a-switch v-model:checked="reviewOnlyNegative" size="small" @change="reloadProductReviews" />
-              <span class="pl-review-bar-label">只看中差评（≤3 星）</span>
-              <a-button size="small" type="text" :loading="reviewLoading" @click="reloadProductReviews">
-                <ReloadOutlined /> 刷新
-              </a-button>
-            </div>
-
-            <div v-if="reviewResult" class="pl-review-scope">
-              关联口径：{{ currentDetail.is_spu ? '本 SPU' : '所属 SPU' }}名下
-              <b>{{ reviewResult.sku_count }}</b> 个 SKU /
-              <b>{{ reviewResult.asin_count }}</b> 个 ASIN（按 SKU 的 ASIN
-              <template v-if="reviewResult.asin_count === 0">，为空时</template>匹配）
-            </div>
-
-            <a-alert
-              v-if="reviewError"
-              type="error"
-              show-icon
-              :message="reviewError"
-              class="pl-review-alert"
-            />
-
-            <div v-else-if="reviewLoading && !reviewResult" class="pl-review-empty">
-              <a-spin size="small" /> 正在按 SKU 的 ASIN 关联差评…
-            </div>
-
-            <div v-else-if="reviewEmpty" :class="['pl-review-empty', reviewEmpty.tone]">
-              <div class="pl-review-empty-icon">{{ reviewEmpty.icon }}</div>
-              <div class="pl-review-empty-title">{{ reviewEmpty.title }}</div>
-              <div class="pl-review-empty-desc">{{ reviewEmpty.desc }}</div>
-            </div>
-
-            <div v-else class="pl-review-list">
-              <div v-for="r in reviewResult?.reviews ?? []" :key="r.id" class="pl-review-item">
-                <div class="pl-review-top">
-                  <span class="pl-review-stars">{{ '★'.repeat(Math.max(0, r.rating)) }}<span class="pl-stars-dim">{{ '★'.repeat(Math.max(0, 5 - (r.rating || 0))) }}</span></span>
-                  <span class="pl-review-date">{{ (r.review_at || '').slice(0, 10) || '-' }}</span>
-                  <a-tag v-if="r.source === 'mock_seed'" color="orange" size="small">演示数据</a-tag>
-                </div>
-                <div class="pl-review-title-line">{{ r.title || '（无标题）' }}</div>
-                <div class="pl-review-body">{{ r.body || '—' }}</div>
-                <div class="pl-review-meta">
-                  <span>{{ r.buyer_name || '匿名买家' }}</span>
-                  <span>·</span>
-                  <span>{{ REVIEW_STATUS_LABELS[r.status] || r.status || '未处理' }}</span>
-                  <template v-if="r.match_kind === 'asin'">
-                    <span>·</span><span>命中 ASIN <code>{{ r.asin }}</code></span>
-                  </template>
-                  <template v-else-if="r.match_kind === 'sku_code'">
-                    <span>·</span><span>命中 SKU 码 <code>{{ r.sku }}</code></span>
-                  </template>
-                </div>
-              </div>
-            </div>
-          </a-tab-pane>
-        </a-tabs>
-      </template>
-    </a-drawer>
-
-    <!-- 竞品管理（入口2：产品详情持久维护对标竞品） -->
-    <CompetitorManager
-      v-model:open="cmOpen"
-      :owner="cmOwner"
-      owner-type="product"
-      @saved="onCmSaved"
-    />
-
-    <!-- 文件导入弹窗 -->
-    <a-modal
-      v-model:open="showImportModal"
-      title="批量导入产品"
-      :width="WINDOW_W.lg"
-      :footer="null"
-    >
-      <div class="import-area">
-        <a-upload-dragger
-          :file-list="importFileList"
-          :before-upload="handleImportFile"
-          :remove="() => { importFileList = []; return true }"
-          accept=".json,.csv"
-          :max-count="1"
-        >
-          <p class="ant-upload-drag-icon"><InboxOutlined /></p>
-          <p class="ant-upload-text">点击或拖拽文件到此区域上传</p>
-          <p class="ant-upload-hint">
-            支持 JSON / CSV 格式<br/>
-            CSV 列：asin, sku, title, brand, category, price, cost, fba_stock...
-          </p>
-        </a-upload-dragger>
-        <div v-if="importResult" class="import-result" :class="{ error: importResult.failed > 0 }">
-          <a-alert
-            :type="importResult.failed > 0 ? 'warning' : 'success'"
-            :message="`导入完成：成功 ${importResult.success} 条${importResult.failed > 0 ? `，失败 ${importResult.failed} 条` : ''}`"
+            button-style="solid"
+            class="view-switch"
           >
-            <template v-if="importResult.errors.length" #description>
-              <ul class="error-list">
-                <li v-for="(err, i) in importResult.errors.slice(0, 5)" :key="i">{{ err }}</li>
-              </ul>
+            <a-radio-button value="flat">
+              <AppstoreOutlined /> 平铺
+            </a-radio-button>
+            <a-radio-button value="tree">
+              <UnorderedListOutlined /> 树形
+            </a-radio-button>
+          </a-radio-group>
+          <a-input-search
+            v-model:value="store.searchQuery"
+            placeholder="搜索标题、ASIN、SKU、品牌..."
+            style="width: 280px"
+            allow-clear
+          >
+            <template #prefix>
+              <SearchOutlined />
             </template>
-          </a-alert>
+          </a-input-search>
+          <a-select
+            v-model:value="store.filterCategory"
+            style="width: 140px"
+            placeholder="全部分类"
+            allow-clear
+          >
+            <a-select-option
+              v-for="cat in CATEGORIES"
+              :key="cat.key"
+              :value="cat.key"
+            >
+              {{ cat.icon }} {{ cat.label }}
+              <span
+                v-if="store.categoryStats[cat.key]"
+                class="cat-count"
+              >({{ store.categoryStats[cat.key] }})</span>
+            </a-select-option>
+          </a-select>
+          <a-select
+            v-model:value="store.filterStatus"
+            style="width: 120px"
+            placeholder="全部状态"
+            allow-clear
+          >
+            <a-select-option value="draft">
+              📝 草稿 ({{ draftCount }})
+            </a-select-option>
+            <a-select-option value="active">
+              ✅ 在售
+            </a-select-option>
+            <a-select-option value="archived">
+              📦 归档
+            </a-select-option>
+          </a-select>
+          <a-select
+            v-model:value="store.sortBy"
+            style="width: 140px"
+          >
+            <a-select-option value="updated_at">
+              最近更新
+            </a-select-option>
+            <a-select-option value="price_asc">
+              价格 ↑
+            </a-select-option>
+            <a-select-option value="price">
+              价格 ↓
+            </a-select-option>
+            <a-select-option value="sales">
+              日均销量
+            </a-select-option>
+            <a-select-option value="rating">
+              评分
+            </a-select-option>
+            <a-select-option value="margin">
+              利润率
+            </a-select-option>
+            <a-select-option value="bsr">
+              BSR 排名
+            </a-select-option>
+          </a-select>
+        </div>
+        <div class="toolbar-right">
+          <a-tooltip title="从 CSV/JSON 文件批量导入产品数据">
+            <a-button @click="showImportModal = true">
+              <UploadOutlined /> 导入
+            </a-button>
+          </a-tooltip>
+          <a-button
+            type="primary"
+            @click="openAddModal"
+          >
+            <PlusOutlined /> 新增产品
+          </a-button>
         </div>
       </div>
-    </a-modal>
 
-    <!-- 新建分组弹窗 -->
-    <a-modal
-      v-model:open="createGroupVisible"
-      title="新建产品分组"
-      :footer="null"
-      :width="WINDOW_W.xs"
-      centered
-    >
-      <a-form layout="vertical">
-        <a-form-item label="分组名称">
-          <a-input
-            v-model:value="createGroupName"
-            placeholder="如：高利润小家电、潜力赛道"
-            @pressEnter="submitCreateGroup"
+      <!-- 产品列表表格（树形：SPU下挂SKU，SKU缩进） -->
+      <a-table
+        :columns="columns"
+        :data-source="viewMode === 'flat' ? store.flatSpuRows : store.treeItems"
+        :loading="store.isLoading"
+        row-key="id"
+        :pagination="{ pageSize: 12, size: 'small', showTotal: (t: number) => `共 ${t} 个产品` }"
+        size="middle"
+        :scroll="{ x: 1040, y: 'calc(100vh - 380px)' }"
+        :default-expand-all-rows="true"
+        :expand-row-by-click="false"
+        :indent-size="20"
+        :children-column-name="'children'"
+        :row-class-name="rowClassName"
+      >
+        <!-- ★ 表格自带空态是「暂无数据」，与「加载失败」自相矛盾；换成统一组件
+           （失败 ⇒ 说失败 + 重试；无错且空 ⇒ 说空）。 -->
+        <template #emptyText>
+          <AsyncEmpty
+            :error="store.loadError"
+            label="产品库"
+            empty-description="产品库为空，点击右上角添加产品"
+            @retry="store.fetchItems()"
           />
-        </a-form-item>
-        <a-form-item label="标签颜色">
-          <div class="pl-color-picker">
-            <span
-              v-for="c in GROUP_COLORS"
-              :key="c"
-              class="pl-color-swatch"
-              :class="{ active: createGroupColor === c }"
-              :style="{ background: c }"
-              @click="createGroupColor = c"
-            ></span>
-          </div>
-        </a-form-item>
-      </a-form>
-      <template #footer>
-        <a-button @click="createGroupVisible = false">取消</a-button>
-        <a-button type="primary" @click="submitCreateGroup">创建</a-button>
-      </template>
-    </a-modal>
+        </template>
+        <template #bodyCell="{ column, record }">
+          <!-- 产品信息 -->
+          <template v-if="column.dataIndex === 'title'">
+            <a-popover
+              placement="rightTop"
+              trigger="hover"
+              :overlay-style="{ width: '340px' }"
+            >
+              <template #content>
+                <div class="hp-preview">
+                  <img
+                    v-if="record.main_image"
+                    :src="record.main_image"
+                    alt=""
+                    class="hp-img"
+                    @error="(e: Event) => (e.target as HTMLImageElement).style.display = 'none'"
+                  >
+                  <div class="hp-body">
+                    <div class="hp-title">
+                      {{ record.title }}
+                    </div>
+                    <a-tag
+                      v-if="record.status === 'draft'"
+                      :color="productStatusColor(record.status)"
+                      size="small"
+                    >
+                      草稿
+                    </a-tag>
+                    <div class="hp-meta">
+                      <code class="hp-asin">{{ record.asin || '（SPU 无 ASIN）' }}</code>
+                      <span class="hp-sku">SKU: {{ record.sku }}</span>
+                      <span
+                        v-if="record.brand"
+                        class="hp-brand"
+                      >{{ record.brand }}</span>
+                    </div>
+                    <template v-if="record.is_spu">
+                      <div class="hp-parent-note">
+                        规格主题：{{ record.spu_theme || '未设置' }} · 共 {{ store.getChildren(record.id).length }} 个 SKU
+                      </div>
+                    </template>
+                    <template v-else>
+                      <div class="hp-stats">
+                        <div class="hp-stat">
+                          <span class="hp-label">售价</span><strong>${{ record.price.toFixed(2) }}</strong>
+                        </div>
+                        <div class="hp-stat">
+                          <span class="hp-label">成本</span><strong>${{ record.cost.toFixed(2) }}</strong>
+                        </div>
+                        <div class="hp-stat">
+                          <span class="hp-label">利润率</span><strong :class="'margin-' + bandOf('margin', record.margin)">{{ record.margin }}%</strong>
+                        </div>
+                      </div>
+                      <div class="hp-row">
+                        <span class="hp-label">评分</span>
+                        <span class="stars">{{ '★'.repeat(Math.floor(record.rating)) }}{{ '☆'.repeat(5 - Math.floor(record.rating)) }}</span>
+                        <strong>{{ record.rating }}</strong>
+                        <span class="hp-sub">({{ formatNumber(record.review_count) }})</span>
+                        <span
+                          v-if="record.bsr"
+                          class="hp-bsr"
+                        >BSR #{{ record.bsr.toLocaleString() }}</span>
+                      </div>
+                      <div class="hp-row">
+                        <span class="hp-label">库存</span>
+                        <strong style="color: var(--primary);">FBA {{ record.fba_stock }}</strong>
+                        <span
+                          v-if="record.fbm_stock > 0"
+                          style="color: var(--text-tertiary); margin-left: var(--space-8);"
+                        >FBM {{ record.fbm_stock }}</span>
+                        <span
+                          class="hp-sub"
+                          style="margin-left: auto;"
+                        >日销 <strong>{{ record.daily_sales_avg }}/天</strong></span>
+                      </div>
+                      <div
+                        v-if="record.selling_points"
+                        class="hp-points"
+                      >
+                        <div
+                          v-for="(sp, i) in record.selling_points.split(' | ').slice(0, 3)"
+                          :key="i"
+                          class="hp-point"
+                        >
+                          {{ sp }}
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+              <div class="product-cell">
+                <div class="product-cell-head">
+                  <div class="product-thumb">
+                    <img
+                      v-if="record.main_image"
+                      :src="record.main_image"
+                      alt=""
+                      loading="lazy"
+                      @error="onImgError"
+                    >
+                    <div
+                      v-else
+                      class="thumb-placeholder"
+                    >
+                      🖼️
+                    </div>
+                  </div>
+                  <div class="product-cell-body">
+                    <div class="product-title">
+                      <span class="pt-text">{{ record.title }}</span>
+                      <button
+                        class="title-translate-btn"
+                        type="button"
+                        title="翻译标题"
+                        data-stl-trigger=""
+                        @click.stop="translateFromEvent(record.title, $event)"
+                      >
+                        译
+                      </button>
+                      <a-tag
+                        v-if="record.status === 'draft'"
+                        :color="productStatusColor(record.status)"
+                        size="small"
+                      >
+                        草稿
+                      </a-tag>
+                      <span
+                        v-if="record.is_spu"
+                        class="var-parent-badge"
+                      >👪 SPU · {{ store.getChildren(record.id).length }} SKU</span>
+                      <span
+                        v-else-if="record.spu_id"
+                        class="var-child-badge"
+                      >
+                        {{ record.spec_value || 'SKU' }}
+                      </span>
+                    </div>
+                    <div class="product-meta">
+                      <span class="asin">{{ record.asin || '-' }}</span>
+                      <a-divider
+                        type="vertical"
+                        :margin="4"
+                      />
+                      <span class="sku">{{ record.sku }}</span>
+                      <a-divider
+                        type="vertical"
+                        :margin="4"
+                      />
+                      <span class="brand">{{ record.brand || '-' }}</span>
+                    </div>
+                    <div
+                      v-if="record.tags.length || (record.groups && record.groups.length)"
+                      class="tags-row"
+                    >
+                      <a-tag
+                        v-for="tag in record.tags"
+                        :key="tag"
+                        size="small"
+                        :color="productTagColor(tag)"
+                      >
+                        {{ tag }}
+                      </a-tag>
+                      <a-tag
+                        v-for="gid in (record.groups || [])"
+                        :key="'g-' + gid"
+                        size="small"
+                        :color="getGroupById(gid)?.color || 'default'"
+                      >
+                        📁 {{ getGroupById(gid)?.name || '未知分组' }}
+                      </a-tag>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </a-popover>
+          </template>
 
-    <!-- 重命名分组弹窗 -->
-    <a-modal
-      v-model:open="renameVisible"
-      title="重命名分组"
-      :footer="null"
-      :width="WINDOW_W.xs"
-      centered
-    >
-      <a-input v-model:value="renameValue" placeholder="新分组名称" @pressEnter="submitRename" />
-      <template #footer>
-        <a-button @click="renameVisible = false">取消</a-button>
-        <a-button type="primary" @click="submitRename">确定</a-button>
-      </template>
-    </a-modal>
+          <!-- 价格/成本 -->
+          <template v-else-if="column.dataIndex === 'price'">
+            <!-- 单品：投影唯一 SKU 的售价/成本 -->
+            <div
+              v-if="isSingleSkuSpu(record)"
+              class="price-cell price-cell-projected"
+            >
+              <span class="price">${{ singleSkuOf(record)!.price.toFixed(2) }}</span>
+              <span class="cost">成本 ${{ singleSkuOf(record)!.cost.toFixed(2) }}</span>
+            </div>
+            <!-- 多变体：价格区间 + SKU 数量 -->
+            <div
+              v-else-if="record.is_spu"
+              class="spu-summary-cell"
+            >
+              <span class="price">{{ spuPriceRange(record) }}</span>
+              <span class="sku-count">× {{ spuSkus(record).length }} SKU</span>
+            </div>
+            <div
+              v-else
+              class="price-cell"
+            >
+              <span class="price">${{ record.price.toFixed(2) }}</span>
+              <span class="cost">成本 ${{ record.cost.toFixed(2) }}</span>
+            </div>
+          </template>
+
+          <!-- 利润率 -->
+          <template v-else-if="column.dataIndex === 'margin'">
+            <span
+              v-if="isSingleSkuSpu(record)"
+              :class="['margin-badge', 'projected', bandOf('margin', singleSkuOf(record)!.margin)]"
+            >
+              {{ singleSkuOf(record)!.margin }}%
+            </span>
+            <span
+              v-else-if="record.is_spu"
+              class="cell-placeholder"
+            >—</span>
+            <span
+              v-else
+              :class="['margin-badge', bandOf('margin', record.margin)]"
+            >
+              {{ record.margin }}%
+            </span>
+          </template>
+
+          <!-- BSR -->
+          <template v-else-if="column.dataIndex === 'bsr'">
+            <span
+              v-if="isSingleSkuSpu(record)"
+              class="projected"
+            >
+              <template v-if="singleSkuOf(record)!.bsr">#{{ singleSkuOf(record)!.bsr!.toLocaleString() }}</template>
+              <template v-else>-</template>
+            </span>
+            <span
+              v-else-if="record.is_spu"
+              class="cell-placeholder"
+            >—</span>
+            <span v-else-if="record.bsr">#{{ record.bsr.toLocaleString() }}</span>
+            <span
+              v-else
+              class="text-muted"
+            >-</span>
+          </template>
+
+          <!-- 评分 -->
+          <template v-else-if="column.dataIndex === 'rating'">
+            <div
+              v-if="isSingleSkuSpu(record)"
+              class="rating-cell projected"
+            >
+              <span class="stars">{{ '★'.repeat(Math.floor(singleSkuOf(record)!.rating)) }}{{ '☆'.repeat(5 - Math.floor(singleSkuOf(record)!.rating)) }}</span>
+              <span class="rating-num">{{ singleSkuOf(record)!.rating }}</span>
+              <span class="review-count">({{ formatNumber(singleSkuOf(record)!.review_count) }})</span>
+            </div>
+            <div
+              v-else-if="record.is_spu"
+              class="cell-placeholder"
+            >
+              —
+            </div>
+            <div
+              v-else
+              class="rating-cell"
+            >
+              <span class="stars">{{ '★'.repeat(Math.floor(record.rating)) }}{{ '☆'.repeat(5 - Math.floor(record.rating)) }}</span>
+              <span class="rating-num">{{ record.rating }}</span>
+              <span class="review-count">({{ formatNumber(record.review_count) }})</span>
+            </div>
+          </template>
+
+          <!-- 库存 -->
+          <template v-else-if="column.dataIndex === 'stock'">
+            <!-- 单品：投影唯一 SKU 库存 -->
+            <div
+              v-if="isSingleSkuSpu(record)"
+              class="stock-cell projected"
+            >
+              <span class="fba-stock">FBA: {{ singleSkuOf(record)!.fba_stock }}</span>
+              <span
+                v-if="singleSkuOf(record)!.fbm_stock > 0"
+                class="fbm-stock"
+              >FBM: {{ singleSkuOf(record)!.fbm_stock }}</span>
+            </div>
+            <!-- 多变体：总库存汇总 -->
+            <div
+              v-else-if="record.is_spu"
+              class="spu-summary-cell"
+            >
+              <span class="fba-stock">总库存 {{ spuTotalStock(record) }}</span>
+              <span class="sku-count">× {{ spuSkus(record).length }} SKU</span>
+            </div>
+            <div
+              v-else
+              class="stock-cell"
+            >
+              <span class="fba-stock">FBA: {{ record.fba_stock }}</span>
+              <span
+                v-if="record.fbm_stock > 0"
+                class="fbm-stock"
+              >FBM: {{ record.fbm_stock }}</span>
+            </div>
+          </template>
+
+          <!-- 日均销量 -->
+          <template v-else-if="column.dataIndex === 'daily_sales_avg'">
+            <template v-if="isSingleSkuSpu(record)">
+              <strong class="projected">{{ singleSkuOf(record)!.daily_sales_avg }}</strong><span class="unit">/天</span>
+            </template>
+            <span
+              v-else-if="record.is_spu"
+              class="cell-placeholder"
+            >—</span>
+            <template v-else>
+              <strong>{{ record.daily_sales_avg }}</strong><span class="unit">/天</span>
+            </template>
+          </template>
+
+          <!-- Listing 状态 -->
+          <template v-else-if="column.dataIndex === 'listing_status'">
+            <a-tag
+              v-if="record.is_spu"
+              size="small"
+              color="purple"
+            >
+              SPU
+            </a-tag>
+            <a-badge
+              v-else
+              :status="listingStatusMap[record.listing_status]?.status || 'default'"
+              :text="listingStatusMap[record.listing_status]?.text || record.listing_status"
+            />
+          </template>
+
+          <!-- 操作 -->
+          <template v-else-if="column.dataIndex === 'actions'">
+            <a-space>
+              <!-- SPU：新增SKU + AIGC + Listing 优化 + 详情 + 编辑 + 删除 -->
+              <template v-if="record.is_spu">
+                <a-tooltip title="新增SKU">
+                  <a-button
+                    type="text"
+                    size="small"
+                    class="aigc-btn"
+                    @click="openAddChild(record)"
+                  >
+                    <PlusOutlined />
+                  </a-button>
+                </a-tooltip>
+                <!-- AIGC 媒体生成：SPU也可触发，用SPU公共文案作为模板 -->
+                <a-tooltip title="AIGC 媒体生成">
+                  <a-button
+                    type="text"
+                    size="small"
+                    class="aigc-btn"
+                    @click="handleAigcLaunch(record)"
+                  >
+                    <PictureOutlined />
+                  </a-button>
+                </a-tooltip>
+                <!-- Listing 优化：SPU可基于公共文案模板生成 Listing -->
+                <a-tooltip title="Listing 优化">
+                  <a-button
+                    type="text"
+                    size="small"
+                    class="listing-opt-btn"
+                    @click="handleListingOptimize(record)"
+                  >
+                    <FileTextOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="查看详情">
+                  <a-button
+                    type="text"
+                    size="small"
+                    @click="openDetailDrawer(record)"
+                  >
+                    <EyeOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="编辑SPU">
+                  <a-button
+                    type="text"
+                    size="small"
+                    @click="openEditModal(record)"
+                  >
+                    <EditOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-popconfirm
+                  title="删除SPU将同时删除其全部SKU，确定？"
+                  @confirm="handleDeleteParent(record)"
+                >
+                  <a-tooltip title="删除">
+                    <a-button
+                      type="text"
+                      size="small"
+                      danger
+                    >
+                      <DeleteOutlined />
+                    </a-button>
+                  </a-tooltip>
+                </a-popconfirm>
+              </template>
+              <!-- 独立产品（非父非子）：自我组化 + AIGC + Listing 优化 + 详情 + 编辑 + 删除 -->
+              <template v-else-if="!record.spu_id">
+                <a-tooltip title="提升为SPU（本产品将成为第一个 SKU）">
+                  <a-button
+                    type="text"
+                    size="small"
+                    class="aigc-btn"
+                    @click="openPromoteToGroup(record)"
+                  >
+                    <PlusOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="AIGC 媒体生成">
+                  <a-button
+                    type="text"
+                    size="small"
+                    class="aigc-btn"
+                    @click="handleAigcLaunch(record)"
+                  >
+                    <PictureOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip :title="record.status === 'draft' ? 'Listing 优化（草稿）' : 'Listing 优化'">
+                  <a-button
+                    type="text"
+                    size="small"
+                    :class="['listing-opt-btn', { 'is-draft': record.status === 'draft' }]"
+                    @click="handleListingOptimize(record)"
+                  >
+                    <FileTextOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="查看详情">
+                  <a-button
+                    type="text"
+                    size="small"
+                    @click="openDetailDrawer(record)"
+                  >
+                    <EyeOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="编辑">
+                  <a-button
+                    type="text"
+                    size="small"
+                    @click="openEditModal(record)"
+                  >
+                    <EditOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-popconfirm
+                  title="确定删除此产品？"
+                  @confirm="handleDelete(record.id)"
+                >
+                  <a-tooltip title="删除">
+                    <a-button
+                      type="text"
+                      size="small"
+                      danger
+                    >
+                      <DeleteOutlined />
+                    </a-button>
+                  </a-tooltip>
+                </a-popconfirm>
+              </template>
+              <!-- SKU：图片 + 详情 + 编辑 + 删除（SKU 无文案，无 Listing） -->
+              <template v-else>
+                <a-tooltip title="AIGC 媒体生成">
+                  <a-button
+                    type="text"
+                    size="small"
+                    class="aigc-btn"
+                    @click="handleAigcLaunch(record)"
+                  >
+                    <PictureOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="查看详情">
+                  <a-button
+                    type="text"
+                    size="small"
+                    @click="openDetailDrawer(record)"
+                  >
+                    <EyeOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="编辑">
+                  <a-button
+                    type="text"
+                    size="small"
+                    @click="openEditModal(record)"
+                  >
+                    <EditOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-popconfirm
+                  title="确定删除此产品？"
+                  @confirm="handleDelete(record.id)"
+                >
+                  <a-tooltip title="删除">
+                    <a-button
+                      type="text"
+                      size="small"
+                      danger
+                    >
+                      <DeleteOutlined />
+                    </a-button>
+                  </a-tooltip>
+                </a-popconfirm>
+              </template>
+            </a-space>
+          </template>
+        </template>
+      </a-table>
+
+      <!-- 新增/编辑产品弹窗 -->
+      <ProductFormModal
+        v-model:open="modalVisible"
+        :editing-id="editingId"
+        @saved="onSaved"
+      />
+
+      <!-- SKU 增删弹窗 -->
+      <SkuFormModal
+        v-model:open="childModalVisible"
+        :editing-id="childEditingId"
+        :parent-id="childParentId"
+        @saved="onSaved"
+      />
+
+      <!-- 提升为 SPU 弹窗 -->
+      <PromoteSkuModal
+        v-model:open="promoteModalVisible"
+        :product-id="promoteTargetId"
+        @saved="onSaved"
+      />
+
+      <!-- 详情抽屉 -->
+      <a-drawer
+        v-model:open="drawerVisible"
+        :title="currentDetail?.title || '产品详情'"
+        :width="WINDOW_W.md"
+        placement="right"
+      >
+        <template v-if="currentDetail">
+          <!-- ★ 详情 / 差评 双 tab（第 289 轮 P0）：默认停在「详情」，
+             不打扰既有阅读路径；差评 tab 上有条数 / 缺口角标。 -->
+          <a-tabs
+            v-model:active-key="detailTab"
+            size="small"
+            class="pl-detail-tabs"
+          >
+            <a-tab-pane key="detail">
+              <template #tab>
+                <span>🗂 详情</span>
+              </template>
+              <!-- 主图 -->
+              <div class="detail-main-image">
+                <img
+                  v-if="currentDetail.main_image"
+                  :src="currentDetail.main_image"
+                  alt="主图"
+                  @error="onImgError"
+                >
+                <div
+                  v-else
+                  class="detail-image-placeholder"
+                >
+                  🖼️ 暂无主图
+                </div>
+                <div
+                  v-if="currentDetail.images?.length"
+                  class="detail-thumbs"
+                >
+                  <img
+                    v-for="(img, i) in currentDetail.images"
+                    :key="i"
+                    :src="img"
+                    alt="附图"
+                    loading="lazy"
+                    @error="onImgError"
+                  >
+                </div>
+              </div>
+
+              <!-- 竞品管理入口（产品详情维护对标竞品；监控驱动统一在下方"关联竞品·定向监控"区） -->
+              <div style="margin-bottom: var(--space-12); display:flex; gap:var(--space-8); flex-wrap:wrap; align-items:center">
+                <a-button
+                  type="primary"
+                  size="small"
+                  @click="openCompetitorManager"
+                >
+                  <TeamOutlined /> 对标竞品管理
+                </a-button>
+              </div>
+
+              <a-descriptions
+                :column="1"
+                bordered
+                size="small"
+              >
+                <a-descriptions-item label="ASIN">
+                  <code>{{ detailDisplay.asin || '-' }}</code>
+                </a-descriptions-item>
+                <a-descriptions-item label="SKU">
+                  {{ detailDisplay.sku }}
+                </a-descriptions-item>
+                <a-descriptions-item label="品牌">
+                  {{ detailDisplay.brand || '-' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="售价">
+                  ${{ detailDisplay.price.toFixed(2) }}
+                </a-descriptions-item>
+                <a-descriptions-item label="成本">
+                  ${{ detailDisplay.cost.toFixed(2) }}
+                </a-descriptions-item>
+                <a-descriptions-item label="利润率">
+                  <span :class="['margin-badge', bandOf('margin', detailDisplay.margin)]">
+                    {{ detailDisplay.margin }}%
+                  </span>
+                </a-descriptions-item>
+                <a-descriptions-item label="ROI">
+                  {{ detailDisplay.roi }}%
+                </a-descriptions-item>
+                <a-descriptions-item label="BSR">
+                  #{{ detailDisplay.bsr?.toLocaleString() || '-' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="评分">
+                  {{ detailDisplay.rating }} ({{ detailDisplay.review_count }} 评论)
+                </a-descriptions-item>
+                <a-descriptions-item label="FBA 库存">
+                  {{ detailDisplay.fba_stock }}
+                </a-descriptions-item>
+                <a-descriptions-item label="FBM 库存">
+                  {{ detailDisplay.fbm_stock }}
+                </a-descriptions-item>
+                <a-descriptions-item label="日均销量">
+                  {{ detailDisplay.daily_sales_avg }}/天
+                </a-descriptions-item>
+                <a-descriptions-item label="配送">
+                  {{ detailDisplay.fulfillment_type }}
+                </a-descriptions-item>
+                <a-descriptions-item label="标签">
+                  <a-tag
+                    v-for="t in detailDisplay.tags"
+                    :key="t"
+                  >
+                    {{ t }}
+                  </a-tag>
+                </a-descriptions-item>
+                <a-descriptions-item label="备注">
+                  {{ detailDisplay.notes || '-' }}
+                </a-descriptions-item>
+              </a-descriptions>
+
+              <!-- Listing 信息 -->
+              <div
+                v-if="detailDisplay.generated_title || detailDisplay.generated_bullets?.length || detailDisplay.description || detailDisplay.seo_score"
+                class="detail-section"
+              >
+                <h4>
+                  📝 Listing 信息
+                  <a-tag
+                    v-if="detailDisplay.seo_score"
+                    :color="getSeoScoreColor(detailDisplay.seo_score)"
+                    size="small"
+                  >
+                    SEO {{ detailDisplay.seo_score }}
+                  </a-tag>
+                  <a-tag
+                    v-if="detailDisplay.listing_version"
+                    color="default"
+                    size="small"
+                  >
+                    v{{ detailDisplay.listing_version }}
+                  </a-tag>
+                </h4>
+
+                <!-- 标题对比 -->
+                <div
+                  v-if="detailDisplay.generated_title"
+                  class="listing-block"
+                >
+                  <div class="listing-label">
+                    产品标题
+                  </div>
+                  <div class="listing-title">
+                    {{ detailDisplay.generated_title }}
+                  </div>
+                </div>
+
+                <!-- 五点描述 -->
+                <div
+                  v-if="detailDisplay.generated_bullets?.length"
+                  class="listing-block"
+                >
+                  <div class="listing-label">
+                    五点描述 (Bullet Points)
+                  </div>
+                  <div
+                    v-for="(b, i) in detailDisplay.generated_bullets"
+                    :key="i"
+                    class="bullet-item"
+                  >
+                    <div class="bullet-title">
+                      ▸ {{ b.title }}
+                    </div>
+                    <div class="bullet-content">
+                      {{ b.content }}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 商品描述 -->
+                <div
+                  v-if="detailDisplay.description"
+                  class="listing-block"
+                >
+                  <div class="listing-label">
+                    商品描述 (Description)
+                  </div>
+                  <div class="listing-desc">
+                    {{ detailDisplay.description }}
+                  </div>
+                </div>
+
+                <!-- 竞品 ASIN + 定向监控态（监控驱动统一在此：单行/批量） -->
+                <div
+                  v-if="detailDisplay.competitor_asins?.length"
+                  class="listing-block"
+                >
+                  <div class="cm-section-head">
+                    <div class="listing-label">
+                      关联竞品 · 定向监控
+                    </div>
+                    <a-button
+                      size="small"
+                      type="link"
+                      class="cm-batch-btn"
+                      :loading="inheritingMonitor"
+                      :disabled="!unmonitoredCompetitorCount"
+                      @click="inheritMonitorFromCompetitors(currentDetail)"
+                    >
+                      <FundOutlined /> 全部开启监控{{ unmonitoredCompetitorCount ? `（${unmonitoredCompetitorCount}）` : '（已全监控）' }}
+                    </a-button>
+                  </div>
+                  <div class="competitor-mon-list">
+                    <div
+                      v-for="c in detailDisplay.competitor_asins"
+                      :key="c"
+                      class="competitor-mon-row"
+                    >
+                      <img
+                        v-if="productCompetitorMap[c]?.main_image"
+                        class="cm-img"
+                        :src="productCompetitorMap[c]?.main_image"
+                        :alt="c"
+                        loading="lazy"
+                        @error="(e: Event) => { (e.target as HTMLImageElement).style.display = 'none'; const fb = (e.target as HTMLImageElement).nextElementSibling as HTMLElement | null; if (fb) fb.style.display = 'inline-flex'; }"
+                      >
+                      <span
+                        class="cm-img-fb"
+                        :style="{ display: productCompetitorMap[c]?.main_image ? 'none' : 'inline-flex' }"
+                      >🏷️</span>
+                      <span class="cm-asin">{{ c }}</span>
+                      <a-button
+                        v-if="mpStore.isAsinInPool(c)"
+                        type="link"
+                        size="small"
+                        danger
+                        class="cm-mon-act"
+                        @click="removeMonitoredCompetitor(c)"
+                      >
+                        停止监控
+                      </a-button>
+                      <a-button
+                        v-else
+                        type="link"
+                        size="small"
+                        class="cm-mon-act"
+                        @click="monitorOneCompetitor(c)"
+                      >
+                        开启监控
+                      </a-button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- SKU 列表（SPU 详情） -->
+              <div
+                v-if="currentDetail.is_spu && detailSkus.length"
+                style="margin-top: var(--space-16)"
+              >
+                <h4>SKU ({{ currentDetail.spu_theme || '未设置规格主题' }})</h4>
+                <a-table
+                  :columns="variationColumns"
+                  :data-source="detailSkus"
+                  :pagination="false"
+                  size="small"
+                  row-key="asin"
+                />
+              </div>
+            </a-tab-pane>
+
+            <!-- ★ 差评 tab：SPU 只是聚合壳，真正的键在 SKU 的 ASIN 上 -->
+            <a-tab-pane key="reviews">
+              <template #tab>
+                <span>
+                  📉 差评
+                  <span
+                    v-if="reviewResult?.total"
+                    class="pl-tab-count"
+                  >{{ reviewResult.total }}</span>
+                  <span
+                    v-else-if="reviewResult && reviewResult.empty_state && reviewResult.empty_state !== 'no_reviews'"
+                    class="pl-tab-warn"
+                    title="关联有缺口，进去看说明"
+                  >!</span>
+                </span>
+              </template>
+
+              <div class="pl-review-bar">
+                <a-switch
+                  v-model:checked="reviewOnlyNegative"
+                  size="small"
+                  @change="reloadProductReviews"
+                />
+                <span class="pl-review-bar-label">只看中差评（≤3 星）</span>
+                <a-button
+                  size="small"
+                  type="text"
+                  :loading="reviewLoading"
+                  @click="reloadProductReviews"
+                >
+                  <ReloadOutlined /> 刷新
+                </a-button>
+              </div>
+
+              <div
+                v-if="reviewResult"
+                class="pl-review-scope"
+              >
+                关联口径：{{ currentDetail.is_spu ? '本 SPU' : '所属 SPU' }}名下
+                <b>{{ reviewResult.sku_count }}</b> 个 SKU /
+                <b>{{ reviewResult.asin_count }}</b> 个 ASIN（按 SKU 的 ASIN
+                <template v-if="reviewResult.asin_count === 0">
+                  ，为空时
+                </template>匹配）
+              </div>
+
+              <a-alert
+                v-if="reviewError"
+                type="error"
+                show-icon
+                :message="reviewError"
+                class="pl-review-alert"
+              />
+
+              <div
+                v-else-if="reviewLoading && !reviewResult"
+                class="pl-review-empty"
+              >
+                <a-spin size="small" /> 正在按 SKU 的 ASIN 关联差评…
+              </div>
+
+              <div
+                v-else-if="reviewEmpty"
+                :class="['pl-review-empty', reviewEmpty.tone]"
+              >
+                <div class="pl-review-empty-icon">
+                  {{ reviewEmpty.icon }}
+                </div>
+                <div class="pl-review-empty-title">
+                  {{ reviewEmpty.title }}
+                </div>
+                <div class="pl-review-empty-desc">
+                  {{ reviewEmpty.desc }}
+                </div>
+              </div>
+
+              <div
+                v-else
+                class="pl-review-list"
+              >
+                <div
+                  v-for="r in reviewResult?.reviews ?? []"
+                  :key="r.id"
+                  class="pl-review-item"
+                >
+                  <div class="pl-review-top">
+                    <span class="pl-review-stars">{{ '★'.repeat(Math.max(0, r.rating)) }}<span class="pl-stars-dim">{{ '★'.repeat(Math.max(0, 5 - (r.rating || 0))) }}</span></span>
+                    <span class="pl-review-date">{{ (r.review_at || '').slice(0, 10) || '-' }}</span>
+                    <a-tag
+                      v-if="r.source === 'mock_seed'"
+                      color="orange"
+                      size="small"
+                    >
+                      演示数据
+                    </a-tag>
+                  </div>
+                  <div class="pl-review-title-line">
+                    {{ r.title || '（无标题）' }}
+                  </div>
+                  <div class="pl-review-body">
+                    {{ r.body || '—' }}
+                  </div>
+                  <div class="pl-review-meta">
+                    <span>{{ r.buyer_name || '匿名买家' }}</span>
+                    <span>·</span>
+                    <span>{{ REVIEW_STATUS_LABELS[r.status] || r.status || '未处理' }}</span>
+                    <template v-if="r.match_kind === 'asin'">
+                      <span>·</span><span>命中 ASIN <code>{{ r.asin }}</code></span>
+                    </template>
+                    <template v-else-if="r.match_kind === 'sku_code'">
+                      <span>·</span><span>命中 SKU 码 <code>{{ r.sku }}</code></span>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </a-tab-pane>
+          </a-tabs>
+        </template>
+      </a-drawer>
+
+      <!-- 竞品管理（入口2：产品详情持久维护对标竞品） -->
+      <CompetitorManager
+        v-model:open="cmOpen"
+        :owner="cmOwner"
+        owner-type="product"
+        @saved="onCmSaved"
+      />
+
+      <!-- 文件导入弹窗 -->
+      <a-modal
+        v-model:open="showImportModal"
+        title="批量导入产品"
+        :width="WINDOW_W.lg"
+        :footer="null"
+      >
+        <div class="import-area">
+          <a-upload-dragger
+            :file-list="importFileList"
+            :before-upload="handleImportFile"
+            :remove="() => { importFileList = []; return true }"
+            accept=".json,.csv"
+            :max-count="1"
+          >
+            <p class="ant-upload-drag-icon">
+              <InboxOutlined />
+            </p>
+            <p class="ant-upload-text">
+              点击或拖拽文件到此区域上传
+            </p>
+            <p class="ant-upload-hint">
+              支持 JSON / CSV 格式<br>
+              CSV 列：asin, sku, title, brand, category, price, cost, fba_stock...
+            </p>
+          </a-upload-dragger>
+          <div
+            v-if="importResult"
+            class="import-result"
+            :class="{ error: importResult.failed > 0 }"
+          >
+            <a-alert
+              :type="importResult.failed > 0 ? 'warning' : 'success'"
+              :message="`导入完成：成功 ${importResult.success} 条${importResult.failed > 0 ? `，失败 ${importResult.failed} 条` : ''}`"
+            >
+              <template
+                v-if="importResult.errors.length"
+                #description
+              >
+                <ul class="error-list">
+                  <li
+                    v-for="(err, i) in importResult.errors.slice(0, 5)"
+                    :key="i"
+                  >
+                    {{ err }}
+                  </li>
+                </ul>
+              </template>
+            </a-alert>
+          </div>
+        </div>
+      </a-modal>
+
+      <!-- 新建分组弹窗 -->
+      <a-modal
+        v-model:open="createGroupVisible"
+        title="新建产品分组"
+        :footer="null"
+        :width="WINDOW_W.xs"
+        centered
+      >
+        <a-form layout="vertical">
+          <a-form-item label="分组名称">
+            <a-input
+              v-model:value="createGroupName"
+              placeholder="如：高利润小家电、潜力赛道"
+              @press-enter="submitCreateGroup"
+            />
+          </a-form-item>
+          <a-form-item label="标签颜色">
+            <div class="pl-color-picker">
+              <span
+                v-for="c in GROUP_COLORS"
+                :key="c"
+                class="pl-color-swatch"
+                :class="{ active: createGroupColor === c }"
+                :style="{ background: c }"
+                @click="createGroupColor = c"
+              />
+            </div>
+          </a-form-item>
+        </a-form>
+        <template #footer>
+          <a-button @click="createGroupVisible = false">
+            取消
+          </a-button>
+          <a-button
+            type="primary"
+            @click="submitCreateGroup"
+          >
+            创建
+          </a-button>
+        </template>
+      </a-modal>
+
+      <!-- 重命名分组弹窗 -->
+      <a-modal
+        v-model:open="renameVisible"
+        title="重命名分组"
+        :footer="null"
+        :width="WINDOW_W.xs"
+        centered
+      >
+        <a-input
+          v-model:value="renameValue"
+          placeholder="新分组名称"
+          @press-enter="submitRename"
+        />
+        <template #footer>
+          <a-button @click="renameVisible = false">
+            取消
+          </a-button>
+          <a-button
+            type="primary"
+            @click="submitRename"
+          >
+            确定
+          </a-button>
+        </template>
+      </a-modal>
     </div>
   </div>
 </template>

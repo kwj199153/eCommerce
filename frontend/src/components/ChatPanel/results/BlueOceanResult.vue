@@ -5,7 +5,9 @@
       <div class="header-left">
         <span class="result-icon">🌊</span>
         <span class="result-title">蓝海挖掘结果</span>
-        <a-tag color="blue">{{ data.products?.length || 0 }} 个候选</a-tag>
+        <a-tag color="blue">
+          {{ data.products?.length || 0 }} 个候选
+        </a-tag>
       </div>
       <div class="header-right">
         <!-- 批量保存到选品库（始终可见，勾选数为 0 时降级为非主按钮 + 点击提示） -->
@@ -16,7 +18,11 @@
         >
           <SaveOutlined /> 保存到选品库{{ selectedRowKeys.length > 0 ? ` (${selectedRowKeys.length})` : '' }}
         </a-button>
-        <a-button type="text" size="small" @click="$emit('close')">
+        <a-button
+          type="text"
+          size="small"
+          @click="$emit('close')"
+        >
           <CloseOutlined />
         </a-button>
       </div>
@@ -25,34 +31,50 @@
     <!-- 统计概览 -->
     <div class="stats-row">
       <div class="stat-card stat-excellent">
-        <div class="stat-value">{{ data.summary?.high_potential || 0 }}</div>
-        <div class="stat-label">优质蓝海</div>
+        <div class="stat-value">
+          {{ data.summary?.high_potential || 0 }}
+        </div>
+        <div class="stat-label">
+          优质蓝海
+        </div>
       </div>
       <div class="stat-card stat-medium">
-        <div class="stat-value">{{ data.summary?.medium_potential || 0 }}</div>
-        <div class="stat-label">一般潜力</div>
+        <div class="stat-value">
+          {{ data.summary?.medium_potential || 0 }}
+        </div>
+        <div class="stat-label">
+          一般潜力
+        </div>
       </div>
       <div class="stat-card stat-poor">
-        <div class="stat-value">{{ data.summary?.high_competition || 0 }}</div>
-        <div class="stat-label">高竞争</div>
+        <div class="stat-value">
+          {{ data.summary?.high_competition || 0 }}
+        </div>
+        <div class="stat-label">
+          高竞争
+        </div>
       </div>
       <div class="stat-card stat-saved">
-        <div class="stat-value">{{ savedCount }}</div>
-        <div class="stat-label">已保存</div>
+        <div class="stat-value">
+          {{ savedCount }}
+        </div>
+        <div class="stat-label">
+          已保存
+        </div>
       </div>
     </div>
 
     <!-- 商品表格（首页精简视图：6 列 + 复选框，次要指标行 hover 悬浮查看） -->
     <div class="table-wrap">
       <a-table
-        :dataSource="data.products"
+        :data-source="data.products"
         :columns="tableColumns"
         :pagination="{ pageSize: 8, size: 'small' }"
         size="small"
         :scroll="{ y: 280 }"
-        rowKey="asin"
+        row-key="asin"
         :row-selection="rowSelection"
-        :customRow="onRow"
+        :custom-row="onRow"
       >
         <!-- 各列自定义渲染 -->
         <template #bodyCell="{ column, record }">
@@ -66,8 +88,11 @@
                 alt=""
                 loading="lazy"
                 @error="onImgError"
-              />
-              <span class="title-thumb-ph" v-else>🖼️</span>
+              >
+              <span
+                v-else
+                class="title-thumb-ph"
+              >🖼️</span>
               <div class="title-main">
                 <a-tooltip :title="record.title">
                   <a
@@ -104,15 +129,31 @@
             <a-tooltip placement="topLeft">
               <template #title>
                 <div class="roi-tip">
-                  <div class="roi-tip-title">📊 成本 & ROI 明细</div>
-                  <div class="roi-tip-row"><span>售价</span><b>${{ money(record.price) }}</b></div>
-                  <div class="roi-tip-row"><span>采购成本</span><b>${{ money(record.cost_price) }}</b></div>
-                  <div class="roi-tip-row"><span>头程物流</span><b>${{ money(record.freight_cost ?? estFreight(record)) }}</b></div>
-                  <div class="roi-tip-row"><span>平台佣金</span><b>${{ money(commission(record)) }}</b></div>
-                  <div class="roi-tip-row"><span>FBA 配送费</span><b>${{ money(record.fba_fees) }}</b></div>
-                  <div class="roi-tip-divider"></div>
-                  <div class="roi-tip-row net"><span>预估净利</span><b>${{ money(record.net_profit ?? estNet(record)) }}</b></div>
-                  <div class="roi-tip-row total"><span>ROI</span><b :class="roiClass(record.roi_estimated)">{{ record.roi_estimated }}%</b></div>
+                  <div class="roi-tip-title">
+                    📊 成本 & ROI 明细
+                  </div>
+                  <div class="roi-tip-row">
+                    <span>售价</span><b>${{ money(record.price) }}</b>
+                  </div>
+                  <div class="roi-tip-row">
+                    <span>采购成本</span><b>${{ money(record.cost_price) }}</b>
+                  </div>
+                  <div class="roi-tip-row">
+                    <span>头程物流</span><b>${{ money(record.freight_cost ?? estFreight(record)) }}</b>
+                  </div>
+                  <div class="roi-tip-row">
+                    <span>平台佣金</span><b>${{ money(commission(record)) }}</b>
+                  </div>
+                  <div class="roi-tip-row">
+                    <span>FBA 配送费</span><b>${{ money(record.fba_fees) }}</b>
+                  </div>
+                  <div class="roi-tip-divider" />
+                  <div class="roi-tip-row net">
+                    <span>预估净利</span><b>${{ money(record.net_profit ?? estNet(record)) }}</b>
+                  </div>
+                  <div class="roi-tip-row total">
+                    <span>ROI</span><b :class="roiClass(record.roi_estimated)">{{ record.roi_estimated }}%</b>
+                  </div>
                 </div>
               </template>
               <span :class="['roi-val', roiClass(record.roi_estimated)]">{{ record.roi_estimated }}%</span>
@@ -128,7 +169,10 @@
                 :show-info="false"
                 size="small"
               />
-              <span class="score-value" :style="{ color: getScoreColor(record.blue_ocean_score) }">
+              <span
+                class="score-value"
+                :style="{ color: getScoreColor(record.blue_ocean_score) }"
+              >
                 {{ record.blue_ocean_score }}
               </span>
             </div>
@@ -137,7 +181,12 @@
           <!-- 操作列：详情（直达亚马逊/维护对标竞品集合入口已收敛到自有产品库详情页） -->
           <template v-else-if="column.key === 'action'">
             <div class="action-cell">
-              <a-button type="link" size="small" class="detail-btn" @click.stop="openDetail(record)">
+              <a-button
+                type="link"
+                size="small"
+                class="detail-btn"
+                @click.stop="openDetail(record)"
+              >
                 详情
               </a-button>
             </div>
@@ -156,21 +205,40 @@
           <span class="hover-card-tag">{{ hoverCard.record.blue_ocean_score }} 分</span>
         </div>
         <div class="hover-card-grid">
-          <div v-for="it in secondaryItems(hoverCard.record)" :key="it.label" class="hover-card-item">
+          <div
+            v-for="it in secondaryItems(hoverCard.record)"
+            :key="it.label"
+            class="hover-card-item"
+          >
             <span class="hc-label">{{ it.label }}</span>
-            <span class="hc-value" :class="it.cls">{{ it.value }}</span>
+            <span
+              class="hc-value"
+              :class="it.cls"
+            >{{ it.value }}</span>
           </div>
         </div>
-        <div class="hover-card-foot" @mouseenter.stop @click.stop="openDetail(hoverCard.record)">
+        <div
+          class="hover-card-foot"
+          @mouseenter.stop
+          @click.stop="openDetail(hoverCard.record)"
+        >
           🔍 查看完整数据 <b>›</b>
         </div>
       </div>
     </div>
 
     <!-- AI 分析报告摘要 -->
-    <div v-if="data.report" class="report-summary">
-      <div class="report-title">📊 AI 分析洞察</div>
-      <div class="report-content" v-html="renderMarkdown(data.report)"></div>
+    <div
+      v-if="data.report"
+      class="report-summary"
+    >
+      <div class="report-title">
+        📊 AI 分析洞察
+      </div>
+      <div
+        class="report-content"
+        v-html="renderMarkdown(data.report)"
+      />
     </div>
 
     <!-- 保存成功弹窗 -->
@@ -189,20 +257,38 @@
         >
           <template #extra>
             <a-space>
-              <a-button @click="successModalVisible = false">继续选品</a-button>
-              <a-button type="primary" @click="goToProductLibrary">
+              <a-button @click="successModalVisible = false">
+                继续选品
+              </a-button>
+              <a-button
+                type="primary"
+                @click="goToProductLibrary"
+              >
                 <ExportOutlined /> 去选品库评审
               </a-button>
             </a-space>
           </template>
         </a-result>
 
-        <div v-if="lastSavedProducts.length > 0" class="saved-list">
-          <div class="saved-list-title">本次保存的候选：</div>
-          <div v-for="p in lastSavedProducts" :key="p.asin" class="saved-item">
-            <a-tag color="blue">{{ p.asin }}</a-tag>
+        <div
+          v-if="lastSavedProducts.length > 0"
+          class="saved-list"
+        >
+          <div class="saved-list-title">
+            本次保存的候选：
+          </div>
+          <div
+            v-for="p in lastSavedProducts"
+            :key="p.asin"
+            class="saved-item"
+          >
+            <a-tag color="blue">
+              {{ p.asin }}
+            </a-tag>
             <span class="saved-item-title">{{ p.title.slice(0, 40) }}...</span>
-            <a-tag color="blue">待评审</a-tag>
+            <a-tag color="blue">
+              待评审
+            </a-tag>
           </div>
         </div>
       </div>
@@ -220,13 +306,25 @@
           已勾选 <b>{{ selectedRowKeys.length }}</b> 个候选，将存入选品库（待评审状态），可选择加入的分组（可多选，一个候选可归入多个分组）：
         </div>
 
-        <a-tabs v-model:activeKey="poolTab" size="small">
+        <a-tabs
+          v-model:active-key="poolTab"
+          size="small"
+        >
           <!-- 已有分组 -->
-          <a-tab-pane key="existing" tab="已有分组">
-            <div v-if="candidateStore.groups.length === 0" class="pool-empty">
+          <a-tab-pane
+            key="existing"
+            tab="已有分组"
+          >
+            <div
+              v-if="candidateStore.groups.length === 0"
+              class="pool-empty"
+            >
               暂无分组，可到「新建分组」页签创建，或不选分组直接保存。
             </div>
-            <div v-else class="pool-group-list">
+            <div
+              v-else
+              class="pool-group-list"
+            >
               <div
                 v-for="g in candidateStore.groups"
                 :key="g.id"
@@ -234,20 +332,33 @@
                 :class="{ selected: selectedGroupIds.includes(g.id) }"
                 @click="toggleGroupSelect(g.id)"
               >
-                <span class="pool-color-dot" :style="{ background: g.color }"></span>
+                <span
+                  class="pool-color-dot"
+                  :style="{ background: g.color }"
+                />
                 <span class="pool-group-name">{{ g.name }}</span>
                 <span class="pool-group-count">{{ candidateStore.groupProductCount[g.id] || 0 }} 个候选</span>
-                <a-checkbox :checked="selectedGroupIds.includes(g.id)" @click.stop="toggleGroupSelect(g.id)" />
+                <a-checkbox
+                  :checked="selectedGroupIds.includes(g.id)"
+                  @click.stop="toggleGroupSelect(g.id)"
+                />
               </div>
             </div>
           </a-tab-pane>
 
           <!-- 新建分组 -->
-          <a-tab-pane key="new" tab="新建分组">
+          <a-tab-pane
+            key="new"
+            tab="新建分组"
+          >
             <div class="pool-new-form">
               <a-form layout="vertical">
                 <a-form-item label="分组名称">
-                  <a-input v-model:value="newGroupName" placeholder="如：高利润小家电、潜力赛道 Q4" @pressEnter="handleCreateGroup" />
+                  <a-input
+                    v-model:value="newGroupName"
+                    placeholder="如：高利润小家电、潜力赛道 Q4"
+                    @press-enter="handleCreateGroup"
+                  />
                 </a-form-item>
                 <a-form-item label="标签颜色">
                   <div class="pool-color-picker">
@@ -258,11 +369,15 @@
                       :class="{ active: newGroupColor === c }"
                       :style="{ background: c }"
                       @click="newGroupColor = c"
-                    ></span>
+                    />
                   </div>
                 </a-form-item>
               </a-form>
-              <a-button block type="dashed" @click="handleCreateGroup">
+              <a-button
+                block
+                type="dashed"
+                @click="handleCreateGroup"
+              >
                 <PlusOutlined /> 新建并选中此分组
               </a-button>
             </div>
@@ -271,7 +386,9 @@
       </div>
 
       <template #footer>
-        <a-button @click="poolModalVisible = false">取消</a-button>
+        <a-button @click="poolModalVisible = false">
+          取消
+        </a-button>
         <a-button
           type="primary"
           :loading="poolSaving"

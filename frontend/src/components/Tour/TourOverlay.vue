@@ -7,7 +7,10 @@
     ★ 洞比目标元素**大一圈**（pad）：紧贴边缘会让高亮看起来像被裁了一半，
       尤其是目标自身带边框的时候。
   -->
-  <div v-if="rect" class="tour-overlay">
+  <div
+    v-if="rect"
+    class="tour-overlay"
+  >
     <svg
       class="tour-mask-svg"
       :width="vw"
@@ -16,9 +19,18 @@
       preserveAspectRatio="none"
     >
       <defs>
-        <mask :id="maskId" maskUnits="userSpaceOnUse">
+        <mask
+          :id="maskId"
+          maskUnits="userSpaceOnUse"
+        >
           <!-- 白 = 保留遮罩，黑 = 挖掉 -->
-          <rect x="0" y="0" :width="vw" :height="vh" fill="#fff" />
+          <rect
+            x="0"
+            y="0"
+            :width="vw"
+            :height="vh"
+            fill="#fff"
+          />
           <rect
             :x="hole.x"
             :y="hole.y"
@@ -41,7 +53,10 @@
     </svg>
 
     <!-- 高亮描边：ring 单独一层，方便加呼吸感的 box-shadow 而不影响 mask 的几何 -->
-    <div class="tour-ring" :style="ringStyle" />
+    <div
+      class="tour-ring"
+      :style="ringStyle"
+    />
   </div>
 </template>
 

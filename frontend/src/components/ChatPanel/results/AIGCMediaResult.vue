@@ -4,9 +4,15 @@
       <div class="header-left">
         <span class="result-icon">{{ headerIcon }}</span>
         <span class="result-title">{{ headerTitle }}</span>
-        <a-tag color="blue">{{ result.product_name || '-' }}</a-tag>
+        <a-tag color="blue">
+          {{ result.product_name || '-' }}
+        </a-tag>
       </div>
-      <a-button type="text" size="small" @click="$emit('close')">
+      <a-button
+        type="text"
+        size="small"
+        @click="$emit('close')"
+      >
         <CloseOutlined />
       </a-button>
     </div>
@@ -38,7 +44,10 @@
           :message="`其中 ${result.failed.length} 类素材未生成成功`"
         >
           <template #description>
-            <div v-for="(f, i) in result.failed" :key="i">
+            <div
+              v-for="(f, i) in result.failed"
+              :key="i"
+            >
               {{ f.type_label || f.type }}：{{ f.error }}
             </div>
           </template>
@@ -53,7 +62,10 @@
         />
       </template>
 
-      <div v-if="(result.generated_assets || []).length" class="asset-preview-grid">
+      <div
+        v-if="(result.generated_assets || []).length"
+        class="asset-preview-grid"
+      >
         <div
           v-for="(a, i) in result.generated_assets || []"
           :key="a.id || i"
@@ -61,9 +73,17 @@
           :class="{ selected: isSelected(a), archived: isArchived(a) }"
           @click="toggleSelect(a)"
         >
-          <img :src="a.url" :alt="a.desc" loading="lazy" @error="onImgError" />
+          <img
+            :src="a.url"
+            :alt="a.desc"
+            loading="lazy"
+            @error="onImgError"
+          >
           <!-- 左上角勾选：只有勾中的才会进归档 -->
-          <span class="asset-pick" :class="{ on: isSelected(a), done: isArchived(a) }">
+          <span
+            class="asset-pick"
+            :class="{ on: isSelected(a), done: isArchived(a) }"
+          >
             <CheckOutlined v-if="isSelected(a)" />
             <CheckCircleFilled v-else-if="isArchived(a)" />
           </span>
@@ -74,21 +94,34 @@
         </div>
       </div>
       <!-- 空态：不放任何占位图（空状态优于虚构默认） -->
-      <div v-else-if="!result.degraded" class="asset-empty">
+      <div
+        v-else-if="!result.degraded"
+        class="asset-empty"
+      >
         <span class="asset-empty-icon">🖼️</span>
         <span>本次未生成任何素材，可调整素材类型后重试</span>
       </div>
       <div class="result-footer">
-        <a-button type="primary" :disabled="!selectedAssets.length" @click="openArchive">
-          <SaveOutlined /> 归档到素材库<template v-if="selectedAssets.length">（已选 {{ selectedAssets.length }} 张）</template>
-          <template v-else-if="archivedCount">（已归档 {{ archivedCount }}）</template>
+        <a-button
+          type="primary"
+          :disabled="!selectedAssets.length"
+          @click="openArchive"
+        >
+          <SaveOutlined /> 归档到素材库<template v-if="selectedAssets.length">
+            （已选 {{ selectedAssets.length }} 张）
+          </template>
+          <template v-else-if="archivedCount">
+            （已归档 {{ archivedCount }}）
+          </template>
         </a-button>
         <a-button
           v-if="(result.generated_assets || []).length"
           type="link"
           size="small"
           @click="toggleAll"
-        >{{ allSelected ? '取消全选' : '全选' }}</a-button>
+        >
+          {{ allSelected ? '取消全选' : '全选' }}
+        </a-button>
         <span class="footer-hint">勾选要保留的素材后归档，保存后可在「资料库 → 营销素材库」统一分组管理</span>
       </div>
     </template>
@@ -98,13 +131,23 @@
          读的是同一个引用，改一处两端自动同步，无需额外同步逻辑。 -->
     <template v-else-if="result.type === 'video_script_gen'">
       <div class="script-overview">
-        <a-space :size="12" wrap>
-          <a-tag color="cyan">{{ result.platform_label }}</a-tag>
+        <a-space
+          :size="12"
+          wrap
+        >
+          <a-tag color="cyan">
+            {{ result.platform_label }}
+          </a-tag>
           <a-tag>{{ styleLabel(result.video_style) }}</a-tag>
-          <a-tag color="blue">总时长 {{ result.total_duration }}s</a-tag>
+          <a-tag color="blue">
+            总时长 {{ result.total_duration }}s
+          </a-tag>
           <a-tag>{{ (result.storyboard || []).length }} 个镜头</a-tag>
         </a-space>
-        <div class="script-summary" v-html="renderMarkdown(result.script_summary)"></div>
+        <div
+          class="script-summary"
+          v-html="renderMarkdown(result.script_summary)"
+        />
       </div>
 
       <a-table
@@ -122,7 +165,10 @@
           <template v-else-if="column.key === 'duration'">
             <a-input-number
               v-model:value="record.duration"
-              :min="1" :max="60" size="small" style="width: 100%"
+              :min="1"
+              :max="60"
+              size="small"
+              style="width: 100%"
               addon-after="s"
               @change="touchScript"
             />
@@ -131,7 +177,8 @@
             <a-textarea
               v-model:value="record.visual"
               :auto-size="{ minRows: 1, maxRows: 3 }"
-              size="small" placeholder="画面描述"
+              size="small"
+              placeholder="画面描述"
               @change="touchScript"
             />
           </template>
@@ -139,7 +186,8 @@
             <a-textarea
               v-model:value="record.narration"
               :auto-size="{ minRows: 1, maxRows: 3 }"
-              size="small" placeholder="文案 / 旁白"
+              size="small"
+              placeholder="文案 / 旁白"
               @change="touchScript"
             />
           </template>
@@ -153,8 +201,13 @@
                 title="点击更换首帧"
                 @error="onImgError"
                 @click="openFramePicker(index)"
-              />
-              <button v-else class="frame-folder-btn" title="从素材库选取 / 上传图片" @click="openFramePicker(index)">
+              >
+              <button
+                v-else
+                class="frame-folder-btn"
+                title="从素材库选取 / 上传图片"
+                @click="openFramePicker(index)"
+              >
                 <FolderOpenOutlined />
               </button>
             </div>
@@ -162,7 +215,8 @@
           <template v-else-if="column.key === 'camera'">
             <a-select
               v-model:value="record.cameraMovement"
-              size="small" style="width: 100%"
+              size="small"
+              style="width: 100%"
               :options="CAMERA_OPTIONS"
               @change="touchScript"
             />
@@ -170,7 +224,8 @@
           <template v-else-if="column.key === 'shot'">
             <a-select
               v-model:value="record.shotSize"
-              size="small" style="width: 100%"
+              size="small"
+              style="width: 100%"
               :options="SHOT_OPTIONS"
               allow-clear
               @change="touchScript"
@@ -179,7 +234,8 @@
           <template v-else-if="column.key === 'subtitle'">
             <a-select
               v-model:value="record.subtitleStyle"
-              size="small" style="width: 100%"
+              size="small"
+              style="width: 100%"
               :options="SUBTITLE_OPTIONS"
               @change="touchScript"
             />
@@ -187,26 +243,44 @@
           <template v-else-if="column.key === 'ops'">
             <a-space :size="0">
               <a-button
-                size="small" type="text" title="上移"
+                size="small"
+                type="text"
+                title="上移"
                 :disabled="index === 0"
                 @click="moveScene(index, -1)"
-              ><ArrowUpOutlined /></a-button>
+              >
+                <ArrowUpOutlined />
+              </a-button>
               <a-button
-                size="small" type="text" title="下移"
+                size="small"
+                type="text"
+                title="下移"
                 :disabled="index === (result.storyboard || []).length - 1"
                 @click="moveScene(index, 1)"
-              ><ArrowDownOutlined /></a-button>
+              >
+                <ArrowDownOutlined />
+              </a-button>
               <a-button
-                size="small" type="text" danger title="删除"
+                size="small"
+                type="text"
+                danger
+                title="删除"
                 :disabled="(result.storyboard || []).length <= 1"
                 @click="removeScene(index)"
-              ><DeleteOutlined /></a-button>
+              >
+                <DeleteOutlined />
+              </a-button>
             </a-space>
           </template>
         </template>
       </a-table>
 
-      <a-button size="small" type="dashed" block @click="addScene">
+      <a-button
+        size="small"
+        type="dashed"
+        block
+        @click="addScene"
+      >
         <PlusOutlined /> 添加镜头
       </a-button>
 
@@ -220,7 +294,11 @@
       <div class="video-result">
         <div class="video-main">
           <div class="video-player">
-            <img :src="result.thumbnail_url || fallbackThumb" alt="视频封面" @error="onImgError" />
+            <img
+              :src="result.thumbnail_url || fallbackThumb"
+              alt="视频封面"
+              @error="onImgError"
+            >
             <span class="play-badge"><PlayCircleFilled /></span>
           </div>
           <div class="video-meta">
@@ -248,11 +326,25 @@
         </div>
       </div>
 
-      <div v-if="(result.preview_frames || []).length" class="frames-section">
-        <div class="frames-title">关键帧预览</div>
+      <div
+        v-if="(result.preview_frames || []).length"
+        class="frames-section"
+      >
+        <div class="frames-title">
+          关键帧预览
+        </div>
         <div class="asset-preview-grid">
-          <div v-for="(f, i) in result.preview_frames" :key="i" class="asset-preview-item frame-item">
-            <img :src="f.url" :alt="f.desc" loading="lazy" @error="onImgError" />
+          <div
+            v-for="(f, i) in result.preview_frames"
+            :key="i"
+            class="asset-preview-item frame-item"
+          >
+            <img
+              :src="f.url"
+              :alt="f.desc"
+              loading="lazy"
+              @error="onImgError"
+            >
             <div class="asset-preview-meta">
               <span class="asset-type-chip">{{ f.timestamp }}</span>
               <span class="asset-desc">{{ f.desc }}</span>
@@ -262,8 +354,13 @@
       </div>
 
       <div class="result-footer">
-        <a-button type="primary" @click="openArchive">
-          <SaveOutlined /> 归档到素材库<template v-if="archivedCount">（已归档 {{ archivedCount }}）</template>
+        <a-button
+          type="primary"
+          @click="openArchive"
+        >
+          <SaveOutlined /> 归档到素材库<template v-if="archivedCount">
+            （已归档 {{ archivedCount }}）
+          </template>
         </a-button>
         <span class="footer-hint">确认后视频与关键帧可保存到营销素材库并绑定产品</span>
       </div>
@@ -286,9 +383,18 @@
       :width="WINDOW_W.md"
       :closable="true"
     >
-      <a-tabs v-model:active-key="framePickerTab" size="small">
-        <a-tab-pane key="library" tab="📁 产品素材库">
-          <div v-if="frameLibraryAssets.length" class="frame-picker-grid">
+      <a-tabs
+        v-model:active-key="framePickerTab"
+        size="small"
+      >
+        <a-tab-pane
+          key="library"
+          tab="📁 产品素材库"
+        >
+          <div
+            v-if="frameLibraryAssets.length"
+            class="frame-picker-grid"
+          >
             <div
               v-for="asset in frameLibraryAssets"
               :key="asset.id"
@@ -296,31 +402,67 @@
               :title="asset.name"
               @click="pickFrameFromLibrary(asset)"
             >
-              <img :src="asset.url" :alt="asset.name" loading="lazy" @error="onImgError" />
+              <img
+                :src="asset.url"
+                :alt="asset.name"
+                loading="lazy"
+                @error="onImgError"
+              >
               <span class="frame-picker-label">{{ asset.name }}</span>
             </div>
           </div>
-          <a-empty v-else description="素材库暂无图片，可切到「本地上传」" :image-style="{ height: '40px' }" />
+          <a-empty
+            v-else
+            description="素材库暂无图片，可切到「本地上传」"
+            :image-style="{ height: '40px' }"
+          />
         </a-tab-pane>
 
-        <a-tab-pane key="upload" tab="📤 本地上传">
-          <div class="frame-upload-drop" @click="frameFileRef?.click()">
+        <a-tab-pane
+          key="upload"
+          tab="📤 本地上传"
+        >
+          <div
+            class="frame-upload-drop"
+            @click="frameFileRef?.click()"
+          >
             <input
               ref="frameFileRef"
               type="file"
               accept="image/*"
               style="display: none"
               @change="handleFrameFileChange"
-            />
+            >
             <CloudUploadOutlined class="frame-upload-icon" />
-            <p class="frame-upload-title">点击选择本地图片</p>
-            <p class="frame-upload-sub">JPG / PNG / WebP，≤20MB</p>
+            <p class="frame-upload-title">
+              点击选择本地图片
+            </p>
+            <p class="frame-upload-sub">
+              JPG / PNG / WebP，≤20MB
+            </p>
           </div>
-          <div v-if="frameUploadPreview" class="frame-upload-preview">
-            <img :src="frameUploadPreview" alt="" />
+          <div
+            v-if="frameUploadPreview"
+            class="frame-upload-preview"
+          >
+            <img
+              :src="frameUploadPreview"
+              alt=""
+            >
             <a-space :size="8">
-              <a-button type="primary" size="small" @click="confirmFrameUpload">使用此图</a-button>
-              <a-button size="small" @click="frameUploadPreview = ''">重选</a-button>
+              <a-button
+                type="primary"
+                size="small"
+                @click="confirmFrameUpload"
+              >
+                使用此图
+              </a-button>
+              <a-button
+                size="small"
+                @click="frameUploadPreview = ''"
+              >
+                重选
+              </a-button>
             </a-space>
           </div>
         </a-tab-pane>

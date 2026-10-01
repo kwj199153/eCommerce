@@ -3,36 +3,65 @@
     v-model:open="open"
     :title="editingId ? '编辑产品' : '新增产品'"
     :width="WINDOW_W.xxl"
+    :ok-loading="submitting"
+    cancel-text="取消"
     @ok="handleSubmit"
-    :okLoading="submitting"
-    cancelText="取消"
   >
-    <a-form :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }">
+    <a-form
+      :label-col="{ span: 5 }"
+      :wrapper-col="{ span: 18 }"
+    >
       <a-row :gutter="16">
         <a-col :span="12">
-          <a-form-item label="ASIN" required>
-            <a-input v-model:value="form.asin" placeholder="B0XXXXXXXX" />
+          <a-form-item
+            label="ASIN"
+            required
+          >
+            <a-input
+              v-model:value="form.asin"
+              placeholder="B0XXXXXXXX"
+            />
           </a-form-item>
         </a-col>
         <a-col :span="12">
           <a-form-item label="SKU">
-            <a-input v-model:value="form.sku" placeholder="内部 SKU" />
+            <a-input
+              v-model:value="form.sku"
+              placeholder="内部 SKU"
+            />
           </a-form-item>
         </a-col>
       </a-row>
-      <a-form-item label="产品标题" required>
-        <a-textarea v-model:value="form.title" placeholder="产品名称/Listing 标题" :rows="2" />
+      <a-form-item
+        label="产品标题"
+        required
+      >
+        <a-textarea
+          v-model:value="form.title"
+          placeholder="产品名称/Listing 标题"
+          :rows="2"
+        />
       </a-form-item>
       <a-row :gutter="16">
         <a-col :span="12">
           <a-form-item label="品牌">
-            <a-input v-model:value="form.brand" placeholder="品牌名" />
+            <a-input
+              v-model:value="form.brand"
+              placeholder="品牌名"
+            />
           </a-form-item>
         </a-col>
         <a-col :span="12">
           <a-form-item label="分类">
-            <a-select v-model:value="form.category" placeholder="选择分类">
-              <a-select-option v-for="cat in CATEGORIES" :key="cat.key" :value="cat.key">
+            <a-select
+              v-model:value="form.category"
+              placeholder="选择分类"
+            >
+              <a-select-option
+                v-for="cat in CATEGORIES"
+                :key="cat.key"
+                :value="cat.key"
+              >
                 {{ cat.icon }} {{ cat.label }}
               </a-select-option>
             </a-select>
@@ -42,19 +71,33 @@
       <a-row :gutter="16">
         <a-col :span="8">
           <a-form-item label="售价 ($)">
-            <a-input-number v-model:value="form.price" :min="0" :precision="2" style="width:100%" />
+            <a-input-number
+              v-model:value="form.price"
+              :min="0"
+              :precision="2"
+              style="width:100%"
+            />
           </a-form-item>
         </a-col>
         <a-col :span="8">
           <a-form-item label="成本 ($)">
-            <a-input-number v-model:value="form.cost" :min="0" :precision="2" style="width:100%" />
+            <a-input-number
+              v-model:value="form.cost"
+              :min="0"
+              :precision="2"
+              style="width:100%"
+            />
           </a-form-item>
         </a-col>
         <a-col :span="8">
           <a-form-item label="配送方式">
             <a-select v-model:value="form.fulfillment_type">
-              <a-select-option value="FBA">FBA</a-select-option>
-              <a-select-option value="FBM">FBM</a-select-option>
+              <a-select-option value="FBA">
+                FBA
+              </a-select-option>
+              <a-select-option value="FBM">
+                FBM
+              </a-select-option>
             </a-select>
           </a-form-item>
         </a-col>
@@ -62,22 +105,39 @@
       <a-row :gutter="16">
         <a-col :span="8">
           <a-form-item label="FBA 库存">
-            <a-input-number v-model:value="form.fba_stock" :min="0" style="width:100%" />
+            <a-input-number
+              v-model:value="form.fba_stock"
+              :min="0"
+              style="width:100%"
+            />
           </a-form-item>
         </a-col>
         <a-col :span="8">
           <a-form-item label="FBM 库存">
-            <a-input-number v-model:value="form.fbm_stock" :min="0" style="width:100%" />
+            <a-input-number
+              v-model:value="form.fbm_stock"
+              :min="0"
+              style="width:100%"
+            />
           </a-form-item>
         </a-col>
         <a-col :span="8">
           <a-form-item label="日均销量">
-            <a-input-number v-model:value="form.daily_sales_avg" :min="0" style="width:100%" />
+            <a-input-number
+              v-model:value="form.daily_sales_avg"
+              :min="0"
+              style="width:100%"
+            />
           </a-form-item>
         </a-col>
       </a-row>
       <a-form-item label="标签">
-        <a-select v-model:value="form.tags" mode="tags" placeholder="输入标签回车添加" style="width:100%" />
+        <a-select
+          v-model:value="form.tags"
+          mode="tags"
+          placeholder="输入标签回车添加"
+          style="width:100%"
+        />
       </a-form-item>
       <a-form-item label="分组">
         <a-select
@@ -89,46 +149,103 @@
         />
       </a-form-item>
       <a-form-item label="备注">
-        <a-textarea v-model:value="form.notes" placeholder="运营备注..." :rows="2" />
+        <a-textarea
+          v-model:value="form.notes"
+          placeholder="运营备注..."
+          :rows="2"
+        />
       </a-form-item>
 
       <!-- 创建SPU（仅新增时可选） -->
       <template v-if="!editingId">
-        <a-divider orientation="left" style="margin: var(--space-16) 0 var(--space-8)">
+        <a-divider
+          orientation="left"
+          style="margin: var(--space-16) 0 var(--space-8)"
+        >
           <span style="font-size: var(--font-size-13); color: var(--text-secondary)">SPU</span>
         </a-divider>
         <a-form-item label="创建SPU">
-          <a-switch v-model:checked="createVariation" :disabled="editingId !== null" />
+          <a-switch
+            v-model:checked="createVariation"
+            :disabled="editingId !== null"
+          />
           <span style="margin-left: var(--space-8); font-size: var(--font-size-12); color: var(--text-tertiary)">
             开启后生成 1 个SPU + 多个SKU，SKU各自独立维护价格/库存/文案
           </span>
         </a-form-item>
         <template v-if="createVariation">
-          <a-form-item label="规格主题" required>
-            <a-select v-model:value="variationTheme" placeholder="选择规格维度" style="width: 100%">
-              <a-select-option value="Color">颜色 Color</a-select-option>
-              <a-select-option value="Size">尺寸 Size</a-select-option>
-              <a-select-option value="Color-Size">颜色 + 尺寸</a-select-option>
-              <a-select-option value="Style">款式 Style</a-select-option>
-              <a-select-option value="Package">包装 Package</a-select-option>
+          <a-form-item
+            label="规格主题"
+            required
+          >
+            <a-select
+              v-model:value="variationTheme"
+              placeholder="选择规格维度"
+              style="width: 100%"
+            >
+              <a-select-option value="Color">
+                颜色 Color
+              </a-select-option>
+              <a-select-option value="Size">
+                尺寸 Size
+              </a-select-option>
+              <a-select-option value="Color-Size">
+                颜色 + 尺寸
+              </a-select-option>
+              <a-select-option value="Style">
+                款式 Style
+              </a-select-option>
+              <a-select-option value="Package">
+                包装 Package
+              </a-select-option>
             </a-select>
           </a-form-item>
           <a-form-item label="SKU">
             <div style="width: 100%">
-              <div v-for="(ch, i) in childVariations" :key="i" class="var-child-row">
+              <div
+                v-for="(ch, i) in childVariations"
+                :key="i"
+                class="var-child-row"
+              >
                 <a-input
                   v-model:value="ch.spec_value"
                   :placeholder="variationTheme === 'Size' ? '如 M / L / XL' : '如 红色 / 蓝色'"
                   style="width: 120px"
                 />
-                <a-input v-model:value="ch.asin" placeholder="ASIN (B0XXXX)" style="width: 140px" />
-                <a-input-number v-model:value="ch.price" :min="0" :precision="2" placeholder="价格" style="width: 90px" />
-                <a-input-number v-model:value="ch.stock" :min="0" placeholder="库存" style="width: 80px" />
-                <a-button type="text" danger size="small" @click="removeChildVariation(i)">
+                <a-input
+                  v-model:value="ch.asin"
+                  placeholder="ASIN (B0XXXX)"
+                  style="width: 140px"
+                />
+                <a-input-number
+                  v-model:value="ch.price"
+                  :min="0"
+                  :precision="2"
+                  placeholder="价格"
+                  style="width: 90px"
+                />
+                <a-input-number
+                  v-model:value="ch.stock"
+                  :min="0"
+                  placeholder="库存"
+                  style="width: 80px"
+                />
+                <a-button
+                  type="text"
+                  danger
+                  size="small"
+                  @click="removeChildVariation(i)"
+                >
                   <DeleteOutlined />
                 </a-button>
               </div>
-              <a-button type="dashed" size="small" block style="margin-top: var(--space-6)" @click="addChildVariationRow">
+              <a-button
+                type="dashed"
+                size="small"
+                block
+                style="margin-top: var(--space-6)"
+                @click="addChildVariationRow"
+              >
                 <PlusOutlined /> 添加SKU
               </a-button>
             </div>

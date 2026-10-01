@@ -1,5 +1,10 @@
 <template>
-  <div ref="wrapEl" class="et-wrap chart-root" role="img" :aria-label="title || '品类大盘云图'"></div>
+  <div
+    ref="wrapEl"
+    class="et-wrap chart-root"
+    role="img"
+    :aria-label="title || '品类大盘云图'"
+  />
 </template>
 
 <script setup lang="ts">

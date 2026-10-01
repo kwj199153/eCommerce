@@ -2,18 +2,49 @@
   <div class="ap-sec">
     <div class="sec-head">
       <div>
-        <div class="sec-title">长描述 <a-tag class="mini-tag">{{ draft.aplusModules.length }} 个模块</a-tag></div>
-        <div class="sec-sub">按模块编辑，保存时整体写回产品（A+ / 商品详情）</div>
+        <div class="sec-title">
+          长描述 <a-tag class="mini-tag">
+            {{ draft.aplusModules.length }} 个模块
+          </a-tag>
+        </div>
+        <div class="sec-sub">
+          按模块编辑，保存时整体写回产品（A+ / 商品详情）
+        </div>
       </div>
-      <a-button size="small" :loading="genLoading" :disabled="disabled" @click="$emit('gen')">生成长描述</a-button>
+      <a-button
+        size="small"
+        :loading="genLoading"
+        :disabled="disabled"
+        @click="$emit('gen')"
+      >
+        生成长描述
+      </a-button>
     </div>
 
     <div class="ap-list">
-      <div v-for="m in draft.aplusModules" :key="m.id" class="ap-card">
+      <div
+        v-for="m in draft.aplusModules"
+        :key="m.id"
+        class="ap-card"
+      >
         <div class="ap-head">
-          <a-tag class="mini-tag">{{ apTypeLabel(m.type) }}</a-tag>
-          <a-input v-model:value="m.heading" size="small" placeholder="模块标题" class="ap-heading" />
-          <a-button size="small" type="text" danger @click="draft.removeAPlusModule(m.id)">删除</a-button>
+          <a-tag class="mini-tag">
+            {{ apTypeLabel(m.type) }}
+          </a-tag>
+          <a-input
+            v-model:value="m.heading"
+            size="small"
+            placeholder="模块标题"
+            class="ap-heading"
+          />
+          <a-button
+            size="small"
+            type="text"
+            danger
+            @click="draft.removeAPlusModule(m.id)"
+          >
+            删除
+          </a-button>
         </div>
         <a-textarea
           v-if="m.type === 'text'"
@@ -32,20 +63,54 @@
           />
         </template>
         <template v-else-if="m.type === 'highlights'">
-          <div v-for="(it, ii) in m.items || []" :key="ii" class="ap-item">
-            <a-input v-model:value="it.title" size="small" placeholder="亮点" class="ap-item-title" />
-            <a-input v-model:value="it.desc" size="small" placeholder="说明" />
+          <div
+            v-for="(it, ii) in m.items || []"
+            :key="ii"
+            class="ap-item"
+          >
+            <a-input
+              v-model:value="it.title"
+              size="small"
+              placeholder="亮点"
+              class="ap-item-title"
+            />
+            <a-input
+              v-model:value="it.desc"
+              size="small"
+              placeholder="说明"
+            />
           </div>
         </template>
       </div>
       <div class="ap-add">
-        <a-button size="small" type="dashed" @click="draft.addAPlusModule('text')">+ 文本模块</a-button>
-        <a-button size="small" type="dashed" @click="draft.addAPlusModule('highlights')">+ 亮点模块</a-button>
-        <a-button size="small" type="dashed" @click="draft.addAPlusModule('image-text')">+ 图文模块</a-button>
+        <a-button
+          size="small"
+          type="dashed"
+          @click="draft.addAPlusModule('text')"
+        >
+          + 文本模块
+        </a-button>
+        <a-button
+          size="small"
+          type="dashed"
+          @click="draft.addAPlusModule('highlights')"
+        >
+          + 亮点模块
+        </a-button>
+        <a-button
+          size="small"
+          type="dashed"
+          @click="draft.addAPlusModule('image-text')"
+        >
+          + 图文模块
+        </a-button>
       </div>
     </div>
 
-    <PromptTab v-model="draft.aplusPrompt" placeholder="例如：A+ Content 风格，先讲使用场景痛点再讲解决方案，结尾加品牌承诺" />
+    <PromptTab
+      v-model="draft.aplusPrompt"
+      placeholder="例如：A+ Content 风格，先讲使用场景痛点再讲解决方案，结尾加品牌承诺"
+    />
   </div>
 </template>
 

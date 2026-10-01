@@ -3,14 +3,22 @@
     <!-- 顶部标题栏 -->
     <div class="pr-header">
       <div>
-        <h2 class="pr-title">平台规则库</h2>
-        <p class="pr-subtitle">聚合各跨境电商平台的运营规则、政策条款与合规要求</p>
+        <h2 class="pr-title">
+          平台规则库
+        </h2>
+        <p class="pr-subtitle">
+          聚合各跨境电商平台的运营规则、政策条款与合规要求
+        </p>
       </div>
       <div class="header-actions">
         <a-tooltip title="管理规则文档（PDF / MD / Excel）">
           <a-button @click="showDocPanel = !showDocPanel">
             <FileTextOutlined /> 文档 {{ showDocPanel ? '收起' : '管理' }}
-            <a-badge v-if="store.docs.length" :count="store.docs.length" :offset="[-4, 0]" />
+            <a-badge
+              v-if="store.docs.length"
+              :count="store.docs.length"
+              :offset="[-4, 0]"
+            />
           </a-button>
         </a-tooltip>
         <a-tooltip title="导出全部规则，支持 JSON / Excel / CSV / TXT，可选择保存位置">
@@ -23,14 +31,20 @@
             <UploadOutlined /> 导入规则
           </a-button>
         </a-tooltip>
-        <a-button type="primary" @click="openAddModal">
+        <a-button
+          type="primary"
+          @click="openAddModal"
+        >
           <PlusOutlined /> 新增规则
         </a-button>
       </div>
     </div>
 
     <!-- 规则文档面板（可折叠，RAG 补充资料） -->
-    <div v-show="showDocPanel" class="doc-panel">
+    <div
+      v-show="showDocPanel"
+      class="doc-panel"
+    >
       <div class="doc-panel-header">
         <span class="doc-panel-title"><FileTextOutlined /> 规则原文文档（RAG 补充资料）</span>
         <a-space>
@@ -39,20 +53,38 @@
             accept=".pdf,.md,.txt,.xlsx,.xls,.csv"
             :before-upload="handleDocUpload"
           >
-            <a-button size="small" type="primary"><UploadOutlined /> 上传文档</a-button>
+            <a-button
+              size="small"
+              type="primary"
+            >
+              <UploadOutlined /> 上传文档
+            </a-button>
           </a-upload>
         </a-space>
       </div>
-      <div v-if="store.docs.length" class="doc-list">
-        <div v-for="doc in store.docs" :key="doc.id" class="doc-item">
+      <div
+        v-if="store.docs.length"
+        class="doc-list"
+      >
+        <div
+          v-for="doc in store.docs"
+          :key="doc.id"
+          class="doc-item"
+        >
           <div class="doc-info">
             <span class="doc-icon">{{ getDocIcon(doc.file_type) }}</span>
             <span class="doc-name">{{ doc.filename }}</span>
             <span class="doc-size">{{ formatSize(doc.size) }}</span>
-            <a-tag size="small" :color="platformMeta(doc.platform).color">
+            <a-tag
+              size="small"
+              :color="platformMeta(doc.platform).color"
+            >
               {{ platformMeta(doc.platform).label }}
             </a-tag>
-            <span v-if="doc.description" class="doc-desc">— {{ doc.description }}</span>
+            <span
+              v-if="doc.description"
+              class="doc-desc"
+            >— {{ doc.description }}</span>
           </div>
           <a-space :size="4">
             <a-tooltip title="AI 拆分：自动从文档中提取结构化规则">
@@ -65,32 +97,61 @@
                 <RobotOutlined /> AI 拆分
               </a-button>
             </a-tooltip>
-            <a-popconfirm title="删除此文档？" @confirm="handleDeleteDoc(doc)">
-              <a-button type="text" size="small" danger><DeleteOutlined /></a-button>
+            <a-popconfirm
+              title="删除此文档？"
+              @confirm="handleDeleteDoc(doc)"
+            >
+              <a-button
+                type="text"
+                size="small"
+                danger
+              >
+                <DeleteOutlined />
+              </a-button>
             </a-popconfirm>
           </a-space>
         </div>
       </div>
-      <a-empty v-else description="暂无规则原文文档，上传 PDF/MD/Excel 作为规则检索素材" :image-style="{ height: '40px' }" />
+      <a-empty
+        v-else
+        description="暂无规则原文文档，上传 PDF/MD/Excel 作为规则检索素材"
+        :image-style="{ height: '40px' }"
+      />
     </div>
 
     <!-- 统计卡片 -->
     <div class="stat-cards">
       <div class="stat-card">
-        <div class="stat-value">{{ store.totalCount }}</div>
-        <div class="stat-label">规则总数</div>
+        <div class="stat-value">
+          {{ store.totalCount }}
+        </div>
+        <div class="stat-label">
+          规则总数
+        </div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">{{ store.platformCount }}</div>
-        <div class="stat-label">覆盖平台</div>
+        <div class="stat-value">
+          {{ store.platformCount }}
+        </div>
+        <div class="stat-label">
+          覆盖平台
+        </div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">{{ activeCount }}</div>
-        <div class="stat-label">生效中</div>
+        <div class="stat-value">
+          {{ activeCount }}
+        </div>
+        <div class="stat-label">
+          生效中
+        </div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">{{ upcomingCount }}</div>
-        <div class="stat-label">即将生效</div>
+        <div class="stat-value">
+          {{ upcomingCount }}
+        </div>
+        <div class="stat-label">
+          即将生效
+        </div>
       </div>
     </div>
 
@@ -103,7 +164,9 @@
           style="width: 260px"
           allow-clear
         >
-          <template #prefix><SearchOutlined /></template>
+          <template #prefix>
+            <SearchOutlined />
+          </template>
         </a-input-search>
         <a-select
           v-model:value="store.filterPlatform"
@@ -111,7 +174,11 @@
           placeholder="全部平台"
           allow-clear
         >
-          <a-select-option v-for="p in PLATFORMS" :key="p.key" :value="p.key">
+          <a-select-option
+            v-for="p in PLATFORMS"
+            :key="p.key"
+            :value="p.key"
+          >
             {{ p.icon }} {{ p.label }}
           </a-select-option>
         </a-select>
@@ -121,7 +188,11 @@
           placeholder="全部分类"
           allow-clear
         >
-          <a-select-option v-for="c in RULE_CATEGORIES" :key="c.key" :value="c.key">
+          <a-select-option
+            v-for="c in RULE_CATEGORIES"
+            :key="c.key"
+            :value="c.key"
+          >
             {{ c.icon }} {{ c.label }}
           </a-select-option>
         </a-select>
@@ -131,15 +202,24 @@
           placeholder="全部状态"
           allow-clear
         >
-          <a-select-option value="active">🟢 生效中</a-select-option>
-          <a-select-option value="upcoming">🟡 即将生效</a-select-option>
-          <a-select-option value="expired">⚪ 已失效</a-select-option>
+          <a-select-option value="active">
+            🟢 生效中
+          </a-select-option>
+          <a-select-option value="upcoming">
+            🟡 即将生效
+          </a-select-option>
+          <a-select-option value="expired">
+            ⚪ 已失效
+          </a-select-option>
         </a-select>
       </div>
     </div>
 
     <!-- 已启用的过滤条件（chip 行） -->
-    <div v-if="store.hasActiveFilters" class="active-filters">
+    <div
+      v-if="store.hasActiveFilters"
+      class="active-filters"
+    >
       <span class="af-label">
         <FilterOutlined /> 已启用过滤 ({{ store.activeFilterCount }})
       </span>
@@ -147,9 +227,9 @@
       <a-tag
         v-if="store.filterPlatform && store.filterPlatform !== 'all'"
         closable
-        @close="store.filterPlatform = undefined"
         :color="COLOR_PLATFORM"
         class="af-chip"
+        @close="store.filterPlatform = undefined"
       >
         平台：{{ platformLabel(store.filterPlatform) }}
       </a-tag>
@@ -157,9 +237,9 @@
       <a-tag
         v-if="store.filterCategory && store.filterCategory !== 'all'"
         closable
-        @close="store.filterCategory = undefined"
         :color="COLOR_INFO"
         class="af-chip"
+        @close="store.filterCategory = undefined"
       >
         分类：{{ categoryLabel(store.filterCategory) }}
       </a-tag>
@@ -167,9 +247,9 @@
       <a-tag
         v-if="store.filterStatus && store.filterStatus !== 'all'"
         closable
-        @close="store.filterStatus = undefined"
         :color="COLOR_INFO"
         class="af-chip"
+        @close="store.filterStatus = undefined"
       >
         状态：{{ statusLabel(store.filterStatus) }}
       </a-tag>
@@ -177,14 +257,19 @@
       <a-tag
         v-if="store.searchQuery.trim()"
         closable
-        @close="store.searchQuery = ''"
         :color="COLOR_INFO"
         class="af-chip"
+        @close="store.searchQuery = ''"
       >
         搜索："{{ store.searchQuery }}"
       </a-tag>
 
-      <a-button type="link" size="small" danger @click="store.clearAllFilters()">
+      <a-button
+        type="link"
+        size="small"
+        danger
+        @click="store.clearAllFilters()"
+      >
         <ClearOutlined /> 清空全部
       </a-button>
     </div>
@@ -206,10 +291,18 @@
             <div class="title-text-wrap">
               <span class="title-text">{{ record.title }}</span>
               <div class="title-sub">
-                <a-tag :color="platformMeta(record.platform).color" size="small">
+                <a-tag
+                  :color="platformMeta(record.platform).color"
+                  size="small"
+                >
                   {{ platformMeta(record.platform).icon }} {{ platformMeta(record.platform).label }}
                 </a-tag>
-                <a-tag color="default" size="small">{{ categoryLabel(record.category) }}</a-tag>
+                <a-tag
+                  color="default"
+                  size="small"
+                >
+                  {{ categoryLabel(record.category) }}
+                </a-tag>
               </div>
             </div>
           </div>
@@ -232,7 +325,10 @@
           <a-tag :color="statusColor(getResolvedStatus(record))">
             {{ statusLabel(getResolvedStatus(record)) }}
           </a-tag>
-          <a-tooltip v-if="record.status !== 'auto'" title="手动覆盖状态（不受日期自动计算影响）">
+          <a-tooltip
+            v-if="record.status !== 'auto'"
+            title="手动覆盖状态（不受日期自动计算影响）"
+          >
             <span class="manual-override-badge">✋</span>
           </a-tooltip>
         </template>
@@ -241,17 +337,32 @@
         <template v-else-if="column.key === 'action'">
           <a-space :size="4">
             <a-tooltip title="查看详情">
-              <a-button type="text" size="small" @click="openDetail(record)">
+              <a-button
+                type="text"
+                size="small"
+                @click="openDetail(record)"
+              >
                 <EyeOutlined />
               </a-button>
             </a-tooltip>
             <a-tooltip title="编辑">
-              <a-button type="text" size="small" @click="openEditModal(record)">
+              <a-button
+                type="text"
+                size="small"
+                @click="openEditModal(record)"
+              >
                 <EditOutlined />
               </a-button>
             </a-tooltip>
-            <a-popconfirm title="确认删除该规则？" @confirm="handleDelete(record)">
-              <a-button type="text" size="small" danger>
+            <a-popconfirm
+              title="确认删除该规则？"
+              @confirm="handleDelete(record)"
+            >
+              <a-button
+                type="text"
+                size="small"
+                danger
+              >
                 <DeleteOutlined />
               </a-button>
             </a-popconfirm>
@@ -278,24 +389,40 @@
           <p class="ant-upload-drag-icon">
             <InboxOutlined />
           </p>
-          <p class="ant-upload-text">点击或拖拽文件到此区域上传</p>
+          <p class="ant-upload-text">
+            点击或拖拽文件到此区域上传
+          </p>
           <p class="ant-upload-hint">
-            支持 JSON / CSV / TXT 格式<br/>
-            JSON：数组，每项含 platform / category / title / content<br/>
-            CSV：platform, category, title, content<br/>
+            支持 JSON / CSV / TXT 格式<br>
+            JSON：数组，每项含 platform / category / title / content<br>
+            CSV：platform, category, title, content<br>
             TXT：每行 "标题 /// 内容"
           </p>
         </a-upload-dragger>
 
-        <div v-if="importResult" class="import-result" :class="{ error: importResult.failed > 0 }">
+        <div
+          v-if="importResult"
+          class="import-result"
+          :class="{ error: importResult.failed > 0 }"
+        >
           <a-alert
             :type="importResult.failed > 0 ? 'warning' : 'success'"
             :message="`导入完成：成功 ${importResult.success} 条${importResult.failed > 0 ? `，失败 ${importResult.failed} 条` : ''}`"
           >
-            <template v-if="importResult.errors.length" #description>
+            <template
+              v-if="importResult.errors.length"
+              #description
+            >
               <ul class="error-list">
-                <li v-for="(err, i) in importResult.errors.slice(0, 5)" :key="i">{{ err }}</li>
-                <li v-if="importResult.errors.length > 5">... 还有 {{ importResult.errors.length - 5 }} 条错误</li>
+                <li
+                  v-for="(err, i) in importResult.errors.slice(0, 5)"
+                  :key="i"
+                >
+                  {{ err }}
+                </li>
+                <li v-if="importResult.errors.length > 5">
+                  ... 还有 {{ importResult.errors.length - 5 }} 条错误
+                </li>
               </ul>
             </template>
           </a-alert>
@@ -311,7 +438,10 @@
       ok-text="确认上传"
       @ok="confirmDocUpload"
     >
-      <div v-if="docUploadForm.pendingFile" class="doc-upload-preview">
+      <div
+        v-if="docUploadForm.pendingFile"
+        class="doc-upload-preview"
+      >
         <div class="doc-upload-file">
           <span class="doc-upload-icon">{{ getDocIcon((docUploadForm.pendingFile.name.split('.').pop() || '') as PlatformRuleDoc['file_type']) }}</span>
           <span class="doc-upload-name">{{ docUploadForm.pendingFile.name }}</span>
@@ -319,15 +449,28 @@
         </div>
       </div>
       <a-form layout="vertical">
-        <a-form-item label="所属平台" required>
-          <a-select v-model:value="docUploadForm.platform" placeholder="选择文档所属平台">
-            <a-select-option v-for="p in PLATFORMS" :key="p.key" :value="p.key">
+        <a-form-item
+          label="所属平台"
+          required
+        >
+          <a-select
+            v-model:value="docUploadForm.platform"
+            placeholder="选择文档所属平台"
+          >
+            <a-select-option
+              v-for="p in PLATFORMS"
+              :key="p.key"
+              :value="p.key"
+            >
               {{ p.icon }} {{ p.label }}
             </a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item label="描述（可选）">
-          <a-input v-model:value="docUploadForm.description" placeholder="如：Amazon 2026 Listing 完整规范" />
+          <a-input
+            v-model:value="docUploadForm.description"
+            placeholder="如：Amazon 2026 Listing 完整规范"
+          />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -376,11 +519,41 @@
           placeholder="留空=永久"
         />
         <span class="ai-batch-label">有效期</span>
-        <a-button size="small" :type="!aiBatchExpiryDate ? 'primary' : 'default'" @click="setAiBatchExpiry(null)">永久</a-button>
-        <a-button size="small" :type="aiBatchIsExpiry(3) ? 'primary' : 'default'" @click="setAiBatchExpiry(3)">3月</a-button>
-        <a-button size="small" :type="aiBatchIsExpiry(6) ? 'primary' : 'default'" @click="setAiBatchExpiry(6)">6月</a-button>
-        <a-button size="small" :type="aiBatchIsExpiry(12) ? 'primary' : 'default'" @click="setAiBatchExpiry(12)">1年</a-button>
-        <a-button size="small" :type="aiBatchIsExpiry(24) ? 'primary' : 'default'" @click="setAiBatchExpiry(24)">2年</a-button>
+        <a-button
+          size="small"
+          :type="!aiBatchExpiryDate ? 'primary' : 'default'"
+          @click="setAiBatchExpiry(null)"
+        >
+          永久
+        </a-button>
+        <a-button
+          size="small"
+          :type="aiBatchIsExpiry(3) ? 'primary' : 'default'"
+          @click="setAiBatchExpiry(3)"
+        >
+          3月
+        </a-button>
+        <a-button
+          size="small"
+          :type="aiBatchIsExpiry(6) ? 'primary' : 'default'"
+          @click="setAiBatchExpiry(6)"
+        >
+          6月
+        </a-button>
+        <a-button
+          size="small"
+          :type="aiBatchIsExpiry(12) ? 'primary' : 'default'"
+          @click="setAiBatchExpiry(12)"
+        >
+          1年
+        </a-button>
+        <a-button
+          size="small"
+          :type="aiBatchIsExpiry(24) ? 'primary' : 'default'"
+          @click="setAiBatchExpiry(24)"
+        >
+          2年
+        </a-button>
         <span class="ai-batch-sync">此处的日期会同步应用到下方全部规则</span>
       </div>
 
@@ -388,9 +561,25 @@
         <span class="ai-confirm-count">
           已选 {{ aiPendingRules.filter(r => r._checked).length }} / {{ aiPendingRules.length }} 条
         </span>
-        <a-button size="small" @click="selectAllNew">全选全新</a-button>
-        <a-button size="small" @click="aiPendingRules.forEach(r => r._checked = true)">全选</a-button>
-        <a-button size="small" danger @click="aiPendingRules.forEach(r => r._checked = false)">全不选</a-button>
+        <a-button
+          size="small"
+          @click="selectAllNew"
+        >
+          全选全新
+        </a-button>
+        <a-button
+          size="small"
+          @click="aiPendingRules.forEach(r => r._checked = true)"
+        >
+          全选
+        </a-button>
+        <a-button
+          size="small"
+          danger
+          @click="aiPendingRules.forEach(r => r._checked = false)"
+        >
+          全不选
+        </a-button>
       </div>
 
       <div class="ai-confirm-list">
@@ -410,22 +599,43 @@
             <div class="ai-confirm-check">
               <a-checkbox v-model:checked="rule._checked" />
             </div>
-            <a-tooltip placement="left" :overlayStyle="{ maxWidth: '320px' }">
+            <a-tooltip
+              placement="left"
+              :overlay-style="{ maxWidth: '320px' }"
+            >
               <template #title>
-                <div v-if="rule._dupStatus === 'duplicate'" class="ai-dup-tooltip">
+                <div
+                  v-if="rule._dupStatus === 'duplicate'"
+                  class="ai-dup-tooltip"
+                >
                   <p><strong>⚠ 与已有规则相似</strong></p>
                   <p>相似度：{{ ((rule._similarityScore || 0) * 100).toFixed(0) }}%</p>
                   <p>匹配规则：{{ getMatchedRuleTitle(rule._matchedRuleId) }}</p>
                   <p style="margin-top:var(--space-6)">
-                    <a-button type="link" size="small" @click="viewMatchedRule(rule._matchedRuleId!)">查看原规则 →</a-button>
+                    <a-button
+                      type="link"
+                      size="small"
+                      @click="viewMatchedRule(rule._matchedRuleId!)"
+                    >
+                      查看原规则 →
+                    </a-button>
                   </p>
                 </div>
-                <div v-else-if="rule._dupStatus === 'update'" class="ai-dup-tooltip">
+                <div
+                  v-else-if="rule._dupStatus === 'update'"
+                  class="ai-dup-tooltip"
+                >
                   <p><strong>🔄 检测到版本更新</strong></p>
                   <p>{{ rule._diffSummary }}</p>
                   <p>旧规则：{{ getMatchedRuleTitle(rule._matchedRuleId) }}</p>
                   <p style="margin-top:var(--space-6)">
-                    <a-button type="link" size="small" @click="replaceThisRule(rule)">覆盖旧版 →</a-button>
+                    <a-button
+                      type="link"
+                      size="small"
+                      @click="replaceThisRule(rule)"
+                    >
+                      覆盖旧版 →
+                    </a-button>
                   </p>
                 </div>
                 <div v-else>
@@ -438,7 +648,10 @@
                 :class="`ai-dup-${rule._dupStatus}`"
               >
                 {{ dupStatusLabel(rule._dupStatus) }}
-                <span v-if="rule._similarityScore !== undefined" class="ai-dup-score">
+                <span
+                  v-if="rule._similarityScore !== undefined"
+                  class="ai-dup-score"
+                >
                   {{ (rule._similarityScore * 100).toFixed(0) }}%
                 </span>
               </span>
@@ -460,7 +673,13 @@
                 style="width: 110px"
                 :disabled="!rule._checked"
               >
-                <a-select-option v-for="c in RULE_CATEGORIES" :key="c.key" :value="c.key">{{ c.label }}</a-select-option>
+                <a-select-option
+                  v-for="c in RULE_CATEGORIES"
+                  :key="c.key"
+                  :value="c.key"
+                >
+                  {{ c.label }}
+                </a-select-option>
               </a-select>
             </div>
             <a-textarea
@@ -471,31 +690,46 @@
               style="margin-top: 6px"
             />
             <div class="ai-confirm-meta">
-              <a-tag size="small" color="blue">AI 提取</a-tag>
-              <a-tag size="small" :color="platformMeta(rule.platform).color">
+              <a-tag
+                size="small"
+                color="blue"
+              >
+                AI 提取
+              </a-tag>
+              <a-tag
+                size="small"
+                :color="platformMeta(rule.platform).color"
+              >
                 {{ platformMeta(rule.platform).label }}
               </a-tag>
-              <span v-if="rule._diffSummary" class="ai-diff-hint">{{ rule._diffSummary }}</span>
+              <span
+                v-if="rule._diffSummary"
+                class="ai-diff-hint"
+              >{{ rule._diffSummary }}</span>
               <!-- 操作按钮 -->
               <a-button
                 v-if="rule._matchedRuleId && rule._dupStatus !== 'new'"
                 type="link"
                 size="small"
                 @click="viewMatchedRule(rule._matchedRuleId!)"
-              >查看原规则</a-button>
+              >
+                查看原规则
+              </a-button>
               <a-button
                 v-if="rule._dupStatus === 'update'"
                 type="link"
                 size="small"
                 style="color: var(--primary)"
                 @click="replaceThisRule(rule)"
-              >覆盖旧版</a-button>
+              >
+                覆盖旧版
+              </a-button>
               <!-- 高级设置开关 -->
               <a-button
                 type="link"
                 size="small"
-                @click="toggleAiAdvance(rule)"
                 :disabled="!rule._checked"
+                @click="toggleAiAdvance(rule)"
               >
                 {{ aiAdvanceOpen.has(rule) ? '收起设置' : '⚙️ 高级设置' }}
               </a-button>
@@ -510,15 +744,31 @@
               <a-row :gutter="8">
                 <a-col :span="24">
                   <span class="ai-adv-label">状态（日期已统一，仅需在此覆盖特殊情况）</span>
-                  <a-select v-model:value="rule.status" size="small" style="width: 100%" :disabled="!rule._checked">
-                    <a-select-option value="auto">🤖 自动（按统一日期计算，推荐）</a-select-option>
-                    <a-select-option value="active">🟢 强制生效中</a-select-option>
-                    <a-select-option value="upcoming">🟡 强制即将生效</a-select-option>
-                    <a-select-option value="expired">⚪ 强制已失效</a-select-option>
+                  <a-select
+                    v-model:value="rule.status"
+                    size="small"
+                    style="width: 100%"
+                    :disabled="!rule._checked"
+                  >
+                    <a-select-option value="auto">
+                      🤖 自动（按统一日期计算，推荐）
+                    </a-select-option>
+                    <a-select-option value="active">
+                      🟢 强制生效中
+                    </a-select-option>
+                    <a-select-option value="upcoming">
+                      🟡 强制即将生效
+                    </a-select-option>
+                    <a-select-option value="expired">
+                      ⚪ 强制已失效
+                    </a-select-option>
                   </a-select>
                 </a-col>
               </a-row>
-              <a-row :gutter="8" style="margin-top: 4px">
+              <a-row
+                :gutter="8"
+                style="margin-top: 4px"
+              >
                 <a-col :span="12">
                   <span class="ai-adv-label">标签（逗号分隔）</span>
                   <a-input
@@ -564,16 +814,26 @@
         style="margin-bottom: 16px"
       />
       <div class="ai-force-list">
-        <div v-for="(w, i) in aiForceWarnings" :key="i" class="ai-force-item">
+        <div
+          v-for="(w, i) in aiForceWarnings"
+          :key="i"
+          class="ai-force-item"
+        >
           <WarningOutlined style="color: var(--warning); margin-right: 8px" />
           <span>{{ w }}</span>
         </div>
       </div>
-      <p class="ai-force-note">提示：极少数业务场景确实需要保留多条版本对比（如新旧政策并行期）。如为误判请返回取消勾选。</p>
+      <p class="ai-force-note">
+        提示：极少数业务场景确实需要保留多条版本对比（如新旧政策并行期）。如为误判请返回取消勾选。
+      </p>
     </a-modal>
 
     <!-- 新增/编辑规则弹窗 -->
-    <RuleFormModal v-model:open="editModalVisible" :editing-id="editingId" @saved="onSaved" />
+    <RuleFormModal
+      v-model:open="editModalVisible"
+      :editing-id="editingId"
+      @saved="onSaved"
+    />
 
     <!-- 详情弹窗 -->
     <a-modal
@@ -582,28 +842,48 @@
       :footer="null"
       :width="WINDOW_W.xxl"
     >
-      <div v-if="detailItem" class="detail-body">
+      <div
+        v-if="detailItem"
+        class="detail-body"
+      >
         <div class="detail-meta">
           <a-tag :color="platformMeta(detailItem.platform).color">
             {{ platformMeta(detailItem.platform).icon }} {{ platformMeta(detailItem.platform).label }}
           </a-tag>
-          <a-tag color="default">{{ categoryLabel(detailItem.category) }}</a-tag>
+          <a-tag color="default">
+            {{ categoryLabel(detailItem.category) }}
+          </a-tag>
           <a-tag :color="statusColor(getResolvedStatus(detailItem))">
             {{ statusLabel(getResolvedStatus(detailItem)) }}
           </a-tag>
-          <span v-if="detailItem.status !== 'auto'" class="manual-override-badge" title="手动覆盖状态">✋</span>
+          <span
+            v-if="detailItem.status !== 'auto'"
+            class="manual-override-badge"
+            title="手动覆盖状态"
+          >✋</span>
           <span class="detail-date">生效：{{ detailItem.effective_date }}</span>
-          <span v-if="detailItem.expiry_date" class="detail-date" style="color: var(--danger)">
+          <span
+            v-if="detailItem.expiry_date"
+            class="detail-date"
+            style="color: var(--danger)"
+          >
             失效：{{ detailItem.expiry_date }}
             <span style="font-size: 11px; color: var(--text-tertiary); font-weight: normal">
               （{{ calcDetailDuration(detailItem) }}）
             </span>
           </span>
-          <span v-else class="detail-date" style="color: var(--success)">永不过期</span>
+          <span
+            v-else
+            class="detail-date"
+            style="color: var(--success)"
+          >永不过期</span>
         </div>
 
         <!-- 来源文档关联 -->
-        <div v-if="detailItem.source_doc_id" class="detail-source-doc">
+        <div
+          v-if="detailItem.source_doc_id"
+          class="detail-source-doc"
+        >
           <span class="detail-source-doc-label"><FileTextOutlined /> 来源文档</span>
           <a-button
             type="link"
@@ -615,11 +895,27 @@
           </a-button>
         </div>
 
-        <div class="detail-content">{{ detailItem.content }}</div>
-        <div v-if="detailItem.tags.length" class="detail-tags">
-          <a-tag v-for="t in detailItem.tags" :key="t" color="blue">{{ t }}</a-tag>
+        <div class="detail-content">
+          {{ detailItem.content }}
         </div>
-        <a v-if="detailItem.source" :href="detailItem.source" target="_blank" class="detail-source">
+        <div
+          v-if="detailItem.tags.length"
+          class="detail-tags"
+        >
+          <a-tag
+            v-for="t in detailItem.tags"
+            :key="t"
+            color="blue"
+          >
+            {{ t }}
+          </a-tag>
+        </div>
+        <a
+          v-if="detailItem.source"
+          :href="detailItem.source"
+          target="_blank"
+          class="detail-source"
+        >
           外部来源链接 →
         </a>
       </div>
@@ -633,30 +929,56 @@
       :width="WINDOW_W.xxl"
       :body-style="{ maxHeight: '70vh', overflow: 'auto', padding: '0' }"
     >
-      <div v-if="sourceDocItem" class="source-doc-body">
+      <div
+        v-if="sourceDocItem"
+        class="source-doc-body"
+      >
         <!-- 文档元数据条 -->
         <div class="source-doc-meta-bar">
           <a-tag :color="platformMeta(sourceDocItem.platform).color">
             {{ platformMeta(sourceDocItem.platform).label }}
           </a-tag>
-          <a-tag size="small">{{ getDocIcon(sourceDocItem.file_type) }} {{ sourceDocItem.file_type.toUpperCase() }}</a-tag>
+          <a-tag size="small">
+            {{ getDocIcon(sourceDocItem.file_type) }} {{ sourceDocItem.file_type.toUpperCase() }}
+          </a-tag>
           <span class="source-doc-size">{{ formatSize(sourceDocItem.size) }}</span>
           <span class="source-doc-date">上传于 {{ sourceDocItem.uploaded_at.slice(0, 10) }}</span>
         </div>
 
         <!-- 文档描述 -->
-        <p v-if="sourceDocItem.description" class="source-doc-desc">{{ sourceDocItem.description }}</p>
+        <p
+          v-if="sourceDocItem.description"
+          class="source-doc-desc"
+        >
+          {{ sourceDocItem.description }}
+        </p>
 
         <!-- ====== 原文内容区（核心） ====== -->
         <div class="source-doc-content-section">
-          <div class="source-doc-section-header" @click="toggleContentExpanded">
+          <div
+            class="source-doc-section-header"
+            @click="toggleContentExpanded"
+          >
             <span class="source-doc-section-title"><FileTextOutlined /> 原文内容</span>
             <span class="source-doc-toggle">{{ contentExpanded ? '收起 ▲' : '展开全文 ▼' }}</span>
           </div>
-          <div v-show="contentExpanded" class="source-doc-content-body">
-            <a-spin v-if="sourceDocLoading" size="small" />
-            <pre v-else-if="sourceDocItem.content" class="source-doc-text">{{ sourceDocItem.content }}</pre>
-            <a-empty v-else description="暂无原文内容（上传时未提取文本）" :image-style="{ height: '60px' }" />
+          <div
+            v-show="contentExpanded"
+            class="source-doc-content-body"
+          >
+            <a-spin
+              v-if="sourceDocLoading"
+              size="small"
+            />
+            <pre
+              v-else-if="sourceDocItem.content"
+              class="source-doc-text"
+            >{{ sourceDocItem.content }}</pre>
+            <a-empty
+              v-else
+              description="暂无原文内容（上传时未提取文本）"
+              :image-style="{ height: '60px' }"
+            />
           </div>
         </div>
 
@@ -665,16 +987,35 @@
 
         <!-- 关联到此文档的规则列表 -->
         <div class="source-doc-rules">
-          <h4 class="source-doc-rules-title">从此文档提取的规则（{{ linkedRules.length }} 条）</h4>
-          <div v-if="linkedRules.length" class="source-doc-rules-list">
-            <div v-for="rule in linkedRules" :key="rule.id" class="source-doc-rule-item" @click="viewLinkedRule(rule)">
-              <a-tag :color="statusColor(rule.status)" size="small">{{ statusLabel(rule.status) }}</a-tag>
+          <h4 class="source-doc-rules-title">
+            从此文档提取的规则（{{ linkedRules.length }} 条）
+          </h4>
+          <div
+            v-if="linkedRules.length"
+            class="source-doc-rules-list"
+          >
+            <div
+              v-for="rule in linkedRules"
+              :key="rule.id"
+              class="source-doc-rule-item"
+              @click="viewLinkedRule(rule)"
+            >
+              <a-tag
+                :color="statusColor(rule.status)"
+                size="small"
+              >
+                {{ statusLabel(rule.status) }}
+              </a-tag>
               <span class="source-doc-rule-title">{{ rule.title }}</span>
               <span class="source-doc-rule-cat">{{ categoryLabel(rule.category) }}</span>
               <ExportOutlined class="source-doc-arrow" />
             </div>
           </div>
-          <a-empty v-else description="暂无规则关联此文档，可点击「AI 拆分」自动提取" :image-style="{ height: '36px' }" />
+          <a-empty
+            v-else
+            description="暂无规则关联此文档，可点击「AI 拆分」自动提取"
+            :image-style="{ height: '36px' }"
+          />
         </div>
       </div>
     </a-modal>

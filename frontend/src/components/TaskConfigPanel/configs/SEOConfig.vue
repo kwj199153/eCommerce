@@ -7,8 +7,14 @@
       style="margin-bottom: var(--space-16)"
     />
 
-    <a-form layout="vertical" :model="form">
-      <a-form-item label="Listing ASIN" required>
+    <a-form
+      layout="vertical"
+      :model="form"
+    >
+      <a-form-item
+        label="Listing ASIN"
+        required
+      >
         <div class="input-with-picker">
           <a-input
             v-model:value="form.asin"
@@ -29,31 +35,50 @@
       </a-form-item>
 
       <a-form-item label="诊断维度">
-        <a-checkbox-group v-model:value="form.dimensions" @change="saveForm">
+        <a-checkbox-group
+          v-model:value="form.dimensions"
+          @change="saveForm"
+        >
           <a-row :gutter="[8, 8]">
             <a-col :span="12">
-              <a-checkbox value="title">📝 标题优化</a-checkbox>
+              <a-checkbox value="title">
+                📝 标题优化
+              </a-checkbox>
             </a-col>
             <a-col :span="12">
-              <a-checkbox value="bullets">✨ 五点描述</a-checkbox>
+              <a-checkbox value="bullets">
+                ✨ 五点描述
+              </a-checkbox>
             </a-col>
             <a-col :span="12">
-              <a-checkbox value="images">🖼️ 主图质量</a-checkbox>
+              <a-checkbox value="images">
+                🖼️ 主图质量
+              </a-checkbox>
             </a-col>
             <a-col :span="12">
-              <a-checkbox value="price">💰 定价竞争力</a-checkbox>
+              <a-checkbox value="price">
+                💰 定价竞争力
+              </a-checkbox>
             </a-col>
             <a-col :span="12">
-              <a-checkbox value="reviews">⭐ 评论健康度</a-checkbox>
+              <a-checkbox value="reviews">
+                ⭐ 评论健康度
+              </a-checkbox>
             </a-col>
             <a-col :span="12">
-              <a-checkbox value="keywords">🔑 关键词覆盖</a-checkbox>
+              <a-checkbox value="keywords">
+                🔑 关键词覆盖
+              </a-checkbox>
             </a-col>
             <a-col :span="12">
-              <a-checkbox value="a_plus">📄 A+ Content</a-checkbox>
+              <a-checkbox value="a_plus">
+                📄 A+ Content
+              </a-checkbox>
             </a-col>
             <a-col :span="12">
-              <a-checkbox value="category">📂 类目排名</a-checkbox>
+              <a-checkbox value="category">
+                📂 类目排名
+              </a-checkbox>
             </a-col>
           </a-row>
         </a-checkbox-group>
@@ -78,26 +103,53 @@
       </a-form-item>
 
       <a-form-item label="报告深度">
-        <a-radio-group v-model:value="form.depth" @change="saveForm">
-          <a-radio-button value="quick">快速概览</a-radio-button>
-          <a-radio-button value="standard">标准报告</a-radio-button>
-          <a-radio-button value="deep">深度分析</a-radio-button>
+        <a-radio-group
+          v-model:value="form.depth"
+          @change="saveForm"
+        >
+          <a-radio-button value="quick">
+            快速概览
+          </a-radio-button>
+          <a-radio-button value="standard">
+            标准报告
+          </a-radio-button>
+          <a-radio-button value="deep">
+            深度分析
+          </a-radio-button>
         </a-radio-group>
       </a-form-item>
 
       <a-form-item label="输出语言">
-        <a-select v-model:value="form.language" @change="saveForm">
-          <a-select-option value="zh">中文</a-select-option>
-          <a-select-option value="en">English</a-select-option>
+        <a-select
+          v-model:value="form.language"
+          @change="saveForm"
+        >
+          <a-select-option value="zh">
+            中文
+          </a-select-option>
+          <a-select-option value="en">
+            English
+          </a-select-option>
         </a-select>
       </a-form-item>
     </a-form>
 
     <div class="config-actions">
-      <a-button type="primary" block size="large" @click="handleAnalyze" :loading="analyzing">
+      <a-button
+        type="primary"
+        block
+        size="large"
+        :loading="analyzing"
+        @click="handleAnalyze"
+      >
         <ExperimentOutlined /> 开始诊断
       </a-button>
-      <a-button block @click="handleReset"><ReloadOutlined /> 重置</a-button>
+      <a-button
+        block
+        @click="handleReset"
+      >
+        <ReloadOutlined /> 重置
+      </a-button>
     </div>
   </div>
 </template>

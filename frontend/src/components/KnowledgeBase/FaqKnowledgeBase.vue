@@ -19,26 +19,44 @@
             title="删除此话术库？其下所有话术和文档将被清除。"
             @confirm="handleDeleteKb(kb.id)"
           >
-            <button class="tab-close" @click.stop>×</button>
+            <button
+              class="tab-close"
+              @click.stop
+            >
+              ×
+            </button>
           </a-popconfirm>
         </div>
         <!-- 新建库按钮 -->
-        <button class="kb-tab kb-tab-add" @click="showCreateKbModal = true">
+        <button
+          class="kb-tab kb-tab-add"
+          @click="showCreateKbModal = true"
+        >
           <PlusOutlined />
         </button>
       </div>
       <div class="tabs-right">
         <a-tooltip title="管理文档素材（PDF / MD / Excel）">
-          <a-button size="small" @click="showDocPanel = !showDocPanel">
+          <a-button
+            size="small"
+            @click="showDocPanel = !showDocPanel"
+          >
             <FileTextOutlined /> 文档 {{ showDocPanel ? '收起' : '管理' }}
-            <a-badge v-if="store.currentDocs.length" :count="store.currentDocs.length" :offset="[-4, 0]" />
+            <a-badge
+              v-if="store.currentDocs.length"
+              :count="store.currentDocs.length"
+              :offset="[-4, 0]"
+            />
           </a-button>
         </a-tooltip>
       </div>
     </div>
 
     <!-- ====== 文档素材面板（可折叠） ====== -->
-    <div v-show="showDocPanel" class="doc-panel">
+    <div
+      v-show="showDocPanel"
+      class="doc-panel"
+    >
       <div class="doc-panel-header">
         <span class="doc-panel-title"><FileTextOutlined /> RAG 补充文档（{{ store.currentKnowledgeBase?.is_default ? '通用' : store.currentKnowledgeBase?.name }}）</span>
         <a-space>
@@ -47,31 +65,64 @@
             accept=".pdf,.md,.txt,.xlsx,.xls,.csv"
             :before-upload="handleDocUpload"
           >
-            <a-button size="small" type="link"><UploadOutlined /> 上传文档</a-button>
+            <a-button
+              size="small"
+              type="link"
+            >
+              <UploadOutlined /> 上传文档
+            </a-button>
           </a-upload>
         </a-space>
       </div>
-      <div v-if="store.currentDocs.length" class="doc-list">
-        <div v-for="doc in store.currentDocs" :key="doc.id" class="doc-item">
+      <div
+        v-if="store.currentDocs.length"
+        class="doc-list"
+      >
+        <div
+          v-for="doc in store.currentDocs"
+          :key="doc.id"
+          class="doc-item"
+        >
           <div class="doc-info">
             <span class="doc-icon">{{ getDocIcon(doc.file_type) }}</span>
             <span class="doc-name">{{ doc.filename }}</span>
             <span class="doc-size">{{ formatSize(doc.size) }}</span>
-            <span v-if="doc.description" class="doc-desc">— {{ doc.description }}</span>
+            <span
+              v-if="doc.description"
+              class="doc-desc"
+            >— {{ doc.description }}</span>
           </div>
           <!-- ★ 第 288 轮：文档的出口。拆出来的条目是**草稿**，
                不进检索，需在下方话术列表确认后点「发布」。 -->
           <a-tooltip title="用 AI 从文档正文拆出话术（存为草稿，确认后发布才进客服检索）">
-            <a-button type="text" size="small" :loading="splittingDocId === doc.id" @click="handleAiSplit(doc)">
+            <a-button
+              type="text"
+              size="small"
+              :loading="splittingDocId === doc.id"
+              @click="handleAiSplit(doc)"
+            >
               <ExperimentOutlined />
             </a-button>
           </a-tooltip>
-          <a-popconfirm title="删除此文档？" @confirm="handleDeleteDoc(doc.id)">
-            <a-button type="text" size="small" danger><DeleteOutlined /></a-button>
+          <a-popconfirm
+            title="删除此文档？"
+            @confirm="handleDeleteDoc(doc.id)"
+          >
+            <a-button
+              type="text"
+              size="small"
+              danger
+            >
+              <DeleteOutlined />
+            </a-button>
           </a-popconfirm>
         </div>
       </div>
-      <a-empty v-else description="暂无文档。上传后可一键拆成话术草稿（文档本身不参与检索）" :image-style="{ height: '40px' }" />
+      <a-empty
+        v-else
+        description="暂无文档。上传后可一键拆成话术草稿（文档本身不参与检索）"
+        :image-style="{ height: '40px' }"
+      />
     </div>
 
     <!-- ====== 顶部操作栏 ====== -->
@@ -84,7 +135,12 @@
         <span class="active-badge">活跃 {{ store.activeCount }}</span>
         <!-- ★ 草稿必须**看得见**：它是「待人工确认」的那批，
              藏起来就等于取消了这道确认 -->
-        <a-tag v-if="draftCount > 0" color="warning">草稿 {{ draftCount }} 待确认</a-tag>
+        <a-tag
+          v-if="draftCount > 0"
+          color="warning"
+        >
+          草稿 {{ draftCount }} 待确认
+        </a-tag>
       </div>
       <div class="header-actions">
         <!-- 导出当前话术库配置（多格式，可选目标文件夹） -->
@@ -99,10 +155,16 @@
             <UploadOutlined /> 导入话术
           </a-button>
         </a-tooltip>
-        <a-button v-if="draftCount > 0" @click="handlePublishAllDrafts">
+        <a-button
+          v-if="draftCount > 0"
+          @click="handlePublishAllDrafts"
+        >
           <CheckCircleOutlined /> 发布草稿（{{ draftCount }}）
         </a-button>
-        <a-button type="primary" @click="openAddModal">
+        <a-button
+          type="primary"
+          @click="openAddModal"
+        >
           <PlusOutlined /> 新增话术
         </a-button>
       </div>
@@ -116,7 +178,9 @@
         style="width: 280px"
         allow-clear
       >
-        <template #prefix><SearchOutlined /></template>
+        <template #prefix>
+          <SearchOutlined />
+        </template>
       </a-input-search>
       <a-select
         v-model:value="store.filterCategory"
@@ -124,9 +188,16 @@
         placeholder="全部分类"
         allow-clear
       >
-        <a-select-option v-for="cat in CATEGORIES" :key="cat.key" :value="cat.key">
+        <a-select-option
+          v-for="cat in CATEGORIES"
+          :key="cat.key"
+          :value="cat.key"
+        >
           {{ cat.icon }} {{ cat.label }}
-          <span v-if="store.categoryStats[cat.key]" class="cat-count">({{ store.categoryStats[cat.key] }})</span>
+          <span
+            v-if="store.categoryStats[cat.key]"
+            class="cat-count"
+          >({{ store.categoryStats[cat.key] }})</span>
         </a-select-option>
       </a-select>
       <a-select
@@ -135,9 +206,15 @@
         placeholder="全部状态"
         allow-clear
       >
-        <a-select-option value="active">✅ 活跃</a-select-option>
-        <a-select-option value="draft">📝 草稿</a-select-option>
-        <a-select-option value="archived">📦 已归档</a-select-option>
+        <a-select-option value="active">
+          ✅ 活跃
+        </a-select-option>
+        <a-select-option value="draft">
+          📝 草稿
+        </a-select-option>
+        <a-select-option value="archived">
+          📦 已归档
+        </a-select-option>
       </a-select>
     </div>
 
@@ -155,8 +232,17 @@
         <template v-if="column.dataIndex === 'question'">
           <div class="question-cell">
             <span class="q-text">{{ record.question }}</span>
-            <div class="q-keywords" v-if="record.keywords.length">
-              <a-tag v-for="kw in record.keywords.slice(0, 3)" :key="kw" size="small">{{ kw }}</a-tag>
+            <div
+              v-if="record.keywords.length"
+              class="q-keywords"
+            >
+              <a-tag
+                v-for="kw in record.keywords.slice(0, 3)"
+                :key="kw"
+                size="small"
+              >
+                {{ kw }}
+              </a-tag>
             </div>
           </div>
         </template>
@@ -185,19 +271,37 @@
 
         <template v-else-if="column.dataIndex === 'actions'">
           <a-space>
-            <a-tooltip v-if="record.status === 'draft'" title="发布后才会被客服检索命中">
-              <a-button type="text" size="small" @click="handlePublish([record.id])">
+            <a-tooltip
+              v-if="record.status === 'draft'"
+              title="发布后才会被客服检索命中"
+            >
+              <a-button
+                type="text"
+                size="small"
+                @click="handlePublish([record.id])"
+              >
                 <CheckCircleOutlined />
               </a-button>
             </a-tooltip>
             <a-tooltip title="编辑">
-              <a-button type="text" size="small" @click="openEditModal(record)">
+              <a-button
+                type="text"
+                size="small"
+                @click="openEditModal(record)"
+              >
                 <EditOutlined />
               </a-button>
             </a-tooltip>
-            <a-popconfirm title="确定删除此条话术？" @confirm="handleDelete(record.id)">
+            <a-popconfirm
+              title="确定删除此条话术？"
+              @confirm="handleDelete(record.id)"
+            >
               <a-tooltip title="删除">
-                <a-button type="text" size="small" danger>
+                <a-button
+                  type="text"
+                  size="small"
+                  danger
+                >
                   <DeleteOutlined />
                 </a-button>
               </a-tooltip>
@@ -212,20 +316,44 @@
       v-model:open="modalVisible"
       :title="editingId ? '编辑话术' : '新增话术'"
       :width="WINDOW_W.xl"
+      :ok-loading="submitting"
+      cancel-text="取消"
       @ok="handleSubmit"
-      :okLoading="submitting"
-      cancelText="取消"
     >
-      <a-form :label-col="{ span: 4 }" :wrapper-col="{ span: 19 }">
-        <a-form-item label="问题" required>
-          <a-textarea v-model:value="form.question" placeholder="客户可能提出的问题..." :rows="2" />
+      <a-form
+        :label-col="{ span: 4 }"
+        :wrapper-col="{ span: 19 }"
+      >
+        <a-form-item
+          label="问题"
+          required
+        >
+          <a-textarea
+            v-model:value="form.question"
+            placeholder="客户可能提出的问题..."
+            :rows="2"
+          />
         </a-form-item>
-        <a-form-item label="答案" required>
-          <a-textarea v-model:value="form.answer" placeholder="标准回答内容..." :rows="4" />
+        <a-form-item
+          label="答案"
+          required
+        >
+          <a-textarea
+            v-model:value="form.answer"
+            placeholder="标准回答内容..."
+            :rows="4"
+          />
         </a-form-item>
         <a-form-item label="分类">
-          <a-select v-model:value="form.category" placeholder="选择分类">
-            <a-select-option v-for="cat in CATEGORIES" :key="cat.key" :value="cat.key">
+          <a-select
+            v-model:value="form.category"
+            placeholder="选择分类"
+          >
+            <a-select-option
+              v-for="cat in CATEGORIES"
+              :key="cat.key"
+              :value="cat.key"
+            >
               {{ cat.icon }} {{ cat.label }}
             </a-select-option>
           </a-select>
@@ -240,16 +368,28 @@
         </a-form-item>
         <a-form-item label="优先级">
           <a-radio-group v-model:value="form.priority">
-            <a-radio-button value="high">高（优先匹配）</a-radio-button>
-            <a-radio-button value="medium">中</a-radio-button>
-            <a-radio-button value="low">低</a-radio-button>
+            <a-radio-button value="high">
+              高（优先匹配）
+            </a-radio-button>
+            <a-radio-button value="medium">
+              中
+            </a-radio-button>
+            <a-radio-button value="low">
+              低
+            </a-radio-button>
           </a-radio-group>
         </a-form-item>
         <a-form-item label="状态">
           <a-radio-group v-model:value="form.status">
-            <a-radio-button value="active">活跃</a-radio-button>
-            <a-radio-button value="draft">草稿</a-radio-button>
-            <a-radio-button value="archived">归档</a-radio-button>
+            <a-radio-button value="active">
+              活跃
+            </a-radio-button>
+            <a-radio-button value="draft">
+              草稿
+            </a-radio-button>
+            <a-radio-button value="archived">
+              归档
+            </a-radio-button>
           </a-radio-group>
         </a-form-item>
       </a-form>
@@ -273,24 +413,40 @@
           <p class="ant-upload-drag-icon">
             <InboxOutlined />
           </p>
-          <p class="ant-upload-text">点击或拖拽文件到此区域上传</p>
+          <p class="ant-upload-text">
+            点击或拖拽文件到此区域上传
+          </p>
           <p class="ant-upload-hint">
-            支持 JSON / CSV / TXT / Excel 格式<br/>
-            CSV：question, answer, category, keywords<br/>
-            TXT：每行 "问题 /// 答案"<br/>
+            支持 JSON / CSV / TXT / Excel 格式<br>
+            CSV：question, answer, category, keywords<br>
+            TXT：每行 "问题 /// 答案"<br>
             Excel：首行为表头，含 question / answer 列
           </p>
         </a-upload-dragger>
 
-        <div v-if="importResult" class="import-result" :class="{ error: importResult.failed > 0 }">
+        <div
+          v-if="importResult"
+          class="import-result"
+          :class="{ error: importResult.failed > 0 }"
+        >
           <a-alert
             :type="importResult.failed > 0 ? 'warning' : 'success'"
             :message="`导入完成：成功 ${importResult.success} 条${importResult.failed > 0 ? `，失败 ${importResult.failed} 条` : ''}`"
           >
-            <template v-if="importResult.errors.length" #description>
+            <template
+              v-if="importResult.errors.length"
+              #description
+            >
               <ul class="error-list">
-                <li v-for="(err, i) in importResult.errors.slice(0, 5)" :key="i">{{ err }}</li>
-                <li v-if="importResult.errors.length > 5">... 还有 {{ importResult.errors.length - 5 }} 条错误</li>
+                <li
+                  v-for="(err, i) in importResult.errors.slice(0, 5)"
+                  :key="i"
+                >
+                  {{ err }}
+                </li>
+                <li v-if="importResult.errors.length > 5">
+                  ... 还有 {{ importResult.errors.length - 5 }} 条错误
+                </li>
               </ul>
             </template>
           </a-alert>
@@ -303,13 +459,19 @@
       v-model:open="showCreateKbModal"
       title="新建话术库"
       :width="WINDOW_W.sm"
+      :ok-loading="creatingKb"
+      ok-text="创建"
       @ok="handleCreateKb"
-      :okLoading="creatingKb"
-      okText="创建"
     >
       <a-form layout="vertical">
-        <a-form-item label="名称" required>
-          <a-input v-model:value="newKbForm.name" placeholder="如：亚马逊US售后库、TikTok差评模板库" />
+        <a-form-item
+          label="名称"
+          required
+        >
+          <a-input
+            v-model:value="newKbForm.name"
+            placeholder="如：亚马逊US售后库、TikTok差评模板库"
+          />
         </a-form-item>
         <a-form-item label="图标">
           <div class="icon-picker">
@@ -319,18 +481,30 @@
               class="icon-btn"
               :class="{ active: newKbForm.icon === icon }"
               @click="newKbForm.icon = icon"
-            >{{ icon }}</button>
+            >
+              {{ icon }}
+            </button>
           </div>
         </a-form-item>
         <a-form-item label="类型">
           <a-radio-group v-model:value="newKbForm.type">
-            <a-radio-button value="shop">🏪 店铺</a-radio-button>
-            <a-radio-button value="platform">🌐 平台</a-radio-button>
-            <a-radio-button value="custom">📁 自定义</a-radio-button>
+            <a-radio-button value="shop">
+              🏪 店铺
+            </a-radio-button>
+            <a-radio-button value="platform">
+              🌐 平台
+            </a-radio-button>
+            <a-radio-button value="custom">
+              📁 自定义
+            </a-radio-button>
           </a-radio-group>
         </a-form-item>
         <a-form-item label="描述">
-          <a-textarea v-model:value="newKbForm.description" :rows="2" placeholder="简要描述此话术库的用途..." />
+          <a-textarea
+            v-model:value="newKbForm.description"
+            :rows="2"
+            placeholder="简要描述此话术库的用途..."
+          />
         </a-form-item>
       </a-form>
     </a-modal>

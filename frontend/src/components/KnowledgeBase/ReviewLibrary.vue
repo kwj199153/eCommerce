@@ -19,8 +19,15 @@
   <div class="review-library">
     <div class="rl-head">
       <div class="rl-title-row">
-        <h2 class="rl-title">复盘库</h2>
-        <a-tag v-if="!loading && !error" color="blue">共 {{ total }} 份</a-tag>
+        <h2 class="rl-title">
+          复盘库
+        </h2>
+        <a-tag
+          v-if="!loading && !error"
+          color="blue"
+        >
+          共 {{ total }} 份
+        </a-tag>
       </div>
       <p class="rl-sub">
         只存你**确认过**的复盘：在对话里生成复盘后点「归档到复盘库」才会进来。
@@ -44,7 +51,10 @@
         style="width: 190px"
         @change="reload"
       />
-      <a-button :loading="loading" @click="reload">
+      <a-button
+        :loading="loading"
+        @click="reload"
+      >
         <ReloadOutlined />
         刷新
       </a-button>
@@ -62,36 +72,67 @@
       class="rl-alert"
     >
       <template #action>
-        <a-button size="small" @click="reload">重试</a-button>
+        <a-button
+          size="small"
+          @click="reload"
+        >
+          重试
+        </a-button>
       </template>
     </a-alert>
 
     <!-- ===== 空状态 ===== -->
-    <a-empty v-else-if="!loading && !items.length" class="rl-empty">
+    <a-empty
+      v-else-if="!loading && !items.length"
+      class="rl-empty"
+    >
       <template #description>
-        <div class="rl-empty-title">{{ emptyTitle }}</div>
-        <div class="rl-empty-sub">{{ emptySub }}</div>
+        <div class="rl-empty-title">
+          {{ emptyTitle }}
+        </div>
+        <div class="rl-empty-sub">
+          {{ emptySub }}
+        </div>
       </template>
-      <a-button v-if="typeFilter" size="small" @click="clearFilter">清空筛选</a-button>
+      <a-button
+        v-if="typeFilter"
+        size="small"
+        @click="clearFilter"
+      >
+        清空筛选
+      </a-button>
     </a-empty>
 
     <!-- ===== 列表 ===== -->
-    <a-spin v-else :spinning="loading">
+    <a-spin
+      v-else
+      :spinning="loading"
+    >
       <div class="rl-table-wrap">
         <table class="rl-table">
           <thead>
             <tr>
-              <th class="c-pick"></th>
+              <th class="c-pick" />
               <th>类型</th>
-              <th class="num">周期</th>
-              <th class="num">周期末日</th>
+              <th class="num">
+                周期
+              </th>
+              <th class="num">
+                周期末日
+              </th>
               <th>一句话结论</th>
-              <th class="num">归档时间</th>
-              <th class="c-act"></th>
+              <th class="num">
+                归档时间
+              </th>
+              <th class="c-act" />
             </tr>
           </thead>
           <tbody>
-            <tr v-for="it in items" :key="it.id" :class="{ picked: compareIds.includes(it.id) }">
+            <tr
+              v-for="it in items"
+              :key="it.id"
+              :class="{ picked: compareIds.includes(it.id) }"
+            >
               <td class="c-pick">
                 <a-checkbox
                   :checked="compareIds.includes(it.id)"
@@ -100,14 +141,33 @@
                 />
               </td>
               <td>
-                <a-tag color="geekblue">{{ reviewTitleOf(it.report_type) }}</a-tag>
+                <a-tag color="geekblue">
+                  {{ reviewTitleOf(it.report_type) }}
+                </a-tag>
               </td>
-              <td class="num">近 {{ it.period_days }} 天</td>
-              <td class="num">{{ it.period_end }}</td>
-              <td class="c-summary" :title="it.summary">{{ it.summary || '—' }}</td>
-              <td class="num">{{ shortTime(it.created_at) }}</td>
+              <td class="num">
+                近 {{ it.period_days }} 天
+              </td>
+              <td class="num">
+                {{ it.period_end }}
+              </td>
+              <td
+                class="c-summary"
+                :title="it.summary"
+              >
+                {{ it.summary || '—' }}
+              </td>
+              <td class="num">
+                {{ shortTime(it.created_at) }}
+              </td>
               <td class="c-act">
-                <a-button type="link" size="small" @click="openDetail(it.id)">查看</a-button>
+                <a-button
+                  type="link"
+                  size="small"
+                  @click="openDetail(it.id)"
+                >
+                  查看
+                </a-button>
               </td>
             </tr>
           </tbody>
@@ -116,11 +176,20 @@
     </a-spin>
 
     <!-- ===== 周期对比（勾选两份后出现）===== -->
-    <section v-if="compareIds.length === 2" class="rl-compare">
+    <section
+      v-if="compareIds.length === 2"
+      class="rl-compare"
+    >
       <div class="rl-cmp-head">
         <DiffOutlined />
         <span>周期对比</span>
-        <a-button type="link" size="small" @click="compareIds = []">清空</a-button>
+        <a-button
+          type="link"
+          size="small"
+          @click="compareIds = []"
+        >
+          清空
+        </a-button>
       </div>
 
       <a-spin :spinning="cmpLoading">
@@ -141,28 +210,52 @@
               上期 · {{ reviewTitleOf(cmpOld?.report_type) }} · {{ cmpOld?.period_end }}
             </span>
           </div>
-          <div v-if="cmpTypeMismatch" class="rl-cmp-warn">
+          <div
+            v-if="cmpTypeMismatch"
+            class="rl-cmp-warn"
+          >
             两份复盘的<b>类型不同</b>，只有指标名相同的行能对比（其余显示「—」）。
           </div>
           <table class="rl-table rl-cmp-table">
             <thead>
               <tr>
                 <th>指标</th>
-                <th class="num">本期</th>
-                <th class="num">上期</th>
-                <th class="num">变化</th>
+                <th class="num">
+                  本期
+                </th>
+                <th class="num">
+                  上期
+                </th>
+                <th class="num">
+                  变化
+                </th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in cmpRows" :key="row.label">
+              <tr
+                v-for="row in cmpRows"
+                :key="row.label"
+              >
                 <td>{{ row.label }}</td>
-                <td class="num">{{ row.newText }}</td>
-                <td class="num">{{ row.oldText }}</td>
-                <td class="num" :class="row.deltaClass">{{ row.deltaText }}</td>
+                <td class="num">
+                  {{ row.newText }}
+                </td>
+                <td class="num">
+                  {{ row.oldText }}
+                </td>
+                <td
+                  class="num"
+                  :class="row.deltaClass"
+                >
+                  {{ row.deltaText }}
+                </td>
               </tr>
             </tbody>
           </table>
-          <div v-if="!cmpRows.length" class="rl-cmp-empty">
+          <div
+            v-if="!cmpRows.length"
+            class="rl-cmp-empty"
+          >
             两份复盘都没有可对比的指标（后端这份报告没给 `metrics`）。
           </div>
         </template>
@@ -182,7 +275,11 @@
           （`utils/reviewExport.ts`），两处各写一份会导出成两张不一样的表。
       -->
       <template #extra>
-        <a-button v-if="exportRows.length" size="small" @click="exportOpen = true">
+        <a-button
+          v-if="exportRows.length"
+          size="small"
+          @click="exportOpen = true"
+        >
           <DownloadOutlined />
           导出
         </a-button>
@@ -197,45 +294,96 @@
         />
         <template v-else-if="detail">
           <div class="rl-d-head">
-            <a-tag color="geekblue">{{ reviewTitleOf(detail.report_type) }}</a-tag>
+            <a-tag color="geekblue">
+              {{ reviewTitleOf(detail.report_type) }}
+            </a-tag>
             <a-tag>近 {{ detail.period_days }} 天</a-tag>
             <a-tag>周期末日 {{ detail.period_end }}</a-tag>
           </div>
-          <p class="rl-d-summary">{{ detail.summary || '（这份复盘没有一句话结论）' }}</p>
+          <p class="rl-d-summary">
+            {{ detail.summary || '（这份复盘没有一句话结论）' }}
+          </p>
 
-          <div v-if="detailMetrics.length" class="rl-d-grid">
-            <div v-for="m in detailMetrics" :key="m.label" class="rl-d-cell">
-              <div class="rl-d-k">{{ m.label }}</div>
-              <div class="rl-d-v">{{ metricTextOf(m) }}</div>
+          <div
+            v-if="detailMetrics.length"
+            class="rl-d-grid"
+          >
+            <div
+              v-for="m in detailMetrics"
+              :key="m.label"
+              class="rl-d-cell"
+            >
+              <div class="rl-d-k">
+                {{ m.label }}
+              </div>
+              <div class="rl-d-v">
+                {{ metricTextOf(m) }}
+              </div>
             </div>
           </div>
 
-          <div v-if="detailInsights.length" class="rl-d-block">
-            <div class="rl-d-caption">观察</div>
+          <div
+            v-if="detailInsights.length"
+            class="rl-d-block"
+          >
+            <div class="rl-d-caption">
+              观察
+            </div>
             <ul class="rl-d-list">
-              <li v-for="(t, i) in detailInsights" :key="i">{{ t }}</li>
+              <li
+                v-for="(t, i) in detailInsights"
+                :key="i"
+              >
+                {{ t }}
+              </li>
             </ul>
           </div>
-          <div v-if="detailActions.length" class="rl-d-block">
-            <div class="rl-d-caption">建议动作</div>
+          <div
+            v-if="detailActions.length"
+            class="rl-d-block"
+          >
+            <div class="rl-d-caption">
+              建议动作
+            </div>
             <ul class="rl-d-list">
-              <li v-for="(t, i) in detailActions" :key="i">{{ t }}</li>
+              <li
+                v-for="(t, i) in detailActions"
+                :key="i"
+              >
+                {{ t }}
+              </li>
             </ul>
           </div>
 
-          <div v-if="detailTable" class="rl-d-block">
-            <div class="rl-d-caption">{{ detailTable.caption }}</div>
+          <div
+            v-if="detailTable"
+            class="rl-d-block"
+          >
+            <div class="rl-d-caption">
+              {{ detailTable.caption }}
+            </div>
             <table class="rl-table">
               <thead>
                 <tr>
-                  <th v-for="c in detailTable.columns" :key="c.key" :class="{ num: c.num }">
+                  <th
+                    v-for="c in detailTable.columns"
+                    :key="c.key"
+                    :class="{ num: c.num }"
+                  >
                     {{ c.label }}
                   </th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(row, i) in detailTable.rows" :key="i">
-                  <td v-for="c in detailTable.columns" :key="c.key" :class="{ num: c.num }">
+                <tr
+                  v-for="(row, i) in detailTable.rows"
+                  :key="i"
+                >
+                  <td
+                    v-for="c in detailTable.columns"
+                    :key="c.key"
+                    :class="{ num: c.num }"
+                  >
                     {{ c.render(row) }}
                   </td>
                 </tr>
@@ -247,7 +395,10 @@
             归档时间 {{ detail.created_at }}<span v-if="detail.updated_at !== detail.created_at"> · 更新于 {{ detail.updated_at }}</span>
           </div>
         </template>
-        <a-empty v-else description="没有内容" />
+        <a-empty
+          v-else
+          description="没有内容"
+        />
       </a-spin>
     </a-drawer>
 

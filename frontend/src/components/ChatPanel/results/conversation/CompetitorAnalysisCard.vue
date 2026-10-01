@@ -5,11 +5,21 @@
     :badge="items.length ? `${items.length} 个` : ''"
     badge-color="purple"
   >
-    <div v-if="items.length" class="cp-list">
-      <div v-for="(c, i) in items" :key="c.product?.product_id || i" class="cp-item">
+    <div
+      v-if="items.length"
+      class="cp-list"
+    >
+      <div
+        v-for="(c, i) in items"
+        :key="c.product?.product_id || i"
+        class="cp-item"
+      >
         <div class="cp-head">
           <span class="cp-title">{{ c.product?.title || '未知商品' }}</span>
-          <a-tag :color="positionColor(c.price_positioning)" class="cp-pos">
+          <a-tag
+            :color="positionColor(c.price_positioning)"
+            class="cp-pos"
+          >
             {{ positionLabel(c.price_positioning) }}
           </a-tag>
         </div>
@@ -22,15 +32,26 @@
           <span class="cp-sep">·</span>
           <span>Listing {{ Math.round(Number(c.listing_quality_score) || 0) }} 分</span>
         </div>
-        <div v-if="c.strengths?.length" class="cp-row cp-pro">
+        <div
+          v-if="c.strengths?.length"
+          class="cp-row cp-pro"
+        >
           <b>优势</b>{{ c.strengths.join('；') }}
         </div>
-        <div v-if="c.weaknesses?.length" class="cp-row cp-con">
+        <div
+          v-if="c.weaknesses?.length"
+          class="cp-row cp-con"
+        >
           <b>劣势</b>{{ c.weaknesses.join('；') }}
         </div>
       </div>
     </div>
-    <div v-else class="cp-empty">{{ summary || '平台未返回可对比的竞品数据。' }}</div>
+    <div
+      v-else
+      class="cp-empty"
+    >
+      {{ summary || '平台未返回可对比的竞品数据。' }}
+    </div>
   </ConversationCard>
 </template>
 

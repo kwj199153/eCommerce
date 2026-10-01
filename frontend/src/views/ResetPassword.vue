@@ -3,7 +3,9 @@
     <div class="auth-card">
       <div class="brand">
         <h1>重置密码</h1>
-        <p v-if="!done">设置一个新密码，然后用它重新登录</p>
+        <p v-if="!done">
+          设置一个新密码，然后用它重新登录
+        </p>
       </div>
 
       <!-- ===== 成功态 ===== -->
@@ -14,7 +16,13 @@
         :sub-title="doneMessage"
       >
         <template #extra>
-          <a-button type="primary" size="large" @click="goLogin">用新密码登录</a-button>
+          <a-button
+            type="primary"
+            size="large"
+            @click="goLogin"
+          >
+            用新密码登录
+          </a-button>
         </template>
       </a-result>
 
@@ -49,8 +57,15 @@
           description="请把邮件里那串代码粘贴到下方；若邮件已过期，回登录页重新申请一封。"
         />
 
-        <a-form layout="vertical" class="auth-form" @finish="submit">
-          <a-form-item v-if="!hasLinkToken" label="重置代码">
+        <a-form
+          layout="vertical"
+          class="auth-form"
+          @finish="submit"
+        >
+          <a-form-item
+            v-if="!hasLinkToken"
+            label="重置代码"
+          >
             <a-input
               v-model:value="typedToken"
               placeholder="粘贴邮件里的那串代码"
@@ -88,9 +103,21 @@
         </a-form>
 
         <p class="foot">
-          <a-button type="link" size="small" @click="goLogin">返回登录</a-button>
+          <a-button
+            type="link"
+            size="small"
+            @click="goLogin"
+          >
+            返回登录
+          </a-button>
           <span class="foot-sep" />
-          <a-button type="link" size="small" @click="goForgot">重新申请一封</a-button>
+          <a-button
+            type="link"
+            size="small"
+            @click="goForgot"
+          >
+            重新申请一封
+          </a-button>
         </p>
       </template>
     </div>

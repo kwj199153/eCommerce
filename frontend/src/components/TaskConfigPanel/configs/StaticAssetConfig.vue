@@ -1,10 +1,16 @@
 <template>
-  <div class="static-asset-config" :class="{ 'data-mode': isDataMode }">
+  <div
+    class="static-asset-config"
+    :class="{ 'data-mode': isDataMode }"
+  >
     <!-- ====== 大屏模式 = 左右分栏：左表单 + 右预览 ======
          触发条件：Workspace 顶栏 mode-switch 切到「大屏模式」（reviewMode==='data'）。
          表单唯一一份（content.data-layout），大屏下 grid 两列 + 右侧预览，对话下单列。
          CSS grid: 左 5fr（表单，可滚动）+ 右 7fr（预览，不可滚动），总宽约 528。 -->
-    <div class="content" :class="{ 'data-layout': isDataMode }">
+    <div
+      class="content"
+      :class="{ 'data-layout': isDataMode }"
+    >
       <!-- ====== 唯一一份表单（对话平铺 / 大屏左列共用） ====== -->
       <div class="form-body">
         <!-- ① 载入产品：2 选 1（产品库主图 / 上传原图），共用一张预览图 -->
@@ -21,36 +27,70 @@
           </div>
 
           <!-- 未选任何参考图：显示拖拽上传落区 -->
-          <div v-if="!sourceImage" class="upload-area" :class="{ dragging }" @click="triggerUpload" @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="handleDrop">
+          <div
+            v-if="!sourceImage"
+            class="upload-area"
+            :class="{ dragging }"
+            @click="triggerUpload"
+            @dragover.prevent="dragging = true"
+            @dragleave.prevent="dragging = false"
+            @drop.prevent="handleDrop"
+          >
             <input
               ref="fileInputRef"
               type="file"
               accept="image/*"
               style="display: none"
               @change="handleFileChange"
-            />
+            >
             <CloudUploadOutlined class="upload-icon" />
             <div class="upload-text">
-              <p class="upload-hint">拖拽或点击上传原图</p>
-              <p class="upload-sub">JPG / PNG / WebP，≤10MB · 也可点击右上角文件夹从产品库选</p>
+              <p class="upload-hint">
+                拖拽或点击上传原图
+              </p>
+              <p class="upload-sub">
+                JPG / PNG / WebP，≤10MB · 也可点击右上角文件夹从产品库选
+              </p>
             </div>
           </div>
 
           <!-- 已选参考图：统一显示，不区分来源 -->
-          <div v-else class="upload-area has-image">
-            <img :src="sourceImage" alt="参考图" class="preview-img" />
+          <div
+            v-else
+            class="upload-area has-image"
+          >
+            <img
+              :src="sourceImage"
+              alt="参考图"
+              class="preview-img"
+            >
             <div class="preview-info">
               <span class="pi-name">{{ pickedProduct ? pickedProduct.title?.slice(0, 18) + (pickedProduct.title?.length > 18 ? '…' : '') : (sourceFile?.name || '已上传原图') }}</span>
               <span class="pi-source">{{ pickedProduct ? '📁 来自产品库' : '📤 手动上传' }}</span>
             </div>
             <div class="preview-actions">
-              <a-button size="small" @click="triggerUpload"><RedoOutlined /> 更换</a-button>
-              <a-button size="small" danger @click="removeImage"><DeleteOutlined /> 删除</a-button>
+              <a-button
+                size="small"
+                @click="triggerUpload"
+              >
+                <RedoOutlined /> 更换
+              </a-button>
+              <a-button
+                size="small"
+                danger
+                @click="removeImage"
+              >
+                <DeleteOutlined /> 删除
+              </a-button>
             </div>
           </div>
 
           <!-- 选中产品后，自动从卖点/痛点提取提示文案给 AI -->
-          <div v-if="pickedProduct" class="product-info-line" :title="`卖点：${autoFilledSellingPoints || '—'}\n痛点：${autoFilledPainPoints || '—'}`">
+          <div
+            v-if="pickedProduct"
+            class="product-info-line"
+            :title="`卖点：${autoFilledSellingPoints || '—'}\n痛点：${autoFilledPainPoints || '—'}`"
+          >
             <span class="pi-label">卖点</span>
             <span class="pi-text">{{ autoFilledSellingPoints || '—' }}</span>
             <span class="pi-label">痛点</span>
@@ -60,9 +100,16 @@
 
         <!-- ③ 两个 Tab：素材类型+通用参数 / 自定义 prompt
              「载入产品」在 Tab 外，两个 Tab 共用（它是出图前提输入）。 -->
-        <a-tabs v-model:active-key="paramTab" size="small" class="param-tabs">
+        <a-tabs
+          v-model:active-key="paramTab"
+          size="small"
+          class="param-tabs"
+        >
           <!-- Tab1：素材类型 + 全部结构化参数（通用 / 场景 / 信息图要点） -->
-          <a-tab-pane key="params" tab="素材类型与参数">
+          <a-tab-pane
+            key="params"
+            tab="素材类型与参数"
+          >
             <div class="tab-pane-body">
               <!-- 素材类型（必填核心） -->
               <section class="cfg-section">
@@ -98,25 +145,50 @@
                 <div class="form-row">
                   <div class="form-group flex-1">
                     <label>拍摄风格</label>
-                    <a-select v-model:value="form.style" size="small" style="width: 100%">
-                      <a-select-option value="studio">专业棚拍</a-select-option>
-                      <a-select-option value="natural-light">自然光纪实</a-select-option>
-                      <a-select-option value="minimalist">极简风</a-select-option>
-                      <a-select-option value="luxury">奢华高端</a-select-option>
-                      <a-select-option value="playful">活泼趣味</a-select-option>
-                      <a-select-option value="tech">科技感</a-select-option>
+                    <a-select
+                      v-model:value="form.style"
+                      size="small"
+                      style="width: 100%"
+                    >
+                      <a-select-option value="studio">
+                        专业棚拍
+                      </a-select-option>
+                      <a-select-option value="natural-light">
+                        自然光纪实
+                      </a-select-option>
+                      <a-select-option value="minimalist">
+                        极简风
+                      </a-select-option>
+                      <a-select-option value="luxury">
+                        奢华高端
+                      </a-select-option>
+                      <a-select-option value="playful">
+                        活泼趣味
+                      </a-select-option>
+                      <a-select-option value="tech">
+                        科技感
+                      </a-select-option>
                     </a-select>
                   </div>
                   <div class="form-group flex-1">
                     <label>生成数量</label>
-                    <a-input-number v-model:value="form.quantity" :min="1" :max="12" size="small" style="width: 100%" />
+                    <a-input-number
+                      v-model:value="form.quantity"
+                      :min="1"
+                      :max="12"
+                      size="small"
+                      style="width: 100%"
+                    />
                   </div>
                 </div>
               </section>
 
               <!-- 场景设置（场景图 / 生活方式图 / 广告主图 选中时） -->
               <!-- 白底背景的样式由素材类型（SPU 主图/白底副图）的 prompt 决定，无需额外配置 -->
-              <section v-if="needsScene" class="cfg-section">
+              <section
+                v-if="needsScene"
+                class="cfg-section"
+              >
                 <div class="section-title">
                   <span class="title-icon">🏞️</span>
                   <span class="title-text">场景设置</span>
@@ -133,28 +205,57 @@
                 <div class="form-row">
                   <div class="form-group flex-1">
                     <label>背景环境</label>
-                    <a-select v-model:value="form.background" size="small" style="width: 100%">
-                      <a-select-option value="indoor">室内</a-select-option>
-                      <a-select-option value="outdoor">户外</a-select-option>
-                      <a-select-option value="studio-pure">纯色背景</a-select-option>
-                      <a-select-option value="natural">自然环境</a-select-option>
-                      <a-select-option value="urban">城市街景</a-select-option>
+                    <a-select
+                      v-model:value="form.background"
+                      size="small"
+                      style="width: 100%"
+                    >
+                      <a-select-option value="indoor">
+                        室内
+                      </a-select-option>
+                      <a-select-option value="outdoor">
+                        户外
+                      </a-select-option>
+                      <a-select-option value="studio-pure">
+                        纯色背景
+                      </a-select-option>
+                      <a-select-option value="natural">
+                        自然环境
+                      </a-select-option>
+                      <a-select-option value="urban">
+                        城市街景
+                      </a-select-option>
                     </a-select>
                   </div>
                   <div class="form-group flex-1">
                     <label>光线类型</label>
-                    <a-select v-model:value="form.lighting" size="small" style="width: 100%">
-                      <a-select-option value="natural-light">自然光</a-select-option>
-                      <a-select-option value="soft-box">柔光箱</a-select-option>
-                      <a-select-option value="dramatic">戏剧光</a-select-option>
-                      <a-select-option value="golden-hour">黄金时刻</a-select-option>
+                    <a-select
+                      v-model:value="form.lighting"
+                      size="small"
+                      style="width: 100%"
+                    >
+                      <a-select-option value="natural-light">
+                        自然光
+                      </a-select-option>
+                      <a-select-option value="soft-box">
+                        柔光箱
+                      </a-select-option>
+                      <a-select-option value="dramatic">
+                        戏剧光
+                      </a-select-option>
+                      <a-select-option value="golden-hour">
+                        黄金时刻
+                      </a-select-option>
                     </a-select>
                   </div>
                 </div>
               </section>
 
               <!-- 信息图解图 选中时：提示卖点来源 -->
-              <section v-if="form.imageTypes.includes('infographic')" class="cfg-section">
+              <section
+                v-if="form.imageTypes.includes('infographic')"
+                class="cfg-section"
+              >
                 <div class="section-title">
                   <span class="title-icon">📊</span>
                   <span class="title-text">信息图要点</span>
@@ -173,7 +274,10 @@
           </a-tab-pane>
 
           <!-- Tab2：自定义 prompt（全权由文字限定） -->
-          <a-tab-pane key="prompt" tab="自定义 prompt">
+          <a-tab-pane
+            key="prompt"
+            tab="自定义 prompt"
+          >
             <div class="tab-pane-body">
               <section class="cfg-section">
                 <div class="section-title">
@@ -185,7 +289,11 @@
                   <!-- 提示词增强：这段文字**全权覆盖**参数配置直接送给出图模型 ⇒ 最值得扩写的输入点 -->
                   <div class="label-row">
                     <label>完整提示词（可选）</label>
-                    <PromptEnhanceButton v-model="form.extraPrompt" context="aigc-image" size="sm" />
+                    <PromptEnhanceButton
+                      v-model="form.extraPrompt"
+                      context="aigc-image"
+                      size="sm"
+                    />
                   </div>
                   <a-textarea
                     v-model:value="form.extraPrompt"
@@ -206,11 +314,21 @@
       <!-- 右侧：预览区（仅大屏模式）—— 复用 AIGCMediaResult：
            与对话流共用同一渲染真源，自带「归档到素材库」/ 逐项失败提示 / 文生图说明。
            此前这里是本文件自己写的一套 canvas-grid，结果既缺归档按钮、又与对话流渲染分叉。 -->
-      <div v-if="isDataMode" class="split-preview">
-        <div v-if="isGenerating" class="preview-loading">
+      <div
+        v-if="isDataMode"
+        class="split-preview"
+      >
+        <div
+          v-if="isGenerating"
+          class="preview-loading"
+        >
           <a-spin size="large" />
-          <p class="preview-loading-title">正在生成素材…</p>
-          <p class="preview-loading-sub">单张约 15-25s，数量越多越久，请勿关闭页面</p>
+          <p class="preview-loading-title">
+            正在生成素材…
+          </p>
+          <p class="preview-loading-sub">
+            单张约 15-25s，数量越多越久，请勿关闭页面
+          </p>
         </div>
         <AIGCMediaResult
           v-else-if="latestResult"
@@ -227,7 +345,12 @@
 
     <!-- ====== 操作按钮 ====== 大屏/对话两态都在容器底部（flex column 第二项），不参与表单滚动 -->
     <div class="action-bar">
-      <a-button size="small" @click="handleReset"><ReloadOutlined /> 重置</a-button>
+      <a-button
+        size="small"
+        @click="handleReset"
+      >
+        <ReloadOutlined /> 重置
+      </a-button>
       <a-button
         type="primary"
         size="small"

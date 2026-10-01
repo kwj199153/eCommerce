@@ -1,14 +1,22 @@
 <template>
-  <div class="ad-diagnosis-result" v-if="data">
+  <div
+    v-if="data"
+    class="ad-diagnosis-result"
+  >
     <!-- 综合评分头部 -->
-    <div class="score-header" :class="'grade-' + (data.grade || 'C')">
+    <div
+      class="score-header"
+      :class="'grade-' + (data.grade || 'C')"
+    >
       <div class="score-circle">
         <span class="score-value">{{ data.overall_score || 0 }}</span>
         <span class="grade-label">{{ data.grade || '?' }}</span>
       </div>
       <div class="score-info">
         <h3>广告账户健康诊断</h3>
-        <p class="summary">{{ data.summary || '诊断完成' }}</p>
+        <p class="summary">
+          {{ data.summary || '诊断完成' }}
+        </p>
       </div>
     </div>
 
@@ -25,7 +33,10 @@
           {{ metric.unit === '%' ? metric.value?.toFixed(1) + '%' : metric.unit === '$' ? '$' + metric.value?.toFixed(2) : metric.unit === 'x' ? metric.value?.toFixed(2) + 'x' : metric.value?.toFixed(2) + '%' }}
         </span>
         <span class="benchmark">基准: {{ metric.unit === '%' ? metric.benchmark?.toFixed(1) + '%' : metric.unit === 'x' ? metric.benchmark?.toFixed(2) + 'x' : '$' + metric.benchmark?.toFixed(2) }}</span>
-        <span class="change" :class="metric.change_pct > 0 ? 'up' : 'down'">
+        <span
+          class="change"
+          :class="metric.change_pct > 0 ? 'up' : 'down'"
+        >
           {{ metric.change_pct > 0 ? '↑' : '↓' }} {{ Math.abs(metric.change_pct)?.toFixed(1) }}%
         </span>
       </div>
@@ -33,20 +44,27 @@
 
     <!-- Campaign 健康表 -->
     <div class="section-block">
-      <h4 class="section-title">📊 Campaign 健康状态</h4>
+      <h4 class="section-title">
+        📊 Campaign 健康状态
+      </h4>
       <a-table
-        :dataSource="campaignTableData"
+        :data-source="campaignTableData"
         :columns="campaignColumns"
         :pagination="false"
         size="small"
         :scroll="{ x: 700 }"
-        rowKey="campaign_name"
+        row-key="campaign_name"
       />
     </div>
 
     <!-- 问题列表 -->
-    <div class="section-block" v-if="data.top_issues?.length">
-      <h4 class="section-title">⚠️ 主要问题 (Top {{ data.top_issues.length }})</h4>
+    <div
+      v-if="data.top_issues?.length"
+      class="section-block"
+    >
+      <h4 class="section-title">
+        ⚠️ 主要问题 (Top {{ data.top_issues.length }})
+      </h4>
       <div class="issue-list">
         <div
           v-for="(issue, idx) in data.top_issues"
@@ -59,22 +77,39 @@
             <span class="issue-title">{{ issue.title }}</span>
             <span class="issue-desc">{{ issue.description }}</span>
           </div>
-          <a-tag :color="priorityColor(issue.priority)">{{ issue.priority }}</a-tag>
+          <a-tag :color="priorityColor(issue.priority)">
+            {{ issue.priority }}
+          </a-tag>
         </div>
       </div>
     </div>
 
     <!-- 优化建议 -->
-    <div class="section-block" v-if="data.recommendations?.length">
-      <h4 class="section-title">💡 优化建议</h4>
+    <div
+      v-if="data.recommendations?.length"
+      class="section-block"
+    >
+      <h4 class="section-title">
+        💡 优化建议
+      </h4>
       <ul class="rec-list">
-        <li v-for="(rec, idx) in data.recommendations" :key="idx">{{ rec }}</li>
+        <li
+          v-for="(rec, idx) in data.recommendations"
+          :key="idx"
+        >
+          {{ rec }}
+        </li>
       </ul>
     </div>
 
     <!-- 关闭按钮 -->
     <div class="result-footer">
-      <a-button size="small" @click="$emit('close')">关闭报告</a-button>
+      <a-button
+        size="small"
+        @click="$emit('close')"
+      >
+        关闭报告
+      </a-button>
     </div>
   </div>
 </template>

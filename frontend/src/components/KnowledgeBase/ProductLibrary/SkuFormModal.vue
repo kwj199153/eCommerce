@@ -3,29 +3,53 @@
     v-model:open="open"
     :title="editingId ? '编辑SKU' : '新增SKU'"
     :width="WINDOW_W.sm"
+    :ok-loading="submitting"
+    cancel-text="取消"
     @ok="submit"
-    :okLoading="submitting"
-    cancelText="取消"
   >
-    <a-form :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }">
-      <a-form-item label="规格值" required>
-        <a-input v-model:value="childForm.spec_value" placeholder="如 红色 / M / XL" />
+    <a-form
+      :label-col="{ span: 5 }"
+      :wrapper-col="{ span: 18 }"
+    >
+      <a-form-item
+        label="规格值"
+        required
+      >
+        <a-input
+          v-model:value="childForm.spec_value"
+          placeholder="如 红色 / M / XL"
+        />
       </a-form-item>
       <a-form-item label="ASIN">
-        <a-input v-model:value="childForm.asin" placeholder="B0XXXXXXXX" />
+        <a-input
+          v-model:value="childForm.asin"
+          placeholder="B0XXXXXXXX"
+        />
       </a-form-item>
       <a-form-item label="SKU">
-        <a-input v-model:value="childForm.sku" placeholder="内部 SKU" />
+        <a-input
+          v-model:value="childForm.sku"
+          placeholder="内部 SKU"
+        />
       </a-form-item>
       <a-row :gutter="16">
         <a-col :span="12">
           <a-form-item label="价格 ($)">
-            <a-input-number v-model:value="childForm.price" :min="0" :precision="2" style="width:100%" />
+            <a-input-number
+              v-model:value="childForm.price"
+              :min="0"
+              :precision="2"
+              style="width:100%"
+            />
           </a-form-item>
         </a-col>
         <a-col :span="12">
           <a-form-item label="库存">
-            <a-input-number v-model:value="childForm.stock" :min="0" style="width:100%" />
+            <a-input-number
+              v-model:value="childForm.stock"
+              :min="0"
+              style="width:100%"
+            />
           </a-form-item>
         </a-col>
       </a-row>

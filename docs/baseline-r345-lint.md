@@ -316,7 +316,7 @@ error 最密集的文件（Top 12）：
 | 档 | 内容 | 规模 | 为什么这样分 |
 |---|---|---|---|
 | **F-1** | 183 条**当前零违规**规则开为 error | 0 行代码改动 | 零风险立门禁。**唯一"纯赚"的一档** |
-| **F-2** | 3 条 vue 格式规则（6658 条，全 warning 全可自动修）+ 其余可修项 | 约 6286 处自动修 | 跑一次 formatter 落一次大提交，之后开为 error。**收益是消除噪声、让真问题显形** |
+| **F-2** | 3 条 vue 格式规则（6658 条）+ 其余 8 条可自动修 vue 规则 = **11 条** | ✔ **第 348 轮已落**：103 个 `.vue`，**6285 处**（+12646/−4011） | 跑一次 formatter 落一次大提交，之后开为 error。**收益是消除噪声、让真问题显形**（详见 §6） |
 | **F-3** | `no-unused-vars` 103 / `no-empty` 12 / `no-case-declarations` 9 / `no-useless-escape` 4 / `multi-word-component-names` 7 / `no-unused-expressions` 1 | **136** | 这些**能真抓 bug**（未使用变量=可能写错、空块=漏实现、case 无块=作用域泄漏），需逐条看 |
 | **F-4** | `no-explicit-any` 689 | **689** | 存量风格债，逐条要判真实类型 ⇒ **本轮不建议**（成本高、收益是"风格"不是"正确性"） |
 
@@ -342,6 +342,7 @@ error 最密集的文件（Top 12）：
 一次 `--fix` 会改动上百个文件，与手上正在做的组件拆分（`ReviewDeskConfig.vue` 那条线）
 **产生大面积冲突**，而它带来的只是"格式统一"。
 建议顺序改成：**F-1（零成本）→ 后端 B-1（圈小面）→ 手头重构告一段落 → F-2 → F-3 → B-2/B-3 → F-4**。
+★ **第 348 轮**：B-1 与「手头重构告一段落」两格均已落，F-2 即按此顺序执行完毕。
 
 ---
 
@@ -369,6 +370,119 @@ error 最密集的文件（Top 12）：
 cd /d/ai/eCommerce
 ./backend/.venv/Scripts/python.exe .workbuddy/probes/r345_baseline/summarize.py
 ```
+
+---
+
+## 6. 第 348 轮：F-2 落地记录（自动修 + 棘轮收紧）
+
+### 6.1 口径更正：「3 条 / 6286 处」→「11 条 / 6285 处」
+
+§4.1 写的「3 条 vue 格式规则（6658 条）+ 其余可修项 = 约 6286 处」，
+第 348 轮实测：**6285 处是由 11 条规则的可自动修条数构成的**，不只 3 条。
+
+| 规则 | 总条数 | 可自动修 | 涉及文件 |
+|---|---:|---:|---:|
+| `vue/max-attributes-per-line` | 2607 | 1735 | 102 |
+| `vue/singleline-html-element-content-newline` | 2522 | 2522 | 89 |
+| `vue/html-indent` | 1529 | 1529 | 17 |
+| **3 条主体小计** | **6658** | **5786** | — |
+| `vue/attributes-order` | 154 | 154 | 46 |
+| `vue/html-self-closing` | 132 | 132 | 43 |
+| `vue/multiline-html-element-content-newline` | 83 | 83 | 21 |
+| `vue/attribute-hyphenation` | 77 | 77 | 34 |
+| `vue/v-on-event-hyphenation` | 31 | 31 | 9 |
+| `vue/html-closing-bracket-spacing` | 10 | 10 | 4 |
+| `vue/first-attribute-linebreak` | 9 | 9 | 5 |
+| `vue/html-closing-bracket-newline` | 3 | 3 | 2 |
+| **合计** | **7157** | **6285** | **103** |
+
+### 6.2 一个反直觉的实测事实（★ 纪律）
+
+初轮 JSON 统计里 `vue/max-attributes-per-line` 有 **872 条（2607−1735）没有 `fix` 字段**，
+看上去「不可自动修」。**这个判断是错的** —— 那是 ESLint 的**同位置 fix 冲突去重**
+（同一行多个属性时只保留一个 fix）。`--fix` 多轮迭代后 **2607 条全部清零**。
+
+⇒ **判「能不能自动修」不能只看单轮 JSON 的 `fix` 字段**（会低估 872 条），要看 `--fix` 跑完后的残留。
+
+### 6.3 落地结果
+
+| 项 | 前 | 后 |
+|---|---:|---:|
+| 问题总数（清空欠账口径） | 8117 | **960** |
+| 欠账表条数 | 21 | **10** |
+| 生效规则集合 | 181 | **192** |
+| 改动文件 | — | **103 个 `.vue`**（+12646 / −4011） |
+| `eslint . --max-warnings=0` | 0 problem | **0 problem** |
+
+剩余 960 条**全部不可自动修**：`no-explicit-any` 689 / `no-require-imports` 115 /
+`no-unused-vars` 103 / `no-undef` 12 / `no-empty` 12 / `no-case-declarations` 9 /
+`vue/no-v-html` 8 / `vue/multi-word-component-names` 7 / `no-useless-escape` 4 /
+`no-unused-expressions` 1。
+
+### 6.4 棘轮门禁同步（`frontend/scripts/check-eslint-ratchet.cjs`）
+
+棘轮**只增不减**，所以「清空欠账」必须同步更新三张冻结表（属**收紧**方向）：
+
+- `FLOOR_ENFORCED` 181 → **192**（11 条清零规则**入列**，从此不许再关）
+- `CEILING_DEBT` 21 → **10**（11 条移出）
+- `FLOOR_PER_CLASS` 实测四类**均 +11** ⇒ 162→173 / 177→188 / 175→186 / 175→186
+- R4 自检常量同步：`!== 181`→`!== 192`、`!== 21`→`!== 10`
+
+**反向注入自证**（`.workbuddy/probes/r348/revinject_ratchet.py`）：
+
+| 注入 | 期望 | 实测 |
+|---|---|---|
+| ① `vue/html-indent` 塞回欠账表 | R1+R3 红 | ✔ 红，报出 `vue/html-indent -> main.ts=0 App.vue=0` |
+| ② `App.vue` 冻结值抬到 999 | R2 红 | ✔ 红（缩水） |
+| ③ 自检数字改成 193 | R4 红 | ✔ 红（自身被改坏） |
+
+三次还原后均回绿 ⇒ **收紧后的门禁有牙齿**（不能靠把新入列规则塞回欠账表回退）。
+
+### 6.5 行尾
+
+103 个改动文件中 39 个 `w/lf`、64 个 `w/mixed` —— 后者是 fixer 插入的 `\n` 落在
+原本 CRLF 的 worktree 上所致。`git add` 按 `.gitattributes`（`* text=auto eol=lf`）统一
+规范化为 LF ⇒ **blob 不受影响**；三条后端 LF 门禁（`backend/ai_infra/*.py`）与 `.vue` 无关，
+不会假红。
+
+### 6.6 附带修复：4 道门禁的锚点改为**免疫空白**（本轮的真实技术债偿还）
+
+F-2 暴露了一个**既有**技术债：4 道门禁用**单行字面量锚点**判源码形态，
+自动格式化把开标签拆成多行后，它们一律失配 —— 症状是报「找不到锚点」，
+与真实缺陷毫无关系。**不改判据就得回退 6741 条收益**，所以本轮改判据。
+
+| 门禁 | 失败条数 | 修法 |
+|---|---:|---|
+| `check-skill-view-parity.cjs` | 6 | `readTarget()` 加 `collapseTagWs`（只折叠标签**内部**空白） |
+| `check-review-library-view.cjs` | 4 | `menuKeysIn` 支持正则锚点：`'资料库</div>'` → `/资料库\s*<\/div>/` |
+| `check-review-chat-entries.cjs` | 2 | `readSrc()` 加 `collapseTagWs`（**只对 `.vue`**，`.ts` 不动） |
+| `check-chat-failure-path.cjs` | 1 | L10 正则结尾 `>` → `\s*>`（`\s` 含换行） |
+
+归一化的定义（只折叠**标签内部**）：
+
+```js
+s.replace(/<[^>]*>/g, (t) => t.replace(/\s+/g, ' ').replace(/\s+>$/, '>'))
+```
+
+★ 为什么**只**折叠标签内部：标签之外的缩进必须保留 —— `check-skill-view-parity` 的
+`TPL_END`（`\n<10 空格></template>\n`）正是靠缩进把 `v-else` 兄弟节点的收尾与
+行内 `<template>` 的收尾区分开（实测该文件 `</template>` 缩进分布 `{0:1,10:4,14:1,16:1,18:1}`）。
+一刀切地 `\s+ → ' '` 会把这个区分抹掉。
+
+★ 为什么 `.ts` 不折叠：`check-review-chat-entries` 的 `readSrc` 也读 `.ts`，
+而 TS 里的跨行泛型 `Foo<\n  A,\n  B\n>` 会被 `<[^>]*>` 误伤 ⇒ 按扩展名分流。
+
+**反向注入自证**（`.workbuddy/probes/r348/revinject_gates_ws.py`，5 条）：
+
+| 注入 | 期望判据 | 实测 |
+|---|---|---|
+| `class="sm-list"` → `sm-listX` | A1 | ✔ 红 |
+| `@click="sendToChat"` → `sendToChatX` | R0 | ✔ 红 |
+| `:disabled="!detailView.id"` → `…idX` ★专门打被折叠修好的那条锚 | R0「形态变了」 | ✔ 红 |
+| `key="reviews"` → `reviewsX` | B0 | ✔ 红 |
+| `class="pending-skill-chip"` → `…chipX` | L10 | ✔ 红 |
+
+全部「基线绿 → 注入红 → 报在预期判据 → 还原绿」⇒ **判据没有被归一化成恒真**。
 
 ---
 

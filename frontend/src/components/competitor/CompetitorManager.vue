@@ -9,22 +9,38 @@
   >
     <div class="competitor-manager">
       <!-- 添加来源：三来源 tab 互斥（推荐 / 手动添加 / 从其它复制） -->
-      <a-tabs v-model:active-key="addSource" size="small" class="cm-source-tabs">
+      <a-tabs
+        v-model:active-key="addSource"
+        size="small"
+        class="cm-source-tabs"
+      >
         <template #rightExtra>
           <span class="pool-hint">{{ enabledCount }} / {{ poolLength }} 已启用</span>
         </template>
         <!-- Tab 1：一键生成相似竞品 -->
-        <a-tab-pane key="recommend" tab="⚡ 一键生成相似竞品">
+        <a-tab-pane
+          key="recommend"
+          tab="⚡ 一键生成相似竞品"
+        >
           <div class="tab-pane-body">
-            <p class="tab-hint">按主品类目与关键词自动推荐 10-20 个相似 ASIN，一键入池。</p>
-            <a-button type="primary" :loading="recommending" @click="doRecommend">
+            <p class="tab-hint">
+              按主品类目与关键词自动推荐 10-20 个相似 ASIN，一键入池。
+            </p>
+            <a-button
+              type="primary"
+              :loading="recommending"
+              @click="doRecommend"
+            >
               <ThunderboltOutlined /> 立即生成
             </a-button>
           </div>
         </a-tab-pane>
 
         <!-- Tab 2：手动添加 ASIN -->
-        <a-tab-pane key="manual" tab="✍️ 手动添加 ASIN">
+        <a-tab-pane
+          key="manual"
+          tab="✍️ 手动添加 ASIN"
+        >
           <div class="tab-pane-body">
             <a-textarea
               v-model:value="manualAsins"
@@ -32,14 +48,29 @@
               placeholder="粘贴 ASIN，多个用逗号/换行分隔（如 B0XXXX1, B0XXXX2）"
             />
             <div class="tab-pane-actions">
-              <a-button size="small" @click="cancelManual">清空</a-button>
-              <a-button size="small" type="primary" :loading="addingManual" @click="doAddManual">添加</a-button>
+              <a-button
+                size="small"
+                @click="cancelManual"
+              >
+                清空
+              </a-button>
+              <a-button
+                size="small"
+                type="primary"
+                :loading="addingManual"
+                @click="doAddManual"
+              >
+                添加
+              </a-button>
             </div>
           </div>
         </a-tab-pane>
 
         <!-- Tab 3：从其它产品复制 -->
-        <a-tab-pane key="copy" tab="📋 从其它复制">
+        <a-tab-pane
+          key="copy"
+          tab="📋 从其它复制"
+        >
           <div class="tab-pane-body">
             <a-select
               v-model:value="copySourceOwner"
@@ -49,13 +80,30 @@
               :disabled="copyOptions.length === 0"
               style="width: 100%"
             >
-              <a-select-option v-for="o in copyOptions" :key="o.key" :value="o.key" :label="o.label">
+              <a-select-option
+                v-for="o in copyOptions"
+                :key="o.key"
+                :value="o.key"
+                :label="o.label"
+              >
                 {{ o.label }}
               </a-select-option>
             </a-select>
             <div class="tab-pane-actions">
-              <a-button size="small" @click="copySourceOwner = ''">清空</a-button>
-              <a-button size="small" type="primary" :disabled="!copySourceOwner" @click="doCopy">复制</a-button>
+              <a-button
+                size="small"
+                @click="copySourceOwner = ''"
+              >
+                清空
+              </a-button>
+              <a-button
+                size="small"
+                type="primary"
+                :disabled="!copySourceOwner"
+                @click="doCopy"
+              >
+                复制
+              </a-button>
             </div>
           </div>
         </a-tab-pane>
@@ -64,20 +112,45 @@
       <!-- 竞品列表 -->
       <div class="pool-list">
         <template v-if="poolList.length">
-          <div v-for="c in poolList" :key="c.asin" class="pool-item" :class="{ disabled: !c.enabled }">
+          <div
+            v-for="c in poolList"
+            :key="c.asin"
+            class="pool-item"
+            :class="{ disabled: !c.enabled }"
+          >
             <a-switch
               :checked="c.enabled"
               size="small"
               @change="(v: boolean) => cp.setEnabled(ownerType, owner!.asin, c.asin, v)"
             />
-            <img v-if="c.main_image" class="thumb" :src="c.main_image" alt="" @error="onImgError" />
-            <span v-else class="thumb-ph">🖼️</span>
+            <img
+              v-if="c.main_image"
+              class="thumb"
+              :src="c.main_image"
+              alt=""
+              @error="onImgError"
+            >
+            <span
+              v-else
+              class="thumb-ph"
+            >🖼️</span>
             <div class="info">
-              <div class="title">{{ c.title || c.asin }}</div>
+              <div class="title">
+                {{ c.title || c.asin }}
+              </div>
               <div class="meta">
                 <span class="asin">{{ c.asin }}</span>
-                <a-tag :color="sourceColor(c.source)" size="small" style="margin-inline-end:0">{{ sourceLabel(c.source) }}</a-tag>
-                <span v-if="c.brand" class="brand">{{ c.brand }}</span>
+                <a-tag
+                  :color="sourceColor(c.source)"
+                  size="small"
+                  style="margin-inline-end:0"
+                >
+                  {{ sourceLabel(c.source) }}
+                </a-tag>
+                <span
+                  v-if="c.brand"
+                  class="brand"
+                >{{ c.brand }}</span>
               </div>
             </div>
             <a-button
@@ -89,12 +162,20 @@
             >
               {{ mp.isAsinInPool(c.asin) ? '已监控' : '＋监控' }}
             </a-button>
-            <a-button type="text" danger size="small" @click="cp.removeRef(ownerType, owner!.asin, c.asin)">
+            <a-button
+              type="text"
+              danger
+              size="small"
+              @click="cp.removeRef(ownerType, owner!.asin, c.asin)"
+            >
               <DeleteOutlined />
             </a-button>
           </div>
         </template>
-        <div v-else class="empty">
+        <div
+          v-else
+          class="empty"
+        >
           <InboxOutlined style="font-size:28px; color:#d9d9d9" />
           <p>暂无竞品。点「一键生成相似竞品」或手动添加</p>
         </div>
@@ -102,29 +183,60 @@
 
       <!-- 底部持久化操作 -->
       <div class="footer-actions">
-        <div v-if="ownerType === 'session'" class="mode-switch">
-          <a-alert type="info" :show-icon="false" banner style="font-size:12px">
-            <template #message>会话临时竞品 · 切换 Agent / 离开对话即清空</template>
+        <div
+          v-if="ownerType === 'session'"
+          class="mode-switch"
+        >
+          <a-alert
+            type="info"
+            :show-icon="false"
+            banner
+            style="font-size:12px"
+          >
+            <template #message>
+              会话临时竞品 · 切换 Agent / 离开对话即清空
+            </template>
           </a-alert>
           <div class="mode-btns">
-            <a-button @click="closeSessionOnly">仅本次会话生效</a-button>
-            <a-button type="primary" :loading="savingToProduct" @click="saveToCandidateLibrary">
+            <a-button @click="closeSessionOnly">
+              仅本次会话生效
+            </a-button>
+            <a-button
+              type="primary"
+              :loading="savingToProduct"
+              @click="saveToCandidateLibrary"
+            >
               <SaveOutlined /> 保存至选品库
             </a-button>
           </div>
         </div>
-        <div v-else class="mode-switch">
-          <a-alert type="success" :show-icon="false" banner style="font-size:12px">
-            <template #message>此池绑定主品（已启用竞品将写回 competitor_asins 持久保存）</template>
+        <div
+          v-else
+          class="mode-switch"
+        >
+          <a-alert
+            type="success"
+            :show-icon="false"
+            banner
+            style="font-size:12px"
+          >
+            <template #message>
+              此池绑定主品（已启用竞品将写回 competitor_asins 持久保存）
+            </template>
           </a-alert>
           <div class="mode-btns">
-            <a-button type="primary" :loading="savingToProduct" @click="savePersist">保存</a-button>
+            <a-button
+              type="primary"
+              :loading="savingToProduct"
+              @click="savePersist"
+            >
+              保存
+            </a-button>
           </div>
         </div>
       </div>
     </div>
-
-    </a-modal>
+  </a-modal>
 </template>
 
 <script setup lang="ts">

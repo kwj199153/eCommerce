@@ -40,7 +40,10 @@
         :message="loadError"
         style="margin-bottom: 12px"
       >
-        <template v-if="supportedPlatforms.length" #description>
+        <template
+          v-if="supportedPlatforms.length"
+          #description
+        >
           当前支持连接的平台：{{ supportedPlatforms.join(' / ') }}
         </template>
       </a-alert>
@@ -55,17 +58,35 @@
           message="本平台暂未接入自动校验"
           description="凭据会加密保存，但不会标记为「已验证」—— 列表里会显示「已配置（未验证）」。"
         />
-        <div v-if="schema.docs_url" class="docs-line">
-          <a :href="schema.docs_url" target="_blank" rel="noopener">
+        <div
+          v-if="schema.docs_url"
+          class="docs-line"
+        >
+          <a
+            :href="schema.docs_url"
+            target="_blank"
+            rel="noopener"
+          >
             去哪拿这些凭据？官方文档
           </a>
         </div>
-        <ul v-if="schema.notes.length" class="notes">
-          <li v-for="(n, i) in schema.notes" :key="i">{{ n }}</li>
+        <ul
+          v-if="schema.notes.length"
+          class="notes"
+        >
+          <li
+            v-for="(n, i) in schema.notes"
+            :key="i"
+          >
+            {{ n }}
+          </li>
         </ul>
 
         <!-- ===== 通用表单：三支控件吃下全部平台 ===== -->
-        <a-form layout="vertical" style="margin-top: 8px">
+        <a-form
+          layout="vertical"
+          style="margin-top: 8px"
+        >
           <a-form-item
             v-for="f in schema.fields"
             :key="f.key"
@@ -77,7 +98,9 @@
                 v-if="isConfigured(f.key)"
                 color="blue"
                 style="margin-left: 6px"
-              >已配置</a-tag>
+              >
+                已配置
+              </a-tag>
             </template>
 
             <a-select
@@ -99,7 +122,12 @@
               allow-clear
             />
 
-            <div v-if="f.help" class="field-help">{{ f.help }}</div>
+            <div
+              v-if="f.help"
+              class="field-help"
+            >
+              {{ f.help }}
+            </div>
           </a-form-item>
         </a-form>
 
@@ -111,8 +139,15 @@
           :message="failure.message"
           style="margin-top: 4px"
         >
-          <template v-if="failure.checks.length" #description>
-            <div v-for="(c, i) in failure.checks" :key="i" class="check-line">
+          <template
+            v-if="failure.checks.length"
+            #description
+          >
+            <div
+              v-for="(c, i) in failure.checks"
+              :key="i"
+              class="check-line"
+            >
               <span :class="c.ok ? 'ok' : 'bad'">{{ c.ok ? '✓' : '✗' }}</span>
               <strong>{{ c.name }}</strong>
               <span v-if="c.message">：{{ c.message }}</span>

@@ -11,8 +11,13 @@
     </div>
 
     <!-- 分组过滤 -->
-    <div class="group-filter" v-if="pool.groups.length">
-      <div class="gf-label">📁 分组</div>
+    <div
+      v-if="pool.groups.length"
+      class="group-filter"
+    >
+      <div class="gf-label">
+        📁 分组
+      </div>
       <div class="gf-chips">
         <button
           v-for="g in groupChips"
@@ -23,7 +28,10 @@
           :style="activeFilterKey === g.key ? { borderColor: g.color || SEM.primary, color: g.color || SEM.primary } : {}"
           @click="setFilter(g.key)"
         >
-          <span v-if="g.emoji" class="gf-emoji">{{ g.emoji }}</span>
+          <span
+            v-if="g.emoji"
+            class="gf-emoji"
+          >{{ g.emoji }}</span>
           {{ g.name }}
           <span class="gf-count">({{ g.count }})</span>
         </button>
@@ -36,33 +44,54 @@
         :checked="allChecked"
         :indeterminate="someChecked"
         @change="onToggleAll"
-      >全选当前分组</a-checkbox>
+      >
+        全选当前分组
+      </a-checkbox>
       <a-space :size="4">
-        <a-button size="small" type="link" :disabled="!pool.totalCount" @click="onPickGroupOrAll('all')">
+        <a-button
+          size="small"
+          type="link"
+          :disabled="!pool.totalCount"
+          @click="onPickGroupOrAll('all')"
+        >
           全选全部
         </a-button>
-        <a-button size="small" type="link" :disabled="!pool.selectedAsins.length" @click="clearAll">
+        <a-button
+          size="small"
+          type="link"
+          :disabled="!pool.selectedAsins.length"
+          @click="clearAll"
+        >
           清空
         </a-button>
       </a-space>
     </div>
 
     <!-- 分组聚合竞品清单 -->
-    <div class="pick-list" v-if="visibleGroupedBuckets.length">
+    <div
+      v-if="visibleGroupedBuckets.length"
+      class="pick-list"
+    >
       <div
         v-for="bucket in visibleGroupedBuckets"
         :key="bucket.key"
         class="pick-bucket"
       >
         <!-- 组头 -->
-        <div class="bucket-head" @click="toggleGroupAll(bucket)">
+        <div
+          class="bucket-head"
+          @click="toggleGroupAll(bucket)"
+        >
           <a-checkbox
             :checked="bucket.allChecked"
             :indeterminate="bucket.someChecked && !bucket.allChecked"
             @click.stop
             @change="toggleGroupAll(bucket)"
           />
-          <span class="bucket-emoji" v-if="bucket.emoji">{{ bucket.emoji }}</span>
+          <span
+            v-if="bucket.emoji"
+            class="bucket-emoji"
+          >{{ bucket.emoji }}</span>
           <span class="bucket-name">{{ bucket.name }}</span>
           <span class="bucket-counts">
             {{ bucket.selectedInGroup }}/{{ bucket.records.length }}
@@ -105,8 +134,13 @@
     />
 
     <!-- 底部提示 -->
-    <div class="pick-empty-note" v-if="pool.records.length && !pool.selectedAsins.length">
-      <a-tag color="orange">未圈选</a-tag>
+    <div
+      v-if="pool.records.length && !pool.selectedAsins.length"
+      class="pick-empty-note"
+    >
+      <a-tag color="orange">
+        未圈选
+      </a-tag>
       <span>将默认分析全部在池竞品；建议先勾选目标竞品。</span>
     </div>
   </div>

@@ -4,30 +4,76 @@
          ① 流光期间**默认展开** —— 老板要的是「看到它一步步推进」，不是为了留档；
          ② 结果到达后**默认折叠** —— 老板原话「然后有结果出结果（过程折叠掉）」。
          用户手动干预过就尊重用户（`manual`），不再被 loading 自动翻回来。 -->
-  <div v-if="steps.length" class="thinking-trace" :class="{ 'is-live': loading }">
-    <button type="button" class="tt-head" @click="toggle">
+  <div
+    v-if="steps.length"
+    class="thinking-trace"
+    :class="{ 'is-live': loading }"
+  >
+    <button
+      type="button"
+      class="tt-head"
+      @click="toggle"
+    >
       <span class="tt-caret">{{ open ? '▾' : '▸' }}</span>
       <span class="tt-label">思考过程</span>
       <span class="tt-count">{{ steps.length }} 步</span>
-      <span v-if="totalMs" class="tt-total">{{ fmtMs(totalMs) }}</span>
-      <span v-if="loading" class="tt-pulse" aria-hidden="true"></span>
+      <span
+        v-if="totalMs"
+        class="tt-total"
+      >{{ fmtMs(totalMs) }}</span>
+      <span
+        v-if="loading"
+        class="tt-pulse"
+        aria-hidden="true"
+      />
     </button>
 
-    <div v-show="open" class="tt-body">
-      <div v-for="(s, i) in steps" :key="s.id || i" :class="['tt-step', `st-${statusOf(s)}`]">
-        <span class="tt-dot" aria-hidden="true"></span>
+    <div
+      v-show="open"
+      class="tt-body"
+    >
+      <div
+        v-for="(s, i) in steps"
+        :key="s.id || i"
+        :class="['tt-step', `st-${statusOf(s)}`]"
+      >
+        <span
+          class="tt-dot"
+          aria-hidden="true"
+        />
         <span class="tt-text">{{ s.title }}</span>
-        <code v-if="s.tool && s.tool !== s.title" class="tt-tool">{{ s.tool }}</code>
-        <span v-if="s.ms != null" class="tt-ms">{{ fmtMs(s.ms) }}</span>
-        <span v-if="statusOf(s) === 'stale'" class="tt-state">未完成</span>
-        <span v-else-if="statusOf(s) === 'error'" class="tt-state">失败</span>
+        <code
+          v-if="s.tool && s.tool !== s.title"
+          class="tt-tool"
+        >{{ s.tool }}</code>
+        <span
+          v-if="s.ms != null"
+          class="tt-ms"
+        >{{ fmtMs(s.ms) }}</span>
+        <span
+          v-if="statusOf(s) === 'stale'"
+          class="tt-state"
+        >未完成</span>
+        <span
+          v-else-if="statusOf(s) === 'error'"
+          class="tt-state"
+        >失败</span>
 
         <!-- 入参与返回**分两行**：踩过的坑是挤进一个字段，合成一行后必然丢一半。 -->
-        <div v-if="s.detail || s.result" class="tt-io">
-          <div v-if="s.detail" class="tt-io-line">
+        <div
+          v-if="s.detail || s.result"
+          class="tt-io"
+        >
+          <div
+            v-if="s.detail"
+            class="tt-io-line"
+          >
             <span class="tt-io-tag">入参</span><span class="tt-io-text">{{ s.detail }}</span>
           </div>
-          <div v-if="s.result" class="tt-io-line">
+          <div
+            v-if="s.result"
+            class="tt-io-line"
+          >
             <span class="tt-io-tag">返回</span><span class="tt-io-text">{{ s.result }}</span>
           </div>
         </div>

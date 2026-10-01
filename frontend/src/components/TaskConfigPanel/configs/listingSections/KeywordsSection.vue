@@ -2,20 +2,40 @@
   <div class="kw-sec">
     <div class="sec-head">
       <div>
-        <div class="sec-title">关键词 <a-tag class="mini-tag">{{ draft.keywords.length }} 个</a-tag></div>
+        <div class="sec-title">
+          关键词 <a-tag class="mini-tag">
+            {{ draft.keywords.length }} 个
+          </a-tag>
+        </div>
         <div class="sec-sub">
           勾选的词会随「保存全部」合并进产品关键词，可在此增删改。
           搜索量 / 竞争度 / 相关度由<strong>关键词挖掘</strong>提供 ——
           Search Terms 端点本身不带这三项，缺数据时显示 «—»
         </div>
       </div>
-      <a-button size="small" :loading="genLoading" :disabled="disabled" @click="$emit('gen')">生成关键词</a-button>
+      <a-button
+        size="small"
+        :loading="genLoading"
+        :disabled="disabled"
+        @click="$emit('gen')"
+      >
+        生成关键词
+      </a-button>
     </div>
 
     <div class="kw-list">
-      <div v-for="k in draft.keywords" :key="k.id" class="kw-row">
+      <div
+        v-for="k in draft.keywords"
+        :key="k.id"
+        class="kw-row"
+      >
         <a-checkbox v-model:checked="k.selected" />
-        <a-input v-model:value="k.word" size="small" placeholder="关键词" class="kw-word" />
+        <a-input
+          v-model:value="k.word"
+          size="small"
+          placeholder="关键词"
+          class="kw-word"
+        />
         <!--
           ★ 三列指标是 null 感知的：`null` = 后端未提供（Search Terms 端点就不带），
             与「搜索量真的是 0」「相关度真的是 80」不是一回事 ⇒ 渲染 «—»。
@@ -28,23 +48,68 @@
           :min="0"
           class="kw-num"
         />
-        <span v-else class="kw-none" title="Search Terms 端点不提供月搜索量">—</span>
-        <a-select v-if="k.competition" v-model:value="k.competition" size="small" class="kw-comp">
-          <a-select-option value="high">高竞争</a-select-option>
-          <a-select-option value="medium">中</a-select-option>
-          <a-select-option value="low">低</a-select-option>
+        <span
+          v-else
+          class="kw-none"
+          title="Search Terms 端点不提供月搜索量"
+        >—</span>
+        <a-select
+          v-if="k.competition"
+          v-model:value="k.competition"
+          size="small"
+          class="kw-comp"
+        >
+          <a-select-option value="high">
+            高竞争
+          </a-select-option>
+          <a-select-option value="medium">
+            中
+          </a-select-option>
+          <a-select-option value="low">
+            低
+          </a-select-option>
         </a-select>
-        <span v-else class="kw-none">—</span>
-        <span class="kw-rel" :class="relClass(k.relevance)">{{ k.relevance ?? '—' }}</span>
-        <a-button size="small" type="text" danger @click="draft.removeKeyword(k.id)">删除</a-button>
+        <span
+          v-else
+          class="kw-none"
+        >—</span>
+        <span
+          class="kw-rel"
+          :class="relClass(k.relevance)"
+        >{{ k.relevance ?? '—' }}</span>
+        <a-button
+          size="small"
+          type="text"
+          danger
+          @click="draft.removeKeyword(k.id)"
+        >
+          删除
+        </a-button>
       </div>
-      <a-button v-if="!draft.keywords.length" size="small" block type="dashed" @click="draft.addKeyword('')">
+      <a-button
+        v-if="!draft.keywords.length"
+        size="small"
+        block
+        type="dashed"
+        @click="draft.addKeyword('')"
+      >
         + 手动添加关键词
       </a-button>
-      <a-button v-else size="small" block type="dashed" @click="draft.addKeyword('')">+ 添加一行</a-button>
+      <a-button
+        v-else
+        size="small"
+        block
+        type="dashed"
+        @click="draft.addKeyword('')"
+      >
+        + 添加一行
+      </a-button>
     </div>
 
-    <PromptTab v-model="draft.keywordPrompt" placeholder="例如：重点覆盖长尾词，包含拼写变体与场景词，控制在 250 字节内" />
+    <PromptTab
+      v-model="draft.keywordPrompt"
+      placeholder="例如：重点覆盖长尾词，包含拼写变体与场景词，控制在 250 字节内"
+    />
   </div>
 </template>
 

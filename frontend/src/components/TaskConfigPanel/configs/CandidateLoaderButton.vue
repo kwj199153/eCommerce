@@ -3,7 +3,7 @@
     v-model:open="popoverVisible"
     trigger="click"
     placement="bottomLeft"
-    :overlayStyle="{ width: '380px', maxHeight: '460px' }"
+    :overlay-style="{ width: '380px', maxHeight: '460px' }"
   >
     <template #content>
       <div class="cand-loader">
@@ -20,16 +20,31 @@
           allow-clear
           style="margin-bottom: var(--space-8)"
         >
-          <template #prefix><SearchOutlined style="color: var(--text-disabled)" /></template>
+          <template #prefix>
+            <SearchOutlined style="color: var(--text-disabled)" />
+          </template>
         </a-input>
 
         <!-- 当前已选 -->
-        <div v-if="modelValue" class="current-selected">
-          <div class="current-label">当前评估对象</div>
-          <div class="current-card" @click="handleReselect(modelValue)">
+        <div
+          v-if="modelValue"
+          class="current-selected"
+        >
+          <div class="current-label">
+            当前评估对象
+          </div>
+          <div
+            class="current-card"
+            @click="handleReselect(modelValue)"
+          >
             <span class="current-title">{{ modelValue.title }}</span>
             <span class="current-asin">{{ modelValue.asin }}</span>
-            <a-button type="text" size="small" danger @click.stop="handleClear">
+            <a-button
+              type="text"
+              size="small"
+              danger
+              @click.stop="handleClear"
+            >
               <CloseOutlined />
             </a-button>
           </div>
@@ -48,29 +63,58 @@
               <a-popover
                 v-if="c.main_image"
                 placement="right"
-                :mouseEnterDelay="0.3"
-                overlayClassName="product-thumb-popover"
+                :mouse-enter-delay="0.3"
+                overlay-class-name="product-thumb-popover"
               >
                 <template #content>
-                  <img :src="c.main_image" alt="" class="item-thumb-large" />
+                  <img
+                    :src="c.main_image"
+                    alt=""
+                    class="item-thumb-large"
+                  >
                 </template>
-                <img class="item-thumb" :src="c.main_image" alt="" loading="lazy" @error="onImgError" @click.stop />
+                <img
+                  class="item-thumb"
+                  :src="c.main_image"
+                  alt=""
+                  loading="lazy"
+                  @error="onImgError"
+                  @click.stop
+                >
               </a-popover>
-              <span class="item-thumb-ph" v-else>🖼️</span>
+              <span
+                v-else
+                class="item-thumb-ph"
+              >🖼️</span>
               <span class="item-title">{{ c.title }}</span>
               <span class="item-price">${{ c.price }}</span>
             </div>
             <div class="item-meta">
               <span class="item-badges">
-                <span v-if="c.blue_ocean_score > 0" class="score-badge">蓝海 {{ c.blue_ocean_score }}</span>
-                <span v-if="c.roi_estimated > 0" class="roi-badge">ROI {{ c.roi_estimated }}%</span>
-                <span class="status-chip" :style="{ color: statusColor(c.review_status) }">{{ statusLabel(c.review_status) }}</span>
+                <span
+                  v-if="c.blue_ocean_score > 0"
+                  class="score-badge"
+                >蓝海 {{ c.blue_ocean_score }}</span>
+                <span
+                  v-if="c.roi_estimated > 0"
+                  class="roi-badge"
+                >ROI {{ c.roi_estimated }}%</span>
+                <span
+                  class="status-chip"
+                  :style="{ color: statusColor(c.review_status) }"
+                >{{ statusLabel(c.review_status) }}</span>
               </span>
               <span class="item-asin">{{ c.asin }}</span>
-              <CheckCircleFilled v-if="modelValue?.asin === c.asin" class="item-check" />
+              <CheckCircleFilled
+                v-if="modelValue?.asin === c.asin"
+                class="item-check"
+              />
             </div>
           </div>
-          <div v-if="displayedCands.length === 0" class="empty-hint">
+          <div
+            v-if="displayedCands.length === 0"
+            class="empty-hint"
+          >
             暂无候选，先到选品库 / 蓝海挖掘添加
           </div>
         </div>

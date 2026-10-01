@@ -1,7 +1,13 @@
 <template>
-  <div class="order-track-result" v-if="data">
+  <div
+    v-if="data"
+    class="order-track-result"
+  >
     <!-- 订单头部 -->
-    <div class="order-header" :class="'status-' + view.header.tone">
+    <div
+      class="order-header"
+      :class="'status-' + view.header.tone"
+    >
       <span class="status-icon">{{ view.header.icon }}</span>
       <div class="header-info">
         <h3>订单 {{ view.header.orderId }}</h3>
@@ -16,9 +22,16 @@
            现在本模板只负责**摆版面**，「有哪些字段、标签叫什么」全在真源里。 -->
     <div class="order-details">
       <div class="detail-grid">
-        <div v-for="f in view.base" :key="f.key" class="detail-item">
+        <div
+          v-for="f in view.base"
+          :key="f.key"
+          class="detail-item"
+        >
           <span class="label">{{ f.label }}</span>
-          <span class="value" :class="{ amount: f.key === 'total_text', 'product-name': f.key === 'product_name' }">{{ f.value }}</span>
+          <span
+            class="value"
+            :class="{ amount: f.key === 'total_text', 'product-name': f.key === 'product_name' }"
+          >{{ f.value }}</span>
         </div>
       </div>
     </div>
@@ -27,19 +40,38 @@
          ★ 原实现用 `tracking_number` 当唯一开关 —— 真数据里它可能为空 ⇒ 整段
            （连「预计送达」）一起被吞掉。现在由真源决定「物流组里有没有行」，
            有任一项就整块出现；运单号/承运商/轨迹**只在后端给了值时才渲染**，绝不编造。 -->
-    <div v-if="view.hasLogistics" class="logistics-section">
+    <div
+      v-if="view.hasLogistics"
+      class="logistics-section"
+    >
       <h4>🚚 物流信息</h4>
       <div class="logistics-card">
-        <div v-for="f in view.logistics" :key="f.key" class="log-row">
+        <div
+          v-for="f in view.logistics"
+          :key="f.key"
+          class="log-row"
+        >
           <span class="log-label">{{ f.label }}</span>
-          <code v-if="f.mono" class="log-value tracking-code">{{ f.value }}</code>
-          <span v-else class="log-value" :class="{ 'delivery-date': f.emphasis }">{{ f.value }}</span>
+          <code
+            v-if="f.mono"
+            class="log-value tracking-code"
+          >{{ f.value }}</code>
+          <span
+            v-else
+            class="log-value"
+            :class="{ 'delivery-date': f.emphasis }"
+          >{{ f.value }}</span>
         </div>
       </div>
     </div>
 
     <!-- 数据来源：演示数据不得冒充真实订单 -->
-    <div v-if="sourceNote" class="source-note">{{ sourceNote }}</div>
+    <div
+      v-if="sourceNote"
+      class="source-note"
+    >
+      {{ sourceNote }}
+    </div>
 
     <!-- 操作提示 -->
     <div class="action-hints">
@@ -47,7 +79,12 @@
     </div>
 
     <div class="result-footer">
-      <a-button size="small" @click="$emit('close')">关闭</a-button>
+      <a-button
+        size="small"
+        @click="$emit('close')"
+      >
+        关闭
+      </a-button>
     </div>
   </div>
 </template>

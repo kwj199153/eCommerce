@@ -6,7 +6,9 @@
         <span class="result-icon">🔑</span>
         <div>
           <h3>关键词挖掘结果</h3>
-          <p class="subtitle">共挖掘 {{ keywordRows.length }} 个候选关键词 · 基于「{{ resultData.seed_keywords?.join('、') || '种子词' }}」</p>
+          <p class="subtitle">
+            共挖掘 {{ keywordRows.length }} 个候选关键词 · 基于「{{ resultData.seed_keywords?.join('、') || '种子词' }}」
+          </p>
         </div>
       </div>
       <div class="header-actions">
@@ -15,12 +17,15 @@
           v-if="sourceMode === 'product' && productId"
           type="primary"
           size="small"
-          @click="handleSaveToProduct"
           :loading="saving"
+          @click="handleSaveToProduct"
         >
           <SaveOutlined /> 应用到当前产品 Listing
         </a-button>
-        <a-button size="small" @click="$emit('close')">
+        <a-button
+          size="small"
+          @click="$emit('close')"
+        >
           <CloseOutlined /> 关闭
         </a-button>
       </div>
@@ -29,30 +34,56 @@
     <!-- 统计概览 -->
     <div class="stats-row">
       <div class="stat-card">
-        <div class="stat-value">{{ stats.total }}</div>
-        <div class="stat-label">候选词</div>
+        <div class="stat-value">
+          {{ stats.total }}
+        </div>
+        <div class="stat-label">
+          候选词
+        </div>
       </div>
       <div class="stat-card stat-low">
-        <div class="stat-value">{{ stats.lowCompetition }}</div>
-        <div class="stat-label">低竞争高相关</div>
+        <div class="stat-value">
+          {{ stats.lowCompetition }}
+        </div>
+        <div class="stat-label">
+          低竞争高相关
+        </div>
       </div>
       <div class="stat-card stat-good">
-        <div class="stat-value">{{ stats.recommended }}</div>
-        <div class="stat-label">推荐投放</div>
+        <div class="stat-value">
+          {{ stats.recommended }}
+        </div>
+        <div class="stat-label">
+          推荐投放
+        </div>
       </div>
       <div class="stat-card stat-avg">
-        <div class="stat-value">{{ stats.avgRelevance }}</div>
-        <div class="stat-label">平均相关度</div>
+        <div class="stat-value">
+          {{ stats.avgRelevance }}
+        </div>
+        <div class="stat-label">
+          平均相关度
+        </div>
       </div>
     </div>
 
     <!-- 关键词表格（词条可编辑） -->
     <div class="table-toolbar">
       <a-space>
-        <a-button size="small" type="dashed" @click="addRow">
+        <a-button
+          size="small"
+          type="dashed"
+          @click="addRow"
+        >
           <PlusOutlined /> 新增候选词
         </a-button>
-        <a-button size="small" type="text" @click="resetRows" :disabled="!isRowsEdited" title="还原为 AI 挖掘原值">
+        <a-button
+          size="small"
+          type="text"
+          :disabled="!isRowsEdited"
+          title="还原为 AI 挖掘原值"
+          @click="resetRows"
+        >
           <UndoOutlined /> 还原
         </a-button>
         <span class="edit-hint"><EditOutlined /> 关键词文本可直接修改，指标（搜索量/竞争度/出价/相关性）由 AI 给出，保持只读</span>
@@ -77,26 +108,51 @@
               class="kw-input"
               @click.stop
             />
-            <span v-if="record.source === 'competitor'" class="kw-badge comp">竞品</span>
-            <span v-else-if="record.source === 'seed_expand'" class="kw-badge expand">种子扩展</span>
-            <span v-else-if="record.source === 'long_tail'" class="kw-badge tail">长尾</span>
-            <span v-else class="kw-badge manual">自填</span>
+            <span
+              v-if="record.source === 'competitor'"
+              class="kw-badge comp"
+            >竞品</span>
+            <span
+              v-else-if="record.source === 'seed_expand'"
+              class="kw-badge expand"
+            >种子扩展</span>
+            <span
+              v-else-if="record.source === 'long_tail'"
+              class="kw-badge tail"
+            >长尾</span>
+            <span
+              v-else
+              class="kw-badge manual"
+            >自填</span>
           </template>
           <template v-else-if="column.key === 'search_volume'">
             <span class="vol">{{ (record.search_volume ?? 0).toLocaleString?.() || record.search_volume }}</span>
           </template>
           <template v-else-if="column.key === 'competition'">
-            <a-tag :color="compColor(record.competition)">{{ compLabel(record.competition) }}</a-tag>
+            <a-tag :color="compColor(record.competition)">
+              {{ compLabel(record.competition) }}
+            </a-tag>
           </template>
           <template v-else-if="column.key === 'bid'">
             <span>${{ Number(record.suggested_bid || 0).toFixed(2) }}</span>
           </template>
           <template v-else-if="column.key === 'relevance'">
-            <a-progress :percent="record.relevance" :stroke-color="relevanceColor(record.relevance)" :show-info="false" size="small" style="width: 90px" />
+            <a-progress
+              :percent="record.relevance"
+              :stroke-color="relevanceColor(record.relevance)"
+              :show-info="false"
+              size="small"
+              style="width: 90px"
+            />
             <span class="rel-val">{{ record.relevance }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
-            <a-button type="text" size="small" danger @click="removeRow(record)">
+            <a-button
+              type="text"
+              size="small"
+              danger
+              @click="removeRow(record)"
+            >
               <DeleteOutlined />
             </a-button>
           </template>
@@ -105,8 +161,14 @@
     </div>
 
     <!-- 推荐词云/摘要 -->
-    <div class="summary-box" v-if="resultData.summary">
-      <div class="summary-body" v-html="md.render(resultData.summary)"></div>
+    <div
+      v-if="resultData.summary"
+      class="summary-box"
+    >
+      <div
+        class="summary-body"
+        v-html="md.render(resultData.summary)"
+      />
     </div>
   </div>
 </template>

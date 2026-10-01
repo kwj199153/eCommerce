@@ -1,21 +1,51 @@
 <template>
   <div class="subscription-container">
-    <a-page-header title="订阅 & 计费" @back="router.back()" />
+    <a-page-header
+      title="订阅 & 计费"
+      @back="router.back()"
+    />
 
     <!-- ====== 当前套餐状态卡片 ====== -->
-    <div v-if="subscription" class="current-plan-banner" :class="planStatusClass">
+    <div
+      v-if="subscription"
+      class="current-plan-banner"
+      :class="planStatusClass"
+    >
       <div class="banner-left">
         <div class="plan-badge">
-          <CrownFilled v-if="isPremiumPlan" style="color: var(--gold)" />
+          <CrownFilled
+            v-if="isPremiumPlan"
+            style="color: var(--gold)"
+          />
           <CrownOutlined v-else />
           <span>{{ subscription.plan.display_name }}</span>
         </div>
         <div class="plan-price">
           ¥{{ subscription.plan.price_monthly }}<span class="period">/月</span>
-          <a-tag v-if="subscription.status === 'trialing'" color="orange">试用中</a-tag>
-          <a-tag v-else-if="subscription.cancel_at_period_end" color="orange">即将到期</a-tag>
-          <a-tag v-else-if="subscription.status === 'active'" color="green">正常</a-tag>
-          <a-tag v-else color="red">{{ statusLabel }}</a-tag>
+          <a-tag
+            v-if="subscription.status === 'trialing'"
+            color="orange"
+          >
+            试用中
+          </a-tag>
+          <a-tag
+            v-else-if="subscription.cancel_at_period_end"
+            color="orange"
+          >
+            即将到期
+          </a-tag>
+          <a-tag
+            v-else-if="subscription.status === 'active'"
+            color="green"
+          >
+            正常
+          </a-tag>
+          <a-tag
+            v-else
+            color="red"
+          >
+            {{ statusLabel }}
+          </a-tag>
         </div>
         <div class="period-text">
           当前周期: {{ formatDate(subscription.period.start) }} ~
@@ -51,18 +81,32 @@
       style="margin-bottom: var(--space-24)"
     >
       <template #extra>
-        <a-button type="primary" size="large" @click="goChoosePlan">
+        <a-button
+          type="primary"
+          size="large"
+          @click="goChoosePlan"
+        >
           选择套餐
         </a-button>
       </template>
     </a-result>
 
     <!-- ====== 用量仪表盘 ====== -->
-    <a-card title="本月用量" :bordered="false" class="usage-card">
+    <a-card
+      title="本月用量"
+      :bordered="false"
+      class="usage-card"
+    >
       <a-row :gutter="[16, 16]">
-        <a-col :xs="24" :sm="12" :md="6">
+        <a-col
+          :xs="24"
+          :sm="12"
+          :md="6"
+        >
           <div class="usage-metric">
-            <div class="metric-label">API 调用</div>
+            <div class="metric-label">
+              API 调用
+            </div>
             <a-progress
               type="dashboard"
               :percent="usagePct('api_calls')"
@@ -71,9 +115,15 @@
             />
           </div>
         </a-col>
-        <a-col :xs="24" :sm="12" :md="6">
+        <a-col
+          :xs="24"
+          :sm="12"
+          :md="6"
+        >
           <div class="usage-metric">
-            <div class="metric-label">Agent 对话</div>
+            <div class="metric-label">
+              Agent 对话
+            </div>
             <a-progress
               type="dashboard"
               :percent="usagePct('agent_chats')"
@@ -82,9 +132,15 @@
             />
           </div>
         </a-col>
-        <a-col :xs="24" :sm="12" :md="6">
+        <a-col
+          :xs="24"
+          :sm="12"
+          :md="6"
+        >
           <div class="usage-metric">
-            <div class="metric-label">AI 生成次数</div>
+            <div class="metric-label">
+              AI 生成次数
+            </div>
             <a-progress
               type="dashboard"
               :percent="usagePct('ai_gen')"
@@ -93,9 +149,15 @@
             />
           </div>
         </a-col>
-        <a-col :xs="24" :sm="12" :md="6">
+        <a-col
+          :xs="24"
+          :sm="12"
+          :md="6"
+        >
           <div class="usage-metric">
-            <div class="metric-label">绑定店铺数</div>
+            <div class="metric-label">
+              绑定店铺数
+            </div>
             <div class="simple-metric">
               <span class="big-num">{{ shopCount }}</span>
               <span class="metric-limit">/ {{ subscription?.plan.limits.shops_limit || 1 }}</span>
@@ -106,7 +168,12 @@
     </a-card>
 
     <!-- ====== 套餐对比 & 选择 ====== -->
-    <a-card ref="plansCardRef" title="选择套餐" :bordered="false" class="plans-card">
+    <a-card
+      ref="plansCardRef"
+      title="选择套餐"
+      :bordered="false"
+      class="plans-card"
+    >
       <a-spin :spinning="plansLoading">
         <!-- ★ 读失败时不得静默空白（改前是 catch 灌 mockPlans ⇒ 3 个假套餐、
              假价格、「选择此套餐」还能点）。空状态优于虚构默认。 -->
@@ -117,17 +184,32 @@
           empty-description="暂无可选套餐"
           @retry="loadPlans"
         />
-        <div v-else class="plans-grid">
+        <div
+          v-else
+          class="plans-grid"
+        >
           <div
             v-for="plan in plans"
             :key="plan.id"
             class="plan-card"
             :class="{ 'is-current': plan.id === subscription?.plan.id, 'recommended': plan.recommended }"
           >
-            <div v-if="plan.recommended" class="recommend-badge">推荐</div>
-            <div v-if="plan.id === subscription?.plan.id" class="current-badge">当前</div>
+            <div
+              v-if="plan.recommended"
+              class="recommend-badge"
+            >
+              推荐
+            </div>
+            <div
+              v-if="plan.id === subscription?.plan.id"
+              class="current-badge"
+            >
+              当前
+            </div>
 
-            <h3 class="plan-name">{{ plan.display_name }}</h3>
+            <h3 class="plan-name">
+              {{ plan.display_name }}
+            </h3>
             <div class="plan-pricing">
               <span class="price-monthly">¥{{ plan.price_monthly }}</span>
               <span class="price-unit">/月</span>
@@ -138,11 +220,16 @@
               <template v-if="planYearlySaving(plan) !== null">
                 年付 ¥{{ plan.price_yearly }}/年（省 {{ planYearlySaving(plan) }}%）
               </template>
-              <template v-else>永久免费</template>
+              <template v-else>
+                永久免费
+              </template>
             </div>
 
             <ul class="plan-features">
-              <li v-for="(feature, idx) in plan.features" :key="idx">
+              <li
+                v-for="(feature, idx) in plan.features"
+                :key="idx"
+              >
                 <CheckCircleOutlined class="feature-check" /> {{ feature }}
               </li>
             </ul>
@@ -170,12 +257,26 @@
     </a-card>
 
     <!-- ====== 账单历史 ====== -->
-    <a-card title="账单历史" :bordered="false" class="invoices-card">
+    <a-card
+      title="账单历史"
+      :bordered="false"
+      class="invoices-card"
+    >
       <template #extra>
-        <a-radio-group v-model:value="invoiceFilter" size="small" button-style="solid">
-          <a-radio-button value="all">全部</a-radio-button>
-          <a-radio-button value="paid">已支付</a-radio-button>
-          <a-radio-button value="pending">待支付</a-radio-button>
+        <a-radio-group
+          v-model:value="invoiceFilter"
+          size="small"
+          button-style="solid"
+        >
+          <a-radio-button value="all">
+            全部
+          </a-radio-button>
+          <a-radio-button value="paid">
+            已支付
+          </a-radio-button>
+          <a-radio-button value="pending">
+            待支付
+          </a-radio-button>
         </a-radio-group>
       </template>
 
@@ -216,7 +317,9 @@
                 size="small"
                 type="link"
                 @click="openInvoice(record.pdf_url)"
-              >下载发票</a-button>
+              >
+                下载发票
+              </a-button>
               <a-button
                 v-if="record.status === 'pending'"
                 size="small"
@@ -224,7 +327,9 @@
                 danger
                 :loading="payChecking"
                 @click="openPayFromInvoice(record)"
-              >去支付</a-button>
+              >
+                去支付
+              </a-button>
             </a-space>
           </template>
         </template>
@@ -235,8 +340,15 @@
     </a-card>
 
     <!-- ====== 支付方式 ====== -->
-    <a-card title="支付方式" :bordered="false" class="payment-card">
-      <div v-if="paymentMethods.length > 0" class="payment-methods">
+    <a-card
+      title="支付方式"
+      :bordered="false"
+      class="payment-card"
+    >
+      <div
+        v-if="paymentMethods.length > 0"
+        class="payment-methods"
+      >
         <div
           v-for="pm in paymentMethods"
           :key="pm.id"
@@ -251,7 +363,13 @@
             <span>有效期 {{ String(pm.exp_month).padStart(2, '0') }}/{{ pm.exp_year }}</span>
           </div>
           <div class="pm-badges">
-            <a-tag v-if="pm.is_default" color="blue" size="small">默认</a-tag>
+            <a-tag
+              v-if="pm.is_default"
+              color="blue"
+              size="small"
+            >
+              默认
+            </a-tag>
           </div>
           <div class="pm-actions">
             <a-button
@@ -259,13 +377,21 @@
               size="small"
               type="link"
               @click="handleSetDefault(pm.id)"
-            >设为默认</a-button>
+            >
+              设为默认
+            </a-button>
             <a-popconfirm
               v-if="paymentMethods.length > 1"
               title="确定删除此支付方式？"
               @confirm="handleRemovePayment(pm.id)"
             >
-              <a-button size="small" type="link" danger>删除</a-button>
+              <a-button
+                size="small"
+                type="link"
+                danger
+              >
+                删除
+              </a-button>
             </a-popconfirm>
           </div>
         </div>
@@ -279,7 +405,10 @@
            ★ 文案只写「支付宝」是因为当前**只有**支付宝接好了；接入微信支付时
              必须回来同步这一句，否则这里就成了新的谎。
            若后端将来真接入可保存的支付方式，再把添加入口加回来。 -->
-      <a-empty v-else description="无需绑定银行卡">
+      <a-empty
+        v-else
+        description="无需绑定银行卡"
+      >
         <p class="payment-hint">
           支付时用「支付宝」扫码完成，按所选周期一次性付款，不保存卡信息。
         </p>
@@ -306,17 +435,26 @@
         ok-type="danger"
         @confirm="handleCancelSubscription"
       >
-        <a-button danger :loading="cancelling">取消订阅</a-button>
+        <a-button
+          danger
+          :loading="cancelling"
+        >
+          取消订阅
+        </a-button>
       </a-popconfirm>
     </a-card>
 
     <!-- ====== 升级/切换套餐弹窗 ====== -->
-    <a-modal :width="WINDOW_W.md"
+    <a-modal
       v-model:open="showUpgradeModal"
+      :width="WINDOW_W.md"
       :title="upgradeModalTitle"
       :footer="null"
     >
-      <div v-if="selectedPlanForUpgrade" class="upgrade-confirm">
+      <div
+        v-if="selectedPlanForUpgrade"
+        class="upgrade-confirm"
+      >
         <h3 style="text-align: center; margin-bottom: 16px">
           {{ selectedPlanForUpgrade.display_name }}
         </h3>
@@ -326,17 +464,30 @@
             :class="{ active: billingCycle === 'monthly' }"
             @click="billingCycle = 'monthly'"
           >
-            <div class="cycle-price">¥{{ selectedPlanForUpgrade.price_monthly }}</div>
-            <div class="cycle-period">按月付费</div>
+            <div class="cycle-price">
+              ¥{{ selectedPlanForUpgrade.price_monthly }}
+            </div>
+            <div class="cycle-period">
+              按月付费
+            </div>
           </div>
           <div
             class="cycle-option recommended-cycle"
             :class="{ active: billingCycle === 'yearly' }"
             @click="billingCycle = 'yearly'"
           >
-            <div v-if="yearlySaving !== null" class="cycle-badge">省 {{ yearlySaving }}%</div>
-            <div class="cycle-price">¥{{ selectedPlanForUpgrade.price_yearly }}</div>
-            <div class="cycle-period">按年付费</div>
+            <div
+              v-if="yearlySaving !== null"
+              class="cycle-badge"
+            >
+              省 {{ yearlySaving }}%
+            </div>
+            <div class="cycle-price">
+              ¥{{ selectedPlanForUpgrade.price_yearly }}
+            </div>
+            <div class="cycle-period">
+              按年付费
+            </div>
           </div>
         </div>
         <a-button
@@ -366,12 +517,17 @@
       :mask-closable="false"
       @cancel="stopPayPolling"
     >
-      <div v-if="payPayment" class="pay-dialog">
+      <div
+        v-if="payPayment"
+        class="pay-dialog"
+      >
         <div class="pay-summary">
           <span class="pay-plan">{{ payPlanLabel }}</span>
           <span class="pay-amount">{{ payCurrencySymbol }}{{ payPayment.amount.toFixed(2) }}</span>
         </div>
-        <div class="pay-order">订单号：{{ payPayment.number }}</div>
+        <div class="pay-order">
+          订单号：{{ payPayment.number }}
+        </div>
 
         <div class="pay-qr-area">
           <a-spin :spinning="payQrLoading">
@@ -380,8 +536,11 @@
               :src="payQr"
               alt="支付宝收款二维码"
               class="pay-qr-img"
-            />
-            <div v-else class="pay-qr-placeholder">
+            >
+            <div
+              v-else
+              class="pay-qr-placeholder"
+            >
               <a-alert
                 v-if="payQrFailed"
                 type="error"
@@ -397,15 +556,26 @@
           ★ 倒计时与"已过期"是**互斥**的两个状态，不要合成一句
             "剩余 -00:01" —— 负数的倒计时在用户眼里就是产品坏了。
         -->
-        <div v-if="payExpired" class="pay-status pay-status-expired">
+        <div
+          v-if="payExpired"
+          class="pay-status pay-status-expired"
+        >
           <ExclamationCircleOutlined /> 二维码已过期，请重新生成订单
         </div>
-        <div v-else class="pay-status">
+        <div
+          v-else
+          class="pay-status"
+        >
           请在 <strong>{{ payRemainingText }}</strong> 内扫码完成支付
         </div>
 
         <!-- 轮询抖动时**如实**告知，而不是让界面看起来一切正常 -->
-        <div v-if="payPollHint" class="pay-poll-hint">{{ payPollHint }}</div>
+        <div
+          v-if="payPollHint"
+          class="pay-poll-hint"
+        >
+          {{ payPollHint }}
+        </div>
 
         <div class="pay-actions">
           <a-button
@@ -417,10 +587,21 @@
           >
             我已完成支付
           </a-button>
-          <a-button v-if="payExpired" block type="primary" @click="regenerateOrder">
+          <a-button
+            v-if="payExpired"
+            block
+            type="primary"
+            @click="regenerateOrder"
+          >
             重新生成订单
           </a-button>
-          <a-button block type="text" @click="closePayModal">稍后再付</a-button>
+          <a-button
+            block
+            type="text"
+            @click="closePayModal"
+          >
+            稍后再付
+          </a-button>
         </div>
 
         <div class="pay-tip">

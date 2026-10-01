@@ -6,8 +6,15 @@
     badge-color="orange"
     :note="asin"
   >
-    <div v-if="points.length" class="pp-list">
-      <div v-for="pp in points" :key="pp.pain_point" class="pp-item">
+    <div
+      v-if="points.length"
+      class="pp-list"
+    >
+      <div
+        v-for="pp in points"
+        :key="pp.pain_point"
+        class="pp-item"
+      >
         <div class="pp-line">
           <span class="pp-name">{{ pp.pain_point }}</span>
           <span class="pp-pct">{{ pp.percentage }}%</span>
@@ -15,13 +22,28 @@
         <div class="pp-bar">
           <i :style="{ width: `${Math.min(100, Number(pp.percentage) || 0)}%` }" />
         </div>
-        <div class="pp-count">{{ pp.count }} 条提及</div>
+        <div class="pp-count">
+          {{ pp.count }} 条提及
+        </div>
       </div>
     </div>
-    <div v-else class="pp-empty">{{ summary || '暂未提炼出明显痛点。' }}</div>
+    <div
+      v-else
+      class="pp-empty"
+    >
+      {{ summary || '暂未提炼出明显痛点。' }}
+    </div>
 
-    <ul v-if="suggestions.length" class="pp-sug">
-      <li v-for="(s, i) in suggestions" :key="i">{{ s }}</li>
+    <ul
+      v-if="suggestions.length"
+      class="pp-sug"
+    >
+      <li
+        v-for="(s, i) in suggestions"
+        :key="i"
+      >
+        {{ s }}
+      </li>
     </ul>
   </ConversationCard>
 </template>

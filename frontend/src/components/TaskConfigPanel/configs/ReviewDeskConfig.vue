@@ -12,7 +12,10 @@
       >
         <span class="rd-tab-icon">{{ t.icon }}</span>
         <span>{{ t.label }}</span>
-        <span v-if="counts[t.key] !== null" class="rd-tab-count">{{ counts[t.key] }}</span>
+        <span
+          v-if="counts[t.key] !== null"
+          class="rd-tab-count"
+        >{{ counts[t.key] }}</span>
       </button>
       <a-button
         size="small"
@@ -36,18 +39,43 @@
            `cdp-review-desk-ui-probe.mjs` 的 B2 已同步改成查按钮 title。 -->
 
     <!-- 差评列表：时间窗 + 星级 -->
-    <div v-if="view !== 'ledger'" class="rd-filter">
+    <div
+      v-if="view !== 'ledger'"
+      class="rd-filter"
+    >
       <span class="rd-filter-label">时间窗</span>
-      <a-select v-model:value="days" size="small" class="rd-days" @change="reload">
-        <a-select-option :value="7">近 7 天</a-select-option>
-        <a-select-option :value="30">近 30 天</a-select-option>
-        <a-select-option :value="90">近 90 天</a-select-option>
-        <a-select-option :value="3650">全部</a-select-option>
+      <a-select
+        v-model:value="days"
+        size="small"
+        class="rd-days"
+        @change="reload"
+      >
+        <a-select-option :value="7">
+          近 7 天
+        </a-select-option>
+        <a-select-option :value="30">
+          近 30 天
+        </a-select-option>
+        <a-select-option :value="90">
+          近 90 天
+        </a-select-option>
+        <a-select-option :value="3650">
+          全部
+        </a-select-option>
       </a-select>
       <span class="rd-filter-label">星级</span>
-      <a-select v-model:value="maxRating" size="small" class="rd-days" @change="reload">
-        <a-select-option :value="3">≤3 星（中差评）</a-select-option>
-        <a-select-option :value="5">全部星级</a-select-option>
+      <a-select
+        v-model:value="maxRating"
+        size="small"
+        class="rd-days"
+        @change="reload"
+      >
+        <a-select-option :value="3">
+          ≤3 星（中差评）
+        </a-select-option>
+        <a-select-option :value="5">
+          全部星级
+        </a-select-option>
       </a-select>
     </div>
 
@@ -64,7 +92,10 @@
          ★ 只在这个视图显示：扫描口径与「近期差评」同源（`/reviews` 那一批），
            孤儿差评是**另一批**数据，给它们标风险会张冠李戴。
          ★ 排序在**后端**（风险 → 未定论 → 干净）；前端只按后端给的顺序渲染。 -->
-    <div v-if="view === 'recent'" class="rd-risk-bar">
+    <div
+      v-if="view === 'recent'"
+      class="rd-risk-bar"
+    >
       <a-button
         size="small"
         :loading="riskLoading"
@@ -86,13 +117,22 @@
             语义打包 {{ riskMeta.llm_calls }} 次（共送 {{ riskMeta.semantic_sent }} 条）
           </template>
         </span>
-        <a-button size="small" type="text" @click="clearRisk">清除标记</a-button>
+        <a-button
+          size="small"
+          type="text"
+          @click="clearRisk"
+        >
+          清除标记
+        </a-button>
       </template>
-      <span v-else class="rd-risk-tip">
+      <span
+        v-else
+        class="rd-risk-tip"
+      >
         逐条判定评价正文里的对抗性话术（以进一步升级相要挟、索要退款赔偿、
         预告平台介入或投诉 —— 类别名由后端下发），命中的标红并置顶。
         ★ 判定对象是**已公开发布的买家评价**，不是买家私信 / 客服会话：
-          评价里的施压常以「旁白」口气出现（说给别人听，其实是对卖家要价），照样要判。
+        评价里的施压常以「旁白」口气出现（说给别人听，其实是对卖家要价），照样要判。
         只读：不写库、不发券、不改处置状态。
         分层：先跑零成本的规则通道，规则已判出四类的**不再送语义**，其余打包成一次语义调用。
       </span>
@@ -117,7 +157,10 @@
     />
 
     <!-- 处置台账：状态筛选 + 批量生成（★「生成待处置」全仓只此一处） -->
-    <div v-else class="rd-filter">
+    <div
+      v-else
+      class="rd-filter"
+    >
       <span class="rd-filter-label">状态</span>
       <a-select
         v-model:value="dispStatusFilter"
@@ -158,28 +201,65 @@
 
     <!-- ★ 失败必须落到界面上：500 / 400（没选店铺）都是这一块，
          不能让它变成「列表空空的随机失败」。 -->
-    <a-alert v-if="error" type="error" show-icon :message="error" class="rd-alert" />
+    <a-alert
+      v-if="error"
+      type="error"
+      show-icon
+      :message="error"
+      class="rd-alert"
+    />
 
-    <div v-else-if="loading && !hasRows" class="rd-hint">
+    <div
+      v-else-if="loading && !hasRows"
+      class="rd-hint"
+    >
       <a-spin size="small" /> 正在读取{{ viewLabel }}…
     </div>
 
-    <div v-else-if="!hasRows" class="rd-hint">
-      <div class="rd-hint-icon">{{ emptyIcon }}</div>
-      <div class="rd-hint-title">{{ emptyTitle }}</div>
-      <div class="rd-hint-desc">{{ emptyDesc }}</div>
-      <div v-if="isFilteredEmpty" class="rd-hint-acts">
-        <a-button size="small" @click="resetFilters">清空筛选</a-button>
+    <div
+      v-else-if="!hasRows"
+      class="rd-hint"
+    >
+      <div class="rd-hint-icon">
+        {{ emptyIcon }}
       </div>
-      <div v-else-if="view === 'ledger'" class="rd-hint-acts">
-        <a-button size="small" type="primary" :loading="backfilling" @click="runBackfill">
+      <div class="rd-hint-title">
+        {{ emptyTitle }}
+      </div>
+      <div class="rd-hint-desc">
+        {{ emptyDesc }}
+      </div>
+      <div
+        v-if="isFilteredEmpty"
+        class="rd-hint-acts"
+      >
+        <a-button
+          size="small"
+          @click="resetFilters"
+        >
+          清空筛选
+        </a-button>
+      </div>
+      <div
+        v-else-if="view === 'ledger'"
+        class="rd-hint-acts"
+      >
+        <a-button
+          size="small"
+          type="primary"
+          :loading="backfilling"
+          @click="runBackfill"
+        >
           生成待处置
         </a-button>
       </div>
     </div>
 
     <!-- ===== 处置台账：以处置为主语 ===== -->
-    <div v-else-if="view === 'ledger'" class="rd-ledger">
+    <div
+      v-else-if="view === 'ledger'"
+      class="rd-ledger"
+    >
       <table class="rd-table">
         <thead>
           <tr>
@@ -189,13 +269,19 @@
                  缺的只是这一列。 -->
             <th>ASIN</th>
             <th>SKU</th>
-            <th class="num">评分</th>
+            <th class="num">
+              评分
+            </th>
             <th>差评标题</th>
             <th>通道</th>
-            <th class="num">补偿</th>
+            <th class="num">
+              补偿
+            </th>
             <th>状态</th>
-            <th class="num">更新</th>
-            <th class="rd-table-act"></th>
+            <th class="num">
+              更新
+            </th>
+            <th class="rd-table-act" />
           </tr>
         </thead>
         <tbody>
@@ -208,39 +294,68 @@
           >
             <td><code>{{ d.review?.asin || '—' }}</code></td>
             <td><code>{{ d.review?.sku || '—' }}</code></td>
-            <td class="num">{{ d.review?.rating ?? '—' }} 星</td>
-            <td class="rd-table-title" :title="d.review?.title || ''">
+            <td class="num">
+              {{ d.review?.rating ?? '—' }} 星
+            </td>
+            <td
+              class="rd-table-title"
+              :title="d.review?.title || ''"
+            >
               {{ d.review?.title || '—' }}
             </td>
             <td>
               <!-- 通道逐个可悬停查看作用（不可逆的两类会明确标出来） -->
-              <a-tooltip v-for="c in d.channels" :key="c" :title="channelEffect(c)">
+              <a-tooltip
+                v-for="c in d.channels"
+                :key="c"
+                :title="channelEffect(c)"
+              >
                 <a-tag>{{ channelLabel(c) }}</a-tag>
               </a-tooltip>
             </td>
-            <td class="num">{{ compensationText(d.compensation) }}</td>
+            <td class="num">
+              {{ compensationText(d.compensation) }}
+            </td>
             <td>
               <a-tag :color="DISPOSITION_STATUS_COLORS[d.status]">
                 {{ DISPOSITION_STATUS_LABELS[d.status] }}
               </a-tag>
             </td>
-            <td class="num">{{ shortTime(d.updated_at) }}</td>
+            <td class="num">
+              {{ shortTime(d.updated_at) }}
+            </td>
             <td class="rd-table-act">
               <!-- ★ 第 292 轮：这里从前一律写「查看」，用户找不到去哪编辑。
                    待批准 / 已驳回的行点进去就是**可编辑**的，文案必须如实。 -->
-              <a-button type="link" size="small" class="rd-act-open">{{ rowActionLabel(d) }}</a-button>
+              <a-button
+                type="link"
+                size="small"
+                class="rd-act-open"
+              >
+                {{ rowActionLabel(d) }}
+              </a-button>
               <!-- ★ 第 298 轮：列表行也要能直达对话 —— 此前这个出口只长在**抽屉**里，
                    老板在【处置台账】列表上找不到它（原话：列表没有按钮）。
                    `@click.stop` 必须留：行本身点了是开抽屉，不拦会两个动作一起触发。 -->
               <a-tooltip title="把这条差评带进对话，按「差评应对」的完整流程走">
-                <a-button type="link" size="small" class="rd-act-chat"
-                  :disabled="!d.review_id" @click.stop="sendRowToChat(d)">💬</a-button>
+                <a-button
+                  type="link"
+                  size="small"
+                  class="rd-act-chat"
+                  :disabled="!d.review_id"
+                  @click.stop="sendRowToChat(d)"
+                >
+                  💬
+                </a-button>
               </a-tooltip>
             </td>
           </tr>
         </tbody>
       </table>
-      <div v-if="dispTotal > dispositions.length" class="rd-more">
+      <div
+        v-if="dispTotal > dispositions.length"
+        class="rd-more"
+      >
         共 {{ dispTotal }} 条，当前显示 {{ dispositions.length }} 条
       </div>
     </div>
@@ -248,16 +363,29 @@
     <!-- ===== 补偿规则配置（第 304 轮后半）=====
          ★ 这就是此前「要调金额请去改规则表」那句话**缺失的落点**：
            金额由规则唯一算出，这里是人配规则的地方。 -->
-    <div v-else-if="view === 'rules'" class="rd-rules">
+    <div
+      v-else-if="view === 'rules'"
+      class="rd-rules"
+    >
       <div class="rd-rules-bar">
         <span class="rd-filter-tip">
           金额由这里唯一算出 —— 处置草稿按「归因 + 命中规则」现算；<b>改金额不在这里改，改这里</b>。
         </span>
-        <a-button size="small" type="primary" @click="openRuleCreate">
+        <a-button
+          size="small"
+          type="primary"
+          @click="openRuleCreate"
+        >
           <SettingOutlined /> 新建规则
         </a-button>
       </div>
-      <a-alert v-if="rulesError" type="error" show-icon :message="rulesError" class="rd-alert" />
+      <a-alert
+        v-if="rulesError"
+        type="error"
+        show-icon
+        :message="rulesError"
+        class="rd-alert"
+      />
       <ReviewDeskRulesTable
         :rules="rules"
         @edit="openRuleEdit"
@@ -267,7 +395,10 @@
     </div>
 
     <!-- ===== 差评列表：以差评为主语 ===== -->
-    <div v-else class="rd-list">
+    <div
+      v-else
+      class="rd-list"
+    >
       <div
         v-for="r in displayItems"
         :key="r.id"
@@ -278,7 +409,13 @@
         <div class="rd-item-top">
           <span class="rd-stars">{{ '★'.repeat(Math.max(0, r.rating)) }}<span class="rd-stars-dim">{{ '★'.repeat(Math.max(0, 5 - (r.rating || 0))) }}</span></span>
           <span class="rd-date">{{ (r.review_at || '').slice(0, 10) || '-' }}</span>
-          <a-tag v-if="r.source === 'mock_seed'" color="orange" size="small">演示数据</a-tag>
+          <a-tag
+            v-if="r.source === 'mock_seed'"
+            color="orange"
+            size="small"
+          >
+            演示数据
+          </a-tag>
           <!-- ★ 风险标记：类别中文名与等级中文名**都取自后端**
                （`label` / `level_label`），前端不写第二份映射。
                未定论走琥珀色 —— 它与「干净」方向相反，不可同色。 -->
@@ -301,29 +438,62 @@
           <!-- ★ 第 298 轮：与台账行同款 —— 差评卡片上也给一个直达对话的出口
                （此前非要点开抽屉才看得见那个按钮）。`@click.stop` 同上。 -->
           <a-tooltip title="把这条差评带进对话，按「差评应对」的完整流程走">
-            <a-button type="link" size="small" class="rd-item-chat"
-              @click.stop="sendItemToChat(r)">💬</a-button>
+            <a-button
+              type="link"
+              size="small"
+              class="rd-item-chat"
+              @click.stop="sendItemToChat(r)"
+            >
+              💬
+            </a-button>
           </a-tooltip>
         </div>
-        <div class="rd-title">{{ r.title || '（无标题）' }}</div>
-        <div class="rd-body">{{ r.body || '—' }}</div>
+        <div class="rd-title">
+          {{ r.title || '（无标题）' }}
+        </div>
+        <div class="rd-body">
+          {{ r.body || '—' }}
+        </div>
         <!-- ★ 证据是**原文片段**（后端保证），界面只显示：不改写、不拼接 ——
              改了老板拿它去原文里搜就搜不到，等于伪造证据。 -->
-        <div v-if="showRiskEvidence(riskMap[r.id])" class="rd-risk-ev">
-          <div v-for="h in riskMap[r.id].hits" :key="h.category" class="rd-risk-hit">
+        <div
+          v-if="showRiskEvidence(riskMap[r.id])"
+          class="rd-risk-ev"
+        >
+          <div
+            v-for="h in riskMap[r.id].hits"
+            :key="h.category"
+            class="rd-risk-hit"
+          >
             <span class="rd-risk-hit-cat">{{ h.label }}</span>
             <span class="rd-risk-hit-lv">· {{ levelLabel(h.level) }}</span>
-            <span v-for="(ev, i) in h.evidence" :key="i" class="rd-risk-quote">「{{ ev }}」</span>
-            <span v-if="!h.evidence.length && h.note" class="rd-risk-note">{{ h.note }}</span>
+            <span
+              v-for="(ev, i) in h.evidence"
+              :key="i"
+              class="rd-risk-quote"
+            >「{{ ev }}」</span>
+            <span
+              v-if="!h.evidence.length && h.note"
+              class="rd-risk-note"
+            >{{ h.note }}</span>
           </div>
         </div>
         <div class="rd-meta">
-          <template v-if="r.asin"><span>ASIN <code>{{ r.asin }}</code></span></template>
-          <template v-else-if="r.sku"><span>SKU <code>{{ r.sku }}</code></span></template>
-          <template v-else><span class="rd-meta-miss">无 ASIN / SKU</span></template>
+          <template v-if="r.asin">
+            <span>ASIN <code>{{ r.asin }}</code></span>
+          </template>
+          <template v-else-if="r.sku">
+            <span>SKU <code>{{ r.sku }}</code></span>
+          </template>
+          <template v-else>
+            <span class="rd-meta-miss">无 ASIN / SKU</span>
+          </template>
           <span>·</span>
           <span>{{ REVIEW_STATUS_LABELS[r.status] || r.status || '未处理' }}</span>
-          <span v-if="dispositionStatus[r.id]" class="rd-disp">
+          <span
+            v-if="dispositionStatus[r.id]"
+            class="rd-disp"
+          >
             · <span :class="'rd-disp-' + dispositionStatus[r.id]">
               {{ DISPOSITION_STATUS_LABELS[dispositionStatus[r.id]] }}
             </span>
@@ -341,7 +511,10 @@
           </span>
         </div>
       </div>
-      <div v-if="total > items.length" class="rd-more">
+      <div
+        v-if="total > items.length"
+        class="rd-more"
+      >
         共 {{ total }} 条，当前显示 {{ items.length }} 条
       </div>
     </div>
@@ -376,7 +549,12 @@
            ★ 放 `#extra` 而不是某个区块里：它是「这条差评」的整体动作，
              一打开抽屉就能看到，不依赖滚动到某个区块。 -->
       <template #extra>
-        <a-button v-if="detailView" size="small" :disabled="!detailView.id" @click="sendToChat">
+        <a-button
+          v-if="detailView"
+          size="small"
+          :disabled="!detailView.id"
+          @click="sendToChat"
+        >
           💬 在对话里处置这条
         </a-button>
       </template>
@@ -384,12 +562,26 @@
         <!-- ==================== 左栏：事实 + 设置 ==================== -->
         <div class="rd-detail-col">
           <template v-if="detailView">
-            <a-descriptions :column="1" bordered size="small">
-              <a-descriptions-item label="星级">{{ detailView.rating ?? '-' }} 星</a-descriptions-item>
-              <a-descriptions-item label="ASIN"><code>{{ detailView.asin || '-' }}</code></a-descriptions-item>
-              <a-descriptions-item label="SKU"><code>{{ detailView.sku || '-' }}</code></a-descriptions-item>
-              <a-descriptions-item label="时间">{{ detailView.review_at || '-' }}</a-descriptions-item>
-              <a-descriptions-item label="买家">{{ detailView.buyer_name || '匿名' }}</a-descriptions-item>
+            <a-descriptions
+              :column="1"
+              bordered
+              size="small"
+            >
+              <a-descriptions-item label="星级">
+                {{ detailView.rating ?? '-' }} 星
+              </a-descriptions-item>
+              <a-descriptions-item label="ASIN">
+                <code>{{ detailView.asin || '-' }}</code>
+              </a-descriptions-item>
+              <a-descriptions-item label="SKU">
+                <code>{{ detailView.sku || '-' }}</code>
+              </a-descriptions-item>
+              <a-descriptions-item label="时间">
+                {{ detailView.review_at || '-' }}
+              </a-descriptions-item>
+              <a-descriptions-item label="买家">
+                {{ detailView.buyer_name || '匿名' }}
+              </a-descriptions-item>
               <a-descriptions-item label="来源">
                 {{ detailView.source === 'mock_seed' ? '演示数据' : detailView.source || '-' }}
               </a-descriptions-item>
@@ -397,7 +589,9 @@
 
             <div class="rd-section">
               <h4>📝 评价正文</h4>
-              <div class="rd-body-full">{{ detailView.body || '（无正文）' }}</div>
+              <div class="rd-body-full">
+                {{ detailView.body || '（无正文）' }}
+              </div>
             </div>
 
             <!-- ===== 个案 / 系统性判定（第 294 轮 B 档）=====
@@ -410,20 +604,32 @@
             <div class="rd-section">
               <h4>
                 🔎 个案 / 系统性判定
-                <a-tag v-if="systemic" :color="SYSTEMIC_COLORS[systemic.verdict]">
+                <a-tag
+                  v-if="systemic"
+                  :color="SYSTEMIC_COLORS[systemic.verdict]"
+                >
                   {{ systemic.verdict_label }}
                 </a-tag>
               </h4>
 
-              <div v-if="systemicLoading" class="rd-hint-inline">
+              <div
+                v-if="systemicLoading"
+                class="rd-hint-inline"
+              >
                 <a-spin size="small" /> 判定中…
               </div>
-              <div v-else-if="systemicError" class="rd-hint-inline">
+              <div
+                v-else-if="systemicError"
+                class="rd-hint-inline"
+              >
                 判定失败：{{ systemicError }}
               </div>
 
               <template v-else-if="systemic">
-                <div v-if="systemic.ready" class="rd-kv">
+                <div
+                  v-if="systemic.ready"
+                  class="rd-kv"
+                >
                   <span class="rd-k">同因历史</span>
                   <span class="rd-v">
                     {{ systemic.historical_count }} 次
@@ -445,9 +651,14 @@
                     <template v-else>还没算过（需先有一期归因数据）</template>
                   </span>
                 </div>
-                <div class="rd-tip">{{ systemic.reason }}</div>
+                <div class="rd-tip">
+                  {{ systemic.reason }}
+                </div>
 
-                <div v-if="systemic.recommend_escalate" class="rd-warn">
+                <div
+                  v-if="systemic.recommend_escalate"
+                  class="rd-warn"
+                >
                   ⚠️ 判为「{{ systemic.verdict_label }}」：差评只是症状，建议升级到根因环节。
                   <a-button
                     v-if="editable"
@@ -458,7 +669,10 @@
                     {{ editChannels.includes('escalate')
                       ? '已勾选「升级」通道' : '采纳：勾选「升级」通道' }}
                   </a-button>
-                  <span v-else class="rd-block-hint">
+                  <span
+                    v-else
+                    class="rd-block-hint"
+                  >
                     先「生成处置草稿」（或等它加载完），才能把「升级」加进通道
                   </span>
                 </div>
@@ -483,40 +697,63 @@
                    少了它，一旦状态机出现空档（请求被取消、组件重挂），这一块就是
                    一片**没有解释的空白** —— 用户只会以为「功能没做」。
                    本仓铁律：失败与空态都必须能归因。 -->
-              <div v-else class="rd-hint-inline">判定未开始 —— 打开一条差评后会自动请求。</div>
+              <div
+                v-else
+                class="rd-hint-inline"
+              >
+                判定未开始 —— 打开一条差评后会自动请求。
+              </div>
             </div>
 
             <div class="rd-section">
               <h4>
                 🛠 处置
-                <a-tag v-if="disposition" :color="DISPOSITION_STATUS_COLORS[disposition.status]">
+                <a-tag
+                  v-if="disposition"
+                  :color="DISPOSITION_STATUS_COLORS[disposition.status]"
+                >
                   {{ DISPOSITION_STATUS_LABELS[disposition.status] }}
                 </a-tag>
               </h4>
 
-              <div v-if="detailLoading" class="rd-hint-inline">
+              <div
+                v-if="detailLoading"
+                class="rd-hint-inline"
+              >
                 <a-spin size="small" /> 读取处置中…
               </div>
 
               <!-- 尚无处置：此处只说明状态，生成动作在右栏「📤 生成」。
                    ★ 不在左栏再放一个「生成处置草稿」按钮 —— 同一个不可逆流程两个
                      入口，正是第 291 轮删掉资料库入口的理由（HITL 唯一把关点被架空）。 -->
-              <div v-else-if="!disposition" class="rd-hint-inline">
+              <div
+                v-else-if="!disposition"
+                class="rd-hint-inline"
+              >
                 这条差评还没有处置记录 —— 去右栏「📤 生成」点【生成处置草稿】。
               </div>
 
               <template v-else>
                 <div class="rd-steps">
                   <span class="rd-step done">① 生成草稿<em>可写 · 幂等</em></span>
-                  <span class="rd-step" :class="{ done: disposition.status === 'approved' || disposition.status === 'issued' || disposition.status === 'executed' }">
+                  <span
+                    class="rd-step"
+                    :class="{ done: disposition.status === 'approved' || disposition.status === 'issued' || disposition.status === 'executed' }"
+                  >
                     ② 人批准<em>只能人点</em>
                   </span>
-                  <span class="rd-step" :class="{ done: disposition.status === 'issued' || disposition.status === 'executed' }">
+                  <span
+                    class="rd-step"
+                    :class="{ done: disposition.status === 'issued' || disposition.status === 'executed' }"
+                  >
                     ③ 人核准<em>不可逆 · 只生成券码</em>
                   </span>
                   <!-- ★ ④ 是本轮补的那一步：③ 只做本地核准，**平台侧没动**。
                        少了这一步，流程到 `issued` 就「结束」了，而钱其实没退。 -->
-                  <span class="rd-step" :class="{ done: disposition.status === 'executed' }">
+                  <span
+                    class="rd-step"
+                    :class="{ done: disposition.status === 'executed' }"
+                  >
                     ④ 平台执行<em>人工做完后登记回执</em>
                   </span>
                 </div>
@@ -539,13 +776,19 @@
                       @mouseenter="channelHint = c"
                     >
                       {{ CHANNEL_META[c].label
-                      }}<span v-if="CHANNEL_META[c].irreversible" class="rd-chip-mark">✱</span>
+                      }}<span
+                        v-if="CHANNEL_META[c].irreversible"
+                        class="rd-chip-mark"
+                      >✱</span>
                     </button>
                   </div>
                   <div class="rd-chip-desc">
                     <b>{{ CHANNEL_META[focusChannel].label }}</b>：{{ CHANNEL_META[focusChannel].effect }}
                   </div>
-                  <div v-if="irreversiblePicked.length" class="rd-warn">
+                  <div
+                    v-if="irreversiblePicked.length"
+                    class="rd-warn"
+                  >
                     ⚠️ 已选不可逆通道：{{ irreversiblePicked.map(channelLabel).join(' / ') }}
                     —— ③ 核准之后不能改，只能另开一笔。✱ 标记的就是这类。
                   </div>
@@ -560,7 +803,10 @@
                   <!-- ★ 依据：后端 `/draft` 一直返回 `primary_cause_label` 与
                        `rule_name`，界面此前**一次都没渲染** ⇒ 用户看得到「补偿 ¥8」，
                        看不到「为什么是 ¥8」。金额不改（规则唯一算），但理由必须看得见。 -->
-                  <div v-if="draftInfo" class="rd-kv">
+                  <div
+                    v-if="draftInfo"
+                    class="rd-kv"
+                  >
                     <span class="rd-k">依据</span>
                     <span class="rd-v">
                       归因 {{ draftInfo.primary_cause_label || '—' }}
@@ -588,13 +834,23 @@
             <div class="rd-section">
               <h4>📤 生成</h4>
 
-              <div v-if="detailLoading" class="rd-hint-inline">
+              <div
+                v-if="detailLoading"
+                class="rd-hint-inline"
+              >
                 <a-spin size="small" /> 读取处置中…
               </div>
 
               <template v-else-if="!disposition">
-                <div class="rd-hint-inline">这条差评还没有处置记录。</div>
-                <a-button type="primary" size="small" :loading="acting" @click="proposeDraft">
+                <div class="rd-hint-inline">
+                  这条差评还没有处置记录。
+                </div>
+                <a-button
+                  type="primary"
+                  size="small"
+                  :loading="acting"
+                  @click="proposeDraft"
+                >
                   生成处置草稿
                 </a-button>
                 <div class="rd-tip">
@@ -610,10 +866,16 @@
                     <span>券码</span>
                     <span class="rd-block-hint">只读</span>
                   </div>
-                  <div v-if="disposition.coupon_code" class="rd-kv">
+                  <div
+                    v-if="disposition.coupon_code"
+                    class="rd-kv"
+                  >
                     <span class="rd-v"><code>{{ disposition.coupon_code }}</code></span>
                   </div>
-                  <div v-else class="rd-tip">
+                  <div
+                    v-else
+                    class="rd-tip"
+                  >
                     还没核准 ⇒ 尚无券码。③ 核准时自动生成，并<b>写进下面的回复草稿</b>；
                     若草稿已被人工改过则保留人工措辞，同时在处置备注里记账。
                     ★ 券码是**本地生成的待执行凭据**，不是「已发放」的凭证 ——
@@ -629,10 +891,22 @@
                       {{ editable ? (editDirty ? '有未保存的修改' : '可编辑') : '已锁定：' + lockReason }}
                     </span>
                   </div>
-                  <div class="rd-draft-label">中文</div>
-                  <a-textarea v-model:value="editZh" :rows="4" :disabled="!editable" />
-                  <div class="rd-draft-label">English</div>
-                  <a-textarea v-model:value="editEn" :rows="4" :disabled="!editable" />
+                  <div class="rd-draft-label">
+                    中文
+                  </div>
+                  <a-textarea
+                    v-model:value="editZh"
+                    :rows="4"
+                    :disabled="!editable"
+                  />
+                  <div class="rd-draft-label">
+                    English
+                  </div>
+                  <a-textarea
+                    v-model:value="editEn"
+                    :rows="4"
+                    :disabled="!editable"
+                  />
                   <div class="rd-tip">
                     措辞可以改（对买家说话吃语境）；<b>补偿金额不在文中改</b>。
                     草稿在批准之前一律用「拟 / 正在办理」的口径，不写成既成事实。
@@ -640,10 +914,20 @@
                 </div>
 
                 <div class="rd-actions">
-                  <a-button v-if="editable" size="small" :loading="acting" @click="saveEdits">
+                  <a-button
+                    v-if="editable"
+                    size="small"
+                    :loading="acting"
+                    @click="saveEdits"
+                  >
                     保存修改
                   </a-button>
-                  <a-button v-if="editable" size="small" :disabled="acting" @click="restoreSystemDraft">
+                  <a-button
+                    v-if="editable"
+                    size="small"
+                    :disabled="acting"
+                    @click="restoreSystemDraft"
+                  >
                     填入系统草稿
                   </a-button>
                   <a-button
@@ -653,14 +937,18 @@
                     :loading="acting"
                     title="写操作（单条）：批准这条草稿；只能人点 —— 发券退款不可逆，不在 Agent 工具里"
                     @click="confirmAct('approve')"
-                  >批准</a-button>
+                  >
+                    批准
+                  </a-button>
                   <a-button
                     v-if="disposition.status === 'proposed' || disposition.status === 'approved'"
                     size="small"
                     :loading="acting"
                     title="写操作（单条）：驳回这条草稿；只能人点"
                     @click="confirmAct('reject')"
-                  >驳回</a-button>
+                  >
+                    驳回
+                  </a-button>
                   <a-button
                     v-if="disposition.status === 'approved'"
                     danger
@@ -668,7 +956,9 @@
                     :loading="acting"
                     title="写操作（单条·不可逆）：本地核准 —— 生成券码并写进回复。本系统不会调用平台接口，平台侧动作仍需人工去后台执行"
                     @click="confirmAct('issue')"
-                  >核准（不可逆）</a-button>
+                  >
+                    核准（不可逆）
+                  </a-button>
                   <!-- ★ ④ 登记回执：本系统不调平台写接口，这一步是「人去平台做完了，
                        回来登记」。没有它，`executed` 就没有来源 —— 界面也就
                        没资格说「已执行」。 -->
@@ -679,22 +969,41 @@
                     :loading="acting"
                     title="写操作（单条·终态）：登记「平台上已经执行完」的回执 —— 只有真做完了才登记"
                     @click="confirmAct('receipt')"
-                  >登记平台回执</a-button>
+                  >
+                    登记平台回执
+                  </a-button>
                 </div>
-                <div v-if="disposition.status === 'issued'" class="rd-tip">
+                <div
+                  v-if="disposition.status === 'issued'"
+                  class="rd-tip"
+                >
                   <b>已核准 · 待平台执行</b>：券码已生成并写进回复，历史不可改
                   （要调整只能另开一笔）。
                   ★ 本系统<b>不会调用平台接口</b> —— 请人工去平台后台发券 / 退款，
                   做完回来点【登记平台回执】。
                 </div>
-                <div v-if="disposition.status === 'executed'" class="rd-tip">
+                <div
+                  v-if="disposition.status === 'executed'"
+                  class="rd-tip"
+                >
                   <b>平台已执行</b>：{{ disposition.execution_mode === 'manual' ? '人工在平台执行' : '系统执行' }}
-                  <template v-if="disposition.platform_ref"> · 凭证 <code>{{ disposition.platform_ref }}</code></template>
-                  <template v-if="disposition.executed_by"> · 登记人 {{ disposition.executed_by }}</template>
-                  <template v-if="disposition.executed_at"> · {{ disposition.executed_at }}</template>
-                  <template v-if="disposition.receipt_note"><br />{{ disposition.receipt_note }}</template>
+                  <template v-if="disposition.platform_ref">
+                    · 凭证 <code>{{ disposition.platform_ref }}</code>
+                  </template>
+                  <template v-if="disposition.executed_by">
+                    · 登记人 {{ disposition.executed_by }}
+                  </template>
+                  <template v-if="disposition.executed_at">
+                    · {{ disposition.executed_at }}
+                  </template>
+                  <template v-if="disposition.receipt_note">
+                    <br>{{ disposition.receipt_note }}
+                  </template>
                 </div>
-                <div v-if="disposition.status === 'rejected'" class="rd-tip">
+                <div
+                  v-if="disposition.status === 'rejected'"
+                  class="rd-tip"
+                >
                   已驳回 —— 改完通道 / 措辞后点「保存修改」会重新回到待批准。
                 </div>
               </template>

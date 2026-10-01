@@ -7,12 +7,17 @@
         <span class="tm-head-sub">
           工具由<b>代码</b>定义（后端 <code>tools_catalog.py</code> 是唯一真源）——
           本页<b>不能新建工具</b>，也不改工具归属。
-          <br />
+          <br>
           ★ <b>确定可计算 → 工具</b>
         </span>
       </div>
       <div class="tm-head-actions">
-        <a-button :loading="store.loading" @click="store.loadAll()">刷新</a-button>
+        <a-button
+          :loading="store.loading"
+          @click="store.loadAll()"
+        >
+          刷新
+        </a-button>
       </div>
     </div>
 
@@ -25,9 +30,15 @@
       :description="store.error"
     />
 
-    <a-tabs v-model:activeKey="tab" class="tm-tabs">
+    <a-tabs
+      v-model:active-key="tab"
+      class="tm-tabs"
+    >
       <!-- ==================== Tab 1：工具管理 ==================== -->
-      <a-tab-pane key="catalog" tab="工具管理">
+      <a-tab-pane
+        key="catalog"
+        tab="工具管理"
+      >
         <p class="tm-tip">
           <b>只读目录。</b>工具是代码里的静态表 —— 没有 <code>tools</code> 表、没有实体、
           没有归属列，所以「新建工具」这件事<b>结构上就不存在</b>（不是"暂时没做"）。
@@ -35,10 +46,16 @@
           ⇒ 改它要改代码。<b>可写的绑定只有一处：「skill 配装」。</b>
         </p>
 
-        <div v-if="store.toolUsage" class="tm-chips tm-block-gap">
+        <div
+          v-if="store.toolUsage"
+          class="tm-chips tm-block-gap"
+        >
           <span class="tm-chip">工具 {{ store.tools.length }} 个</span>
           <span class="tm-chip">已被引用 {{ store.toolUsage.referencedTools }} 个</span>
-          <span class="tm-chip" :class="{ 'tm-chip-off': !store.unusedTools.length }">
+          <span
+            class="tm-chip"
+            :class="{ 'tm-chip-off': !store.unusedTools.length }"
+          >
             未被引用 {{ store.unusedTools.length }} 个
           </span>
           <span class="tm-chip tm-chip-quiet">
@@ -68,7 +85,9 @@
             style="width: 240px"
             allow-clear
           >
-            <template #prefix><SearchOutlined /></template>
+            <template #prefix>
+              <SearchOutlined />
+            </template>
           </a-input-search>
 
           <a-select
@@ -77,7 +96,11 @@
             placeholder="全部 Agent"
             allow-clear
           >
-            <a-select-option v-for="a in store.agents" :key="a.name" :value="a.name">
+            <a-select-option
+              v-for="a in store.agents"
+              :key="a.name"
+              :value="a.name"
+            >
               {{ a.title }}
             </a-select-option>
           </a-select>
@@ -88,8 +111,12 @@
             placeholder="副作用不限"
             allow-clear
           >
-            <a-select-option value="approval">需审批</a-select-option>
-            <a-select-option value="read_only">只读</a-select-option>
+            <a-select-option value="approval">
+              需审批
+            </a-select-option>
+            <a-select-option value="read_only">
+              只读
+            </a-select-option>
           </a-select>
 
           <a-select
@@ -98,8 +125,12 @@
             placeholder="引用状态不限"
             allow-clear
           >
-            <a-select-option value="cited">有技能引用</a-select-option>
-            <a-select-option value="uncited">无技能引用</a-select-option>
+            <a-select-option value="cited">
+              有技能引用
+            </a-select-option>
+            <a-select-option value="uncited">
+              无技能引用
+            </a-select-option>
           </a-select>
 
           <a-button
@@ -129,23 +160,47 @@
         </div>
 
         <a-spin :spinning="store.loading">
-          <a-empty v-if="!store.tools.length" description="工具目录加载失败或为空" />
+          <a-empty
+            v-if="!store.tools.length"
+            description="工具目录加载失败或为空"
+          />
           <template v-else>
             <!-- ★ 筛选后为空 ⇒ **直接空**（照「快捷卡片管理」tab 的既有判据）：
                  不另起一个空状态块，因为筛选栏已在判空之外、
                  「重置筛选」任何状态下都够得着。 -->
-            <div v-if="view === 'grid'" class="tm-grid">
-              <div v-for="t in flatTools" :key="t.name" class="tm-card">
+            <div
+              v-if="view === 'grid'"
+              class="tm-grid"
+            >
+              <div
+                v-for="t in flatTools"
+                :key="t.name"
+                class="tm-card"
+              >
                 <div class="tm-card-head">
                   <span class="tm-card-title">{{ t.title || t.name }}</span>
-                  <a-tag v-if="t.effect === 'approval'" color="orange">需审批</a-tag>
-                  <a-tag v-if="(t.agents || []).length > 1" color="blue">
+                  <a-tag
+                    v-if="t.effect === 'approval'"
+                    color="orange"
+                  >
+                    需审批
+                  </a-tag>
+                  <a-tag
+                    v-if="(t.agents || []).length > 1"
+                    color="blue"
+                  >
                     {{ (t.agents || []).length }} 家共用
                   </a-tag>
-                  <a-tag v-if="!store.usageOfTool(t.name).length">未被引用</a-tag>
+                  <a-tag v-if="!store.usageOfTool(t.name).length">
+                    未被引用
+                  </a-tag>
                 </div>
-                <div class="tm-card-key">{{ t.name }}</div>
-                <p class="tm-card-desc">{{ t.description }}</p>
+                <div class="tm-card-key">
+                  {{ t.name }}
+                </div>
+                <p class="tm-card-desc">
+                  {{ t.description }}
+                </p>
 
                 <div class="tm-card-line">
                   <span class="tm-meta-label">归属</span>
@@ -166,23 +221,41 @@
                       :key="r.id"
                       :title="refTooltip(r)"
                     >
-                      <span class="tm-chip" :class="{ 'tm-chip-off': !r.enabled }">
+                      <span
+                        class="tm-chip"
+                        :class="{ 'tm-chip-off': !r.enabled }"
+                      >
                         {{ r.title }}<template v-if="!r.enabled"> · 已停用</template>
                       </span>
                     </a-tooltip>
                   </template>
-                  <span v-else class="tm-muted">
+                  <span
+                    v-else
+                    class="tm-muted"
+                  >
                     没有任何技能引用它 —— 模型不会被引导去调它。
                   </span>
                 </div>
               </div>
             </div>
 
-            <div v-else class="tm-list">
-              <div v-for="t in flatTools" :key="t.name" class="tm-row">
+            <div
+              v-else
+              class="tm-list"
+            >
+              <div
+                v-for="t in flatTools"
+                :key="t.name"
+                class="tm-row"
+              >
                 <span class="tm-row-title">{{ t.title || t.name }}</span>
                 <span class="tm-row-key">{{ t.name }}</span>
-                <a-tag v-if="t.effect === 'approval'" color="orange">需审批</a-tag>
+                <a-tag
+                  v-if="t.effect === 'approval'"
+                  color="orange"
+                >
+                  需审批
+                </a-tag>
                 <span class="tm-row-agents">
                   {{ (t.agents || [t.agent]).map(titleOfAgent).join('、') }}
                 </span>
@@ -190,7 +263,10 @@
                   <template v-if="store.usageOfTool(t.name).length">
                     被引用 {{ store.usageOfTool(t.name).length }} 次
                   </template>
-                  <span v-else class="tm-muted">未被引用</span>
+                  <span
+                    v-else
+                    class="tm-muted"
+                  >未被引用</span>
                 </span>
               </div>
             </div>
@@ -199,10 +275,13 @@
       </a-tab-pane>
 
       <!-- ==================== Tab 2：skill 配装 ==================== -->
-      <a-tab-pane key="skill-tools" tab="skill 配装">
+      <a-tab-pane
+        key="skill-tools"
+        tab="skill 配装"
+      >
         <p class="tm-tip">
           <b>勾选即存</b>：这里改的是「该技能<b>配备</b>哪些工具」。
-          <br />
+          <br>
           ★★ 必须说清它的真实作用：<b>这是提示词层面的引导，不是权限。</b>
           Agent 手上真正有哪些工具由<b>代码装配</b>决定（真源 <code>TOOL_CATALOG</code>），
           <code>skill.tools</code> 的唯一去处是把「本技能配套工具」渲染进提示词。
@@ -221,16 +300,31 @@
         />
 
         <a-spin :spinning="store.loading">
-          <a-empty v-if="!store.items.length" description="没有可见的技能" />
-          <div v-else class="tm-skill-list">
-            <div v-for="s in skillsSorted" :key="s.id" class="tm-skill-row">
+          <a-empty
+            v-if="!store.items.length"
+            description="没有可见的技能"
+          />
+          <div
+            v-else
+            class="tm-skill-list"
+          >
+            <div
+              v-for="s in skillsSorted"
+              :key="s.id"
+              class="tm-skill-row"
+            >
               <div class="tm-skill-head">
                 <span class="tm-skill-title">
-                  <span v-if="s.icon" class="tm-skill-icon">{{ s.icon }}</span>
+                  <span
+                    v-if="s.icon"
+                    class="tm-skill-icon"
+                  >{{ s.icon }}</span>
                   {{ s.title || s.name }}
                 </span>
                 <span class="tm-skill-key">{{ s.name }}</span>
-                <a-tag v-if="!s.enabled">已停用</a-tag>
+                <a-tag v-if="!s.enabled">
+                  已停用
+                </a-tag>
               </div>
 
               <div class="tm-card-line">
@@ -244,7 +338,10 @@
                     {{ titleOfAgent(a) }}
                   </span>
                 </template>
-                <span v-else class="tm-muted">
+                <span
+                  v-else
+                  class="tm-muted"
+                >
                   未对任何 Agent 生效 —— 模型连它的名字都看不到。
                 </span>
               </div>
@@ -284,14 +381,17 @@
       </a-tab-pane>
 
       <!-- ==================== Tab 3：Agent 配装 ==================== -->
-      <a-tab-pane key="agent-wiring" tab="Agent 配装">
+      <a-tab-pane
+        key="agent-wiring"
+        tab="Agent 配装"
+      >
         <p class="tm-tip">
           <b>只读总览。</b>「Agent 手上有哪些工具」是<b>代码声明</b>的
           （<code>TOOL_CATALOG[].agent / agents</code>），后端门禁断言它与
           <b>真实装配点集合相等</b> ⇒ 这里<b>没有可勾的写动作</b>：
           做成可勾会造出第二个真源，且没有任何门禁会红。
           可写的绑定只有「skill 配装」那一处。
-          <br />
+          <br>
           ★ 本 tab 真正的用处是看<b>组合约束</b>：技能引导了某工具、
           但那个工具<b>不属于</b>该 Agent ⇒ 运行期调不到（「给了方法，没给原料」）。
           这类缺口在别处看不见。
@@ -300,19 +400,34 @@
         <div class="tm-chips tm-block-gap">
           <span class="tm-chip">Agent {{ store.agents.length }} 个</span>
           <span class="tm-chip">工具 {{ store.tools.length }} 个</span>
-          <span class="tm-chip" :class="{ 'tm-chip-off': !mismatchTotal }">
+          <span
+            class="tm-chip"
+            :class="{ 'tm-chip-off': !mismatchTotal }"
+          >
             引用了但调不到 {{ mismatchTotal }} 条
           </span>
         </div>
 
         <a-spin :spinning="store.loading">
-          <a-empty v-if="!store.agents.length" description="Agent 目录加载失败或为空" />
-          <div v-else class="tm-agent-list">
-            <div v-for="a in store.agents" :key="a.name" class="tm-agent-card">
+          <a-empty
+            v-if="!store.agents.length"
+            description="Agent 目录加载失败或为空"
+          />
+          <div
+            v-else
+            class="tm-agent-list"
+          >
+            <div
+              v-for="a in store.agents"
+              :key="a.name"
+              class="tm-agent-card"
+            >
               <div class="tm-agent-head">
                 <span class="tm-agent-title">{{ a.title }}</span>
                 <span class="tm-agent-key">{{ a.name }}</span>
-                <a-tag color="blue">手上 {{ toolsOfAgent(a.name).length }} 个工具</a-tag>
+                <a-tag color="blue">
+                  手上 {{ toolsOfAgent(a.name).length }} 个工具
+                </a-tag>
                 <a-tag color="green">
                   启用 {{ store.skillsOfAgent(a.name).length }} 个技能
                 </a-tag>
@@ -331,7 +446,10 @@
                     {{ t.title }}<template v-if="t.effect === 'approval'"> · 需审批</template>
                   </span>
                 </template>
-                <span v-else class="tm-muted">（这个 Agent 手上没有工具）</span>
+                <span
+                  v-else
+                  class="tm-muted"
+                >（这个 Agent 手上没有工具）</span>
               </div>
 
               <div class="tm-card-line">
@@ -345,7 +463,10 @@
                     {{ s.title || s.name }}
                   </span>
                 </template>
-                <span v-else class="tm-muted">（没有启用任何技能）</span>
+                <span
+                  v-else
+                  class="tm-muted"
+                >（没有启用任何技能）</span>
               </div>
 
               <div class="tm-card-line tm-card-line-wrap">
@@ -366,7 +487,10 @@
                     <template v-if="!row.reachable"> · 调不到</template>
                   </span>
                 </template>
-                <span v-else class="tm-muted">（没有技能引导任何工具）</span>
+                <span
+                  v-else
+                  class="tm-muted"
+                >（没有技能引导任何工具）</span>
               </div>
             </div>
           </div>

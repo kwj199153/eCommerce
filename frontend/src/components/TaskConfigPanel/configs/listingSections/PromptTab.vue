@@ -1,11 +1,27 @@
 <template>
   <div class="prompt-tab">
-    <button type="button" class="prompt-toggle" @click="open = !open">
+    <button
+      type="button"
+      class="prompt-toggle"
+      @click="open = !open"
+    >
       <span>⚙️ 自定义 prompt</span>
-      <span class="prompt-arrow" :class="{ open }">▾</span>
-      <a-tag v-if="hasLocal" color="purple" class="mini-tag">已覆盖</a-tag>
+      <span
+        class="prompt-arrow"
+        :class="{ open }"
+      >▾</span>
+      <a-tag
+        v-if="hasLocal"
+        color="purple"
+        class="mini-tag"
+      >
+        已覆盖
+      </a-tag>
     </button>
-    <div v-if="open" class="prompt-body">
+    <div
+      v-if="open"
+      class="prompt-body"
+    >
       <a-textarea
         :value="modelValue"
         :rows="3"

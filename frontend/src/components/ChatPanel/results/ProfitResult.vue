@@ -8,9 +8,15 @@
           ROI {{ (data.roi ?? 0).toFixed(1) }}%
         </a-tag>
         <a-tag>{{ platformLabel }}</a-tag>
-        <a-tag v-if="data.calculation_mode === 'reverse'">逆向定价</a-tag>
+        <a-tag v-if="data.calculation_mode === 'reverse'">
+          逆向定价
+        </a-tag>
       </div>
-      <a-button type="text" size="small" @click="$emit('close')">
+      <a-button
+        type="text"
+        size="small"
+        @click="$emit('close')"
+      >
         <CloseOutlined />
       </a-button>
     </div>
@@ -20,20 +26,26 @@
       <div class="metric">
         <span class="metric-label">{{ data.effective_discount_pct > 0 ? '成交价' : '售价' }}</span>
         <span class="metric-value price">{{ money(data.final_price) }}</span>
-        <span v-if="data.effective_discount_pct > 0" class="metric-sub">
+        <span
+          v-if="data.effective_discount_pct > 0"
+          class="metric-sub"
+        >
           标价 {{ money(data.listing_price) }} · 折扣 {{ (data.effective_discount_pct ?? 0).toFixed(1) }}%
         </span>
       </div>
-      <div class="metric-divider"></div>
+      <div class="metric-divider" />
       <div class="metric">
         <span class="metric-label">总成本</span>
         <span class="metric-value cost">{{ money(data.total_cost) }}</span>
         <span class="metric-sub">占成交价 {{ costPercent }}%</span>
       </div>
-      <div class="metric-divider"></div>
+      <div class="metric-divider" />
       <div class="metric">
         <span class="metric-label">净利润</span>
-        <span class="metric-value" :class="{ profit: data.net_profit > 0 }">
+        <span
+          class="metric-value"
+          :class="{ profit: data.net_profit > 0 }"
+        >
           {{ money(data.net_profit) }}
         </span>
         <span class="metric-sub">毛利率 {{ (data.profit_margin_pct ?? 0).toFixed(1) }}%</span>
@@ -42,9 +54,18 @@
 
     <!-- 成本明细 -->
     <div class="breakdown-section">
-      <div class="section-title">📊 成本明细</div>
-      <div v-if="(data.fee_breakdown || []).length" class="breakdown-list">
-        <div v-for="(item, i) in data.fee_breakdown" :key="i" class="breakdown-item">
+      <div class="section-title">
+        📊 成本明细
+      </div>
+      <div
+        v-if="(data.fee_breakdown || []).length"
+        class="breakdown-list"
+      >
+        <div
+          v-for="(item, i) in data.fee_breakdown"
+          :key="i"
+          class="breakdown-item"
+        >
           <span>{{ item.name }}</span>
           <span>{{ money(item.amount) }}</span>
         </div>
@@ -53,22 +74,41 @@
           <span>{{ money(data.total_cost) }}</span>
         </div>
       </div>
-      <div v-else class="breakdown-empty">未获取到成本明细。</div>
+      <div
+        v-else
+        class="breakdown-empty"
+      >
+        未获取到成本明细。
+      </div>
     </div>
 
     <!-- 成本 / 利润 占成交价的可视化 -->
-    <div v-if="data.final_price > 0" class="profit-visual">
+    <div
+      v-if="data.final_price > 0"
+      class="profit-visual"
+    >
       <div class="bar-container">
-        <div class="bar cost-bar" :style="{ width: Math.min(100, costPercent) + '%' }"></div>
-        <div class="bar profit-bar" :style="{ width: Math.max(0, 100 - costPercent) + '%' }"></div>
+        <div
+          class="bar cost-bar"
+          :style="{ width: Math.min(100, costPercent) + '%' }"
+        />
+        <div
+          class="bar profit-bar"
+          :style="{ width: Math.max(0, 100 - costPercent) + '%' }"
+        />
       </div>
       <div class="bar-legend">
-        <span><i class="dot cost-dot"></i> 成本 {{ costPercent }}%</span>
-        <span><i class="dot profit-dot"></i> 利润 {{ Math.max(0, 100 - costPercent) }}%</span>
+        <span><i class="dot cost-dot" /> 成本 {{ costPercent }}%</span>
+        <span><i class="dot profit-dot" /> 利润 {{ Math.max(0, 100 - costPercent) }}%</span>
       </div>
     </div>
 
-    <div v-if="data.formula_summary" class="formula-note">{{ data.formula_summary }}</div>
+    <div
+      v-if="data.formula_summary"
+      class="formula-note"
+    >
+      {{ data.formula_summary }}
+    </div>
   </div>
 </template>
 

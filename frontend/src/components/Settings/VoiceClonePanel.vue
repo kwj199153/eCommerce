@@ -18,7 +18,12 @@
       >
         <template #message>
           音色已就绪
-          <a-tag color="blue" class="vc-tag">{{ record.voice_id }}</a-tag>
+          <a-tag
+            color="blue"
+            class="vc-tag"
+          >
+            {{ record.voice_id }}
+          </a-tag>
         </template>
         <template #description>
           <div class="vc-meta">
@@ -37,7 +42,13 @@
         description="平台正在审核音色样本，通常几分钟内完成。可点击「刷新状态」重新查询。"
       >
         <template #action>
-          <a-button size="small" :loading="statusLoading" @click="refreshStatus">刷新状态</a-button>
+          <a-button
+            size="small"
+            :loading="statusLoading"
+            @click="refreshStatus"
+          >
+            刷新状态
+          </a-button>
         </template>
       </a-alert>
 
@@ -75,24 +86,38 @@
            ★ 仍保留 `.vc-danger-row` 类名：既有安全探针
              `scripts/cdp-vc-step-layout-probe.mjs` 用它当作
              「确认是带二次确认的新版本」的标记，没看到它就拒绝点击（防误删真音色）。 -->
-      <div v-if="record.exists" class="vc-danger-row">
+      <div
+        v-if="record.exists"
+        class="vc-danger-row"
+      >
         <a-popconfirm
           title="删除后远端配额一并释放，需重新录制样本并克隆"
           @confirm="handleDelete"
         >
-          <a-button danger :loading="deleting">删除音色</a-button>
+          <a-button
+            danger
+            :loading="deleting"
+          >
+            删除音色
+          </a-button>
         </a-popconfirm>
         <span class="vc-danger-hint">当前店铺只能有一个音色，删除后才能创建新的</span>
       </div>
 
       <!-- ============ 步骤 1：录制 / 上传样本 ============ -->
-      <a-card :bordered="false" class="vc-card">
+      <a-card
+        :bordered="false"
+        class="vc-card"
+      >
         <template #title>
           <span class="vc-step">1</span> 录制音频样本
         </template>
 
         <!-- 通道 A：跟读录音（只在安全上下文 + 麦克风可用时出现） -->
-        <div v-if="recorder.supported" class="vc-rec">
+        <div
+          v-if="recorder.supported"
+          class="vc-rec"
+        >
           <div class="vc-rec-label">
             跟着下面这段念，不用背（约 {{ scriptSeconds }} 秒，念完自动够长）
           </div>
@@ -105,34 +130,58 @@
                 'is-current': recorder.isRecording && i === currentSentence,
                 'is-done': recorder.isRecording && i < currentSentence,
               }"
-              >{{ s }}</span
-            >
+            >{{ s }}</span>
           </div>
 
           <div class="vc-rec-bar">
             <div class="vc-rec-meter">
-              <div class="vc-rec-meter-fill" :style="{ width: meterPct + '%' }"></div>
+              <div
+                class="vc-rec-meter-fill"
+                :style="{ width: meterPct + '%' }"
+              />
             </div>
             <span class="vc-rec-time">{{ elapsedText }} / 建议 {{ suggestRange }}</span>
           </div>
 
           <div class="vc-rec-actions">
-            <a-button v-if="!recorder.isRecording" type="primary" :loading="recordStarting" @click="startRecord">
+            <a-button
+              v-if="!recorder.isRecording"
+              type="primary"
+              :loading="recordStarting"
+              @click="startRecord"
+            >
               <AudioOutlined /> {{ recordedFile ? '重新录制' : '开始录制' }}
             </a-button>
-            <a-button v-else danger @click="stopRecord">
+            <a-button
+              v-else
+              danger
+              @click="stopRecord"
+            >
               <StopOutlined /> 停止录制
             </a-button>
           </div>
 
           <!-- 录音失败必须显示原因，不做兜底 -->
-          <div v-if="recorder.error" class="vc-hint vc-hint-warn">{{ recorder.error }}</div>
+          <div
+            v-if="recorder.error"
+            class="vc-hint vc-hint-warn"
+          >
+            {{ recorder.error }}
+          </div>
         </div>
 
         <!-- 通道 B：上传文件。录音不可用时这是唯一入口，因此**不可删**。 -->
         <div class="vc-upload-wrap">
-          <div v-if="recorder.supported" class="vc-or">或上传已有音频文件</div>
-          <div v-else class="vc-hint vc-hint-warn vc-hint-lead">
+          <div
+            v-if="recorder.supported"
+            class="vc-or"
+          >
+            或上传已有音频文件
+          </div>
+          <div
+            v-else
+            class="vc-hint vc-hint-warn vc-hint-lead"
+          >
             当前环境无法浏览器录音：{{ recorder.unsupportedReason }}
           </div>
 
@@ -143,8 +192,12 @@
             :accept="acceptExts"
             @remove="onRemove"
           >
-            <p class="ant-upload-drag-icon"><InboxOutlined /></p>
-            <p class="ant-upload-text">点击或拖拽音频文件到此处</p>
+            <p class="ant-upload-drag-icon">
+              <InboxOutlined />
+            </p>
+            <p class="ant-upload-text">
+              点击或拖拽音频文件到此处
+            </p>
             <p class="ant-upload-hint">
               支持 {{ limitsText.exts }} · 建议 10~20 秒 · 至少 5 秒连续清晰朗读 ·
               ≤ {{ limitsText.maxMb }} MB
@@ -153,20 +206,44 @@
         </div>
 
         <!-- 校验徽标：把硬要求逐条摆出来，用户一眼看出行不行 -->
-        <div v-if="sample" class="vc-badges">
-          <a-tag :color="extOk ? 'success' : 'error'">格式 {{ sampleExt || '未知' }}</a-tag>
+        <div
+          v-if="sample"
+          class="vc-badges"
+        >
+          <a-tag :color="extOk ? 'success' : 'error'">
+            格式 {{ sampleExt || '未知' }}
+          </a-tag>
           <a-tag :color="sizeOk ? 'success' : 'error'">
             大小 {{ (sample.size / 1024 / 1024).toFixed(2) }} MB
           </a-tag>
           <a-tag :color="durationOk === null ? 'default' : durationOk ? 'success' : 'error'">
             时长 {{ sampleDuration === null ? '未测到' : sampleDuration.toFixed(1) + 's' }}
           </a-tag>
-          <a-tag v-if="sample.duration_verified === false" color="warning">未校验时长</a-tag>
+          <a-tag
+            v-if="sample.duration_verified === false"
+            color="warning"
+          >
+            未校验时长
+          </a-tag>
         </div>
 
-        <div v-if="sample" class="vc-sample-actions">
-          <audio :src="sample.url" controls class="vc-audio" />
-          <a-button size="small" danger type="text" @click="clearSample">清除</a-button>
+        <div
+          v-if="sample"
+          class="vc-sample-actions"
+        >
+          <audio
+            :src="sample.url"
+            controls
+            class="vc-audio"
+          />
+          <a-button
+            size="small"
+            danger
+            type="text"
+            @click="clearSample"
+          >
+            清除
+          </a-button>
         </div>
 
         <a-alert
@@ -179,27 +256,41 @@
       </a-card>
 
       <!-- ============ 步骤 2：授权确认 ============ -->
-      <a-card :bordered="false" class="vc-card">
+      <a-card
+        :bordered="false"
+        class="vc-card"
+      >
         <template #title>
           <span class="vc-step">2</span> 授权确认
         </template>
 
-        <div class="vc-agreement">{{ AGREEMENT_TEXT }}</div>
+        <div class="vc-agreement">
+          {{ AGREEMENT_TEXT }}
+        </div>
 
-        <a-checkbox v-model:checked="authorized" class="vc-checkbox">
+        <a-checkbox
+          v-model:checked="authorized"
+          class="vc-checkbox"
+        >
           我已阅读并同意上述条款，确认对该声音拥有合法使用权
         </a-checkbox>
       </a-card>
 
       <!-- ============ 步骤 3：创建音色 ============ -->
-      <a-card :bordered="false" class="vc-card">
+      <a-card
+        :bordered="false"
+        class="vc-card"
+      >
         <template #title>
           <span class="vc-step">3</span> 创建音色
         </template>
 
         <a-form layout="vertical">
           <a-form-item label="驱动模型">
-            <a-select v-model:value="targetModel" :options="modelOptions" />
+            <a-select
+              v-model:value="targetModel"
+              :options="modelOptions"
+            />
             <div class="vc-hint">
               音色与模型**死绑**：创建后不可换模型，换模型需重新克隆。
             </div>
@@ -214,7 +305,10 @@
         >
           {{ record.status === 'ready' ? '已有可用音色' : '开始克隆' }}
         </a-button>
-        <div v-if="!canEnroll && !enrolling" class="vc-hint vc-hint-warn">
+        <div
+          v-if="!canEnroll && !enrolling"
+          class="vc-hint vc-hint-warn"
+        >
           {{ enrollBlockReason }}
         </div>
 
@@ -232,7 +326,10 @@
       </a-card>
 
       <!-- ============ 步骤 4：试听 ============ -->
-      <a-card :bordered="false" class="vc-card">
+      <a-card
+        :bordered="false"
+        class="vc-card"
+      >
         <template #title>
           <span class="vc-step">4</span> 试听
         </template>
@@ -259,15 +356,28 @@
           </a-button>
         </a-space>
 
-        <div v-if="!record.ready" class="vc-hint vc-hint-warn">
+        <div
+          v-if="!record.ready"
+          class="vc-hint vc-hint-warn"
+        >
           音色未就绪，暂不能试听{{ record.exists ? '（当前状态：' + statusText(record.status) + '）' : '' }}
         </div>
 
-        <div v-if="previewUrl" class="vc-preview">
+        <div
+          v-if="previewUrl"
+          class="vc-preview"
+        >
           <!-- ★ ref 用于「生成完直接出声」：老板口径是不要让人生成后再点一次播放。
                保留 controls —— 重播 / 拖进度仍然要用它。 -->
-          <audio ref="previewAudioEl" :src="previewUrl" controls class="vc-audio" />
-          <div class="vc-hint">{{ previewHint }}</div>
+          <audio
+            ref="previewAudioEl"
+            :src="previewUrl"
+            controls
+            class="vc-audio"
+          />
+          <div class="vc-hint">
+            {{ previewHint }}
+          </div>
         </div>
 
         <!-- 失败原因必须显式展示，不做兜底（只显示本卡片触发的） -->

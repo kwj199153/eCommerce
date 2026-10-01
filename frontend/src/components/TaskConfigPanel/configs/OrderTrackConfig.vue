@@ -1,16 +1,24 @@
 <template>
   <div class="order-track-config">
-    <a-form layout="vertical" :model="formState" class="config-form">
-      <div class="section-title">📦 订单查询</div>
+    <a-form
+      layout="vertical"
+      :model="formState"
+      class="config-form"
+    >
+      <div class="section-title">
+        📦 订单查询
+      </div>
 
       <!-- 订单号 -->
       <a-form-item label="订单号">
         <a-input
           v-model:value="formState.orderId"
           placeholder="输入订单号，如 112-1234567-8901234"
-          allowClear
+          allow-clear
         />
-        <div class="form-hint">Amazon 订单号格式：123-1234567-1234567</div>
+        <div class="form-hint">
+          Amazon 订单号格式：123-1234567-1234567
+        </div>
       </a-form-item>
 
       <a-divider style="margin: var(--space-12) 0;" />
@@ -22,7 +30,7 @@
           v-model:value="formState.email"
           placeholder="example@email.com"
           disabled
-          allowClear
+          allow-clear
         />
       </a-form-item>
 
@@ -32,14 +40,21 @@
           placeholder="输入手机号后 4 位"
           :maxlength="4"
           disabled
-          allowClear
+          allow-clear
         />
       </a-form-item>
-      <div class="form-hint">按邮箱 / 手机号检索需要卖家后台授权，暂未开放 —— 请用订单号查询。</div>
+      <div class="form-hint">
+        按邮箱 / 手机号检索需要卖家后台授权，暂未开放 —— 请用订单号查询。
+      </div>
 
       <!-- 操作按钮 -->
       <div class="action-bar">
-        <a-button type="primary" block @click="handleStart" :loading="loading">
+        <a-button
+          type="primary"
+          block
+          :loading="loading"
+          @click="handleStart"
+        >
           <SearchOutlined /> 查询订单
         </a-button>
       </div>
@@ -51,10 +66,18 @@
            接口中」—— 而自有订单库那条链（`_map_order_from_trade`）**是给的**，
            这句话把用户指去了错的地方。现在从唯一真源 `orderFieldPreview()` 派生。 -->
     <div class="quick-tips">
-      <p class="tips-title">💡 查询结果包含</p>
+      <p class="tips-title">
+        💡 查询结果包含
+      </p>
       <ul>
-        <li v-for="f in fieldPreview" :key="f.key">
-          {{ f.label }}<span v-if="f.ownDbOnly" class="tips-sub">（自有订单库才有）</span>
+        <li
+          v-for="f in fieldPreview"
+          :key="f.key"
+        >
+          {{ f.label }}<span
+            v-if="f.ownDbOnly"
+            class="tips-sub"
+          >（自有订单库才有）</span>
         </li>
       </ul>
       <p class="form-hint">

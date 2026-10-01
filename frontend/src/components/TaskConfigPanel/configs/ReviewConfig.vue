@@ -1,7 +1,10 @@
 <template>
   <div class="rv-config">
     <!-- ====== 顶部：5 个数据视图 Tab 导航（仅大屏模式显示；对话模式由顶部工具栏 5 个工具按钮承担切换） ====== -->
-    <div v-if="isDataMode" class="rv-tabs">
+    <div
+      v-if="isDataMode"
+      class="rv-tabs"
+    >
       <button
         v-for="tab in DATA_VIEW_TABS"
         :key="tab.key"
@@ -18,181 +21,361 @@
          第 167 轮（#725）：此前本组件读的是**内联常量**，结构上不可能失败，
          因此也没有任何失败出口 —— 新店铺的第一眼就是满屏别人家的数字。
          接真源后必须把「未选店铺 / 加载中 / 取数失败」三种状态显式说出来。 -->
-    <div v-if="banner" class="rv-banner" :class="banner.kind">
+    <div
+      v-if="banner"
+      class="rv-banner"
+      :class="banner.kind"
+    >
       <span class="rv-banner-text">{{ banner.text }}</span>
-      <button v-if="banner.retry" class="rv-retry" @click="reload">重试</button>
+      <button
+        v-if="banner.retry"
+        class="rv-retry"
+        @click="reload"
+      >
+        重试
+      </button>
     </div>
 
     <!-- ① 经营概览 -->
-    <section v-if="activeTab === 'overview'" class="rv-pane">
+    <section
+      v-if="activeTab === 'overview'"
+      class="rv-pane"
+    >
       <div class="pane-head">
         <div>
-          <div class="pane-title">经营概览 <a-tag color="default" class="mini-tag">近 7 天</a-tag></div>
-          <div class="pane-sub">全店核心指标 + ASIN 销量排行（数据来自 <code>/review/weekly-report</code> 与 <code>/review/product-performance</code>）</div>
+          <div class="pane-title">
+            经营概览 <a-tag
+              color="default"
+              class="mini-tag"
+            >
+              近 7 天
+            </a-tag>
+          </div>
+          <div class="pane-sub">
+            全店核心指标 + ASIN 销量排行（数据来自 <code>/review/weekly-report</code> 与 <code>/review/product-performance</code>）
+          </div>
         </div>
       </div>
 
       <div class="kpi-grid">
-        <div v-for="m in metricsOf(weekly)" :key="m.label" class="kpi-card">
-          <div class="kpi-label">{{ m.label }}</div>
-          <div class="kpi-value" :class="kpiClass(m.status)">{{ formatMetric(m) }}</div>
-          <div v-if="m.delta_pct != null" class="kpi-change">
+        <div
+          v-for="m in metricsOf(weekly)"
+          :key="m.label"
+          class="kpi-card"
+        >
+          <div class="kpi-label">
+            {{ m.label }}
+          </div>
+          <div
+            class="kpi-value"
+            :class="kpiClass(m.status)"
+          >
+            {{ formatMetric(m) }}
+          </div>
+          <div
+            v-if="m.delta_pct != null"
+            class="kpi-change"
+          >
             <span :class="m.delta_pct >= 0 ? 'up' : 'down'">
               {{ m.delta_pct >= 0 ? '▲' : '▼' }} {{ Math.abs(m.delta_pct).toFixed(1) }}% <em>环比</em>
             </span>
           </div>
-          <div v-else class="kpi-change"><span class="muted">—</span></div>
+          <div
+            v-else
+            class="kpi-change"
+          >
+            <span class="muted">—</span>
+          </div>
         </div>
       </div>
 
       <div class="panel-card">
-        <div class="card-head">每日销量 / 销售额走势</div>
+        <div class="card-head">
+          每日销量 / 销售额走势
+        </div>
         <UnsupportedNote label="逐日销售序列" />
       </div>
 
       <div class="two-col flex-block">
         <div class="panel-card">
-          <div class="card-head">ASIN 销量排行（近 7 天）</div>
-          <div v-if="rankRows.length" class="rank-list">
-            <div v-for="(r, i) in rankRows" :key="r.asin" class="rank-row">
-              <span class="rank-idx" :class="'idx-' + (i + 1)">{{ i + 1 }}</span>
+          <div class="card-head">
+            ASIN 销量排行（近 7 天）
+          </div>
+          <div
+            v-if="rankRows.length"
+            class="rank-list"
+          >
+            <div
+              v-for="(r, i) in rankRows"
+              :key="r.asin"
+              class="rank-row"
+            >
+              <span
+                class="rank-idx"
+                :class="'idx-' + (i + 1)"
+              >{{ i + 1 }}</span>
               <span class="rank-name"><span class="rank-asin">{{ r.asin }}</span></span>
               <span class="rank-orders">{{ r.units }} 件</span>
-              <span class="rank-bar-track"><i class="rank-bar" :style="{ width: r.pct + '%', background: rankColor(i) }"></i></span>
+              <span class="rank-bar-track"><i
+                class="rank-bar"
+                :style="{ width: r.pct + '%', background: rankColor(i) }"
+              /></span>
               <span class="rank-share">{{ r.pct.toFixed(1) }}%</span>
             </div>
           </div>
-          <div v-else class="rv-unsupported"><span class="rv-unsupported-icon">∅</span><span>该店铺在所选周期内没有商品销量记录。</span></div>
+          <div
+            v-else
+            class="rv-unsupported"
+          >
+            <span class="rv-unsupported-icon">∅</span><span>该店铺在所选周期内没有商品销量记录。</span>
+          </div>
         </div>
         <div class="panel-card">
-          <div class="card-head">流量占比</div>
+          <div class="card-head">
+            流量占比
+          </div>
           <UnsupportedNote label="自然 / 广告 / 关联流量的拆分口径" />
         </div>
       </div>
     </section>
 
     <!-- ② 月度数据 -->
-    <section v-else-if="activeTab === 'monthly'" class="rv-pane">
+    <section
+      v-else-if="activeTab === 'monthly'"
+      class="rv-pane"
+    >
       <div class="pane-head">
         <div>
-          <div class="pane-title">月度数据 <a-tag color="default" class="mini-tag">近 30 天</a-tag></div>
-          <div class="pane-sub">月 GMV / 净利率 / 退货率 / 广告占比 + 利润口径（数据来自 <code>/review/monthly-review</code>）</div>
+          <div class="pane-title">
+            月度数据 <a-tag
+              color="default"
+              class="mini-tag"
+            >
+              近 30 天
+            </a-tag>
+          </div>
+          <div class="pane-sub">
+            月 GMV / 净利率 / 退货率 / 广告占比 + 利润口径（数据来自 <code>/review/monthly-review</code>）
+          </div>
         </div>
       </div>
 
       <div class="kpi-grid">
-        <div v-for="m in metricsOf(monthly)" :key="m.label" class="kpi-card">
-          <div class="kpi-label">{{ m.label }}</div>
-          <div class="kpi-value" :class="kpiClass(m.status)">{{ formatMetric(m) }}</div>
-          <div v-if="m.delta_pct != null" class="kpi-change">
+        <div
+          v-for="m in metricsOf(monthly)"
+          :key="m.label"
+          class="kpi-card"
+        >
+          <div class="kpi-label">
+            {{ m.label }}
+          </div>
+          <div
+            class="kpi-value"
+            :class="kpiClass(m.status)"
+          >
+            {{ formatMetric(m) }}
+          </div>
+          <div
+            v-if="m.delta_pct != null"
+            class="kpi-change"
+          >
             <span :class="m.delta_pct >= 0 ? 'up' : 'down'">
               {{ m.delta_pct >= 0 ? '▲' : '▼' }} {{ Math.abs(m.delta_pct).toFixed(1) }}% <em>环比</em>
             </span>
           </div>
-          <div v-else class="kpi-change"><span class="muted">—</span></div>
+          <div
+            v-else
+            class="kpi-change"
+          >
+            <span class="muted">—</span>
+          </div>
         </div>
       </div>
 
       <div class="panel-card">
-        <div class="card-head">整月每日销售趋势（GMV）</div>
+        <div class="card-head">
+          整月每日销售趋势（GMV）
+        </div>
         <UnsupportedNote label="30 天逐日 GMV 序列" />
       </div>
 
       <div class="two-col flex-block">
         <div class="panel-card">
-          <div class="card-head">周维度对比</div>
+          <div class="card-head">
+            周维度对比
+          </div>
           <UnsupportedNote label="按自然周聚合的 GMV 对比" />
         </div>
         <div class="panel-card">
-          <div class="card-head">利润汇总（后端可提供项）</div>
-          <div class="kv-list">
-            <div class="kv-row"><span>销售额</span><span>${{ fmtMoney(sales(monthly)?.revenue) }}</span></div>
-            <div class="kv-row"><span>退款</span><span>-{{ fmtMoney(sales(monthly)?.refunds) }}</span></div>
-            <div class="kv-row"><span>净收入</span><span>${{ fmtMoney(sales(monthly)?.net_revenue) }}</span></div>
-            <div class="kv-row"><span>广告花费</span><span>-{{ fmtMoney(ad(monthly)?.spend) }}</span></div>
-            <div class="kv-row total"><span>预估利润</span><span>${{ fmtMoney(sales(monthly)?.estimated_profit) }}</span></div>
+          <div class="card-head">
+            利润汇总（后端可提供项）
           </div>
-          <div class="rv-mini-note">采购成本 / FBA 费用 / 仓储的逐项拆分后端不提供，故不列出（旧版本的这几个数字是内联编造的）。</div>
+          <div class="kv-list">
+            <div class="kv-row">
+              <span>销售额</span><span>${{ fmtMoney(sales(monthly)?.revenue) }}</span>
+            </div>
+            <div class="kv-row">
+              <span>退款</span><span>-{{ fmtMoney(sales(monthly)?.refunds) }}</span>
+            </div>
+            <div class="kv-row">
+              <span>净收入</span><span>${{ fmtMoney(sales(monthly)?.net_revenue) }}</span>
+            </div>
+            <div class="kv-row">
+              <span>广告花费</span><span>-{{ fmtMoney(ad(monthly)?.spend) }}</span>
+            </div>
+            <div class="kv-row total">
+              <span>预估利润</span><span>${{ fmtMoney(sales(monthly)?.estimated_profit) }}</span>
+            </div>
+          </div>
+          <div class="rv-mini-note">
+            采购成本 / FBA 费用 / 仓储的逐项拆分后端不提供，故不列出（旧版本的这几个数字是内联编造的）。
+          </div>
         </div>
       </div>
     </section>
 
     <!-- ④ 商品表现 -->
-    <section v-else-if="activeTab === 'products'" class="rv-pane">
+    <section
+      v-else-if="activeTab === 'products'"
+      class="rv-pane"
+    >
       <div class="pane-head">
         <div>
-          <div class="pane-title">商品表现 <a-tag color="default" class="mini-tag">近 7 天</a-tag></div>
-          <div class="pane-sub">ASIN 级销量 / 销售额 / 利润 / 评分 / BSR / 可售天数（数据来自 <code>/review/product-performance</code>）</div>
+          <div class="pane-title">
+            商品表现 <a-tag
+              color="default"
+              class="mini-tag"
+            >
+              近 7 天
+            </a-tag>
+          </div>
+          <div class="pane-sub">
+            ASIN 级销量 / 销售额 / 利润 / 评分 / BSR / 可售天数（数据来自 <code>/review/product-performance</code>）
+          </div>
         </div>
       </div>
 
       <div class="panel-card">
-        <div class="card-head">ASIN 表现总览</div>
-        <div v-if="products.length" class="tbl">
+        <div class="card-head">
+          ASIN 表现总览
+        </div>
+        <div
+          v-if="products.length"
+          class="tbl"
+        >
           <div class="tbl-head">
             <span class="c-role">ASIN</span><span class="c-num">销量</span><span class="c-num">销售额</span>
             <span class="c-num">利润</span><span class="c-num">评分</span><span class="c-num">BSR</span>
             <span class="c-num">可售天数</span><span class="c-badge">健康</span>
           </div>
-          <div v-for="p in products" :key="p.asin" class="tbl-row">
+          <div
+            v-for="p in products"
+            :key="p.asin"
+            class="tbl-row"
+          >
             <span class="c-role"><span class="rank-asin">{{ p.asin }}</span></span>
             <span class="c-num">{{ p.units }}</span>
             <span class="c-num">${{ fmtMoney(p.revenue) }}</span>
-            <span class="c-num" :class="p.profit >= 0 ? 'ok' : 'danger'">${{ fmtMoney(p.profit) }}</span>
+            <span
+              class="c-num"
+              :class="p.profit >= 0 ? 'ok' : 'danger'"
+            >${{ fmtMoney(p.profit) }}</span>
             <span class="c-num">{{ p.rating != null ? p.rating.toFixed(1) + '★' : '—' }}</span>
             <span class="c-num">{{ p.bsr_rank != null ? '#' + p.bsr_rank : '—' }}</span>
-            <span class="c-num" :class="p.days_supply != null ? bandOf('restockDays', p.days_supply) : ''">{{ p.days_supply != null ? p.days_supply + '天' : '—' }}</span>
+            <span
+              class="c-num"
+              :class="p.days_supply != null ? bandOf('restockDays', p.days_supply) : ''"
+            >{{ p.days_supply != null ? p.days_supply + '天' : '—' }}</span>
             <span class="c-badge"><a-tag :color="healthTag(p.health_status).color">{{ healthTag(p.health_status).label }}</a-tag></span>
           </div>
         </div>
-        <div v-else class="rv-unsupported"><span class="rv-unsupported-icon">∅</span><span>该店铺在所选周期内没有商品销量记录。</span></div>
+        <div
+          v-else
+          class="rv-unsupported"
+        >
+          <span class="rv-unsupported-icon">∅</span><span>该店铺在所选周期内没有商品销量记录。</span>
+        </div>
       </div>
 
       <div class="two-col flex-block">
         <div class="panel-card">
-          <div class="card-head">爆款单品销量趋势</div>
+          <div class="card-head">
+            爆款单品销量趋势
+          </div>
           <UnsupportedNote label="单品逐日销量序列" />
         </div>
         <div class="panel-card">
-          <div class="card-head">BSR 排名走势（越低越好）</div>
+          <div class="card-head">
+            BSR 排名走势（越低越好）
+          </div>
           <UnsupportedNote label="单品逐日 BSR 序列" />
         </div>
       </div>
 
       <div class="panel-card">
-        <div class="card-head">评价变动记录</div>
+        <div class="card-head">
+          评价变动记录
+        </div>
         <UnsupportedNote label="评论增减事件流" />
       </div>
     </section>
 
     <!-- ⑤ 库存健康度 -->
-    <section v-else-if="activeTab === 'inventory'" class="rv-pane">
+    <section
+      v-else-if="activeTab === 'inventory'"
+      class="rv-pane"
+    >
       <div class="pane-head">
         <div>
-          <div class="pane-title">库存健康度 <a-tag color="default" class="mini-tag">当前快照</a-tag></div>
-          <div class="pane-sub">可售水位 + 在途 + 周转天数 + 风险标签（数据来自 <code>/review/inventory-health</code>）</div>
+          <div class="pane-title">
+            库存健康度 <a-tag
+              color="default"
+              class="mini-tag"
+            >
+              当前快照
+            </a-tag>
+          </div>
+          <div class="pane-sub">
+            可售水位 + 在途 + 周转天数 + 风险标签（数据来自 <code>/review/inventory-health</code>）
+          </div>
         </div>
       </div>
 
       <div class="panel-card chart-card">
-        <div class="card-head">可售库存水位</div>
+        <div class="card-head">
+          可售库存水位
+        </div>
         <BarChart
           v-if="inventory.length"
           :groups="[{ name: '可售', color: 'var(--chart-1)', data: inventory.map(i => i.fulfillable) }]"
           :categories="inventory.map(i => i.asin)"
           :legend="false"
         />
-        <div v-else class="rv-unsupported"><span class="rv-unsupported-icon">∅</span><span>该店铺没有库存记录。</span></div>
+        <div
+          v-else
+          class="rv-unsupported"
+        >
+          <span class="rv-unsupported-icon">∅</span><span>该店铺没有库存记录。</span>
+        </div>
       </div>
 
       <div class="panel-card">
-        <div class="card-head">ASIN 库存明细</div>
-        <div v-if="inventory.length" class="tbl">
+        <div class="card-head">
+          ASIN 库存明细
+        </div>
+        <div
+          v-if="inventory.length"
+          class="tbl"
+        >
           <div class="tbl-head">
             <span class="c-role">ASIN / SKU</span><span class="c-num">可售</span><span class="c-num">在途</span>
             <span class="c-num">周转天数</span><span class="c-badge">风险</span>
           </div>
-          <div v-for="it in inventory" :key="it.asin" class="tbl-row">
+          <div
+            v-for="it in inventory"
+            :key="it.asin"
+            class="tbl-row"
+          >
             <span class="c-role">
               <span class="pt-name">
                 <span class="rank-asin">{{ it.asin }}</span>
@@ -201,60 +384,133 @@
             </span>
             <span class="c-num">{{ it.fulfillable }}</span>
             <span class="c-num">{{ it.inbound }}</span>
-            <span class="c-num" :class="bandOf('restockDays', it.days_supply)">{{ it.days_supply }}天</span>
+            <span
+              class="c-num"
+              :class="bandOf('restockDays', it.days_supply)"
+            >{{ it.days_supply }}天</span>
             <span class="c-badge"><a-tag :color="healthTag(it.health_status).color">{{ healthTag(it.health_status).label }}</a-tag></span>
           </div>
         </div>
-        <div v-else class="rv-unsupported"><span class="rv-unsupported-icon">∅</span><span>该店铺没有库存记录。</span></div>
+        <div
+          v-else
+          class="rv-unsupported"
+        >
+          <span class="rv-unsupported-icon">∅</span><span>该店铺没有库存记录。</span>
+        </div>
       </div>
     </section>
 
     <!-- ⑥ 利润统计 -->
-    <section v-else-if="activeTab === 'profit'" class="rv-pane">
+    <section
+      v-else-if="activeTab === 'profit'"
+      class="rv-pane"
+    >
       <div class="pane-head">
         <div>
-          <div class="pane-title">利润统计 <a-tag color="default" class="mini-tag">近 30 天</a-tag></div>
-          <div class="pane-sub">利润构成 + 分 ASIN 利润（数据来自 <code>/review/profit-audit</code> 与 <code>/review/monthly-review</code> 的 SKU 贡献）</div>
+          <div class="pane-title">
+            利润统计 <a-tag
+              color="default"
+              class="mini-tag"
+            >
+              近 30 天
+            </a-tag>
+          </div>
+          <div class="pane-sub">
+            利润构成 + 分 ASIN 利润（数据来自 <code>/review/profit-audit</code> 与 <code>/review/monthly-review</code> 的 SKU 贡献）
+          </div>
         </div>
       </div>
 
       <div class="two-col flex-block">
         <div class="panel-card">
-          <div class="card-head">利润构成（后端可提供项）</div>
-          <div class="kv-list">
-            <div class="kv-row"><span>销售额</span><span>${{ fmtMoney(sales(profit)?.revenue) }}</span></div>
-            <div class="kv-row"><span>平台佣金（后端按 15% 估）</span><span>-{{ fmtMoney(profit?.details?.commission) }}</span></div>
-            <div class="kv-row"><span>广告花费</span><span>-{{ fmtMoney(ad(profit)?.spend) }}</span></div>
-            <div class="kv-row"><span>退款</span><span>-{{ fmtMoney(sales(profit)?.refunds) }}</span></div>
-            <div class="kv-row total"><span>净利润</span><span>${{ fmtMoney(sales(profit)?.estimated_profit) }}</span></div>
+          <div class="card-head">
+            利润构成（后端可提供项）
           </div>
-          <div class="rv-mini-note">采购成本 / FBA 费用的分项拆分后端不提供，故不列出。</div>
+          <div class="kv-list">
+            <div class="kv-row">
+              <span>销售额</span><span>${{ fmtMoney(sales(profit)?.revenue) }}</span>
+            </div>
+            <div class="kv-row">
+              <span>平台佣金（后端按 15% 估）</span><span>-{{ fmtMoney(profit?.details?.commission) }}</span>
+            </div>
+            <div class="kv-row">
+              <span>广告花费</span><span>-{{ fmtMoney(ad(profit)?.spend) }}</span>
+            </div>
+            <div class="kv-row">
+              <span>退款</span><span>-{{ fmtMoney(sales(profit)?.refunds) }}</span>
+            </div>
+            <div class="kv-row total">
+              <span>净利润</span><span>${{ fmtMoney(sales(profit)?.estimated_profit) }}</span>
+            </div>
+          </div>
+          <div class="rv-mini-note">
+            采购成本 / FBA 费用的分项拆分后端不提供，故不列出。
+          </div>
         </div>
         <div class="panel-card">
-          <div class="card-head">盈亏分类（按 SKU）</div>
-          <div class="cat-blocks">
-            <div class="cat-block good"><div class="cat-num">{{ profitCats.good }}</div><div class="cat-label">盈利</div></div>
-            <div class="cat-block warn"><div class="cat-num">{{ profitCats.breakEven }}</div><div class="cat-label">保本</div></div>
-            <div class="cat-block bad"><div class="cat-num">{{ profitCats.loss }}</div><div class="cat-label">亏损</div></div>
+          <div class="card-head">
+            盈亏分类（按 SKU）
           </div>
-          <div class="rv-mini-note">按 SKU 贡献排名的利润正负号统计；共 {{ skuRank.length }} 个 SKU。</div>
+          <div class="cat-blocks">
+            <div class="cat-block good">
+              <div class="cat-num">
+                {{ profitCats.good }}
+              </div><div class="cat-label">
+                盈利
+              </div>
+            </div>
+            <div class="cat-block warn">
+              <div class="cat-num">
+                {{ profitCats.breakEven }}
+              </div><div class="cat-label">
+                保本
+              </div>
+            </div>
+            <div class="cat-block bad">
+              <div class="cat-num">
+                {{ profitCats.loss }}
+              </div><div class="cat-label">
+                亏损
+              </div>
+            </div>
+          </div>
+          <div class="rv-mini-note">
+            按 SKU 贡献排名的利润正负号统计；共 {{ skuRank.length }} 个 SKU。
+          </div>
         </div>
       </div>
 
       <div class="panel-card">
-        <div class="card-head">分 ASIN 利润明细（近 30 天）</div>
-        <div v-if="skuRank.length" class="tbl">
+        <div class="card-head">
+          分 ASIN 利润明细（近 30 天）
+        </div>
+        <div
+          v-if="skuRank.length"
+          class="tbl"
+        >
           <div class="tbl-head">
             <span class="c-role">ASIN</span><span class="c-num">销量</span><span class="c-num">销售额</span><span class="c-num">利润</span>
           </div>
-          <div v-for="r in skuRank" :key="r.asin" class="tbl-row">
+          <div
+            v-for="r in skuRank"
+            :key="r.asin"
+            class="tbl-row"
+          >
             <span class="c-role"><span class="rank-asin">{{ r.asin }}</span></span>
             <span class="c-num">{{ r.units }}</span>
             <span class="c-num">${{ fmtMoney(r.revenue) }}</span>
-            <span class="c-num" :class="r.profit >= 0 ? 'ok' : 'danger'">${{ fmtMoney(r.profit) }}</span>
+            <span
+              class="c-num"
+              :class="r.profit >= 0 ? 'ok' : 'danger'"
+            >${{ fmtMoney(r.profit) }}</span>
           </div>
         </div>
-        <div v-else class="rv-unsupported"><span class="rv-unsupported-icon">∅</span><span>该店铺在所选周期内没有 SKU 贡献记录。</span></div>
+        <div
+          v-else
+          class="rv-unsupported"
+        >
+          <span class="rv-unsupported-icon">∅</span><span>该店铺在所选周期内没有 SKU 贡献记录。</span>
+        </div>
       </div>
     </section>
   </div>

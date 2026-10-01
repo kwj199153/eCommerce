@@ -1,5 +1,8 @@
 <template>
-  <div class="dc-wrap chart-root" ref="wrapEl">
+  <div
+    ref="wrapEl"
+    class="dc-wrap chart-root"
+  >
     <div class="dc-body">
       <svg
         :viewBox="`0 0 ${S} ${S}`"
@@ -9,8 +12,18 @@
         :aria-label="title"
       >
         <title v-if="title">{{ title }}</title>
-        <circle :cx="C" :cy="C" :r="R" fill="none" stroke="var(--bg-hover-light)" :stroke-width="SW" />
-        <g v-for="seg in segments" :key="seg.name">
+        <circle
+          :cx="C"
+          :cy="C"
+          :r="R"
+          fill="none"
+          stroke="var(--bg-hover-light)"
+          :stroke-width="SW"
+        />
+        <g
+          v-for="seg in segments"
+          :key="seg.name"
+        >
           <circle
             :cx="C"
             :cy="C"
@@ -26,12 +39,34 @@
             <title>{{ seg.name }}：{{ seg.pct }}%</title>
           </circle>
         </g>
-        <text v-if="centerTitle" :x="C" :y="C - 2" class="dc-center-title" text-anchor="middle">{{ centerTitle }}</text>
-        <text v-if="centerValue" :x="C" :y="C + 16" class="dc-center-value" text-anchor="middle">{{ centerValue }}</text>
+        <text
+          v-if="centerTitle"
+          :x="C"
+          :y="C - 2"
+          class="dc-center-title"
+          text-anchor="middle"
+        >{{ centerTitle }}</text>
+        <text
+          v-if="centerValue"
+          :x="C"
+          :y="C + 16"
+          class="dc-center-value"
+          text-anchor="middle"
+        >{{ centerValue }}</text>
       </svg>
-      <ul v-if="showLegend" class="dc-legend">
-        <li v-for="seg in segments" :key="seg.name" class="dc-li">
-          <i class="dc-dot" :style="{ background: seg.color }"></i>
+      <ul
+        v-if="showLegend"
+        class="dc-legend"
+      >
+        <li
+          v-for="seg in segments"
+          :key="seg.name"
+          class="dc-li"
+        >
+          <i
+            class="dc-dot"
+            :style="{ background: seg.color }"
+          />
           <span class="dc-name">{{ seg.name }}</span>
           <span class="dc-val">{{ seg.valueText }}</span>
           <span class="dc-pct">{{ seg.pct }}%</span>

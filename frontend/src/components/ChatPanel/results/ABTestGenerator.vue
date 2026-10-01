@@ -6,11 +6,16 @@
         <span class="result-icon">🧪</span>
         <div>
           <h3>A/B 测试变体生成</h3>
-          <p class="subtitle">{{ resultData.variants.length }} 个 Listing 版本 · {{ resultData.test_variable }} 为测试变量</p>
+          <p class="subtitle">
+            {{ resultData.variants.length }} 个 Listing 版本 · {{ resultData.test_variable }} 为测试变量
+          </p>
         </div>
       </div>
       <div class="header-actions">
-        <a-button size="small" @click="$emit('close')">
+        <a-button
+          size="small"
+          @click="$emit('close')"
+        >
           <CloseOutlined /> 关闭
         </a-button>
       </div>
@@ -30,16 +35,28 @@
 
         <!-- 标题对比 -->
         <div class="compare-section">
-          <div class="section-label">标题</div>
-          <div class="content-text">{{ variant.title }}</div>
-          <div class="char-badge">{{ variant.title.length }} 字符</div>
+          <div class="section-label">
+            标题
+          </div>
+          <div class="content-text">
+            {{ variant.title }}
+          </div>
+          <div class="char-badge">
+            {{ variant.title.length }} 字符
+          </div>
         </div>
 
         <!-- 五点描述对比 -->
         <div class="compare-section">
-          <div class="section-label">五点描述</div>
+          <div class="section-label">
+            五点描述
+          </div>
           <div class="bullets-list">
-            <div v-for="(bullet, bidx) in variant.bullets" :key="bidx" class="mini-bullet">
+            <div
+              v-for="(bullet, bidx) in variant.bullets"
+              :key="bidx"
+              class="mini-bullet"
+            >
               <span class="b-num">{{ bidx + 1 }}</span>
               {{ bullet }}
             </div>
@@ -47,28 +64,48 @@
         </div>
 
         <!-- 价格对比 -->
-        <div class="compare-section" v-if="variant.price">
-          <div class="section-label">价格</div>
-          <div class="price-display">${{ variant.price }}</div>
+        <div
+          v-if="variant.price"
+          class="compare-section"
+        >
+          <div class="section-label">
+            价格
+          </div>
+          <div class="price-display">
+            ${{ variant.price }}
+          </div>
         </div>
 
         <!-- 主图策略 -->
-        <div class="compare-section" v-if="variant.image_strategy">
-          <div class="section-label">主图策略</div>
-          <a-tag color="blue">{{ variant.image_strategy }}</a-tag>
+        <div
+          v-if="variant.image_strategy"
+          class="compare-section"
+        >
+          <div class="section-label">
+            主图策略
+          </div>
+          <a-tag color="blue">
+            {{ variant.image_strategy }}
+          </a-tag>
         </div>
 
         <!-- 预测指标 -->
         <div class="variant-metrics">
           <div class="metric">
             <span class="m-label">预计 CTR</span>
-            <span class="m-value" :style="{ color: getMetricColor(variant.predicted_ctr) }">
+            <span
+              class="m-value"
+              :style="{ color: getMetricColor(variant.predicted_ctr) }"
+            >
               {{ variant.predicted_ctr }}%
             </span>
           </div>
           <div class="metric">
             <span class="m-label">预计 CVR</span>
-            <span class="m-value" :style="{ color: getMetricColor(variant.predicted_cvr * 10) }">
+            <span
+              class="m-value"
+              :style="{ color: getMetricColor(variant.predicted_cvr * 10) }"
+            >
               {{ (variant.predicted_cvr * 100).toFixed(1) }}%
             </span>
           </div>
@@ -80,10 +117,18 @@
 
         <!-- 操作 -->
         <div class="variant-actions">
-          <a-button size="small" type="primary" ghost @click="applyVariant(idx)">
+          <a-button
+            size="small"
+            type="primary"
+            ghost
+            @click="applyVariant(idx)"
+          >
             应用此版本
           </a-button>
-          <a-button size="small" @click="exportVariant(idx)">
+          <a-button
+            size="small"
+            @click="exportVariant(idx)"
+          >
             <DownloadOutlined /> 导出
           </a-button>
         </div>
@@ -100,22 +145,39 @@
           <tr>
             <th>差异维度</th>
             <th>对照 A</th>
-            <th v-for="(v, idx) in resultData.variants.slice(1)" :key="idx">
+            <th
+              v-for="(v, idx) in resultData.variants.slice(1)"
+              :key="idx"
+            >
               测试 {{ String.fromCharCode(66 + idx) }}
             </th>
             <th>假设</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(diff, idx) in resultData.differences" :key="idx">
-            <td class="dim-label">{{ diff.dimension }}</td>
+          <tr
+            v-for="(diff, idx) in resultData.differences"
+            :key="idx"
+          >
+            <td class="dim-label">
+              {{ diff.dimension }}
+            </td>
             <td>{{ diff.control }}</td>
-            <td v-for="(val, vi) in diff.test_values" :key="vi" class="changed-cell">
+            <td
+              v-for="(val, vi) in diff.test_values"
+              :key="vi"
+              class="changed-cell"
+            >
               {{ val }}
             </td>
-            <td><a-tag :color="diff.hypothesis === 'positive' ? 'green' : 'orange'" size="small">
-              {{ diff.hypothesis === 'positive' ? '正向' : '中性' }}
-            </a-tag></td>
+            <td>
+              <a-tag
+                :color="diff.hypothesis === 'positive' ? 'green' : 'orange'"
+                size="small"
+              >
+                {{ diff.hypothesis === 'positive' ? '正向' : '中性' }}
+              </a-tag>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -127,12 +189,31 @@
         <ExperimentOutlined /> 测试执行建议
       </div>
       <div class="rec-content">
-        <a-steps :current="0" size="small" direction="vertical">
-          <a-step title="选择主变量" :description="`建议优先测试: ${resultData.recommended_test}`" />
-          <a-step title="设置运行周期" description="建议至少运行 14 天以获得统计显著性" />
-          <a-step title="确定样本量" description="每个版本至少需要 1000 次曝光 / 50 次转化" />
-          <a-step title="监控指标" description="主要看 CTR 和转化率，次要看加购率和跳出率" />
-          <a-step title="结果判定" description="置信度 >95% 时可判定胜出版本并全量上线" />
+        <a-steps
+          :current="0"
+          size="small"
+          direction="vertical"
+        >
+          <a-step
+            title="选择主变量"
+            :description="`建议优先测试: ${resultData.recommended_test}`"
+          />
+          <a-step
+            title="设置运行周期"
+            description="建议至少运行 14 天以获得统计显著性"
+          />
+          <a-step
+            title="确定样本量"
+            description="每个版本至少需要 1000 次曝光 / 50 次转化"
+          />
+          <a-step
+            title="监控指标"
+            description="主要看 CTR 和转化率，次要看加购率和跳出率"
+          />
+          <a-step
+            title="结果判定"
+            description="置信度 >95% 时可判定胜出版本并全量上线"
+          />
         </a-steps>
       </div>
     </div>

@@ -1,16 +1,31 @@
 <template>
   <div class="desc-config">
     <!-- 顶部「载入产品」入口 -->
-    <div v-if="workingProduct?.value" class="product-banner">
+    <div
+      v-if="workingProduct?.value"
+      class="product-banner"
+    >
       <span class="banner-icon">📦</span>
       <span class="banner-text">{{ workingProduct.value.title?.slice(0, 30) }}{{ workingProduct.value.title?.length > 30 ? '…' : '' }}</span>
     </div>
 
-    <a-collapse v-model:activeKey="activeKeys" ghost>
-      <a-collapse-panel key="product" header="📦 产品信息">
-        <a-form layout="vertical" :model="form">
+    <a-collapse
+      v-model:active-key="activeKeys"
+      ghost
+    >
+      <a-collapse-panel
+        key="product"
+        header="📦 产品信息"
+      >
+        <a-form
+          layout="vertical"
+          :model="form"
+        >
           <!-- 产品名称：右侧可从产品库选择 -->
-          <a-form-item label="产品名称" required>
+          <a-form-item
+            label="产品名称"
+            required
+          >
             <div class="input-with-picker">
               <a-input
                 v-model:value="form.product_name"
@@ -24,34 +39,76 @@
             </div>
           </a-form-item>
           <a-form-item label="品牌名称">
-            <a-input v-model:value="form.brand_name" placeholder="例：AeroLife" @change="saveForm" />
+            <a-input
+              v-model:value="form.brand_name"
+              placeholder="例：AeroLife"
+              @change="saveForm"
+            />
           </a-form-item>
           <a-form-item label="品牌 Slogan">
-            <a-input v-model:value="form.brand_slogan" placeholder="例：Breathe Better, Live Better" @change="saveForm" />
+            <a-input
+              v-model:value="form.brand_slogan"
+              placeholder="例：Breathe Better, Live Better"
+              @change="saveForm"
+            />
           </a-form-item>
         </a-form>
       </a-collapse-panel>
 
-      <a-collapse-panel key="style" header="🎨 内容风格">
-        <a-form layout="vertical" :model="form">
+      <a-collapse-panel
+        key="style"
+        header="🎨 内容风格"
+      >
+        <a-form
+          layout="vertical"
+          :model="form"
+        >
           <a-form-item label="调性选择">
-            <a-radio-group v-model:value="form.tone" @change="saveForm">
-              <a-radio-button value="professional">专业科技</a-radio-button>
-              <a-radio-button value="warm">温馨生活</a-radio-button>
-              <a-radio-button value="luxury">高端奢华</a-radio-button>
-              <a-radio-button value="playful">活泼有趣</a-radio-button>
+            <a-radio-group
+              v-model:value="form.tone"
+              @change="saveForm"
+            >
+              <a-radio-button value="professional">
+                专业科技
+              </a-radio-button>
+              <a-radio-button value="warm">
+                温馨生活
+              </a-radio-button>
+              <a-radio-button value="luxury">
+                高端奢华
+              </a-radio-button>
+              <a-radio-button value="playful">
+                活泼有趣
+              </a-radio-button>
             </a-radio-group>
           </a-form-item>
           <a-form-item label="内容模块">
-            <a-checkbox-group v-model:value="form.modules" @change="saveForm">
+            <a-checkbox-group
+              v-model:value="form.modules"
+              @change="saveForm"
+            >
               <div style="display: flex; flex-direction: column; gap: var(--space-6);">
-                <a-checkbox value="hero">🖼️ Hero 图文模块（首屏大图+卖点）</a-checkbox>
-                <a-checkbox value="highlights">✨ 要点列表模块</a-checkbox>
-                <a-checkbox value="comparison">📊 对比表格模块</a-checkbox>
-                <a-checkbox value="scenarios">🏠 使用场景模块</a-checkbox>
-                <a-checkbox value="specs">📐 规格参数模块</a-checkbox>
-                <a-checkbox value="story">📖 品牌故事模块</a-checkbox>
-                <a-checkbox value="lifestyle">🌟 Lifestyle 场景图</a-checkbox>
+                <a-checkbox value="hero">
+                  🖼️ Hero 图文模块（首屏大图+卖点）
+                </a-checkbox>
+                <a-checkbox value="highlights">
+                  ✨ 要点列表模块
+                </a-checkbox>
+                <a-checkbox value="comparison">
+                  📊 对比表格模块
+                </a-checkbox>
+                <a-checkbox value="scenarios">
+                  🏠 使用场景模块
+                </a-checkbox>
+                <a-checkbox value="specs">
+                  📐 规格参数模块
+                </a-checkbox>
+                <a-checkbox value="story">
+                  📖 品牌故事模块
+                </a-checkbox>
+                <a-checkbox value="lifestyle">
+                  🌟 Lifestyle 场景图
+                </a-checkbox>
               </div>
             </a-checkbox-group>
           </a-form-item>
@@ -68,8 +125,14 @@
         </a-form>
       </a-collapse-panel>
 
-      <a-collapse-panel key="content" header="📝 内容要点">
-        <a-form layout="vertical" :model="form">
+      <a-collapse-panel
+        key="content"
+        header="📝 内容要点"
+      >
+        <a-form
+          layout="vertical"
+          :model="form"
+        >
           <a-form-item label="核心卖点（3-6 个）">
             <a-textarea
               v-model:value="form.key_selling_points"
@@ -98,8 +161,14 @@
         </a-form>
       </a-collapse-panel>
 
-      <a-collapse-panel key="brand" header="🏆 品牌故事（可选）">
-        <a-form layout="vertical" :model="form">
+      <a-collapse-panel
+        key="brand"
+        header="🏆 品牌故事（可选）"
+      >
+        <a-form
+          layout="vertical"
+          :model="form"
+        >
           <a-form-item label="品牌起源">
             <a-textarea
               v-model:value="form.brand_origin_story"
@@ -121,10 +190,21 @@
     </a-collapse>
 
     <div class="config-actions">
-      <a-button type="primary" block size="large" @click="handleGenerate" :loading="generating">
+      <a-button
+        type="primary"
+        block
+        size="large"
+        :loading="generating"
+        @click="handleGenerate"
+      >
         <FileTextOutlined /> 生成 A+ 描述
       </a-button>
-      <a-button block @click="handleReset"><ReloadOutlined /> 重置</a-button>
+      <a-button
+        block
+        @click="handleReset"
+      >
+        <ReloadOutlined /> 重置
+      </a-button>
     </div>
   </div>
 </template>

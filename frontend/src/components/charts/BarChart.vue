@@ -1,53 +1,74 @@
 <template>
   <div class="bc-wrap chart-root">
-    <div v-if="legend && groups.length > 1" class="bc-legend">
-      <span v-for="g in groups" :key="g.name" class="bc-legend-item">
-        <i class="bc-dot" :style="{ background: g.color }"></i>{{ g.name }}
+    <div
+      v-if="legend && groups.length > 1"
+      class="bc-legend"
+    >
+      <span
+        v-for="g in groups"
+        :key="g.name"
+        class="bc-legend-item"
+      >
+        <i
+          class="bc-dot"
+          :style="{ background: g.color }"
+        />{{ g.name }}
       </span>
     </div>
-    <div ref="plotEl" class="bc-plot">
-    <svg :viewBox="`0 0 ${VB_W} ${VB_H}`" class="bc-svg" role="img" :aria-label="title">
-      <title v-if="title">{{ title }}</title>
-      <line
-        v-for="g in gridLines"
-        :key="g.y"
-        :x1="PAD_L"
-        :y1="g.y"
-        :x2="VB_W - PAD_R"
-        :y2="g.y"
-        class="bc-grid"
-      />
-      <text
-        v-for="g in gridLines"
-        :key="'t' + g.y"
-        :x="PAD_L - 6"
-        :y="g.y + 4"
-        class="bc-y-label"
-      >{{ g.label }}</text>
-
-      <!-- 每类目下的一组柱子 -->
-      <g v-for="(cat, ci) in categories" :key="cat">
-        <rect
-          v-for="(g, gi) in groups"
-          :key="gi"
-          :x="barX(ci, gi)"
-          :y="barY(g.data[ci])"
-          :width="barW"
-          :height="Math.max(0, PAD_T + PLOT_H - barY(g.data[ci]))"
-          :fill="g.color"
-          rx="2"
-          class="bc-bar"
-        >
-          <title>{{ g.name }} · {{ cat }}：{{ g.data[ci] }}</title>
-        </rect>
+    <div
+      ref="plotEl"
+      class="bc-plot"
+    >
+      <svg
+        :viewBox="`0 0 ${VB_W} ${VB_H}`"
+        class="bc-svg"
+        role="img"
+        :aria-label="title"
+      >
+        <title v-if="title">{{ title }}</title>
+        <line
+          v-for="g in gridLines"
+          :key="g.y"
+          :x1="PAD_L"
+          :y1="g.y"
+          :x2="VB_W - PAD_R"
+          :y2="g.y"
+          class="bc-grid"
+        />
         <text
-          v-if="showCategoryLabel"
-          :x="catX(ci)"
-          :y="VB_H - 8"
-          class="bc-x-label"
-        >{{ cat }}</text>
-      </g>
-    </svg>
+          v-for="g in gridLines"
+          :key="'t' + g.y"
+          :x="PAD_L - 6"
+          :y="g.y + 4"
+          class="bc-y-label"
+        >{{ g.label }}</text>
+
+        <!-- 每类目下的一组柱子 -->
+        <g
+          v-for="(cat, ci) in categories"
+          :key="cat"
+        >
+          <rect
+            v-for="(g, gi) in groups"
+            :key="gi"
+            :x="barX(ci, gi)"
+            :y="barY(g.data[ci])"
+            :width="barW"
+            :height="Math.max(0, PAD_T + PLOT_H - barY(g.data[ci]))"
+            :fill="g.color"
+            rx="2"
+            class="bc-bar"
+          >
+            <title>{{ g.name }} · {{ cat }}：{{ g.data[ci] }}</title>
+          </rect>
+          <text
+            v-if="showCategoryLabel"
+            :x="catX(ci)"
+            :y="VB_H - 8"
+            class="bc-x-label"
+          >{{ cat }}</text>
+        </g>
+      </svg>
     </div>
   </div>
 </template>

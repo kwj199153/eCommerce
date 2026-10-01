@@ -89,16 +89,29 @@ check(page !== null, 'A0 复盘库页面存在', 'components/KnowledgeBase/Revie
 
 // ============================================================ 规则：抽取
 /** 抽一段区间里的 `<a-menu-item key="x">`（区间用**分节标题**界定）。 */
+/** 定位锚点：字符串走 indexOf；正则走 search（换算成绝对下标）。
+ *  ★ 为什么必须支持正则：F-2 的自动格式化把 `<div>\n  资料库\n</div>` 补上了换行与
+ *    缩进，字符串锚点 `'资料库</div>'` 直接失配 ⇒ 两个分组都解析出 0 个 key
+ *    ⇒ B0 / B0b / D1 / D4 一起假红（看着像「资料库分组没了」，其实只是排版变了）。 */
+function anchorIdx(src, marker, from) {
+  if (marker instanceof RegExp) {
+    const m = src.slice(from).search(marker)
+    return m < 0 ? -1 : from + m
+  }
+  return src.indexOf(marker, from)
+}
+
 function menuKeysIn(src, fromMarker, toMarker) {
-  const a = src.indexOf(fromMarker)
+  const a = anchorIdx(src, fromMarker, 0)
   if (a < 0) return []
-  const b = toMarker ? src.indexOf(toMarker, a + 1) : src.length
+  const b = toMarker ? anchorIdx(src, toMarker, a + 1) : src.length
   const seg = src.slice(a, b < 0 ? src.length : b)
   return [...seg.matchAll(/<a-menu-item\s+key="([a-z_]+)"/g)].map((m) => m[1])
 }
 
-const DATA_LIB = menuKeysIn(kb, '资料库</div>', '能力</div>')
-const ABILITY = menuKeysIn(kb, '能力</div>', null)
+// ★ 锚点一律写成**容忍空白**的正则（`\s` 含换行），免得下次格式化再来一遍
+const DATA_LIB = menuKeysIn(kb, /资料库\s*<\/div>/, /能力\s*<\/div>/)
+const ABILITY = menuKeysIn(kb, /能力\s*<\/div>/, null)
 
 /** 抽 `export type X = ...` / `const X = ...` 之后到下一个顶层声明之前的引号字面量。 */
 function literalsAfter(src, anchor) {

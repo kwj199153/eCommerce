@@ -1,6 +1,10 @@
 <template>
   <!-- 只有白名单内的 Agent 才渲染（白名单唯一真源在 store，别在这里再写一遍） -->
-  <a-tooltip v-if="tts.supports(agentId)" :title="tooltip" placement="bottomRight">
+  <a-tooltip
+    v-if="tts.supports(agentId)"
+    :title="tooltip"
+    placement="bottomRight"
+  >
     <button
       class="speaker-btn"
       :class="{ on: tts.enabled, playing: tts.phase === 'playing' }"
@@ -8,7 +12,10 @@
       :aria-pressed="tts.enabled"
       @click="onClick"
     >
-      <LoadingOutlined v-if="busy" spin />
+      <LoadingOutlined
+        v-if="busy"
+        spin
+      />
       <PauseOutlined v-else-if="tts.phase === 'playing'" />
       <SoundOutlined v-else-if="tts.enabled" />
 

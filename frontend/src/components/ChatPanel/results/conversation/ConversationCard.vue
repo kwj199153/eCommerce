@@ -11,8 +11,17 @@
     <div class="cc-head">
       <span class="cc-icon">{{ icon }}</span>
       <span class="cc-title">{{ title }}</span>
-      <a-tag v-if="badge" :color="badgeColor" class="cc-badge">{{ badge }}</a-tag>
-      <span v-if="note" class="cc-note">{{ note }}</span>
+      <a-tag
+        v-if="badge"
+        :color="badgeColor"
+        class="cc-badge"
+      >
+        {{ badge }}
+      </a-tag>
+      <span
+        v-if="note"
+        class="cc-note"
+      >{{ note }}</span>
     </div>
     <div class="cc-body">
       <slot />
@@ -23,7 +32,10 @@
         **视觉分隔**（分隔线 + 右对齐），且有动作时卡片才需要这块空间 ——
         用 `$slots.footer` 判断可以做到「没有动作就完全不渲染」，不留一行空白。
     -->
-    <div v-if="$slots.footer" class="cc-foot">
+    <div
+      v-if="$slots.footer"
+      class="cc-foot"
+    >
       <slot name="footer" />
     </div>
   </div>

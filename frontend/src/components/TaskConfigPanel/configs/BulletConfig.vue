@@ -1,16 +1,31 @@
 <template>
   <div class="bullet-config">
     <!-- 顶部「载入产品」入口（参考 StaticAssetConfig 的双入口设计：组件内部也能选产品） -->
-    <div v-if="workingProduct?.value" class="product-banner">
+    <div
+      v-if="workingProduct?.value"
+      class="product-banner"
+    >
       <span class="banner-icon">📦</span>
       <span class="banner-text">{{ workingProduct.value.title?.slice(0, 30) }}{{ workingProduct.value.title?.length > 30 ? '…' : '' }}</span>
     </div>
 
-    <a-collapse v-model:activeKey="activeKeys" ghost>
-      <a-collapse-panel key="product" header="📦 产品信息">
-        <a-form layout="vertical" :model="form">
+    <a-collapse
+      v-model:active-key="activeKeys"
+      ghost
+    >
+      <a-collapse-panel
+        key="product"
+        header="📦 产品信息"
+      >
+        <a-form
+          layout="vertical"
+          :model="form"
+        >
           <!-- 产品名称：右侧可从产品库选择（像 StaticAssetConfig/VideoGeneratorConfig 一样） -->
-          <a-form-item label="产品名称" required>
+          <a-form-item
+            label="产品名称"
+            required
+          >
             <div class="input-with-picker">
               <a-input
                 v-model:value="form.product_name"
@@ -44,9 +59,16 @@
         </a-form>
       </a-collapse-panel>
 
-      <a-collapse-panel key="features" header="✨ 产品特性">
+      <a-collapse-panel
+        key="features"
+        header="✨ 产品特性"
+      >
         <div class="feature-list">
-          <div v-for="(feat, idx) in form.features" :key="idx" class="feature-row">
+          <div
+            v-for="(feat, idx) in form.features"
+            :key="idx"
+            class="feature-row"
+          >
             <a-input
               v-model:value="form.features[idx].name"
               placeholder="特性名称"
@@ -60,38 +82,73 @@
               @change="saveForm"
             />
             <a-button
+              v-if="form.features.length > 1"
               type="text"
               danger
               size="small"
               @click="removeFeature(idx)"
-              v-if="form.features.length > 1"
             >
               <DeleteOutlined />
             </a-button>
           </div>
-          <a-button type="dashed" block size="small" @click="addFeature">
+          <a-button
+            type="dashed"
+            block
+            size="small"
+            @click="addFeature"
+          >
             <PlusOutlined /> 添加特性
           </a-button>
         </div>
       </a-collapse-panel>
 
-      <a-collapse-panel key="style" header="🎨 写作风格">
-        <a-form layout="vertical" :model="form">
+      <a-collapse-panel
+        key="style"
+        header="🎨 写作风格"
+      >
+        <a-form
+          layout="vertical"
+          :model="form"
+        >
           <a-form-item label="风格选择">
-            <a-radio-group v-model:value="form.style" @change="saveForm">
-              <a-radio-button value="professional">专业严谨</a-radio-button>
-              <a-radio-button value="warm">亲切温暖</a-radio-button>
-              <a-radio-button value="energetic">活力激情</a-radio-button>
-              <a-radio-button value="luxury">高端奢华</a-radio-button>
+            <a-radio-group
+              v-model:value="form.style"
+              @change="saveForm"
+            >
+              <a-radio-button value="professional">
+                专业严谨
+              </a-radio-button>
+              <a-radio-button value="warm">
+                亲切温暖
+              </a-radio-button>
+              <a-radio-button value="energetic">
+                活力激情
+              </a-radio-button>
+              <a-radio-button value="luxury">
+                高端奢华
+              </a-radio-button>
             </a-radio-group>
           </a-form-item>
           <a-form-item label="情感触发策略">
-            <a-checkbox-group v-model:value="form.emotion_triggers" @change="saveForm">
-              <a-checkbox value="fear_avoidance">痛点消除</a-checkbox>
-              <a-checkbox value="aspiration">向往憧憬</a-checkbox>
-              <a-checkbox value="trust">信任构建</a-checkbox>
-              <a-checkbox value="urgency">紧迫感</a-checkbox>
-              <a-checkbox value="exclusivity">独特性</a-checkbox>
+            <a-checkbox-group
+              v-model:value="form.emotion_triggers"
+              @change="saveForm"
+            >
+              <a-checkbox value="fear_avoidance">
+                痛点消除
+              </a-checkbox>
+              <a-checkbox value="aspiration">
+                向往憧憬
+              </a-checkbox>
+              <a-checkbox value="trust">
+                信任构建
+              </a-checkbox>
+              <a-checkbox value="urgency">
+                紧迫感
+              </a-checkbox>
+              <a-checkbox value="exclusivity">
+                独特性
+              </a-checkbox>
             </a-checkbox-group>
           </a-form-item>
           <a-form-item label="每点字符数目标">
@@ -106,8 +163,14 @@
         </a-form>
       </a-collapse-panel>
 
-      <a-collapse-panel key="reference" header="📎 参考素材">
-        <a-form layout="vertical" :model="form">
+      <a-collapse-panel
+        key="reference"
+        header="📎 参考素材"
+      >
+        <a-form
+          layout="vertical"
+          :model="form"
+        >
           <a-form-item label="竞品 ASIN（可选）">
             <div class="input-with-picker">
               <a-textarea
@@ -136,10 +199,21 @@
     </a-collapse>
 
     <div class="config-actions">
-      <a-button type="primary" block size="large" @click="handleGenerate" :loading="generating">
+      <a-button
+        type="primary"
+        block
+        size="large"
+        :loading="generating"
+        @click="handleGenerate"
+      >
         <ThunderboltOutlined /> 生成五点描述
       </a-button>
-      <a-button block @click="handleReset"><ReloadOutlined /> 重置</a-button>
+      <a-button
+        block
+        @click="handleReset"
+      >
+        <ReloadOutlined /> 重置
+      </a-button>
     </div>
   </div>
 </template>

@@ -3,10 +3,10 @@
     v-model:open="open"
     title="提升为SPU"
     :width="WINDOW_W.sm"
+    :ok-loading="submitting"
+    ok-text="确定组化"
+    cancel-text="取消"
     @ok="submit"
-    :okLoading="submitting"
-    okText="确定组化"
-    cancelText="取消"
   >
     <a-alert
       type="info"
@@ -14,17 +14,40 @@
       style="margin-bottom: var(--space-16)"
       message="本产品将成为该 SPU 的首个 SKU，保留其 ASIN/价格/库存/评分等信息；同时生成一个 SPU 作为公共模板。"
     />
-    <a-form :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }">
-      <a-form-item label="规格主题" required>
-        <a-select v-model:value="promoteForm.spu_theme" placeholder="选择规格维度" style="width: 100%">
-          <a-select-option value="Color">颜色 Color</a-select-option>
-          <a-select-option value="Size">尺寸 Size</a-select-option>
-          <a-select-option value="Color-Size">颜色 + 尺寸</a-select-option>
-          <a-select-option value="Style">款式 Style</a-select-option>
-          <a-select-option value="Package">包装 Package</a-select-option>
+    <a-form
+      :label-col="{ span: 5 }"
+      :wrapper-col="{ span: 18 }"
+    >
+      <a-form-item
+        label="规格主题"
+        required
+      >
+        <a-select
+          v-model:value="promoteForm.spu_theme"
+          placeholder="选择规格维度"
+          style="width: 100%"
+        >
+          <a-select-option value="Color">
+            颜色 Color
+          </a-select-option>
+          <a-select-option value="Size">
+            尺寸 Size
+          </a-select-option>
+          <a-select-option value="Color-Size">
+            颜色 + 尺寸
+          </a-select-option>
+          <a-select-option value="Style">
+            款式 Style
+          </a-select-option>
+          <a-select-option value="Package">
+            包装 Package
+          </a-select-option>
         </a-select>
       </a-form-item>
-      <a-form-item label="本产品规格值" required>
+      <a-form-item
+        label="本产品规格值"
+        required
+      >
         <a-input
           v-model:value="promoteForm.first_value"
           :placeholder="promoteForm.spu_theme === 'Size' ? '如 M / L / XL' : '如 黑色 / 红色'"

@@ -7,22 +7,52 @@
         <div class="lb-prod-main">
           <div class="lb-prod-name">
             {{ draft.productName || '未载入产品' }}
-            <a-tag v-if="draft.variationValue" color="purple" class="mini-tag">规格：{{ draft.variationValue }}</a-tag>
-            <a-tag v-if="draft.sourceMode === 'product'" color="blue" class="mini-tag">已载入</a-tag>
-            <a-tag v-else color="orange" class="mini-tag">请先载入</a-tag>
+            <a-tag
+              v-if="draft.variationValue"
+              color="purple"
+              class="mini-tag"
+            >
+              规格：{{ draft.variationValue }}
+            </a-tag>
+            <a-tag
+              v-if="draft.sourceMode === 'product'"
+              color="blue"
+              class="mini-tag"
+            >
+              已载入
+            </a-tag>
+            <a-tag
+              v-else
+              color="orange"
+              class="mini-tag"
+            >
+              请先载入
+            </a-tag>
           </div>
           <div class="lb-prod-sub">
-            <template v-if="noProduct">💡 请先从顶部「载入产品」选定商品，再生成 / 保存文案</template>
+            <template v-if="noProduct">
+              💡 请先从顶部「载入产品」选定商品，再生成 / 保存文案
+            </template>
             <template v-else>
-              <span v-if="draft.asin" class="lb-prod-asin">{{ draft.asin }}</span>
-              已填 {{ draft.filledCount }} 个模块<template v-if="isDataMode"> · 顶部 4 个按钮可一键跳转编辑</template><template v-else> · 点顶部工具栏工具切换模块</template>
+              <span
+                v-if="draft.asin"
+                class="lb-prod-asin"
+              >{{ draft.asin }}</span>
+              已填 {{ draft.filledCount }} 个模块<template v-if="isDataMode">
+                · 顶部 4 个按钮可一键跳转编辑
+              </template><template v-else>
+                · 点顶部工具栏工具切换模块
+              </template>
             </template>
           </div>
         </div>
       </div>
 
       <!-- 文案模式：顶部加回 4 个模块按钮 -->
-      <div v-if="isDataMode" class="lb-tabs">
+      <div
+        v-if="isDataMode"
+        class="lb-tabs"
+      >
         <button
           v-for="m in MODULES"
           :key="m.key"
@@ -32,14 +62,19 @@
         >
           <span class="lb-tab-icon">{{ m.icon }}</span>
           <span>{{ m.label }}</span>
-          <span v-if="draft.moduleFilled[m.key]" class="lb-dot" />
+          <span
+            v-if="draft.moduleFilled[m.key]"
+            class="lb-dot"
+          />
         </button>
       </div>
     </div>
 
     <!-- ====== 全局文案指令（第 273 轮） ====== -->
     <div class="lb-global-prompt">
-      <div class="gp-label">🌐 全局文案指令 <span class="gp-sub">作用于四个模块；模块内「自定义 prompt」可覆盖对应部分</span></div>
+      <div class="gp-label">
+        🌐 全局文案指令 <span class="gp-sub">作用于四个模块；模块内「自定义 prompt」可覆盖对应部分</span>
+      </div>
       <a-textarea
         v-model:value="draft.globalInstruction"
         :rows="2"
@@ -53,27 +88,67 @@
       这里留一条不消失的记录，避免「点了没反应 / 只闪了一下」。
       ★ 因此本组件**不再重复** message.error，避免同一次失败弹两条。
     -->
-    <div v-if="boardError" class="lb-error">
+    <div
+      v-if="boardError"
+      class="lb-error"
+    >
       <span class="lb-error-msg">{{ boardError }}</span>
-      <a-button size="small" type="text" @click="boardError = ''">关闭</a-button>
+      <a-button
+        size="small"
+        type="text"
+        @click="boardError = ''"
+      >
+        关闭
+      </a-button>
     </div>
 
     <!-- ====== 对话模式：仅显示当前工具对应模块 ====== -->
-    <div v-if="!isDataMode" class="lb-pane lb-pane-single">
-      <KeywordsSection v-if="activeModule === 'keywords'" :gen-loading="genLoading === 'keywords'" :disabled="noProduct" @gen="genOne('keywords')" />
-      <TitleSection v-else-if="activeModule === 'title'" :gen-loading="genLoading === 'title'" :disabled="noProduct" @gen="genOne('title')" />
-      <BulletsSection v-else-if="activeModule === 'bullets'" :gen-loading="genLoading === 'bullets'" :disabled="noProduct" @gen="genOne('bullets')" />
-      <AplusSection v-else :gen-loading="genLoading === 'aplus'" :disabled="noProduct" @gen="genOne('aplus')" />
+    <div
+      v-if="!isDataMode"
+      class="lb-pane lb-pane-single"
+    >
+      <KeywordsSection
+        v-if="activeModule === 'keywords'"
+        :gen-loading="genLoading === 'keywords'"
+        :disabled="noProduct"
+        @gen="genOne('keywords')"
+      />
+      <TitleSection
+        v-else-if="activeModule === 'title'"
+        :gen-loading="genLoading === 'title'"
+        :disabled="noProduct"
+        @gen="genOne('title')"
+      />
+      <BulletsSection
+        v-else-if="activeModule === 'bullets'"
+        :gen-loading="genLoading === 'bullets'"
+        :disabled="noProduct"
+        @gen="genOne('bullets')"
+      />
+      <AplusSection
+        v-else
+        :gen-loading="genLoading === 'aplus'"
+        :disabled="noProduct"
+        @gen="genOne('aplus')"
+      />
     </div>
 
     <!-- ====== 文案模式：完整工作区（4 模块平铺 + 滚动定位高亮） ====== -->
-    <div v-else ref="paneRef" class="lb-pane lb-pane-all">
+    <div
+      v-else
+      ref="paneRef"
+      class="lb-pane lb-pane-all"
+    >
       <section
         id="lb-mod-keywords"
         class="lb-section"
         :class="{ 'lb-mod-flash': flashingModule === 'keywords' }"
       >
-        <KeywordsSection :gen-loading="genLoading === 'keywords'" :disabled="noProduct" @gen="genOne('keywords')" />
+        <KeywordsSection
+          :gen-loading="genLoading === 'keywords'"
+          :disabled="noProduct"
+          @gen="genOne('keywords')"
+        />
       </section>
 
       <section
@@ -81,7 +156,11 @@
         class="lb-section"
         :class="{ 'lb-mod-flash': flashingModule === 'title' }"
       >
-        <TitleSection :gen-loading="genLoading === 'title'" :disabled="noProduct" @gen="genOne('title')" />
+        <TitleSection
+          :gen-loading="genLoading === 'title'"
+          :disabled="noProduct"
+          @gen="genOne('title')"
+        />
       </section>
 
       <section
@@ -89,7 +168,11 @@
         class="lb-section"
         :class="{ 'lb-mod-flash': flashingModule === 'bullets' }"
       >
-        <BulletsSection :gen-loading="genLoading === 'bullets'" :disabled="noProduct" @gen="genOne('bullets')" />
+        <BulletsSection
+          :gen-loading="genLoading === 'bullets'"
+          :disabled="noProduct"
+          @gen="genOne('bullets')"
+        />
       </section>
 
       <section
@@ -97,19 +180,40 @@
         class="lb-section"
         :class="{ 'lb-mod-flash': flashingModule === 'aplus' }"
       >
-        <AplusSection :gen-loading="genLoading === 'aplus'" :disabled="noProduct" @gen="genOne('aplus')" />
+        <AplusSection
+          :gen-loading="genLoading === 'aplus'"
+          :disabled="noProduct"
+          @gen="genOne('aplus')"
+        />
       </section>
     </div>
 
     <!-- ====== 底部统一操作 ====== -->
     <div class="lb-actions">
-      <a-button size="small" type="primary" :loading="allLoading" :disabled="noProduct" @click="genAllModules">
+      <a-button
+        size="small"
+        type="primary"
+        :loading="allLoading"
+        :disabled="noProduct"
+        @click="genAllModules"
+      >
         ⚡ 一键生成全部
       </a-button>
-      <a-button size="small" :loading="saving" :disabled="noProduct" @click="saveAll">
+      <a-button
+        size="small"
+        :loading="saving"
+        :disabled="noProduct"
+        @click="saveAll"
+      >
         💾 保存全部
       </a-button>
-      <a-button size="small" type="text" @click="clearAll">清空</a-button>
+      <a-button
+        size="small"
+        type="text"
+        @click="clearAll"
+      >
+        清空
+      </a-button>
     </div>
   </div>
 </template>

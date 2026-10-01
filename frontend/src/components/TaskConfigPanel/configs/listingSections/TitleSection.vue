@@ -2,10 +2,23 @@
   <div class="title-sec">
     <div class="sec-head">
       <div>
-        <div class="sec-title">标题 <a-tag class="mini-tag">{{ titleLen }} 字符</a-tag></div>
-        <div class="sec-sub">推荐 150-200 字符，核心词前置；可直接改写后保存</div>
+        <div class="sec-title">
+          标题 <a-tag class="mini-tag">
+            {{ titleLen }} 字符
+          </a-tag>
+        </div>
+        <div class="sec-sub">
+          推荐 150-200 字符，核心词前置；可直接改写后保存
+        </div>
       </div>
-      <a-button size="small" :loading="genLoading" :disabled="disabled" @click="$emit('gen')">生成标题</a-button>
+      <a-button
+        size="small"
+        :loading="genLoading"
+        :disabled="disabled"
+        @click="$emit('gen')"
+      >
+        生成标题
+      </a-button>
     </div>
 
     <a-textarea
@@ -15,11 +28,20 @@
       class="lb-title-input"
     />
     <div class="len-bar">
-      <i class="len-fill" :class="lenClass" :style="{ width: lenPct + '%' }" />
+      <i
+        class="len-fill"
+        :class="lenClass"
+        :style="{ width: lenPct + '%' }"
+      />
     </div>
 
-    <div v-if="draft.titleVariants.length" class="variant-box">
-      <div class="variant-title">备选标题（点击采纳为主标题）</div>
+    <div
+      v-if="draft.titleVariants.length"
+      class="variant-box"
+    >
+      <div class="variant-title">
+        备选标题（点击采纳为主标题）
+      </div>
       <div
         v-for="(v, i) in draft.titleVariants"
         :key="i"
@@ -31,7 +53,10 @@
       </div>
     </div>
 
-    <PromptTab v-model="draft.titlePrompt" placeholder="例如：标题里务必带上「wireless」「portable」两个词，突出便携卖点，控制在 160 字符内" />
+    <PromptTab
+      v-model="draft.titlePrompt"
+      placeholder="例如：标题里务必带上「wireless」「portable」两个词，突出便携卖点，控制在 160 字符内"
+    />
   </div>
 </template>
 

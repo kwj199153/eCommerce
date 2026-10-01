@@ -1,31 +1,50 @@
 <template>
   <a-drawer
     :open="drawerOpen"
-    @update:open="handleOpenChange"
     title="账号设置"
     placement="right"
     :width="WINDOW_W.xxl"
     :body-style="{ padding: '0', overflow: 'auto' }"
-    :destroyOnClose="false"
+    :destroy-on-close="false"
+    @update:open="handleOpenChange"
   >
-    <a-tabs v-model:activeKey="activeTab" type="card" class="settings-tabs" style="padding: var(--space-16) var(--space-20)">
+    <a-tabs
+      v-model:active-key="activeTab"
+      type="card"
+      class="settings-tabs"
+      style="padding: var(--space-16) var(--space-20)"
+    >
       <!-- ====== Tab 1: 个人资料 ====== -->
-      <a-tab-pane key="profile" tab="个人资料">
-        <a-card :bordered="false" class="profile-card">
+      <a-tab-pane
+        key="profile"
+        tab="个人资料"
+      >
+        <a-card
+          :bordered="false"
+          class="profile-card"
+        >
           <!-- 头像区域 -->
           <div class="avatar-section">
-            <a-avatar :size="80" class="user-avatar">
+            <a-avatar
+              :size="80"
+              class="user-avatar"
+            >
               {{ userStore.userName?.charAt(0)?.toUpperCase() || 'U' }}
             </a-avatar>
             <div class="avatar-actions">
-              <a-button size="small" @click="handleAvatarClick">更换头像</a-button>
+              <a-button
+                size="small"
+                @click="handleAvatarClick"
+              >
+                更换头像
+              </a-button>
               <input
                 ref="avatarInputRef"
                 type="file"
                 accept="image/*"
                 style="display: none"
                 @change="handleAvatarChange"
-              />
+              >
             </div>
           </div>
 
@@ -37,34 +56,60 @@
             :style="{ maxWidth: '480px' }"
           >
             <a-form-item label="用户名">
-              <a-input v-model:value="profileForm.name" placeholder="输入用户名" />
+              <a-input
+                v-model:value="profileForm.name"
+                placeholder="输入用户名"
+              />
             </a-form-item>
 
             <a-form-item label="邮箱地址">
-              <a-input v-model:value="profileForm.email" disabled>
-                <template #prefix><MailOutlined /></template>
+              <a-input
+                v-model:value="profileForm.email"
+                disabled
+              >
+                <template #prefix>
+                  <MailOutlined />
+                </template>
               </a-input>
-              <div class="form-hint">邮箱不可修改，如需变更请联系客服</div>
+              <div class="form-hint">
+                邮箱不可修改，如需变更请联系客服
+              </div>
             </a-form-item>
 
             <a-form-item label="手机号码">
-              <a-input v-model:value="profileForm.phone" placeholder="选填">
-                <template #prefix><PhoneOutlined /></template>
+              <a-input
+                v-model:value="profileForm.phone"
+                placeholder="选填"
+              >
+                <template #prefix>
+                  <PhoneOutlined />
+                </template>
               </a-input>
             </a-form-item>
 
             <a-form-item label="公司名称">
-              <a-input v-model:value="profileForm.company" placeholder="选填，用于发票开具">
-                <template #prefix><BankOutlined /></template>
+              <a-input
+                v-model:value="profileForm.company"
+                placeholder="选填，用于发票开具"
+              >
+                <template #prefix>
+                  <BankOutlined />
+                </template>
               </a-input>
             </a-form-item>
 
             <a-form-item>
               <a-space>
-                <a-button type="primary" :loading="savingProfile" @click="handleSaveProfile">
+                <a-button
+                  type="primary"
+                  :loading="savingProfile"
+                  @click="handleSaveProfile"
+                >
                   保存修改
                 </a-button>
-                <a-button @click="resetProfileForm">重置</a-button>
+                <a-button @click="resetProfileForm">
+                  重置
+                </a-button>
               </a-space>
             </a-form-item>
           </a-form>
@@ -72,27 +117,55 @@
       </a-tab-pane>
 
       <!-- ====== Tab 2: 安全设置 ====== -->
-      <a-tab-pane key="security" tab="安全设置">
-        <a-card :bordered="false" title="修改密码" class="security-card">
-          <a-form layout="vertical" :style="{ maxWidth: '400px' }">
+      <a-tab-pane
+        key="security"
+        tab="安全设置"
+      >
+        <a-card
+          :bordered="false"
+          title="修改密码"
+          class="security-card"
+        >
+          <a-form
+            layout="vertical"
+            :style="{ maxWidth: '400px' }"
+          >
             <a-form-item label="当前密码">
-              <a-input-password v-model:value="passwordForm.current" placeholder="输入当前密码" />
+              <a-input-password
+                v-model:value="passwordForm.current"
+                placeholder="输入当前密码"
+              />
             </a-form-item>
             <a-form-item label="新密码">
-              <a-input-password v-model:value="passwordForm.newPwd" placeholder="至少8位，含字母和数字" />
+              <a-input-password
+                v-model:value="passwordForm.newPwd"
+                placeholder="至少8位，含字母和数字"
+              />
             </a-form-item>
             <a-form-item label="确认新密码">
-              <a-input-password v-model:value="passwordForm.confirm" placeholder="再次输入新密码" />
+              <a-input-password
+                v-model:value="passwordForm.confirm"
+                placeholder="再次输入新密码"
+              />
             </a-form-item>
             <a-form-item>
-              <a-button type="primary" :loading="changingPassword" @click="handleChangePassword">
+              <a-button
+                type="primary"
+                :loading="changingPassword"
+                @click="handleChangePassword"
+              >
                 修改密码
               </a-button>
             </a-form-item>
           </a-form>
         </a-card>
 
-        <a-card :bordered="false" title="API 密钥" class="security-card" style="margin-top: 16px">
+        <a-card
+          :bordered="false"
+          title="API 密钥"
+          class="security-card"
+          style="margin-top: 16px"
+        >
           <a-alert
             type="info"
             show-icon
@@ -100,8 +173,15 @@
             style="margin-bottom: 16px"
           />
 
-          <div v-if="apiKeys.length > 0" class="api-key-list">
-            <div v-for="key in apiKeys" :key="key.id" class="api-key-item">
+          <div
+            v-if="apiKeys.length > 0"
+            class="api-key-list"
+          >
+            <div
+              v-for="key in apiKeys"
+              :key="key.id"
+              class="api-key-item"
+            >
               <div class="key-info">
                 <strong>{{ key.name }}</strong>
                 <code class="key-value">{{ key.key }}</code>
@@ -116,15 +196,32 @@
               <div class="key-actions">
                 <!-- ★ 列表里不再提供"复制"：后端只存 sha256，列表返回的是掩码串，
                      复制一串掩码没有意义。完整 key 只在**创建那一刻**的弹窗里给一次。 -->
-                <a-popconfirm title="确定要删除此密钥吗？" @confirm="handleDeleteKey(key.id)">
-                  <a-button size="small" danger type="link">删除</a-button>
+                <a-popconfirm
+                  title="确定要删除此密钥吗？"
+                  @confirm="handleDeleteKey(key.id)"
+                >
+                  <a-button
+                    size="small"
+                    danger
+                    type="link"
+                  >
+                    删除
+                  </a-button>
                 </a-popconfirm>
               </div>
             </div>
           </div>
 
-          <a-empty v-else description="暂无 API 密钥">
-            <a-button type="primary" @click="showCreateKeyModal = true">创建 API 密钥</a-button>
+          <a-empty
+            v-else
+            description="暂无 API 密钥"
+          >
+            <a-button
+              type="primary"
+              @click="showCreateKeyModal = true"
+            >
+              创建 API 密钥
+            </a-button>
           </a-empty>
 
           <a-button
@@ -137,14 +234,24 @@
           </a-button>
         </a-card>
 
-        <a-card :bordered="false" title="登录会话" class="security-card" style="margin-top: 16px">
-          <a-descriptions :column="1" size="small">
+        <a-card
+          :bordered="false"
+          title="登录会话"
+          class="security-card"
+          style="margin-top: 16px"
+        >
+          <a-descriptions
+            :column="1"
+            size="small"
+          >
             <a-descriptions-item label="当前设备">
               <!-- ★ 台账 #1154：这个标签原来写死「本机 - Chrome / Windows」——
                    在 Safari / Mac / 手机上它是一句**假话**，而这张卡的作用
                    恰恰是让用户判断"哪些登录是我的"。假话在这里的代价不是
                    难看，是**误判**（以为自己被盗号）。改成按 UA 粗分类。 -->
-              <a-tag color="blue">{{ currentDeviceLabel }}</a-tag>
+              <a-tag color="blue">
+                {{ currentDeviceLabel }}
+              </a-tag>
             </a-descriptions-item>
             <a-descriptions-item label="最后登录时间">
               {{ userStore.user?.last_login_at ? formatTime(userStore.user.last_login_at) : '-' }}
@@ -163,7 +270,12 @@
             cancel-text="取消"
             @confirm="handleLogoutAll"
           >
-            <a-button danger size="small" style="margin-top: 8px" :loading="loggingOutAll">
+            <a-button
+              danger
+              size="small"
+              style="margin-top: 8px"
+              :loading="loggingOutAll"
+            >
               退出所有设备（含本机）
             </a-button>
           </a-popconfirm>
@@ -175,8 +287,14 @@
       </a-tab-pane>
 
       <!-- ====== Tab 3: 通知偏好 ====== -->
-      <a-tab-pane key="notifications" tab="通知偏好">
-        <a-card :bordered="false" class="notification-card">
+      <a-tab-pane
+        key="notifications"
+        tab="通知偏好"
+      >
+        <a-card
+          :bordered="false"
+          class="notification-card"
+        >
           <a-form layout="vertical">
             <div class="notify-section">
               <h4>邮件通知</h4>
@@ -213,7 +331,11 @@
             </div>
 
             <a-form-item style="margin-top: 20px">
-              <a-button type="primary" :loading="savingNotif" @click="handleSaveNotifications">
+              <a-button
+                type="primary"
+                :loading="savingNotif"
+                @click="handleSaveNotifications"
+              >
                 保存偏好设置
               </a-button>
             </a-form-item>
@@ -222,8 +344,14 @@
       </a-tab-pane>
 
       <!-- ====== Tab 4: 交互偏好 ====== -->
-      <a-tab-pane key="preferences" tab="交互偏好">
-        <a-card :bordered="false" class="notification-card">
+      <a-tab-pane
+        key="preferences"
+        tab="交互偏好"
+      >
+        <a-card
+          :bordered="false"
+          class="notification-card"
+        >
           <div class="notify-section">
             <h4>翻译</h4>
             <div class="pref-item">
@@ -241,18 +369,33 @@
       </a-tab-pane>
 
       <!-- ====== Tab 5: 店铺管理 ====== -->
-      <a-tab-pane key="shops" tab="店铺管理">
-        <a-card :bordered="false" title="我的店铺">
+      <a-tab-pane
+        key="shops"
+        tab="店铺管理"
+      >
+        <a-card
+          :bordered="false"
+          title="我的店铺"
+        >
           <template #extra>
-            <a-button type="primary" @click="showAddShop = true">
+            <a-button
+              type="primary"
+              @click="showAddShop = true"
+            >
               <PlusOutlined /> 添加店铺
             </a-button>
           </template>
 
-          <a-list :data-source="shops" :loading="shopsLoading">
+          <a-list
+            :data-source="shops"
+            :loading="shopsLoading"
+          >
             <template #renderItem="{ item }">
               <a-list-item>
-                <a-list-item-meta :title="item.name" :description="getPlatformLabel(item.platform)">
+                <a-list-item-meta
+                  :title="item.name"
+                  :description="getPlatformLabel(item.platform)"
+                >
                   <template #avatar>
                     <a-avatar :style="{ backgroundColor: getPlatformColor(item.platform) }">
                       {{ getPlatformIcon(item.platform) }}
@@ -264,10 +407,16 @@
                        改造前是 `item.is_connected ? '已连接' : '未连接'`，而这个字段
                        后端**根本没返回**（普通 @property 不进 model_dump）
                        ⇒ 永远渲染「未连接」，用户以为界面坏了。 -->
-                  <a-tag :color="connectTagColor(item)" :title="connectHint(item)">
+                  <a-tag
+                    :color="connectTagColor(item)"
+                    :title="connectHint(item)"
+                  >
                     {{ connectLabel(item) }}
                   </a-tag>
-                  <a-button size="small" @click="openConnect(item)">
+                  <a-button
+                    size="small"
+                    @click="openConnect(item)"
+                  >
                     {{ isConnected(item) ? '重新配置' : '连接平台' }}
                   </a-button>
                   <a-popconfirm
@@ -275,18 +424,41 @@
                     title="断开连接会同时清除已保存的凭据，确定吗？"
                     @confirm="handleDisconnect(item.id)"
                   >
-                    <a-button size="small" type="text" danger>断开</a-button>
+                    <a-button
+                      size="small"
+                      type="text"
+                      danger
+                    >
+                      断开
+                    </a-button>
                   </a-popconfirm>
-                  <a-popconfirm title="确定删除此店铺？" @confirm="handleDeleteShop(item.id)">
-                    <a-button size="small" type="text" danger>删除</a-button>
+                  <a-popconfirm
+                    title="确定删除此店铺？"
+                    @confirm="handleDeleteShop(item.id)"
+                  >
+                    <a-button
+                      size="small"
+                      type="text"
+                      danger
+                    >
+                      删除
+                    </a-button>
                   </a-popconfirm>
                 </template>
               </a-list-item>
             </template>
           </a-list>
 
-          <a-empty v-if="!shopsLoading && shops.length === 0" description="还没有添加店铺">
-            <a-button type="primary" @click="showAddShop = true">立即添加</a-button>
+          <a-empty
+            v-if="!shopsLoading && shops.length === 0"
+            description="还没有添加店铺"
+          >
+            <a-button
+              type="primary"
+              @click="showAddShop = true"
+            >
+              立即添加
+            </a-button>
           </a-empty>
         </a-card>
 
@@ -305,71 +477,142 @@
            用户不会看到一个点进去是空的入口。
            开启方式：frontend/.env.local 设 VITE_VOICE_CLONE_ENABLED=true，
            同时 backend/.env 设 VOICE_CLONE_ENABLED=true 与 PUBLIC_BASE_URL。 -->
-      <a-tab-pane v-if="VOICE_CLONE_ENABLED" key="voice" tab="客服语音">
+      <a-tab-pane
+        v-if="VOICE_CLONE_ENABLED"
+        key="voice"
+        tab="客服语音"
+      >
         <VoiceClonePanel />
       </a-tab-pane>
     </a-tabs>
 
     <!-- ====== 创建 API Key 弹窗 ====== -->
-    <a-modal :width="WINDOW_W.md"
+    <a-modal
       v-model:open="showCreateKeyModal"
+      :width="WINDOW_W.md"
       title="创建 API 密钥"
-      @ok="handleCreateKey"
       :confirm-loading="creatingKey"
+      @ok="handleCreateKey"
     >
       <a-form layout="vertical">
-        <a-form-item label="密钥名称" required>
-          <a-input v-model:value="newKeyName" placeholder="如：生产环境、测试环境" />
+        <a-form-item
+          label="密钥名称"
+          required
+        >
+          <a-input
+            v-model:value="newKeyName"
+            placeholder="如：生产环境、测试环境"
+          />
         </a-form-item>
-        <a-alert type="warning" show-icon message="创建后请立即复制密钥，之后无法再查看完整值" />
+        <a-alert
+          type="warning"
+          show-icon
+          message="创建后请立即复制密钥，之后无法再查看完整值"
+        />
       </a-form>
     </a-modal>
 
     <!-- ====== 创建后显示完整密钥弹窗 ====== -->
-    <a-modal :width="WINDOW_W.md"
+    <a-modal
       v-model:open="showNewKeyModal"
+      :width="WINDOW_W.md"
       title="API 密钥已创建"
       :footer="null"
     >
-      <a-alert type="success" show-icon message="请立即复制以下密钥，关闭后将无法再次查看" />
-      <a-input :value="newKeyValue" readonly style="margin-top: 12px">
+      <a-alert
+        type="success"
+        show-icon
+        message="请立即复制以下密钥，关闭后将无法再次查看"
+      />
+      <a-input
+        :value="newKeyValue"
+        readonly
+        style="margin-top: 12px"
+      >
         <template #addonAfter>
-          <a-button type="link" size="small" @click="copyToClipboard(newKeyValue)">复制</a-button>
+          <a-button
+            type="link"
+            size="small"
+            @click="copyToClipboard(newKeyValue)"
+          >
+            复制
+          </a-button>
         </template>
       </a-input>
     </a-modal>
 
     <!-- ====== 添加店铺弹窗 ====== -->
-    <a-modal :width="WINDOW_W.md"
+    <a-modal
       v-model:open="showAddShop"
+      :width="WINDOW_W.md"
       title="添加店铺"
       @ok="handleAddShop"
     >
       <a-form layout="vertical">
-        <a-form-item label="店铺名称" required>
-          <a-input v-model:value="shopForm.name" placeholder="如：Amazon 美国店" />
+        <a-form-item
+          label="店铺名称"
+          required
+        >
+          <a-input
+            v-model:value="shopForm.name"
+            placeholder="如：Amazon 美国店"
+          />
         </a-form-item>
-        <a-form-item label="平台类型" required>
-          <a-select v-model:value="shopForm.platform" placeholder="选择平台">
+        <a-form-item
+          label="平台类型"
+          required
+        >
+          <a-select
+            v-model:value="shopForm.platform"
+            placeholder="选择平台"
+          >
             <a-select-opt-group label="Amazon">
-              <a-select-option value="amazon_us">Amazon 美国</a-select-option>
-              <a-select-option value="amazon_uk">Amazon 英国</a-select-option>
-              <a-select-option value="amazon_de">Amazon 德国</a-select-option>
-              <a-select-option value="amazon_jp">Amazon 日本</a-select-option>
+              <a-select-option value="amazon_us">
+                Amazon 美国
+              </a-select-option>
+              <a-select-option value="amazon_uk">
+                Amazon 英国
+              </a-select-option>
+              <a-select-option value="amazon_de">
+                Amazon 德国
+              </a-select-option>
+              <a-select-option value="amazon_jp">
+                Amazon 日本
+              </a-select-option>
             </a-select-opt-group>
             <a-select-opt-group label="Shopee">
-              <a-select-option value="shopee_my">Shopee 马来西亚</a-select-option>
-              <a-select-option value="shopee_tw">Shopee 台湾</a-select-option>
-              <a-select-option value="shopee_ph">Shopee 菲律宾</a-select-option>
-              <a-select-option value="shopee_th">Shopee 泰国</a-select-option>
-              <a-select-option value="shopee_sg">Shopee 新加坡</a-select-option>
-              <a-select-option value="shopee_vn">Shopee 越南</a-select-option>
-              <a-select-option value="shopee_id">Shopee 印尼</a-select-option>
-              <a-select-option value="shopee_br">Shopee 巴西</a-select-option>
+              <a-select-option value="shopee_my">
+                Shopee 马来西亚
+              </a-select-option>
+              <a-select-option value="shopee_tw">
+                Shopee 台湾
+              </a-select-option>
+              <a-select-option value="shopee_ph">
+                Shopee 菲律宾
+              </a-select-option>
+              <a-select-option value="shopee_th">
+                Shopee 泰国
+              </a-select-option>
+              <a-select-option value="shopee_sg">
+                Shopee 新加坡
+              </a-select-option>
+              <a-select-option value="shopee_vn">
+                Shopee 越南
+              </a-select-option>
+              <a-select-option value="shopee_id">
+                Shopee 印尼
+              </a-select-option>
+              <a-select-option value="shopee_br">
+                Shopee 巴西
+              </a-select-option>
             </a-select-opt-group>
             <a-select-opt-group label="其他">
-              <a-select-option value="tiktok">TikTok Shop</a-select-option>
-              <a-select-option value="shopify">Shopify 独立站</a-select-option>
+              <a-select-option value="tiktok">
+                TikTok Shop
+              </a-select-option>
+              <a-select-option value="shopify">
+                Shopify 独立站
+              </a-select-option>
             </a-select-opt-group>
           </a-select>
         </a-form-item>

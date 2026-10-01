@@ -1,7 +1,10 @@
 <template>
   <div class="ad-dashboard">
     <!-- 顶部 Tab 导航（仅大屏模式显示） -->
-    <div v-if="isDataMode" class="ad-tabs">
+    <div
+      v-if="isDataMode"
+      class="ad-tabs"
+    >
       <button
         v-for="tab in AD_TABS"
         :key="tab.key"
@@ -19,24 +22,47 @@
          后端这 4 个端点取不到数据时是 fail-closed：HTTP 仍是 200，但
          `success=false` + `data_status='no_data'`。若不显式处理，界面会渲染出
          一片空白或 `NaN` —— 而空白会被读成「加载失败」，`NaN` 会被读成真数据。 -->
-    <div v-if="state !== 'ready'" class="ad-state">
+    <div
+      v-if="state !== 'ready'"
+      class="ad-state"
+    >
       <template v-if="state === 'loading'">
         <a-spin />
-        <div class="ad-state-title">正在读取广告数据…</div>
-        <div class="ad-state-reason">{{ TAB_HINT[activeTab] }}</div>
+        <div class="ad-state-title">
+          正在读取广告数据…
+        </div>
+        <div class="ad-state-reason">
+          {{ TAB_HINT[activeTab] }}
+        </div>
       </template>
       <template v-else-if="state === 'empty'">
-        <div class="ad-state-title">暂无可用数据</div>
-        <div class="ad-state-reason">{{ stateReason }}</div>
+        <div class="ad-state-title">
+          暂无可用数据
+        </div>
+        <div class="ad-state-reason">
+          {{ stateReason }}
+        </div>
         <div class="ad-state-reason">
           广告数据按<strong>当前店铺</strong>取：请先在左上角选择店铺；
           若已选店铺，则说明它在所选周期内没有对应的投放记录。
         </div>
       </template>
       <template v-else-if="state === 'error'">
-        <div class="ad-state-title" style="color: var(--danger)">读取失败</div>
-        <div class="ad-state-reason">{{ stateReason }}</div>
-        <a-button size="small" @click="loadTab(activeTab, true)">重试</a-button>
+        <div
+          class="ad-state-title"
+          style="color: var(--danger)"
+        >
+          读取失败
+        </div>
+        <div class="ad-state-reason">
+          {{ stateReason }}
+        </div>
+        <a-button
+          size="small"
+          @click="loadTab(activeTab, true)"
+        >
+          重试
+        </a-button>
       </template>
       <template v-else>
         <a-spin />
@@ -44,283 +70,603 @@
     </div>
 
     <template v-else>
-    <!-- ══════════ ① 账户总览 ══════════ -->
-    <section v-if="activeTab === 'overview'" class="ad-pane">
-      <div class="pane-head">
-        <div>
-          <div class="pane-title">账户总览 <a-tag color="default" class="mini-tag">近 30 天</a-tag></div>
-          <div class="pane-sub">核心效益指标 + Campaign 健康状态 + 花费/销售趋势 + Top 问题</div>
-        </div>
-      </div>
-
-      <!-- 综合评分 + KPI -->
-      <div class="score-kpi-row">
-        <div class="score-card" :class="'grade-' + (diag?.grade || 'F')">
-          <span class="score-val">{{ diag?.overall_score ?? 0 }}</span>
-          <span class="grade-label">{{ diag?.grade || '—' }}</span>
-        </div>
-        <div class="kpi-grid flex-1">
-          <div v-for="m in diag?.metrics || []" :key="m.name" class="kpi-card">
-            <div class="kpi-label">{{ m.name }}</div>
-            <div class="kpi-value" :class="m.status === 'good' ? 'success' : m.status === 'critical' ? 'danger' : 'warning'">
-              {{ fmtMetric(m) }}
+      <!-- ══════════ ① 账户总览 ══════════ -->
+      <section
+        v-if="activeTab === 'overview'"
+        class="ad-pane"
+      >
+        <div class="pane-head">
+          <div>
+            <div class="pane-title">
+              账户总览 <a-tag
+                color="default"
+                class="mini-tag"
+              >
+                近 30 天
+              </a-tag>
             </div>
-            <div class="kpi-change">
-              <!-- ★ 后端 change_pct 目前一律 0.0（没有上一期对比口径）。
+            <div class="pane-sub">
+              核心效益指标 + Campaign 健康状态 + 花费/销售趋势 + Top 问题
+            </div>
+          </div>
+        </div>
+
+        <!-- 综合评分 + KPI -->
+        <div class="score-kpi-row">
+          <div
+            class="score-card"
+            :class="'grade-' + (diag?.grade || 'F')"
+          >
+            <span class="score-val">{{ diag?.overall_score ?? 0 }}</span>
+            <span class="grade-label">{{ diag?.grade || '—' }}</span>
+          </div>
+          <div class="kpi-grid flex-1">
+            <div
+              v-for="m in diag?.metrics || []"
+              :key="m.name"
+              class="kpi-card"
+            >
+              <div class="kpi-label">
+                {{ m.name }}
+              </div>
+              <div
+                class="kpi-value"
+                :class="m.status === 'good' ? 'success' : m.status === 'critical' ? 'danger' : 'warning'"
+              >
+                {{ fmtMetric(m) }}
+              </div>
+              <div class="kpi-change">
+                <!-- ★ 后端 change_pct 目前一律 0.0（没有上一期对比口径）。
                    `0` 的语义是「没有环比数据」，**不是**「与上期持平」——
                    渲染成「▲ 0.0% 环比」就是一条看着像真数的假持平。 -->
-              <span v-if="m.change_pct" :class="m.change_pct >= 0 ? 'up' : 'down'">
-                {{ m.change_pct >= 0 ? '▲' : '▼' }} {{ Math.abs(m.change_pct).toFixed(1) }}% <em>环比</em>
-              </span>
-              <span v-else class="kpi-nodata">基准 {{ m.benchmark }}{{ m.unit }} · 无环比</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 诊断结论（后端 LLM 生成；缺则退到规则摘要） -->
-      <div v-if="diag?.summary" class="panel-card">
-        <div class="card-head">诊断结论</div>
-        <p class="rationale">{{ diag.summary }}</p>
-      </div>
-
-      <!-- 趋势图 -->
-      <div class="panel-card chart-card">
-        <div class="card-head">每日花费 / 销售额趋势</div>
-        <LineChart v-if="trendSeries" :series="trendSeries" :labels="diag?.daily_trend?.labels || []" :legend="true" />
-        <!-- ★ 单点也是真实结果：SP-API 拿不到按天拆分时后端把整段活动写在 date_to 当天
-             （已明示、不做随机插值）⇒ 这里只呈现事实，不补点。 -->
-        <div v-else class="ad-empty-inline">后端未返回日粒度序列（该数据源没有按天拆分）</div>
-      </div>
-
-      <!-- 两栏: Campaign 表 + 问题列表 -->
-      <div class="two-col">
-        <div class="panel-card">
-          <div class="card-head">Campaign 健康状态</div>
-          <div class="tbl sm">
-            <div class="tbl-head">
-              <span class="c-role">Campaign</span><span class="c-num">花费</span><span class="c-num">销售</span><span class="c-num">ACoS</span><span class="c-num">RoAS</span><span class="c-badge">状态</span>
-            </div>
-            <div v-for="c in diag?.campaigns || []" :key="c.campaign_name" class="tbl-row">
-              <span class="c-role"><a-tag size="small" :color="campaignTagColor(c.campaign_type)">{{ c.campaign_type }}</a-tag> {{ c.campaign_name }}</span>
-              <span class="c-num">${{ fmtMoney(c.spend) }}</span>
-              <span class="c-num">${{ fmtMoney(c.sales) }}</span>
-              <span class="c-num" :class="bandOf('acos', c.acos)">{{ c.acos }}%</span>
-              <span class="c-num" :class="bandOf('roas', c.roas)">{{ c.roas }}x</span>
-              <span class="c-badge"><a-tag size="small" :color="ACOS_TAG[bandOf('acos', c.acos)]">{{ ACOS_LABEL[bandOf('acos', c.acos)] }}</a-tag></span>
-            </div>
-            <div v-if="!(diag?.campaigns || []).length" class="ad-empty-inline">该周期内没有 Campaign 记录</div>
-          </div>
-        </div>
-        <div class="panel-card">
-          <div class="card-head danger">Top 问题</div>
-          <div class="issue-list">
-            <div v-for="(issue, idx) in diag?.top_issues || []" :key="idx" class="issue-item" :class="'priority-' + (issue.priority || 'medium')">
-              <span class="issue-rank">{{ idx + 1 }}</span>
-              <div class="issue-content">
-                <span class="issue-title">{{ issue.title }}</span>
-                <span class="issue-desc">{{ issue.description }}</span>
+                <span
+                  v-if="m.change_pct"
+                  :class="m.change_pct >= 0 ? 'up' : 'down'"
+                >
+                  {{ m.change_pct >= 0 ? '▲' : '▼' }} {{ Math.abs(m.change_pct).toFixed(1) }}% <em>环比</em>
+                </span>
+                <span
+                  v-else
+                  class="kpi-nodata"
+                >基准 {{ m.benchmark }}{{ m.unit }} · 无环比</span>
               </div>
             </div>
-            <div v-if="!(diag?.top_issues || []).length" class="ad-empty-inline">未识别出问题</div>
-          </div>
-          <!-- 优化建议：与 Top 问题同源同卡，不在页面上另起一块 -->
-          <template v-if="(diag?.recommendations || []).length">
-            <div class="card-head" style="margin-top: var(--space-12)">优化建议</div>
-            <ul class="suggestion-list">
-              <li v-for="(r, i) in diag?.recommendations || []" :key="i">{{ r }}</li>
-            </ul>
-          </template>
-        </div>
-      </div>
-    </section>
-
-    <!-- ══════════ ② 搜索词分析 ══════════ -->
-    <section v-else-if="activeTab === 'searchterms'" class="ad-pane">
-      <div class="pane-head">
-        <div>
-          <div class="pane-title">搜索词分析 <a-tag color="default" class="mini-tag">{{ terms?.period || '—' }}</a-tag></div>
-          <div class="pane-sub">高效词 / 低效词 / 浪费词分类 + 新机会挖掘</div>
-        </div>
-      </div>
-
-      <!-- 效率分布（★ 原来是模板里写死的 42 / 3 / 2 / 2，连 mock 都没走） -->
-      <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">总搜索词</div><div class="kpi-value">{{ terms?.total_terms ?? 0 }}</div></div>
-        <div class="kpi-card"><div class="kpi-label" style="color:var(--success)">高效词</div><div class="kpi-value success">{{ (terms?.high_performers || []).length }}</div><div class="kpi-change"><span class="up">ACoS ≤ 20%</span></div></div>
-        <div class="kpi-card"><div class="kpi-label" style="color:var(--warning)">低效词</div><div class="kpi-value warning">{{ (terms?.low_performers || []).length }}</div><div class="kpi-change"><span class="down">ACoS &gt; 35%</span></div></div>
-        <div class="kpi-card"><div class="kpi-label" style="color:var(--danger)">浪费词</div><div class="kpi-value danger">{{ (terms?.waste_terms || []).length }}</div><div class="kpi-change"><span class="down">零转化</span></div></div>
-      </div>
-
-      <!-- 高效词 -->
-      <div class="panel-card">
-        <div class="card-head ok">高效词（提高预算 / 扩量）</div>
-        <div class="tbl sm">
-          <div class="tbl-head"><span class="c-role">搜索词</span><span class="c-num">展示</span><span class="c-num">点击</span><span class="c-num">花费</span><span class="c-num">销售</span><span class="c-num">ACoS</span><span class="c-badge">匹配</span></div>
-          <div v-for="t in terms?.high_performers || []" :key="t.term" class="tbl-row">
-            <span class="c-role">{{ t.term }}</span>
-            <span class="c-num">{{ t.impressions.toLocaleString() }}</span>
-            <span class="c-num">{{ t.clicks }}</span>
-            <span class="c-num">${{ t.spend.toFixed(2) }}</span>
-            <span class="c-num ok">${{ t.sales.toFixed(2) }}</span>
-            <span class="c-num ok">{{ t.acos }}%</span>
-            <span class="c-badge"><a-tag size="small" color="blue">{{ t.match_type }}</a-tag></span>
-          </div>
-          <div v-if="!(terms?.high_performers || []).length" class="ad-empty-inline">本周期没有达到高效阈值的搜索词</div>
-        </div>
-      </div>
-
-      <!-- 新机会词 -->
-      <div class="panel-card">
-        <div class="card-head">新机会词（小规模试投）</div>
-        <div class="tbl sm">
-          <div class="tbl-head"><span class="c-role">搜索词</span><span class="c-num">展示</span><span class="c-num">点击</span><span class="c-num">花费</span><span class="c-num">销售</span><span class="c-num">ACoS</span><span class="c-badge">匹配</span></div>
-          <div v-for="t in terms?.new_opportunities || []" :key="t.term" class="tbl-row">
-            <span class="c-role">{{ t.term }}</span>
-            <span class="c-num">{{ t.impressions.toLocaleString() }}</span>
-            <span class="c-num">{{ t.clicks }}</span>
-            <span class="c-num">${{ t.spend.toFixed(2) }}</span>
-            <span class="c-num ok">${{ t.sales.toFixed(2) }}</span>
-            <span class="c-num ok">{{ t.acos }}%</span>
-            <span class="c-badge"><a-tag size="small" color="blue">{{ t.match_type }}</a-tag></span>
-          </div>
-          <div v-if="!(terms?.new_opportunities || []).length" class="ad-empty-inline">本周期没有新机会词</div>
-        </div>
-      </div>
-
-      <!-- 低效 + 浪费词 -->
-      <div class="two-col">
-        <div class="panel-card">
-          <div class="card-head warn">低效词（降低出价 / 改匹配）</div>
-          <div class="term-list">
-            <div v-for="t in terms?.low_performers || []" :key="t.term" class="term-row">
-              <span class="term-name">{{ t.term }}</span>
-              <span class="term-acos warn">{{ t.acos }}%</span>
-              <span class="term-spend">${{ t.spend.toFixed(2) }}</span>
-            </div>
-            <div v-if="!(terms?.low_performers || []).length" class="ad-empty-inline">无</div>
           </div>
         </div>
-        <div class="panel-card">
-          <div class="card-head danger">浪费词（建议否定）</div>
-          <div class="term-list">
-            <div v-for="t in terms?.waste_terms || []" :key="t.term" class="term-row">
-              <span class="term-name">{{ t.term }}</span>
-              <span class="term-acos danger">∞</span>
-              <span class="term-spend danger">${{ t.spend.toFixed(2) }}</span>
-            </div>
-            <div v-if="!(terms?.waste_terms || []).length" class="ad-empty-inline">无</div>
+
+        <!-- 诊断结论（后端 LLM 生成；缺则退到规则摘要） -->
+        <div
+          v-if="diag?.summary"
+          class="panel-card"
+        >
+          <div class="card-head">
+            诊断结论
           </div>
-          <div class="waste-total">合计浪费: ${{ wasteSpend.toFixed(2) }}</div>
+          <p class="rationale">
+            {{ diag.summary }}
+          </p>
         </div>
-      </div>
 
-      <!-- 建议 -->
-      <div class="panel-card">
-        <div class="card-head">优化建议</div>
-        <ul class="suggestion-list">
-          <li v-for="(s, i) in terms?.suggestions || []" :key="i">{{ s }}</li>
-        </ul>
-        <div v-if="!(terms?.suggestions || []).length" class="ad-empty-inline">无</div>
-      </div>
-    </section>
-
-    <!-- ══════════ ③ 出价优化 ══════════ -->
-    <section v-else-if="activeTab === 'bid'" class="ad-pane">
-      <div class="pane-head">
-        <div>
-          <div class="pane-title">出价优化 <a-tag color="default" class="mini-tag">{{ STRATEGY_LABEL[bids?.strategy_type || ''] || bids?.strategy_type || '—' }}</a-tag></div>
-          <div class="pane-sub">基于近30天转化的智能出价建议，预计 ACoS {{ fmtPct(bids?.expected_acos_change ?? 0) }}</div>
-        </div>
-      </div>
-
-      <!-- 汇总 -->
-      <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">分析关键词</div><div class="kpi-value">{{ bids?.total_keywords ?? 0 }}</div></div>
-        <div class="kpi-card"><div class="kpi-label">预算影响</div><div class="kpi-value" :class="(bids?.budget_impact ?? 0) >= 0 ? 'danger' : 'success'">${{ (bids?.budget_impact ?? 0) >= 0 ? '+' : '' }}{{ (bids?.budget_impact ?? 0).toFixed(2) }}/词</div></div>
-        <div class="kpi-card"><div class="kpi-label">预计 ACoS 变化</div><div class="kpi-value success">{{ fmtPct(bids?.expected_acos_change ?? 0) }}</div></div>
-      </div>
-
-      <!-- 出价建议表 -->
-      <div class="panel-card">
-        <div class="card-head">关键词出价调整</div>
-        <div class="tbl sm">
-          <div class="tbl-head"><span class="c-role">关键词</span><span class="c-badge">匹配</span><span class="c-num">当前出价</span><span class="c-num">建议出价</span><span class="c-num">调整</span><span class="c-role">原因</span><span class="c-badge">优先级</span></div>
-          <div v-for="b in bids?.recommendations || []" :key="b.keyword" class="tbl-row">
-            <span class="c-role">{{ b.keyword }}</span>
-            <span class="c-badge"><a-tag size="small" color="blue">{{ b.match_type }}</a-tag></span>
-            <span class="c-num">${{ b.current_bid.toFixed(2) }}</span>
-            <span class="c-num" :class="bidClass(b)">${{ b.suggested_bid.toFixed(2) }}</span>
-            <span class="c-num" :class="bidChangeClass(b)">{{ b.bid_change_pct > 0 ? '+' : '' }}{{ b.bid_change_pct }}%</span>
-            <span class="c-role reason-text">{{ b.reason }}</span>
-            <span class="c-badge"><a-tag size="small" :color="b.priority === 'high' ? 'red' : b.priority === 'medium' ? 'orange' : 'default'">{{ b.priority === 'high' ? '高' : b.priority === 'medium' ? '中' : '低' }}</a-tag></span>
-          </div>
-          <div v-if="!(bids?.recommendations || []).length" class="ad-empty-inline">本周期没有需要调整出价的关键词</div>
-        </div>
-      </div>
-
-      <div class="panel-card">
-        <div class="card-head">策略说明</div>
-        <p class="rationale">{{ bids?.rationale }}</p>
-      </div>
-    </section>
-
-    <!-- ══════════ ④ 竞品广告 ══════════ -->
-    <section v-else-if="activeTab === 'competitor'" class="ad-pane">
-      <div class="pane-head">
-        <div>
-          <div class="pane-title">竞品广告 <a-tag color="default" class="mini-tag">SOV 分析</a-tag></div>
-          <div class="pane-sub">你的 SOV: {{ comp?.your_share_of_voice ?? 0 }}% | 市场定位: {{ MARKET_POSITION_LABEL[comp?.market_position || ''] || '—' }} | Top {{ topCompetitors.length }} 竞品广告策略对比</div>
-        </div>
-      </div>
-
-      <!-- SOV 饼图 + 你的位置 -->
-      <div class="two-col">
+        <!-- 趋势图 -->
         <div class="panel-card chart-card">
-          <div class="card-head">SOV 占比</div>
-          <DonutChart
-            v-if="sovSegments"
-            :segments="sovSegments"
-            :center-value="(comp?.your_share_of_voice ?? 0) + '%'"
-            center-title="你的 SOV"
+          <div class="card-head">
+            每日花费 / 销售额趋势
+          </div>
+          <LineChart
+            v-if="trendSeries"
+            :series="trendSeries"
+            :labels="diag?.daily_trend?.labels || []"
+            :legend="true"
           />
-          <!-- ★ 实测后端 `your_share_of_voice = 0`、竞品 `share_of_voice` 同一 asin 多快照
-               ⇒ 全 0 时画一个没有扇区的饼图没有意义，直接说明缺口。 -->
-          <div v-else class="ad-empty-inline">
-            后端未提供展示份额（SOV）数据 —— `amazon_competitor_snapshots` 里没有这个维度
+          <!-- ★ 单点也是真实结果：SP-API 拿不到按天拆分时后端把整段活动写在 date_to 当天
+             （已明示、不做随机插值）⇒ 这里只呈现事实，不补点。 -->
+          <div
+            v-else
+            class="ad-empty-inline"
+          >
+            后端未返回日粒度序列（该数据源没有按天拆分）
           </div>
         </div>
-        <div class="panel-card">
-          <div class="card-head">可执行洞察</div>
-          <ul class="suggestion-list">
-            <li v-for="(insight, i) in comp?.actionable_insights || []" :key="i">{{ insight }}</li>
-          </ul>
-          <div v-if="!(comp?.actionable_insights || []).length" class="ad-empty-inline">无</div>
-        </div>
-      </div>
 
-      <!-- 竞品详情表 -->
-      <div class="panel-card">
-        <div class="card-head">竞品广告详情</div>
-        <div class="tbl sm">
-          <div class="tbl-head"><span class="c-role">竞品</span><span class="c-num">SOV</span><span class="c-num">重叠词</span><span class="c-num">BSR</span><span class="c-num">预估花费</span><span class="c-role">优势</span><span class="c-role">劣势</span></div>
-          <div v-for="c in topCompetitors" :key="c.asin || c.competitor_name" class="tbl-row">
-            <span class="c-role"><strong>{{ c.competitor_name }}</strong><br><span class="rev">{{ c.asin }}</span></span>
-            <span class="c-num"><strong>{{ c.share_of_voice }}%</strong></span>
-            <span class="c-num">{{ c.overlap_keywords }}</span>
-            <span class="c-num">{{ c.avg_position }}</span>
-            <span class="c-num">${{ c.estimated_spend }}</span>
-            <span class="c-role ok-text">{{ (c.strengths || []).join(' / ') }}</span>
-            <span class="c-role warn-text">{{ (c.weaknesses || []).join(' / ') }}</span>
+        <!-- 两栏: Campaign 表 + 问题列表 -->
+        <div class="two-col">
+          <div class="panel-card">
+            <div class="card-head">
+              Campaign 健康状态
+            </div>
+            <div class="tbl sm">
+              <div class="tbl-head">
+                <span class="c-role">Campaign</span><span class="c-num">花费</span><span class="c-num">销售</span><span class="c-num">ACoS</span><span class="c-num">RoAS</span><span class="c-badge">状态</span>
+              </div>
+              <div
+                v-for="c in diag?.campaigns || []"
+                :key="c.campaign_name"
+                class="tbl-row"
+              >
+                <span class="c-role"><a-tag
+                  size="small"
+                  :color="campaignTagColor(c.campaign_type)"
+                >{{ c.campaign_type }}</a-tag> {{ c.campaign_name }}</span>
+                <span class="c-num">${{ fmtMoney(c.spend) }}</span>
+                <span class="c-num">${{ fmtMoney(c.sales) }}</span>
+                <span
+                  class="c-num"
+                  :class="bandOf('acos', c.acos)"
+                >{{ c.acos }}%</span>
+                <span
+                  class="c-num"
+                  :class="bandOf('roas', c.roas)"
+                >{{ c.roas }}x</span>
+                <span class="c-badge"><a-tag
+                  size="small"
+                  :color="ACOS_TAG[bandOf('acos', c.acos)]"
+                >{{ ACOS_LABEL[bandOf('acos', c.acos)] }}</a-tag></span>
+              </div>
+              <div
+                v-if="!(diag?.campaigns || []).length"
+                class="ad-empty-inline"
+              >
+                该周期内没有 Campaign 记录
+              </div>
+            </div>
           </div>
-          <div v-if="!topCompetitors.length" class="ad-empty-inline">该店铺没有竞品快照记录</div>
+          <div class="panel-card">
+            <div class="card-head danger">
+              Top 问题
+            </div>
+            <div class="issue-list">
+              <div
+                v-for="(issue, idx) in diag?.top_issues || []"
+                :key="idx"
+                class="issue-item"
+                :class="'priority-' + (issue.priority || 'medium')"
+              >
+                <span class="issue-rank">{{ idx + 1 }}</span>
+                <div class="issue-content">
+                  <span class="issue-title">{{ issue.title }}</span>
+                  <span class="issue-desc">{{ issue.description }}</span>
+                </div>
+              </div>
+              <div
+                v-if="!(diag?.top_issues || []).length"
+                class="ad-empty-inline"
+              >
+                未识别出问题
+              </div>
+            </div>
+            <!-- 优化建议：与 Top 问题同源同卡，不在页面上另起一块 -->
+            <template v-if="(diag?.recommendations || []).length">
+              <div
+                class="card-head"
+                style="margin-top: var(--space-12)"
+              >
+                优化建议
+              </div>
+              <ul class="suggestion-list">
+                <li
+                  v-for="(r, i) in diag?.recommendations || []"
+                  :key="i"
+                >
+                  {{ r }}
+                </li>
+              </ul>
+            </template>
+          </div>
         </div>
-        <div class="pane-sub" style="margin-top: var(--space-8)">
-          注：「重叠词 / 预估花费」恒为 0、「劣势」显示"数据不足"，源自后端刻意不编造 ——
-          竞品快照表里没有这三个维度。「BSR」是竞品排名（越小越好），不是广告位。
+      </section>
+
+      <!-- ══════════ ② 搜索词分析 ══════════ -->
+      <section
+        v-else-if="activeTab === 'searchterms'"
+        class="ad-pane"
+      >
+        <div class="pane-head">
+          <div>
+            <div class="pane-title">
+              搜索词分析 <a-tag
+                color="default"
+                class="mini-tag"
+              >
+                {{ terms?.period || '—' }}
+              </a-tag>
+            </div>
+            <div class="pane-sub">
+              高效词 / 低效词 / 浪费词分类 + 新机会挖掘
+            </div>
+          </div>
         </div>
-      </div>
-    </section>
+
+        <!-- 效率分布（★ 原来是模板里写死的 42 / 3 / 2 / 2，连 mock 都没走） -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">
+              总搜索词
+            </div><div class="kpi-value">
+              {{ terms?.total_terms ?? 0 }}
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div
+              class="kpi-label"
+              style="color:var(--success)"
+            >
+              高效词
+            </div><div class="kpi-value success">
+              {{ (terms?.high_performers || []).length }}
+            </div><div class="kpi-change">
+              <span class="up">ACoS ≤ 20%</span>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div
+              class="kpi-label"
+              style="color:var(--warning)"
+            >
+              低效词
+            </div><div class="kpi-value warning">
+              {{ (terms?.low_performers || []).length }}
+            </div><div class="kpi-change">
+              <span class="down">ACoS &gt; 35%</span>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div
+              class="kpi-label"
+              style="color:var(--danger)"
+            >
+              浪费词
+            </div><div class="kpi-value danger">
+              {{ (terms?.waste_terms || []).length }}
+            </div><div class="kpi-change">
+              <span class="down">零转化</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 高效词 -->
+        <div class="panel-card">
+          <div class="card-head ok">
+            高效词（提高预算 / 扩量）
+          </div>
+          <div class="tbl sm">
+            <div class="tbl-head">
+              <span class="c-role">搜索词</span><span class="c-num">展示</span><span class="c-num">点击</span><span class="c-num">花费</span><span class="c-num">销售</span><span class="c-num">ACoS</span><span class="c-badge">匹配</span>
+            </div>
+            <div
+              v-for="t in terms?.high_performers || []"
+              :key="t.term"
+              class="tbl-row"
+            >
+              <span class="c-role">{{ t.term }}</span>
+              <span class="c-num">{{ t.impressions.toLocaleString() }}</span>
+              <span class="c-num">{{ t.clicks }}</span>
+              <span class="c-num">${{ t.spend.toFixed(2) }}</span>
+              <span class="c-num ok">${{ t.sales.toFixed(2) }}</span>
+              <span class="c-num ok">{{ t.acos }}%</span>
+              <span class="c-badge"><a-tag
+                size="small"
+                color="blue"
+              >{{ t.match_type }}</a-tag></span>
+            </div>
+            <div
+              v-if="!(terms?.high_performers || []).length"
+              class="ad-empty-inline"
+            >
+              本周期没有达到高效阈值的搜索词
+            </div>
+          </div>
+        </div>
+
+        <!-- 新机会词 -->
+        <div class="panel-card">
+          <div class="card-head">
+            新机会词（小规模试投）
+          </div>
+          <div class="tbl sm">
+            <div class="tbl-head">
+              <span class="c-role">搜索词</span><span class="c-num">展示</span><span class="c-num">点击</span><span class="c-num">花费</span><span class="c-num">销售</span><span class="c-num">ACoS</span><span class="c-badge">匹配</span>
+            </div>
+            <div
+              v-for="t in terms?.new_opportunities || []"
+              :key="t.term"
+              class="tbl-row"
+            >
+              <span class="c-role">{{ t.term }}</span>
+              <span class="c-num">{{ t.impressions.toLocaleString() }}</span>
+              <span class="c-num">{{ t.clicks }}</span>
+              <span class="c-num">${{ t.spend.toFixed(2) }}</span>
+              <span class="c-num ok">${{ t.sales.toFixed(2) }}</span>
+              <span class="c-num ok">{{ t.acos }}%</span>
+              <span class="c-badge"><a-tag
+                size="small"
+                color="blue"
+              >{{ t.match_type }}</a-tag></span>
+            </div>
+            <div
+              v-if="!(terms?.new_opportunities || []).length"
+              class="ad-empty-inline"
+            >
+              本周期没有新机会词
+            </div>
+          </div>
+        </div>
+
+        <!-- 低效 + 浪费词 -->
+        <div class="two-col">
+          <div class="panel-card">
+            <div class="card-head warn">
+              低效词（降低出价 / 改匹配）
+            </div>
+            <div class="term-list">
+              <div
+                v-for="t in terms?.low_performers || []"
+                :key="t.term"
+                class="term-row"
+              >
+                <span class="term-name">{{ t.term }}</span>
+                <span class="term-acos warn">{{ t.acos }}%</span>
+                <span class="term-spend">${{ t.spend.toFixed(2) }}</span>
+              </div>
+              <div
+                v-if="!(terms?.low_performers || []).length"
+                class="ad-empty-inline"
+              >
+                无
+              </div>
+            </div>
+          </div>
+          <div class="panel-card">
+            <div class="card-head danger">
+              浪费词（建议否定）
+            </div>
+            <div class="term-list">
+              <div
+                v-for="t in terms?.waste_terms || []"
+                :key="t.term"
+                class="term-row"
+              >
+                <span class="term-name">{{ t.term }}</span>
+                <span class="term-acos danger">∞</span>
+                <span class="term-spend danger">${{ t.spend.toFixed(2) }}</span>
+              </div>
+              <div
+                v-if="!(terms?.waste_terms || []).length"
+                class="ad-empty-inline"
+              >
+                无
+              </div>
+            </div>
+            <div class="waste-total">
+              合计浪费: ${{ wasteSpend.toFixed(2) }}
+            </div>
+          </div>
+        </div>
+
+        <!-- 建议 -->
+        <div class="panel-card">
+          <div class="card-head">
+            优化建议
+          </div>
+          <ul class="suggestion-list">
+            <li
+              v-for="(s, i) in terms?.suggestions || []"
+              :key="i"
+            >
+              {{ s }}
+            </li>
+          </ul>
+          <div
+            v-if="!(terms?.suggestions || []).length"
+            class="ad-empty-inline"
+          >
+            无
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════ ③ 出价优化 ══════════ -->
+      <section
+        v-else-if="activeTab === 'bid'"
+        class="ad-pane"
+      >
+        <div class="pane-head">
+          <div>
+            <div class="pane-title">
+              出价优化 <a-tag
+                color="default"
+                class="mini-tag"
+              >
+                {{ STRATEGY_LABEL[bids?.strategy_type || ''] || bids?.strategy_type || '—' }}
+              </a-tag>
+            </div>
+            <div class="pane-sub">
+              基于近30天转化的智能出价建议，预计 ACoS {{ fmtPct(bids?.expected_acos_change ?? 0) }}
+            </div>
+          </div>
+        </div>
+
+        <!-- 汇总 -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">
+              分析关键词
+            </div><div class="kpi-value">
+              {{ bids?.total_keywords ?? 0 }}
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">
+              预算影响
+            </div><div
+              class="kpi-value"
+              :class="(bids?.budget_impact ?? 0) >= 0 ? 'danger' : 'success'"
+            >
+              ${{ (bids?.budget_impact ?? 0) >= 0 ? '+' : '' }}{{ (bids?.budget_impact ?? 0).toFixed(2) }}/词
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">
+              预计 ACoS 变化
+            </div><div class="kpi-value success">
+              {{ fmtPct(bids?.expected_acos_change ?? 0) }}
+            </div>
+          </div>
+        </div>
+
+        <!-- 出价建议表 -->
+        <div class="panel-card">
+          <div class="card-head">
+            关键词出价调整
+          </div>
+          <div class="tbl sm">
+            <div class="tbl-head">
+              <span class="c-role">关键词</span><span class="c-badge">匹配</span><span class="c-num">当前出价</span><span class="c-num">建议出价</span><span class="c-num">调整</span><span class="c-role">原因</span><span class="c-badge">优先级</span>
+            </div>
+            <div
+              v-for="b in bids?.recommendations || []"
+              :key="b.keyword"
+              class="tbl-row"
+            >
+              <span class="c-role">{{ b.keyword }}</span>
+              <span class="c-badge"><a-tag
+                size="small"
+                color="blue"
+              >{{ b.match_type }}</a-tag></span>
+              <span class="c-num">${{ b.current_bid.toFixed(2) }}</span>
+              <span
+                class="c-num"
+                :class="bidClass(b)"
+              >${{ b.suggested_bid.toFixed(2) }}</span>
+              <span
+                class="c-num"
+                :class="bidChangeClass(b)"
+              >{{ b.bid_change_pct > 0 ? '+' : '' }}{{ b.bid_change_pct }}%</span>
+              <span class="c-role reason-text">{{ b.reason }}</span>
+              <span class="c-badge"><a-tag
+                size="small"
+                :color="b.priority === 'high' ? 'red' : b.priority === 'medium' ? 'orange' : 'default'"
+              >{{ b.priority === 'high' ? '高' : b.priority === 'medium' ? '中' : '低' }}</a-tag></span>
+            </div>
+            <div
+              v-if="!(bids?.recommendations || []).length"
+              class="ad-empty-inline"
+            >
+              本周期没有需要调整出价的关键词
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="card-head">
+            策略说明
+          </div>
+          <p class="rationale">
+            {{ bids?.rationale }}
+          </p>
+        </div>
+      </section>
+
+      <!-- ══════════ ④ 竞品广告 ══════════ -->
+      <section
+        v-else-if="activeTab === 'competitor'"
+        class="ad-pane"
+      >
+        <div class="pane-head">
+          <div>
+            <div class="pane-title">
+              竞品广告 <a-tag
+                color="default"
+                class="mini-tag"
+              >
+                SOV 分析
+              </a-tag>
+            </div>
+            <div class="pane-sub">
+              你的 SOV: {{ comp?.your_share_of_voice ?? 0 }}% | 市场定位: {{ MARKET_POSITION_LABEL[comp?.market_position || ''] || '—' }} | Top {{ topCompetitors.length }} 竞品广告策略对比
+            </div>
+          </div>
+        </div>
+
+        <!-- SOV 饼图 + 你的位置 -->
+        <div class="two-col">
+          <div class="panel-card chart-card">
+            <div class="card-head">
+              SOV 占比
+            </div>
+            <DonutChart
+              v-if="sovSegments"
+              :segments="sovSegments"
+              :center-value="(comp?.your_share_of_voice ?? 0) + '%'"
+              center-title="你的 SOV"
+            />
+            <!-- ★ 实测后端 `your_share_of_voice = 0`、竞品 `share_of_voice` 同一 asin 多快照
+               ⇒ 全 0 时画一个没有扇区的饼图没有意义，直接说明缺口。 -->
+            <div
+              v-else
+              class="ad-empty-inline"
+            >
+              后端未提供展示份额（SOV）数据 —— `amazon_competitor_snapshots` 里没有这个维度
+            </div>
+          </div>
+          <div class="panel-card">
+            <div class="card-head">
+              可执行洞察
+            </div>
+            <ul class="suggestion-list">
+              <li
+                v-for="(insight, i) in comp?.actionable_insights || []"
+                :key="i"
+              >
+                {{ insight }}
+              </li>
+            </ul>
+            <div
+              v-if="!(comp?.actionable_insights || []).length"
+              class="ad-empty-inline"
+            >
+              无
+            </div>
+          </div>
+        </div>
+
+        <!-- 竞品详情表 -->
+        <div class="panel-card">
+          <div class="card-head">
+            竞品广告详情
+          </div>
+          <div class="tbl sm">
+            <div class="tbl-head">
+              <span class="c-role">竞品</span><span class="c-num">SOV</span><span class="c-num">重叠词</span><span class="c-num">BSR</span><span class="c-num">预估花费</span><span class="c-role">优势</span><span class="c-role">劣势</span>
+            </div>
+            <div
+              v-for="c in topCompetitors"
+              :key="c.asin || c.competitor_name"
+              class="tbl-row"
+            >
+              <span class="c-role"><strong>{{ c.competitor_name }}</strong><br><span class="rev">{{ c.asin }}</span></span>
+              <span class="c-num"><strong>{{ c.share_of_voice }}%</strong></span>
+              <span class="c-num">{{ c.overlap_keywords }}</span>
+              <span class="c-num">{{ c.avg_position }}</span>
+              <span class="c-num">${{ c.estimated_spend }}</span>
+              <span class="c-role ok-text">{{ (c.strengths || []).join(' / ') }}</span>
+              <span class="c-role warn-text">{{ (c.weaknesses || []).join(' / ') }}</span>
+            </div>
+            <div
+              v-if="!topCompetitors.length"
+              class="ad-empty-inline"
+            >
+              该店铺没有竞品快照记录
+            </div>
+          </div>
+          <div
+            class="pane-sub"
+            style="margin-top: var(--space-8)"
+          >
+            注：「重叠词 / 预估花费」恒为 0、「劣势」显示"数据不足"，源自后端刻意不编造 ——
+            竞品快照表里没有这三个维度。「BSR」是竞品排名（越小越好），不是广告位。
+          </div>
+        </div>
+      </section>
 
     <!-- ★ 第 316 轮：⑤ 预算分配 / ⑥ 异常检测 两个 Tab 整段退役
          （老板「广告分析师删除异常检测、广告预算再平衡」）。 -->

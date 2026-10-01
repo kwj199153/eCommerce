@@ -1,12 +1,25 @@
 <template>
-  <div class="mi-config" :class="{ 'data-mode': isDataMode }">
+  <div
+    class="mi-config"
+    :class="{ 'data-mode': isDataMode }"
+  >
     <!-- ====== 全局状态条：加载中 / 取数失败 ======
          真源诚实：演示账号看 mock 快照、真实账号无数据时显式空态 fail-closed（不编假大盘）。
          第 314 轮：取消「演示数据」黄条（白占热力图一整行）——
          标注并未丢失，改由 KPI「数据真源」项黄字 + title 完整说明承载。 -->
-    <div v-if="banner" class="mi-banner" :class="banner.kind">
+    <div
+      v-if="banner"
+      class="mi-banner"
+      :class="banner.kind"
+    >
       <span class="mi-banner-text">{{ banner.text }}</span>
-      <button v-if="banner.retry" class="mi-retry" @click="reload">重试</button>
+      <button
+        v-if="banner.retry"
+        class="mi-retry"
+        @click="reload"
+      >
+        重试
+      </button>
     </div>
 
     <!-- ====== KPI 概览（类目数 / 覆盖站点 / 数据真源） ======
@@ -14,11 +27,17 @@
          原竖向大卡一张近百像素、内容只有一行，白吃掉热力图的垂直空间。
          完整文案挂 title：「数据真源」项仍以黄字标注演示数据，语义不丢。 -->
     <div class="kpi-grid">
-      <div class="kpi-card" title="覆盖类目数">
+      <div
+        class="kpi-card"
+        title="覆盖类目数"
+      >
         <span class="kpi-label">覆盖类目</span>
         <span class="kpi-value">{{ totalCategories }}</span>
       </div>
-      <div class="kpi-card" :title="sites.join(' / ') || '暂无覆盖站点'">
+      <div
+        class="kpi-card"
+        :title="sites.join(' / ') || '暂无覆盖站点'"
+      >
         <span class="kpi-label">覆盖站点</span>
         <span class="kpi-value soft">{{ sites.join(' / ') || '—' }}</span>
       </div>
@@ -27,7 +46,10 @@
         :title="degraded ? '当前为演示 mock 数据，非真实第三方市场数据，仅用于功能演示。' : sourceLabel"
       >
         <span class="kpi-label">数据真源</span>
-        <span class="kpi-value" :class="degraded ? 'warning' : 'success'">
+        <span
+          class="kpi-value"
+          :class="degraded ? 'warning' : 'success'"
+        >
           {{ degraded ? '演示数据' : sourceLabel }}
         </span>
       </div>
@@ -41,123 +63,219 @@
          第 314 轮：分栏下沉进 .mi-body，热力图吃满剩余宽度（原来 55%+45%+gap 溢出
          ⇒ flex-wrap 把明细踹到第二行，热力图右侧白空一半）。 -->
     <div class="mi-body">
-    <div class="mi-treemap-card">
-      <div class="card-head">
-        <span>品类大盘 · 面积=搜索热度 / 颜色=蓝海评分</span>
-        <span class="card-sub">点击色块跳蓝海挖掘并预填类目</span>
-      </div>
-
-      <div class="mi-treemap-body">
-        <!-- 空态：真实账号无数据（fail-closed，不编假数） -->
-        <div v-if="!nodes.length" class="mi-empty">
-          <span class="mi-empty-icon">🗺️</span>
-          <p class="mi-empty-title">暂无市场洞察数据</p>
-          <p class="mi-empty-sub">请先接入第三方类目数据源，或切换到演示账号查看示例。</p>
+      <div class="mi-treemap-card">
+        <div class="card-head">
+          <span>品类大盘 · 面积=搜索热度 / 颜色=蓝海评分</span>
+          <span class="card-sub">点击色块跳蓝海挖掘并预填类目</span>
         </div>
 
-        <!-- Treemap（ECharts） -->
-        <div v-else class="mi-map">
-          <EChartsTreemap
-            :cells="treemapCells"
-            title="选品市场洞察大盘"
-            @cell-click="onCellClick"
-          />
+        <div class="mi-treemap-body">
+          <!-- 空态：真实账号无数据（fail-closed，不编假数） -->
+          <div
+            v-if="!nodes.length"
+            class="mi-empty"
+          >
+            <span class="mi-empty-icon">🗺️</span>
+            <p class="mi-empty-title">
+              暂无市场洞察数据
+            </p>
+            <p class="mi-empty-sub">
+              请先接入第三方类目数据源，或切换到演示账号查看示例。
+            </p>
+          </div>
+
+          <!-- Treemap（ECharts） -->
+          <div
+            v-else
+            class="mi-map"
+          >
+            <EChartsTreemap
+              :cells="treemapCells"
+              title="选品市场洞察大盘"
+              @cell-click="onCellClick"
+            />
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- ====== 六维度明细（点选色块后展示）======
+      <!-- ====== 六维度明细（点选色块后展示）======
          大屏模式下移到右栏，与 Treemap 左右分栏；对话模式仍在 Treemap 下方。 -->
-    <div v-if="selected && !isDataMode" class="mi-detail">
-      <div class="card-head">
-        <span>📊 {{ selected.name }} · {{ selected.site }}</span>
-        <span class="card-sub">{{ selected.snapshot_date }}</span>
-      </div>
-      <div class="mi-detail-grid">
-        <div class="mi-metric">
-          <div class="mi-metric-label">蓝海评分</div>
-          <div class="mi-metric-value" :class="scoreClass(selected.blue_ocean_score)">{{ selected.blue_ocean_score }}</div>
+      <div
+        v-if="selected && !isDataMode"
+        class="mi-detail"
+      >
+        <div class="card-head">
+          <span>📊 {{ selected.name }} · {{ selected.site }}</span>
+          <span class="card-sub">{{ selected.snapshot_date }}</span>
         </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">月搜索量</div>
-          <div class="mi-metric-value">{{ fmtK(selected.search_volume) }}</div>
-        </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">搜索增长率</div>
-          <div class="mi-metric-value" :class="selected.search_growth >= 0 ? 'up' : 'down'">
-            {{ selected.search_growth >= 0 ? '+' : '' }}{{ selected.search_growth }}%
+        <div class="mi-detail-grid">
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              蓝海评分
+            </div>
+            <div
+              class="mi-metric-value"
+              :class="scoreClass(selected.blue_ocean_score)"
+            >
+              {{ selected.blue_ocean_score }}
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              月搜索量
+            </div>
+            <div class="mi-metric-value">
+              {{ fmtK(selected.search_volume) }}
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              搜索增长率
+            </div>
+            <div
+              class="mi-metric-value"
+              :class="selected.search_growth >= 0 ? 'up' : 'down'"
+            >
+              {{ selected.search_growth >= 0 ? '+' : '' }}{{ selected.search_growth }}%
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              价格带
+            </div>
+            <div class="mi-metric-value soft">
+              ${{ selected.price_min }} ~ ${{ selected.price_max }}
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              卖家数
+            </div>
+            <div class="mi-metric-value soft">
+              {{ fmtK(selected.seller_count) }}
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              新卖家(近3月)
+            </div>
+            <div class="mi-metric-value soft">
+              {{ fmtK(selected.new_seller_count) }}
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              在售 ASIN
+            </div>
+            <div class="mi-metric-value soft">
+              {{ fmtK(selected.listing_count) }}
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              价格趋势
+            </div>
+            <div class="mi-metric-value soft">
+              {{ trendLabel(selected.price_trend) }}
+            </div>
           </div>
         </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">价格带</div>
-          <div class="mi-metric-value soft">${{ selected.price_min }} ~ ${{ selected.price_max }}</div>
-        </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">卖家数</div>
-          <div class="mi-metric-value soft">{{ fmtK(selected.seller_count) }}</div>
-        </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">新卖家(近3月)</div>
-          <div class="mi-metric-value soft">{{ fmtK(selected.new_seller_count) }}</div>
-        </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">在售 ASIN</div>
-          <div class="mi-metric-value soft">{{ fmtK(selected.listing_count) }}</div>
-        </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">价格趋势</div>
-          <div class="mi-metric-value soft">{{ trendLabel(selected.price_trend) }}</div>
-        </div>
       </div>
-    </div>
 
-    <!-- 大屏模式：右栏六维度明细（与 Treemap 左右分栏，点色块联动更新） -->
-    <div v-else-if="isDataMode" class="mi-detail mi-detail--split">
-      <div class="card-head">
-        <span>📊 {{ selected ? selected.name + ' · ' + selected.site : '六维度明细' }}</span>
-        <span class="card-sub">{{ selected ? selected.snapshot_date : '点击左侧色块查看详情' }}</span>
-      </div>
-      <div v-if="selected" class="mi-detail-grid">
-        <div class="mi-metric">
-          <div class="mi-metric-label">蓝海评分</div>
-          <div class="mi-metric-value" :class="scoreClass(selected.blue_ocean_score)">{{ selected.blue_ocean_score }}</div>
+      <!-- 大屏模式：右栏六维度明细（与 Treemap 左右分栏，点色块联动更新） -->
+      <div
+        v-else-if="isDataMode"
+        class="mi-detail mi-detail--split"
+      >
+        <div class="card-head">
+          <span>📊 {{ selected ? selected.name + ' · ' + selected.site : '六维度明细' }}</span>
+          <span class="card-sub">{{ selected ? selected.snapshot_date : '点击左侧色块查看详情' }}</span>
         </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">月搜索量</div>
-          <div class="mi-metric-value">{{ fmtK(selected.search_volume) }}</div>
-        </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">搜索增长率</div>
-          <div class="mi-metric-value" :class="selected.search_growth >= 0 ? 'up' : 'down'">
-            {{ selected.search_growth >= 0 ? '+' : '' }}{{ selected.search_growth }}%
+        <div
+          v-if="selected"
+          class="mi-detail-grid"
+        >
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              蓝海评分
+            </div>
+            <div
+              class="mi-metric-value"
+              :class="scoreClass(selected.blue_ocean_score)"
+            >
+              {{ selected.blue_ocean_score }}
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              月搜索量
+            </div>
+            <div class="mi-metric-value">
+              {{ fmtK(selected.search_volume) }}
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              搜索增长率
+            </div>
+            <div
+              class="mi-metric-value"
+              :class="selected.search_growth >= 0 ? 'up' : 'down'"
+            >
+              {{ selected.search_growth >= 0 ? '+' : '' }}{{ selected.search_growth }}%
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              价格带
+            </div>
+            <div class="mi-metric-value soft">
+              ${{ selected.price_min }} ~ ${{ selected.price_max }}
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              卖家数
+            </div>
+            <div class="mi-metric-value soft">
+              {{ fmtK(selected.seller_count) }}
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              新卖家(近3月)
+            </div>
+            <div class="mi-metric-value soft">
+              {{ fmtK(selected.new_seller_count) }}
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              在售 ASIN
+            </div>
+            <div class="mi-metric-value soft">
+              {{ fmtK(selected.listing_count) }}
+            </div>
+          </div>
+          <div class="mi-metric">
+            <div class="mi-metric-label">
+              价格趋势
+            </div>
+            <div class="mi-metric-value soft">
+              {{ trendLabel(selected.price_trend) }}
+            </div>
           </div>
         </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">价格带</div>
-          <div class="mi-metric-value soft">${{ selected.price_min }} ~ ${{ selected.price_max }}</div>
-        </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">卖家数</div>
-          <div class="mi-metric-value soft">{{ fmtK(selected.seller_count) }}</div>
-        </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">新卖家(近3月)</div>
-          <div class="mi-metric-value soft">{{ fmtK(selected.new_seller_count) }}</div>
-        </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">在售 ASIN</div>
-          <div class="mi-metric-value soft">{{ fmtK(selected.listing_count) }}</div>
-        </div>
-        <div class="mi-metric">
-          <div class="mi-metric-label">价格趋势</div>
-          <div class="mi-metric-value soft">{{ trendLabel(selected.price_trend) }}</div>
+        <div
+          v-else
+          class="mi-empty"
+        >
+          <span class="mi-empty-icon">📊</span>
+          <p class="mi-empty-sub">
+            点击左侧品类色块，右侧展示该品类的六维度明细。
+          </p>
         </div>
       </div>
-      <div v-else class="mi-empty">
-        <span class="mi-empty-icon">📊</span>
-        <p class="mi-empty-sub">点击左侧品类色块，右侧展示该品类的六维度明细。</p>
-      </div>
-    </div>
     </div>
   </div>
 </template>

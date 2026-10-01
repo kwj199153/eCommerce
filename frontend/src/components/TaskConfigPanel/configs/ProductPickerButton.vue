@@ -3,7 +3,7 @@
     v-model:open="popoverVisible"
     trigger="click"
     placement="bottomRight"
-    :overlayStyle="{ width: '360px', maxHeight: '440px' }"
+    :overlay-style="{ width: '360px', maxHeight: '440px' }"
   >
     <template #content>
       <div class="product-picker">
@@ -15,11 +15,16 @@
           allow-clear
           style="margin-bottom: var(--space-8)"
         >
-          <template #prefix><SearchOutlined style="color: #bfbfbf" /></template>
+          <template #prefix>
+            <SearchOutlined style="color: #bfbfbf" />
+          </template>
         </a-input>
 
         <!-- 分组过滤 chips -->
-        <div v-if="library.groups.length > 0" class="group-chips">
+        <div
+          v-if="library.groups.length > 0"
+          class="group-chips"
+        >
           <span
             class="group-chip"
             :class="{ active: !activeGroupId }"
@@ -34,7 +39,10 @@
             :class="{ active: activeGroupId === g.id }"
             @click="activeGroupId = g.id"
           >
-            <span class="group-color-dot" :style="{ background: g.color }"></span>
+            <span
+              class="group-color-dot"
+              :style="{ background: g.color }"
+            />
             {{ g.name }} ({{ library.groupProductCount[g.id] || 0 }})
           </span>
         </div>
@@ -53,21 +61,39 @@
                 <a-popover
                   v-if="p.main_image"
                   placement="right"
-                  :mouseEnterDelay="0.3"
-                  overlayClassName="product-thumb-popover"
+                  :mouse-enter-delay="0.3"
+                  overlay-class-name="product-thumb-popover"
                 >
                   <template #content>
-                    <img :src="p.main_image" alt="" class="item-thumb-large" />
+                    <img
+                      :src="p.main_image"
+                      alt=""
+                      class="item-thumb-large"
+                    >
                   </template>
-                  <img class="item-thumb" :src="p.main_image" alt="" loading="lazy" @error="onImgError" @click.stop />
+                  <img
+                    class="item-thumb"
+                    :src="p.main_image"
+                    alt=""
+                    loading="lazy"
+                    @error="onImgError"
+                    @click.stop
+                  >
                 </a-popover>
-                <span class="item-thumb-ph" v-else>🖼️</span>
+                <span
+                  v-else
+                  class="item-thumb-ph"
+                >🖼️</span>
                 <span class="item-title">{{ p.title }}</span>
                 <span class="item-price">${{ p.price }}</span>
               </div>
               <div class="item-meta">
                 <span class="item-asin">{{ p.asin }}</span>
-                <CheckCircleFilled v-if="isSelected(p)" class="item-check" style="color: var(--primary); font-size: 12px" />
+                <CheckCircleFilled
+                  v-if="isSelected(p)"
+                  class="item-check"
+                  style="color: var(--primary); font-size: 12px"
+                />
               </div>
             </div>
           </template>
@@ -78,7 +104,10 @@
               class="group-section"
             >
               <div class="group-section-header">
-                <span class="group-color-dot" :style="{ background: g.color }"></span>
+                <span
+                  class="group-color-dot"
+                  :style="{ background: g.color }"
+                />
                 <span class="group-section-name">{{ g.name }}</span>
                 <span class="group-section-count">{{ library.groupProductCount[g.id] || 0 }} 个</span>
               </div>
@@ -93,25 +122,45 @@
                   <a-popover
                     v-if="p.main_image"
                     placement="right"
-                    :mouseEnterDelay="0.3"
-                    overlayClassName="product-thumb-popover"
+                    :mouse-enter-delay="0.3"
+                    overlay-class-name="product-thumb-popover"
                   >
                     <template #content>
-                      <img :src="p.main_image" alt="" class="item-thumb-large" />
+                      <img
+                        :src="p.main_image"
+                        alt=""
+                        class="item-thumb-large"
+                      >
                     </template>
-                    <img class="item-thumb" :src="p.main_image" alt="" loading="lazy" @error="onImgError" />
+                    <img
+                      class="item-thumb"
+                      :src="p.main_image"
+                      alt=""
+                      loading="lazy"
+                      @error="onImgError"
+                    >
                   </a-popover>
-                  <span class="item-thumb-ph" v-else>🖼️</span>
+                  <span
+                    v-else
+                    class="item-thumb-ph"
+                  >🖼️</span>
                   <span class="item-title">{{ p.title }}</span>
                   <span class="item-price">${{ p.price }}</span>
                 </div>
                 <div class="item-meta">
                   <span class="item-asin">{{ p.asin }}</span>
-                  <CheckCircleFilled v-if="isSelected(p)" class="item-check" style="color: var(--primary); font-size: 12px" />
+                  <CheckCircleFilled
+                    v-if="isSelected(p)"
+                    class="item-check"
+                    style="color: var(--primary); font-size: 12px"
+                  />
                 </div>
               </div>
             </div>
-            <div v-if="ungroupedProducts.length > 0" class="group-section">
+            <div
+              v-if="ungroupedProducts.length > 0"
+              class="group-section"
+            >
               <div class="group-section-header">
                 <FolderOpenOutlined style="color: #bfbfbf" />
                 <span class="group-section-name">未分组</span>
@@ -128,26 +177,46 @@
                   <a-popover
                     v-if="p.main_image"
                     placement="right"
-                    :mouseEnterDelay="0.3"
-                    overlayClassName="product-thumb-popover"
+                    :mouse-enter-delay="0.3"
+                    overlay-class-name="product-thumb-popover"
                   >
                     <template #content>
-                      <img :src="p.main_image" alt="" class="item-thumb-large" />
+                      <img
+                        :src="p.main_image"
+                        alt=""
+                        class="item-thumb-large"
+                      >
                     </template>
-                    <img class="item-thumb" :src="p.main_image" alt="" loading="lazy" @error="onImgError" />
+                    <img
+                      class="item-thumb"
+                      :src="p.main_image"
+                      alt=""
+                      loading="lazy"
+                      @error="onImgError"
+                    >
                   </a-popover>
-                  <span class="item-thumb-ph" v-else>🖼️</span>
+                  <span
+                    v-else
+                    class="item-thumb-ph"
+                  >🖼️</span>
                   <span class="item-title">{{ p.title }}</span>
                   <span class="item-price">${{ p.price }}</span>
                 </div>
                 <div class="item-meta">
                   <span class="item-asin">{{ p.asin }}</span>
-                  <CheckCircleFilled v-if="isSelected(p)" class="item-check" style="color: var(--primary); font-size: 12px" />
+                  <CheckCircleFilled
+                    v-if="isSelected(p)"
+                    class="item-check"
+                    style="color: var(--primary); font-size: 12px"
+                  />
                 </div>
               </div>
             </div>
           </template>
-          <div v-if="displayedProducts.length === 0 && ungroupedProducts.length === 0" class="empty-hint">
+          <div
+            v-if="displayedProducts.length === 0 && ungroupedProducts.length === 0"
+            class="empty-hint"
+          >
             无匹配商品
           </div>
         </div>
@@ -161,7 +230,10 @@
       :title="modelValue ? `已选: ${modelValue.title?.slice(0, 20)}` : '从产品库选择'"
     >
       <FolderOpenOutlined />
-      <span v-if="showLabel" class="btn-label">选择</span>
+      <span
+        v-if="showLabel"
+        class="btn-label"
+      >选择</span>
     </a-button>
   </a-popover>
 </template>

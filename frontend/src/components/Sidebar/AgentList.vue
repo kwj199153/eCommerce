@@ -1,10 +1,15 @@
 <template>
-  <div class="agent-list" data-tour="tour-agent-list">
-    <div class="sidebar-section-title">Agent 群</div>
+  <div
+    class="agent-list"
+    data-tour="tour-agent-list"
+  >
+    <div class="sidebar-section-title">
+      Agent 群
+    </div>
     <a-menu
       class="sidebar-nav-menu"
       mode="inline"
-      :selectedKeys="[currentAgentId]"
+      :selected-keys="[currentAgentId]"
       @click="handleSelectAgent"
     >
       <a-menu-item

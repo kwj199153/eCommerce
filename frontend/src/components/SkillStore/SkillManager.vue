@@ -9,17 +9,28 @@
         </h2>
         <p class="sm-sub">
           技能在这里<b>集中维护</b>、<b>按需勾选启用</b>（模型每轮只见「技能目录」，需要时才加载正文）。
-          <br />
+          <br>
           ★ <b>有取舍、需人判 → 技能</b>
         </p>
       </div>
       <div class="sm-head-actions">
-        <a-button :loading="store.loading" @click="refresh">
-          <template #icon><ReloadOutlined /></template>
+        <a-button
+          :loading="store.loading"
+          @click="refresh"
+        >
+          <template #icon>
+            <ReloadOutlined />
+          </template>
           刷新
         </a-button>
-        <a-button type="primary" :disabled="!canWrite" @click="openCreate">
-          <template #icon><PlusOutlined /></template>
+        <a-button
+          type="primary"
+          :disabled="!canWrite"
+          @click="openCreate"
+        >
+          <template #icon>
+            <PlusOutlined />
+          </template>
           新建技能
         </a-button>
       </div>
@@ -54,7 +65,10 @@
       @close="store.clearError()"
     />
 
-    <a-tabs v-model:activeKey="tab" class="sm-tabs">
+    <a-tabs
+      v-model:active-key="tab"
+      class="sm-tabs"
+    >
       <!-- ============ Tab 1：技能仓库（全局管理） ============ -->
       <!-- ★ 第 209 轮：本 tab 由「技能仓库」改名为「技能管理」——
            因为「工具仓库」已经升为**平级的独立入口**，
@@ -67,7 +81,10 @@
            叫「快捷卡片管理」才和「这条技能要不要在对话框下面给一张卡」对得上。
            ⚠️ tab **key 仍是 `repo`**（不改 key：`check-skill-view-parity.cjs`
            等多处按 `key` 切片，改 key 属于无收益的破坏性重命名）。 -->
-      <a-tab-pane key="repo" tab="快捷卡片管理">
+      <a-tab-pane
+        key="repo"
+        tab="快捷卡片管理"
+      >
         <a-spin :spinning="store.loading">
           <a-empty
             v-if="!store.items.length"
@@ -117,62 +134,91 @@
                    的第二行），改为挂在「重置筛选」按钮上 —— 一个控件同时
                    承担「告知」与「一键清除」。 -->
             <div class="sm-filters">
-                <a-input-search
-                  v-model:value="store.searchQuery"
-                  placeholder="搜索技能标识 / 展示名 / 描述"
-                  style="width: 240px"
-                  allow-clear
-                >
-                  <template #prefix><SearchOutlined /></template>
-                </a-input-search>
+              <a-input-search
+                v-model:value="store.searchQuery"
+                placeholder="搜索技能标识 / 展示名 / 描述"
+                style="width: 240px"
+                allow-clear
+              >
+                <template #prefix>
+                  <SearchOutlined />
+                </template>
+              </a-input-search>
 
-                <a-select
-                  v-model:value="store.filterAgent"
-                  style="width: 150px"
-                  placeholder="全部 Agent"
-                  allow-clear
+              <a-select
+                v-model:value="store.filterAgent"
+                style="width: 150px"
+                placeholder="全部 Agent"
+                allow-clear
+              >
+                <a-select-option
+                  v-for="a in store.agents"
+                  :key="a.name"
+                  :value="a.name"
                 >
-                  <a-select-option v-for="a in store.agents" :key="a.name" :value="a.name">
-                    {{ a.title }}
-                  </a-select-option>
-                </a-select>
+                  {{ a.title }}
+                </a-select-option>
+              </a-select>
 
-                <a-select
-                  v-model:value="store.filterKind"
-                  style="width: 132px"
-                  placeholder="全部类型"
-                  allow-clear
-                >
-                  <a-select-option value="prompt">纯提示词技能</a-select-option>
-                  <a-select-option value="tool">绑定工具技能</a-select-option>
-                </a-select>
+              <a-select
+                v-model:value="store.filterKind"
+                style="width: 132px"
+                placeholder="全部类型"
+                allow-clear
+              >
+                <a-select-option value="prompt">
+                  纯提示词技能
+                </a-select-option>
+                <a-select-option value="tool">
+                  绑定工具技能
+                </a-select-option>
+              </a-select>
 
-                <a-select
-                  v-model:value="store.filterStatus"
-                  style="width: 118px"
-                  placeholder="全部状态"
-                  allow-clear
-                >
-                  <a-select-option value="enabled">已启用</a-select-option>
-                  <a-select-option value="disabled">已停用</a-select-option>
-                  <a-select-option value="demo">演示</a-select-option>
-                </a-select>
+              <a-select
+                v-model:value="store.filterStatus"
+                style="width: 118px"
+                placeholder="全部状态"
+                allow-clear
+              >
+                <a-select-option value="enabled">
+                  已启用
+                </a-select-option>
+                <a-select-option value="disabled">
+                  已停用
+                </a-select-option>
+                <a-select-option value="demo">
+                  演示
+                </a-select-option>
+              </a-select>
 
-                <a-select v-model:value="store.sortBy" style="width: 146px">
-                  <a-select-option value="updated_at">最近更新</a-select-option>
-                  <a-select-option value="name">名称 A→Z</a-select-option>
-                  <a-select-option value="version">版本号（高→低）</a-select-option>
-                </a-select>
-                <a-checkbox v-model:checked="store.onlyFavorites">仅看收藏 ⭐</a-checkbox>
-                <a-checkbox v-model:checked="store.groupByAgent">按 Agent 分组</a-checkbox>
-                <a-button
-                  size="small"
-                  :disabled="!store.activeFilterCount"
-                  @click="store.resetFilters()"
-                >
-                  <ReloadOutlined v-if="store.activeFilterCount" />
-                  重置筛选<span v-if="store.activeFilterCount"> ({{ store.activeFilterCount }})</span>
-                </a-button>
+              <a-select
+                v-model:value="store.sortBy"
+                style="width: 146px"
+              >
+                <a-select-option value="updated_at">
+                  最近更新
+                </a-select-option>
+                <a-select-option value="name">
+                  名称 A→Z
+                </a-select-option>
+                <a-select-option value="version">
+                  版本号（高→低）
+                </a-select-option>
+              </a-select>
+              <a-checkbox v-model:checked="store.onlyFavorites">
+                仅看收藏 ⭐
+              </a-checkbox>
+              <a-checkbox v-model:checked="store.groupByAgent">
+                按 Agent 分组
+              </a-checkbox>
+              <a-button
+                size="small"
+                :disabled="!store.activeFilterCount"
+                @click="store.resetFilters()"
+              >
+                <ReloadOutlined v-if="store.activeFilterCount" />
+                重置筛选<span v-if="store.activeFilterCount"> ({{ store.activeFilterCount }})</span>
+              </a-button>
             </div>
 
             <div class="sm-toolbar">
@@ -182,8 +228,12 @@
                 button-style="solid"
                 class="sm-view-switch"
               >
-                <a-radio-button value="grid"><AppstoreOutlined /> 平铺</a-radio-button>
-                <a-radio-button value="list"><UnorderedListOutlined /> 列表</a-radio-button>
+                <a-radio-button value="grid">
+                  <AppstoreOutlined /> 平铺
+                </a-radio-button>
+                <a-radio-button value="list">
+                  <UnorderedListOutlined /> 列表
+                </a-radio-button>
               </a-radio-group>
               <span class="sm-count">
                 显示 {{ store.filteredItems.length }} / {{ store.items.length }} 个技能
@@ -212,10 +262,20 @@
                  ★ 上方工具栏（平铺/列表 + 「显示 0 / N 个技能」）与筛选栏都**常驻**，
                    所以筛空时用户看到的是「显示 0 / 22」+ 可点的重置按钮，
                    而不是一页空白。 -->
-            <div v-if="store.filteredItems.length" class="sm-groups">
-              <template v-for="g in store.groupedItems" :key="g.key">
+            <div
+              v-if="store.filteredItems.length"
+              class="sm-groups"
+            >
+              <template
+                v-for="g in store.groupedItems"
+                :key="g.key"
+              >
                 <div class="sm-group">
-                  <div v-if="g.title" class="sm-group-head" @click="store.toggleGroup(g.key)">
+                  <div
+                    v-if="g.title"
+                    class="sm-group-head"
+                    @click="store.toggleGroup(g.key)"
+                  >
                     <span class="sm-group-caret">{{ store.collapsedGroups[g.key] ? '▸' : '▾' }}</span>
                     <span class="sm-group-title">{{ g.title }}</span>
                     <span class="sm-group-count">（{{ g.items.length }} 个技能）</span>
@@ -223,8 +283,15 @@
 
                   <template v-if="!g.title || !store.collapsedGroups[g.key]">
                     <!-- ---------- 平铺（卡片网格） ---------- -->
-                    <div v-if="repoView === 'grid'" class="sm-grid">
-                      <div v-for="skill in g.items" :key="skill.id" class="sm-card">
+                    <div
+                      v-if="repoView === 'grid'"
+                      class="sm-grid"
+                    >
+                      <div
+                        v-for="skill in g.items"
+                        :key="skill.id"
+                        class="sm-card"
+                      >
                         <!-- ① 星标 + 展示名（大号） -->
                         <div class="sm-card-top">
                           <button
@@ -240,7 +307,10 @@
                         </div>
 
                         <!-- ② 技能标识（小字，模型调 load_skill 用的名字） -->
-                        <div class="sm-card-name" :title="`模型调用 load_skill 时使用的名字：${skill.name}`">
+                        <div
+                          class="sm-card-name"
+                          :title="`模型调用 load_skill 时使用的名字：${skill.name}`"
+                        >
                           {{ skill.name }}
                         </div>
 
@@ -250,25 +320,50 @@
                                "这个技能对谁生效、带哪些工具"）。 -->
                         <div class="sm-chips">
                           <span class="sm-chip sm-chip-ver">v{{ skill.version }}</span>
-                          <span v-if="skill.isDemo" class="sm-chip sm-chip-demo">演示</span>
-                          <span v-if="!skill.enabled" class="sm-chip sm-chip-off">已停用</span>
-                          <span v-else-if="skill.visibility === 'private'" class="sm-chip sm-chip-priv">私有</span>
+                          <span
+                            v-if="skill.isDemo"
+                            class="sm-chip sm-chip-demo"
+                          >演示</span>
+                          <span
+                            v-if="!skill.enabled"
+                            class="sm-chip sm-chip-off"
+                          >已停用</span>
+                          <span
+                            v-else-if="skill.visibility === 'private'"
+                            class="sm-chip sm-chip-priv"
+                          >私有</span>
                           <span class="sm-chip">{{ skill.tools.length ? '工具技能' : '纯提示词' }}</span>
                           <span class="sm-chip sm-chip-agents">启用于：{{ skill.enabledAgents.map((a: string) => store.titleOfAgent(a)).join('、') || '未分配' }}</span>
-                          <span v-if="skill.isShortcut === false" class="sm-chip sm-chip-no-card" title="对话页不给它快捷卡片（它仍照常生效：Agent 会在需要时自行加载完整步骤，也能被别的技能正文引用）">不设卡片</span>
+                          <span
+                            v-if="skill.isShortcut === false"
+                            class="sm-chip sm-chip-no-card"
+                            title="对话页不给它快捷卡片（它仍照常生效：Agent 会在需要时自行加载完整步骤，也能被别的技能正文引用）"
+                          >不设卡片</span>
                           <span class="sm-chip sm-chip-tools">配套工具：{{ skill.tools.map((t: string) => store.titleOfTool(t) + (store.isApprovalTool(t) ? '·需审批' : '')).join('、') || '无' }}</span>
                         </div>
 
                         <!-- ④ 描述：默认只露 2 行，悬停看全文 —— 卡片拥挤的最大元凶就是这个 -->
-                        <p class="sm-card-desc" :title="skill.description || undefined">
+                        <p
+                          class="sm-card-desc"
+                          :title="skill.description || undefined"
+                        >
                           {{ skill.description || '（未填描述 —— 模型只能靠它判断要不要加载，建议补上）' }}
                         </p>
 
                         <div class="sm-card-actions">
-                          <a-button size="small" :disabled="!canWrite" @click="openEdit(skill)">
+                          <a-button
+                            size="small"
+                            :disabled="!canWrite"
+                            @click="openEdit(skill)"
+                          >
                             编辑
                           </a-button>
-                          <a-button size="small" @click="openRevisions(skill)">版本</a-button>
+                          <a-button
+                            size="small"
+                            @click="openRevisions(skill)"
+                          >
+                            版本
+                          </a-button>
                           <a-popconfirm
                             title="删除该技能？它的版本历史会一并删除，不可恢复。"
                             ok-text="删除"
@@ -276,15 +371,28 @@
                             :disabled="!canWrite"
                             @confirm="removeSkill(skill)"
                           >
-                            <a-button size="small" danger :disabled="!canWrite">删除</a-button>
+                            <a-button
+                              size="small"
+                              danger
+                              :disabled="!canWrite"
+                            >
+                              删除
+                            </a-button>
                           </a-popconfirm>
                         </div>
                       </div>
                     </div>
 
                     <!-- ---------- 列表（一行一项，密度优先） ---------- -->
-                    <div v-else class="sm-list">
-                      <div v-for="skill in g.items" :key="skill.id" class="sm-row">
+                    <div
+                      v-else
+                      class="sm-list"
+                    >
+                      <div
+                        v-for="skill in g.items"
+                        :key="skill.id"
+                        class="sm-row"
+                      >
                         <button
                           class="sm-star"
                           :class="{ 'is-on': skill.favorited }"
@@ -298,27 +406,57 @@
                         <div class="sm-row-main">
                           <div class="sm-row-top">
                             <span class="sm-row-title">{{ skill.title || skill.name }}</span>
-                            <span class="sm-row-slug" :title="`模型调用 load_skill 时使用的名字：${skill.name}`">{{ skill.name }}</span>
+                            <span
+                              class="sm-row-slug"
+                              :title="`模型调用 load_skill 时使用的名字：${skill.name}`"
+                            >{{ skill.name }}</span>
                           </div>
-                          <p class="sm-row-desc" :title="skill.description || undefined">
+                          <p
+                            class="sm-row-desc"
+                            :title="skill.description || undefined"
+                          >
                             {{ skill.description || '（未填描述 —— 模型只能靠它判断要不要加载，建议补上）' }}
                           </p>
                         </div>
 
                         <div class="sm-row-chips">
                           <span class="sm-chip sm-chip-ver">v{{ skill.version }}</span>
-                          <span v-if="skill.isDemo" class="sm-chip sm-chip-demo">演示</span>
-                          <span v-if="!skill.enabled" class="sm-chip sm-chip-off">已停用</span>
-                          <span v-else-if="skill.visibility === 'private'" class="sm-chip sm-chip-priv">私有</span>
+                          <span
+                            v-if="skill.isDemo"
+                            class="sm-chip sm-chip-demo"
+                          >演示</span>
+                          <span
+                            v-if="!skill.enabled"
+                            class="sm-chip sm-chip-off"
+                          >已停用</span>
+                          <span
+                            v-else-if="skill.visibility === 'private'"
+                            class="sm-chip sm-chip-priv"
+                          >私有</span>
                           <span class="sm-chip">{{ skill.tools.length ? '工具技能' : '纯提示词' }}</span>
                           <span class="sm-chip sm-chip-agents">启用于：{{ skill.enabledAgents.map((a: string) => store.titleOfAgent(a)).join('、') || '未分配' }}</span>
-                          <span v-if="skill.isShortcut === false" class="sm-chip sm-chip-no-card" title="对话页不给它快捷卡片（它仍照常生效：Agent 会在需要时自行加载完整步骤，也能被别的技能正文引用）">不设卡片</span>
+                          <span
+                            v-if="skill.isShortcut === false"
+                            class="sm-chip sm-chip-no-card"
+                            title="对话页不给它快捷卡片（它仍照常生效：Agent 会在需要时自行加载完整步骤，也能被别的技能正文引用）"
+                          >不设卡片</span>
                           <span class="sm-chip sm-chip-tools">配套工具：{{ skill.tools.map((t: string) => store.titleOfTool(t) + (store.isApprovalTool(t) ? '·需审批' : '')).join('、') || '无' }}</span>
                         </div>
 
                         <div class="sm-row-actions">
-                          <a-button size="small" :disabled="!canWrite" @click="openEdit(skill)">编辑</a-button>
-                          <a-button size="small" @click="openRevisions(skill)">版本</a-button>
+                          <a-button
+                            size="small"
+                            :disabled="!canWrite"
+                            @click="openEdit(skill)"
+                          >
+                            编辑
+                          </a-button>
+                          <a-button
+                            size="small"
+                            @click="openRevisions(skill)"
+                          >
+                            版本
+                          </a-button>
                           <a-popconfirm
                             title="删除该技能？它的版本历史会一并删除，不可恢复。"
                             ok-text="删除"
@@ -326,7 +464,13 @@
                             :disabled="!canWrite"
                             @confirm="removeSkill(skill)"
                           >
-                            <a-button size="small" danger :disabled="!canWrite">删除</a-button>
+                            <a-button
+                              size="small"
+                              danger
+                              :disabled="!canWrite"
+                            >
+                              删除
+                            </a-button>
                           </a-popconfirm>
                         </div>
                       </div>
@@ -339,30 +483,51 @@
         </a-spin>
       </a-tab-pane>
       <!-- ============ Tab 2：Agent 装配（「Agent 内勾选启用」） ============ -->
-      <a-tab-pane key="wiring" tab="Agent 装配">
+      <a-tab-pane
+        key="wiring"
+        tab="Agent 装配"
+      >
         <p class="sm-tip">
           勾选即生效：这里改的是「该技能对哪些 Agent 生效」。
           未启用的技能对那个 Agent <b>不可见也不可加载</b>（模型连名字都看不到）。
         </p>
         <a-spin :spinning="store.loading">
-          <a-empty v-if="!store.agents.length" description="Agent 目录加载失败或为空" />
-          <div v-else class="sm-agents">
-            <div v-for="agent in store.agents" :key="agent.name" class="sm-agent-card">
+          <a-empty
+            v-if="!store.agents.length"
+            description="Agent 目录加载失败或为空"
+          />
+          <div
+            v-else
+            class="sm-agents"
+          >
+            <div
+              v-for="agent in store.agents"
+              :key="agent.name"
+              class="sm-agent-card"
+            >
               <div class="sm-agent-head">
                 <span class="sm-agent-title">{{ agent.title }}</span>
                 <span class="sm-agent-key">{{ agent.name }}</span>
-                <a-tag class="sm-tag" color="green">
+                <a-tag
+                  class="sm-tag"
+                  color="green"
+                >
                   已启用 {{ store.skillsOfAgent(agent.name).length }} 个技能
                 </a-tag>
               </div>
-              <p class="sm-agent-desc">{{ agent.description }}</p>
+              <p class="sm-agent-desc">
+                {{ agent.description }}
+              </p>
 
               <a-empty
                 v-if="!store.items.length"
                 :image="simpleImage"
                 description="还没有技能可分配"
               />
-              <div v-else class="sm-agent-skills">
+              <div
+                v-else
+                class="sm-agent-skills"
+              >
                 <a-checkbox
                   v-for="skill in store.items"
                   :key="skill.id"
@@ -371,14 +536,16 @@
                   @change="(e: any) => toggleForAgent(skill, agent.name, e.target.checked)"
                 >
                   <span class="sm-ck-label">{{ skill.title || skill.name }}</span>
-                  <span v-if="!skill.enabled" class="sm-muted">（该技能已停用）</span>
+                  <span
+                    v-if="!skill.enabled"
+                    class="sm-muted"
+                  >（该技能已停用）</span>
                 </a-checkbox>
               </div>
             </div>
           </div>
         </a-spin>
       </a-tab-pane>
-
     </a-tabs>
 
     <!-- ============ 编辑抽屉 ============ -->
@@ -390,7 +557,10 @@
       :mask-closable="false"
     >
       <a-form layout="vertical">
-        <a-form-item label="技能标识（name）" required>
+        <a-form-item
+          label="技能标识（name）"
+          required
+        >
           <a-input
             v-model:value="form.name"
             placeholder="kebab-case，如 price-drop-triage"
@@ -402,10 +572,16 @@
         </a-form-item>
 
         <a-form-item label="展示名（title）">
-          <a-input v-model:value="form.title" placeholder="中文名，如「竞品降价研判」" />
+          <a-input
+            v-model:value="form.title"
+            placeholder="中文名，如「竞品降价研判」"
+          />
         </a-form-item>
 
-        <a-form-item label="描述（description）" required>
+        <a-form-item
+          label="描述（description）"
+          required
+        >
           <a-textarea
             v-model:value="form.description"
             :rows="3"
@@ -425,7 +601,11 @@
           <template #label>
             <span style="display: inline-flex; align-items: center; gap: var(--space-6)">
               技能正文（content）
-              <PromptEnhanceButton v-model="form.content" context="skill-authoring" size="sm" />
+              <PromptEnhanceButton
+                v-model="form.content"
+                context="skill-authoring"
+                size="sm"
+              />
             </span>
           </template>
           <a-textarea
@@ -442,14 +622,21 @@
         <a-row :gutter="12">
           <a-col :span="12">
             <a-form-item label="版本号">
-              <a-input v-model:value="form.version" placeholder="留空则自动 +1（改正文时）" />
+              <a-input
+                v-model:value="form.version"
+                placeholder="留空则自动 +1（改正文时）"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="可见范围（权限）">
               <a-radio-group v-model:value="form.visibility">
-                <a-radio value="account">账号内共享</a-radio>
-                <a-radio value="private">仅创建者</a-radio>
+                <a-radio value="account">
+                  账号内共享
+                </a-radio>
+                <a-radio value="private">
+                  仅创建者
+                </a-radio>
               </a-radio-group>
             </a-form-item>
           </a-col>
@@ -478,16 +665,25 @@
             加载该技能时，这份清单会随正文一起交给模型，它会
             <b>只用这些</b>工具完成技能里的步骤 ——
             这就是「工具技能」与「纯提示词技能」的唯一区别。留空 = 纯提示词技能。
-            <br />
+            <br>
             工具按 <b>Agent</b> 分组：下面「启用给哪些 Agent」勾了谁，
             这里就只列谁名下的工具。标
-            <a-tag color="orange" class="sm-inline-tag">橙</a-tag>
+            <a-tag
+              color="orange"
+              class="sm-inline-tag"
+            >
+              橙
+            </a-tag>
             的每次调用都会弹人工审批。
           </div>
         </a-form-item>
 
         <a-form-item label="状态">
-          <a-switch v-model:checked="form.enabled" checked-children="启用" un-checked-children="停用" />
+          <a-switch
+            v-model:checked="form.enabled"
+            checked-children="启用"
+            un-checked-children="停用"
+          />
           <span class="sm-help sm-help-inline">
             停用后不进任何 Agent 的技能目录（配置与历史保留）。
           </span>
@@ -499,42 +695,63 @@
                **别条技能**正文里对本技能的引用断链（周报逐字写着「表达结构
                沿用「复盘结论写法」」）⇒ 没有"零改动的正确解法"，只能拆字段。 -->
         <a-form-item label="快捷卡片">
-          <a-switch v-model:checked="form.isShortcut" checked-children="显示" un-checked-children="不显示" />
+          <a-switch
+            v-model:checked="form.isShortcut"
+            checked-children="显示"
+            un-checked-children="不显示"
+          />
           <span class="sm-help sm-help-inline">
             关掉后它<b>仍然生效</b>：照常进技能目录、可被 <code>load_skill</code> 加载、
             也能被别的技能正文引用；只是对话页不再给它一张可点的卡。
           </span>
           <div class="sm-help">
             什么时候该关 —— 两种情形（★ 第 295 轮补第 ② 种）：
-            <br />
+            <br>
             ① <b>它是「怎么写」的规矩，不是一份东西</b>。典型是「复盘结论写法」：
             周报的正文逐字声明「表达结构沿用「复盘结论写法」」，
             所以它<b>不能停用</b>；但点它拿不到成品（"写什么"得先由别的技能产出），
             所以它不该占一格卡片。
-            <br />
+            <br>
             ② <b>它已经有更合适的入口，卡片只是把同一件事再做一遍</b>。
             典型是「差评应对」：差评的取证 / 判定 / 补偿 / 处置在【差评台账】
             工作台里已是完整流程，卡片点下去只会重算一遍面板已有的东西。
             ★ 它同样<b>不能停用</b> —— 对话里的多轮追问（让它解释判定理由、
             跟买家拉锯）只有它能给，面板没有多轮。
-            <br />
+            <br>
             对照：其余 20 多条技能点下去都会给出一份东西（标题 / 清单 / 判定 /
             话术 / 简报），且没有第二个入口，那些都该保留卡片。
           </div>
         </a-form-item>
 
         <a-form-item label="启用给哪些 Agent">
-          <a-checkbox-group v-model:value="form.enabledAgents" class="sm-ck-group">
-            <a-checkbox v-for="a in store.agents" :key="a.name" :value="a.name">
+          <a-checkbox-group
+            v-model:value="form.enabledAgents"
+            class="sm-ck-group"
+          >
+            <a-checkbox
+              v-for="a in store.agents"
+              :key="a.name"
+              :value="a.name"
+            >
               {{ a.title }}
             </a-checkbox>
           </a-checkbox-group>
-          <div class="sm-help">两者是与关系：技能需「已启用」且「勾选了该 Agent」才会注入。</div>
+          <div class="sm-help">
+            两者是与关系：技能需「已启用」且「勾选了该 Agent」才会注入。
+          </div>
         </a-form-item>
       </a-form>
       <div class="sm-drawer-actions">
-        <a-button @click="editOpen = false">取消</a-button>
-        <a-button type="primary" :loading="store.saving" @click="submitEdit">保存</a-button>
+        <a-button @click="editOpen = false">
+          取消
+        </a-button>
+        <a-button
+          type="primary"
+          :loading="store.saving"
+          @click="submitEdit"
+        >
+          保存
+        </a-button>
       </div>
     </a-drawer>
 
@@ -545,7 +762,10 @@
       placement="right"
       :width="WINDOW_W.lg"
     >
-      <a-empty v-if="!store.revisions.length" description="还没有版本记录" />
+      <a-empty
+        v-if="!store.revisions.length"
+        description="还没有版本记录"
+      />
       <a-timeline v-else>
         <a-timeline-item
           v-for="rev in store.revisions"
@@ -554,11 +774,20 @@
         >
           <div class="sm-rev-head">
             <b>v{{ rev.version }}</b>
-            <a-tag class="sm-tag">{{ actionLabel(rev.action) }}</a-tag>
+            <a-tag class="sm-tag">
+              {{ actionLabel(rev.action) }}
+            </a-tag>
             <span class="sm-muted">{{ fmtTime(rev.changedAt) }}</span>
           </div>
-          <div v-if="rev.note" class="sm-rev-note">{{ rev.note }}</div>
-          <div class="sm-rev-body">{{ preview(rev.content) }}</div>
+          <div
+            v-if="rev.note"
+            class="sm-rev-note"
+          >
+            {{ rev.note }}
+          </div>
+          <div class="sm-rev-body">
+            {{ preview(rev.content) }}
+          </div>
           <a-popconfirm
             title="回滚到这一版？当前内容会被替换（历史不会丢，本次回滚也会记一条）。"
             ok-text="回滚"
@@ -566,7 +795,10 @@
             :disabled="!canWrite"
             @confirm="doRollback(rev)"
           >
-            <a-button size="small" :disabled="!canWrite || rev.id === store.revisions[0]?.id">
+            <a-button
+              size="small"
+              :disabled="!canWrite || rev.id === store.revisions[0]?.id"
+            >
               回滚到此版本
             </a-button>
           </a-popconfirm>

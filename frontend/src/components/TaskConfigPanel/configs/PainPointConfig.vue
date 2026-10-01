@@ -4,20 +4,30 @@
     <div class="form-group">
       <label>目标商品</label>
       <div class="smart-input-row">
-        <div class="smart-input-wrapper" style="flex: 1">
+        <div
+          class="smart-input-wrapper"
+          style="flex: 1"
+        >
           <a-input
             v-model:value="form.productInput"
             :placeholder="inputPlaceholder"
             size="small"
             allow-clear
-            @pressEnter="handleInputConfirm"
+            @press-enter="handleInputConfirm"
             @change="onInputChange"
           >
             <template #prefix>
               <SearchOutlined style="color: #bfbfbf" />
             </template>
-            <template v-if="detectedType" #suffix>
-              <a-tag :color="platformTagColor" size="small" style="margin-right: var(--space-4); font-size: var(--font-size-10)">
+            <template
+              v-if="detectedType"
+              #suffix
+            >
+              <a-tag
+                :color="platformTagColor"
+                size="small"
+                style="margin-right: var(--space-4); font-size: var(--font-size-10)"
+              >
                 {{ platformLabel }}
               </a-tag>
             </template>
@@ -25,8 +35,8 @@
         </div>
         <ProductPickerButton
           :model-value="selectedProduct"
-          @select="onProductSelect"
           :show-label="true"
+          @select="onProductSelect"
         />
       </div>
       <!-- 输入提示 -->
@@ -42,23 +52,47 @@
     </div>
 
     <!-- 已识别的商品信息展示 -->
-    <div v-if="detectedProduct" class="product-card">
+    <div
+      v-if="detectedProduct"
+      class="product-card"
+    >
       <div class="product-card-header">
         <ShopOutlined />
         <span class="product-card-platform">{{ detectedProduct.platform }}</span>
-        <a-button type="link" size="small" danger @click="clearProduct">清除</a-button>
+        <a-button
+          type="link"
+          size="small"
+          danger
+          @click="clearProduct"
+        >
+          清除
+        </a-button>
       </div>
       <div class="product-card-body">
-        <div class="product-card-title">{{ detectedProduct.displayId }}</div>
-        <div v-if="detectedProduct.title" class="product-card-desc">{{ detectedProduct.title }}</div>
+        <div class="product-card-title">
+          {{ detectedProduct.displayId }}
+        </div>
+        <div
+          v-if="detectedProduct.title"
+          class="product-card-desc"
+        >
+          {{ detectedProduct.title }}
+        </div>
       </div>
     </div>
 
     <div class="form-group">
       <label>分析深度</label>
-      <a-radio-group v-model:value="form.depth" size="small">
-        <a-radio-button value="quick">快速分析</a-radio-button>
-        <a-radio-button value="deep">深度分析</a-radio-button>
+      <a-radio-group
+        v-model:value="form.depth"
+        size="small"
+      >
+        <a-radio-button value="quick">
+          快速分析
+        </a-radio-button>
+        <a-radio-button value="deep">
+          深度分析
+        </a-radio-button>
       </a-radio-group>
     </div>
 
@@ -80,24 +114,43 @@
 
     <div class="form-group">
       <label>痛点分类筛选</label>
-      <a-checkbox-group v-model:value="form.categories" style="width: 100%">
+      <a-checkbox-group
+        v-model:value="form.categories"
+        style="width: 100%"
+      >
         <div class="checkbox-row">
-          <a-checkbox value="quality">产品质量</a-checkbox>
-          <a-checkbox value="function">功能体验</a-checkbox>
+          <a-checkbox value="quality">
+            产品质量
+          </a-checkbox>
+          <a-checkbox value="function">
+            功能体验
+          </a-checkbox>
         </div>
         <div class="checkbox-row">
-          <a-checkbox value="logistics">物流包装</a-checkbox>
-          <a-checkbox value="service">售后服务</a-checkbox>
+          <a-checkbox value="logistics">
+            物流包装
+          </a-checkbox>
+          <a-checkbox value="service">
+            售后服务
+          </a-checkbox>
         </div>
       </a-checkbox-group>
     </div>
 
     <!-- 操作按钮 -->
     <div class="action-bar">
-      <a-button @click="handleReset" block>
+      <a-button
+        block
+        @click="handleReset"
+      >
         <ReloadOutlined /> 重置
       </a-button>
-      <a-button type="primary" @click="handleSubmit" block :loading="loading">
+      <a-button
+        type="primary"
+        block
+        :loading="loading"
+        @click="handleSubmit"
+      >
         <SearchOutlined /> 开始分析
       </a-button>
     </div>

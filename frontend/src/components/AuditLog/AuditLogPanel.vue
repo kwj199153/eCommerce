@@ -242,7 +242,7 @@ onMounted(() => {
     placement="right"
     :width="WINDOW_W.xxl"
     :body-style="{ padding: '0' }"
-    :destroyOnClose="false"
+    :destroy-on-close="false"
     @update:open="handleOpenChange"
   >
     <div class="audit-panel">
@@ -250,7 +250,13 @@ onMounted(() => {
         <span class="audit-lead-text">
           记录关键写操作（登录 · 店铺 · 成员）。审计只增不改，没有编辑与删除入口。
         </span>
-        <a-button size="small" :loading="loading" @click="reload">刷新</a-button>
+        <a-button
+          size="small"
+          :loading="loading"
+          @click="reload"
+        >
+          刷新
+        </a-button>
       </div>
 
       <div class="audit-filters">
@@ -299,13 +305,21 @@ onMounted(() => {
           allow-clear
           @press-enter="reload"
         />
-        <a-button v-if="hasFilters()" size="small" type="link" @click="resetFilters">
+        <a-button
+          v-if="hasFilters()"
+          size="small"
+          type="link"
+          @click="resetFilters"
+        >
           重置筛选
         </a-button>
       </div>
 
       <!-- 403：单独的第三态。既不能说「加载失败」，更不能说「暂无记录」。 -->
-      <div v-if="forbidden" class="audit-blocked">
+      <div
+        v-if="forbidden"
+        class="audit-blocked"
+      >
         <a-empty description="无权访问审计日志（此功能仅平台管理员可用）" />
       </div>
 
@@ -344,13 +358,18 @@ onMounted(() => {
           </template>
 
           <template v-else-if="column.key === 'status'">
-            <a-tag :color="statusColor(record.status)">{{ statusLabel(record.status) }}</a-tag>
+            <a-tag :color="statusColor(record.status)">
+              {{ statusLabel(record.status) }}
+            </a-tag>
           </template>
 
           <template v-else-if="column.key === 'actor'">
             <div class="c-actor">
               <span class="c-actor-mail">{{ record.actor_email || '—' }}</span>
-              <a-tooltip v-if="record.actor_id" :title="record.actor_id">
+              <a-tooltip
+                v-if="record.actor_id"
+                :title="record.actor_id"
+              >
                 <span class="c-actor-id">{{ record.actor_id.slice(0, 8) }}</span>
               </a-tooltip>
             </div>
@@ -377,7 +396,10 @@ onMounted(() => {
               <span class="d-k">User-Agent</span>
               <span class="d-v">{{ record.user_agent || '—' }}</span>
             </div>
-            <div v-if="record.detail != null" class="d-row">
+            <div
+              v-if="record.detail != null"
+              class="d-row"
+            >
               <span class="d-k">明细</span>
               <pre class="d-pre">{{ detailText(record) }}</pre>
             </div>

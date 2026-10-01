@@ -1,12 +1,17 @@
 <template>
-  <div class="knowledge-base" data-tour="tour-sidebar-repo">
+  <div
+    class="knowledge-base"
+    data-tour="tour-sidebar-repo"
+  >
     <!-- 「竞品监控」独立入口已下线：看板并入竞品监控员的右侧边栏；
          旧入口（蓝海抽屉 / 选品库开启监控 / 店秘书导航）在 Workspace 统一重定向。 -->
-    <div class="sidebar-section-title">资料库</div>
+    <div class="sidebar-section-title">
+      资料库
+    </div>
     <a-menu
       class="sidebar-nav-menu"
       mode="inline"
-      :selectedKeys="selectedKeys"
+      :selected-keys="selectedKeys"
       @click="handleMenuClick"
     >
       <!-- ★★ 第 269 轮：老板指定「资料库」这一组的**顺序**为
@@ -66,11 +71,13 @@
          而技能是**账号级**、工具是**平台级**的，都与店铺无关。
          并进同一组会让人以为「换个店铺技能就变了」。
          ★ 第 209 轮：分节名由「技能」改为「能力」—— 节里不再只有技能。 -->
-    <div class="sidebar-section-title">能力</div>
+    <div class="sidebar-section-title">
+      能力
+    </div>
     <a-menu
       class="sidebar-nav-menu"
       mode="inline"
-      :selectedKeys="selectedKeys"
+      :selected-keys="selectedKeys"
       @click="handleMenuClick"
     >
       <a-menu-item key="skills">

@@ -7,8 +7,14 @@
       style="margin-bottom: var(--space-16)"
     />
 
-    <a-form layout="vertical" :model="form">
-      <a-form-item label="原始 Listing 信息" required>
+    <a-form
+      layout="vertical"
+      :model="form"
+    >
+      <a-form-item
+        label="原始 Listing 信息"
+        required
+      >
         <a-textarea
           v-model:value="form.original_listing"
           :rows="4"
@@ -18,25 +24,40 @@
       </a-form-item>
 
       <a-form-item label="测试变量选择">
-        <a-checkbox-group v-model:value="form.test_variables" @change="saveForm">
+        <a-checkbox-group
+          v-model:value="form.test_variables"
+          @change="saveForm"
+        >
           <a-row :gutter="[8, 8]">
             <a-col :span="12">
-              <a-checkbox value="title">📝 标题结构</a-checkbox>
+              <a-checkbox value="title">
+                📝 标题结构
+              </a-checkbox>
             </a-col>
             <a-col :span="12">
-              <a-checkbox value="bullets">✨ 五点风格</a-checkbox>
+              <a-checkbox value="bullets">
+                ✨ 五点风格
+              </a-checkbox>
             </a-col>
             <a-col :span="12">
-              <a-checkbox value="price">💰 价格定位</a-checkbox>
+              <a-checkbox value="price">
+                💰 价格定位
+              </a-checkbox>
             </a-col>
             <a-col :span="12">
-              <a-checkbox value="main_image">🖼️ 主图类型</a-checkbox>
+              <a-checkbox value="main_image">
+                🖼️ 主图类型
+              </a-checkbox>
             </a-col>
             <a-col :span="12">
-              <a-checkbox value="branding">🏷️ 品牌露出</a-checkbox>
+              <a-checkbox value="branding">
+                🏷️ 品牌露出
+              </a-checkbox>
             </a-col>
             <a-col :span="12">
-              <a-checkbox value="tone">🗣️ 语调风格</a-checkbox>
+              <a-checkbox value="tone">
+                🗣️ 语调风格
+              </a-checkbox>
             </a-col>
           </a-row>
         </a-checkbox-group>
@@ -61,19 +82,38 @@
           style="width: 100%"
           @change="saveForm"
         >
-          <a-select-option value="emotional">情感共鸣 vs 功能陈述</a-select-option>
-          <a-select-option value="data">数据量化 vs 笼统描述</a-select-option>
-          <a-select-option value="scenario">场景化 vs 抽象化</a-select-option>
-          <a-select-option value="premium">高端定位 vs 性价比</a-select-option>
-          <a-select-option value="mixed">混合策略（推荐）</a-select-option>
+          <a-select-option value="emotional">
+            情感共鸣 vs 功能陈述
+          </a-select-option>
+          <a-select-option value="data">
+            数据量化 vs 笼统描述
+          </a-select-option>
+          <a-select-option value="scenario">
+            场景化 vs 抽象化
+          </a-select-option>
+          <a-select-option value="premium">
+            高端定位 vs 性价比
+          </a-select-option>
+          <a-select-option value="mixed">
+            混合策略（推荐）
+          </a-select-option>
         </a-select>
       </a-form-item>
 
       <a-form-item label="目标指标优先级">
-        <a-radio-group v-model:value="form.primary_metric" @change="saveForm">
-          <a-radio value="ctr">点击率 (CTR)</a-radio>
-          <a-radio value="cvr">转化率 (CVR)</a-radio>
-          <a-radio value="balanced">均衡优化</a-radio>
+        <a-radio-group
+          v-model:value="form.primary_metric"
+          @change="saveForm"
+        >
+          <a-radio value="ctr">
+            点击率 (CTR)
+          </a-radio>
+          <a-radio value="cvr">
+            转化率 (CVR)
+          </a-radio>
+          <a-radio value="balanced">
+            均衡优化
+          </a-radio>
         </a-radio-group>
       </a-form-item>
 
@@ -88,10 +128,21 @@
     </a-form>
 
     <div class="config-actions">
-      <a-button type="primary" block size="large" @click="handleGenerate" :loading="generating">
+      <a-button
+        type="primary"
+        block
+        size="large"
+        :loading="generating"
+        @click="handleGenerate"
+      >
         <ExperimentOutlined /> 生成测试版本
       </a-button>
-      <a-button block @click="handleReset"><ReloadOutlined /> 重置</a-button>
+      <a-button
+        block
+        @click="handleReset"
+      >
+        <ReloadOutlined /> 重置
+      </a-button>
     </div>
   </div>
 </template>

@@ -4,7 +4,11 @@
     <div class="popover-header">
       <span class="popover-title">🏪 店铺群</span>
       <span class="popover-count">{{ shopList.length }} 个店铺</span>
-      <a-button type="link" size="small" @click="openAddModal">
+      <a-button
+        type="link"
+        size="small"
+        @click="openAddModal"
+      >
         <PlusOutlined /> 添加
       </a-button>
     </div>
@@ -14,7 +18,10 @@
          否则用户切换后只看到列表变短，不知道发生了什么。
          ★ 标签用中性的「归属」而非「账户」：后端表名与 API 都还是 account，
            而"账户"这个词在界面上会被读成**登录账号**（同一处曾有三个所指）。 -->
-    <div v-if="accounts.length > 0" class="popover-account">
+    <div
+      v-if="accounts.length > 0"
+      class="popover-account"
+    >
       <span class="account-label">归属</span>
       <a-select
         :value="accountStore.currentAccountId ?? undefined"
@@ -22,7 +29,11 @@
         style="flex: 1"
         @change="onAccountChange"
       >
-        <a-select-option v-for="a in accounts" :key="a.id" :value="a.id">
+        <a-select-option
+          v-for="a in accounts"
+          :key="a.id"
+          :value="a.id"
+        >
           {{ a.name }}
         </a-select-option>
       </a-select>
@@ -39,21 +50,37 @@
       >
         <div class="item-left">
           <span class="shop-name">{{ shop.name }}</span>
-          <a-tag :color="platformColor(shop.platform)" size="small">{{ platformLabel(shop.platform) }}</a-tag>
+          <a-tag
+            :color="platformColor(shop.platform)"
+            size="small"
+          >
+            {{ platformLabel(shop.platform) }}
+          </a-tag>
         </div>
         <div class="item-right">
           <span
             :class="['status-dot', connectStateOf(shop)]"
             :title="connectTitleOf(shop)"
-          ></span>
+          />
           <a-tooltip title="编辑">
-            <button class="icon-btn" @click.stop="openEditModal(shop)">
+            <button
+              class="icon-btn"
+              @click.stop="openEditModal(shop)"
+            >
               <EditOutlined />
             </button>
           </a-tooltip>
-          <a-popconfirm title="确定删除？" ok-text="删除" cancel-text="取消" @confirm="handleDelete(shop)">
+          <a-popconfirm
+            title="确定删除？"
+            ok-text="删除"
+            cancel-text="取消"
+            @confirm="handleDelete(shop)"
+          >
             <a-tooltip title="删除">
-              <button class="icon-btn danger" @click.stop>
+              <button
+                class="icon-btn danger"
+                @click.stop
+              >
                 <DeleteOutlined />
               </button>
             </a-tooltip>
@@ -62,7 +89,10 @@
       </div>
 
       <!-- 空状态 -->
-      <div v-if="shopList.length === 0" class="empty-state">
+      <div
+        v-if="shopList.length === 0"
+        class="empty-state"
+      >
         <p>暂无店铺</p>
         <span>点击「添加」创建第一个店铺</span>
       </div>
@@ -73,36 +103,84 @@
       v-model:open="modalVisible"
       :title="isEditing ? '编辑店铺' : '添加店铺'"
       :confirm-loading="submitting"
-      @ok="handleSubmit"
       :width="WINDOW_W.sm"
       ok-text="保存"
       cancel-text="取消"
+      @ok="handleSubmit"
     >
-      <a-form :model="formState" :label-col="{ span: 6 }" :wrapper-col="{ span: 16 }">
-        <a-form-item label="名称" required>
-          <a-input v-model:value="formState.name" placeholder="如：Amazon US Store" :maxlength="50" show-count />
+      <a-form
+        :model="formState"
+        :label-col="{ span: 6 }"
+        :wrapper-col="{ span: 16 }"
+      >
+        <a-form-item
+          label="名称"
+          required
+        >
+          <a-input
+            v-model:value="formState.name"
+            placeholder="如：Amazon US Store"
+            :maxlength="50"
+            show-count
+          />
         </a-form-item>
-        <a-form-item label="平台" required>
-          <a-select v-model:value="formState.platform" placeholder="选择平台站点" :disabled="isEditing" @change="handlePlatformChange">
+        <a-form-item
+          label="平台"
+          required
+        >
+          <a-select
+            v-model:value="formState.platform"
+            placeholder="选择平台站点"
+            :disabled="isEditing"
+            @change="handlePlatformChange"
+          >
             <a-select-opt-group label="Amazon">
-              <a-select-option value="amazon_us">🇺🇸 Amazon US</a-select-option>
-              <a-select-option value="amazon_uk">🇬🇧 Amazon UK</a-select-option>
-              <a-select-option value="amazon_de">🇩🇪 Amazon DE</a-select-option>
-              <a-select-option value="amazon_jp">🇯🇵 Amazon JP</a-select-option>
+              <a-select-option value="amazon_us">
+                🇺🇸 Amazon US
+              </a-select-option>
+              <a-select-option value="amazon_uk">
+                🇬🇧 Amazon UK
+              </a-select-option>
+              <a-select-option value="amazon_de">
+                🇩🇪 Amazon DE
+              </a-select-option>
+              <a-select-option value="amazon_jp">
+                🇯🇵 Amazon JP
+              </a-select-option>
             </a-select-opt-group>
             <a-select-opt-group label="Shopee">
-              <a-select-option value="shopee_my">🇲🇾 Shopee MY</a-select-option>
-              <a-select-option value="shopee_tw">🇹🇼 Shopee TW</a-select-option>
-              <a-select-option value="shopee_ph">🇵🇭 Shopee PH</a-select-option>
-              <a-select-option value="shopee_th">🇹🇭 Shopee TH</a-select-option>
-              <a-select-option value="shopee_sg">🇸🇬 Shopee SG</a-select-option>
-              <a-select-option value="shopee_vn">🇻🇳 Shopee VN</a-select-option>
-              <a-select-option value="shopee_id">🇮🇩 Shopee ID</a-select-option>
-              <a-select-option value="shopee_br">🇧🇷 Shopee BR</a-select-option>
+              <a-select-option value="shopee_my">
+                🇲🇾 Shopee MY
+              </a-select-option>
+              <a-select-option value="shopee_tw">
+                🇹🇼 Shopee TW
+              </a-select-option>
+              <a-select-option value="shopee_ph">
+                🇵🇭 Shopee PH
+              </a-select-option>
+              <a-select-option value="shopee_th">
+                🇹🇭 Shopee TH
+              </a-select-option>
+              <a-select-option value="shopee_sg">
+                🇸🇬 Shopee SG
+              </a-select-option>
+              <a-select-option value="shopee_vn">
+                🇻🇳 Shopee VN
+              </a-select-option>
+              <a-select-option value="shopee_id">
+                🇮🇩 Shopee ID
+              </a-select-option>
+              <a-select-option value="shopee_br">
+                🇧🇷 Shopee BR
+              </a-select-option>
             </a-select-opt-group>
             <a-select-opt-group label="其他">
-              <a-select-option value="tiktok">TikTok Shop</a-select-option>
-              <a-select-option value="shopify">Shopify</a-select-option>
+              <a-select-option value="tiktok">
+                TikTok Shop
+              </a-select-option>
+              <a-select-option value="shopify">
+                Shopify
+              </a-select-option>
             </a-select-opt-group>
           </a-select>
         </a-form-item>
@@ -112,13 +190,20 @@
              编辑：改选 ⇒ 保存后调**转移端点**（源侧 + 目标侧各一道能力门）。
              改造前这一项只在新建时出现，「转移」在界面上根本没有入口 ——
              于是"新建团队"又变回空壳（用户建完团队却搬不进店）。 -->
-        <a-form-item v-if="accounts.length > 0" label="归属">
+        <a-form-item
+          v-if="accounts.length > 0"
+          label="归属"
+        >
           <a-select
             v-model:value="formState.account_id"
             :placeholder="isEditing ? '不修改：保持原归属' : '默认：你最早的团队'"
             allow-clear
           >
-            <a-select-option v-for="a in accounts" :key="a.id" :value="a.id">
+            <a-select-option
+              v-for="a in accounts"
+              :key="a.id"
+              :value="a.id"
+            >
               {{ a.name }}
             </a-select-option>
           </a-select>
@@ -129,7 +214,12 @@
           </div>
         </a-form-item>
         <a-form-item label="备注">
-          <a-textarea v-model:value="formState.description" placeholder="可选" :rows="2" :maxlength="200" />
+          <a-textarea
+            v-model:value="formState.description"
+            placeholder="可选"
+            :rows="2"
+            :maxlength="200"
+          />
         </a-form-item>
       </a-form>
     </a-modal>

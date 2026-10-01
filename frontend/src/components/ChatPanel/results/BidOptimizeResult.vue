@@ -1,13 +1,21 @@
 <template>
-  <div class="bid-optimize-result" v-if="data">
+  <div
+    v-if="data"
+    class="bid-optimize-result"
+  >
     <!-- 策略概览 -->
-    <div class="strategy-overview" :class="'strat-' + (data.strategy_type || 'balanced')">
+    <div
+      class="strategy-overview"
+      :class="'strat-' + (data.strategy_type || 'balanced')"
+    >
       <div class="overview-left">
         <span class="strategy-label">出价策略</span>
         <span class="strategy-name">{{ strategyNameMap[data.strategy_type] || data.strategy_type }}</span>
       </div>
       <div class="overview-stats">
-        <div class="stat">涉及关键词: <b>{{ data.total_keywords || 0 }}</b></div>
+        <div class="stat">
+          涉及关键词: <b>{{ data.total_keywords || 0 }}</b>
+        </div>
         <div class="stat">
           预算影响:
           <b :class="(data.budget_impact || 0) > 0 ? 'pos' : (data.budget_impact || 0) < 0 ? 'neg' : ''">
@@ -24,51 +32,69 @@
     </div>
 
     <!-- 出价建议列表 -->
-    <h4 class="section-title">💡 出价建议明细</h4>
+    <h4 class="section-title">
+      💡 出价建议明细
+    </h4>
 
     <!-- 提价列表 -->
-    <div v-if="increaseList.length" class="bid-section">
+    <div
+      v-if="increaseList.length"
+      class="bid-section"
+    >
       <div class="section-header header-increase">
         <ArrowUpOutlined /> 建议提价 ({{ increaseList.length }})
       </div>
       <a-table
-        :dataSource="increaseList"
+        :data-source="increaseList"
         :columns="bidColumns"
         :pagination="{ pageSize: 5, size: 'small' }"
         size="small"
-        rowKey="keyword"
-        :rowClassName="() => 'row-increase'"
+        row-key="keyword"
+        :row-class-name="() => 'row-increase'"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.dataIndex === 'bid_change_pct'">
             <span class="change-up">+{{ Number(record.bid_change_pct).toFixed(0) }}%</span>
           </template>
           <template v-else-if="column.dataIndex === 'priority'">
-            <a-tag :color="priorityColor(record.priority)" class="priority-tag">{{ priorityLabel(record.priority) }}</a-tag>
+            <a-tag
+              :color="priorityColor(record.priority)"
+              class="priority-tag"
+            >
+              {{ priorityLabel(record.priority) }}
+            </a-tag>
           </template>
         </template>
       </a-table>
     </div>
 
     <!-- 降价列表 -->
-    <div v-if="decreaseList.length" class="bid-section">
+    <div
+      v-if="decreaseList.length"
+      class="bid-section"
+    >
       <div class="section-header header-decrease">
         <ArrowDownOutlined /> 建议降价 ({{ decreaseList.length }})
       </div>
       <a-table
-        :dataSource="decreaseList"
+        :data-source="decreaseList"
         :columns="bidColumns"
         :pagination="{ pageSize: 5, size: 'small' }"
         size="small"
-        rowKey="keyword"
-        :rowClassName="() => 'row-decrease'"
+        row-key="keyword"
+        :row-class-name="() => 'row-decrease'"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.dataIndex === 'bid_change_pct'">
             <span class="change-down">{{ Number(record.bid_change_pct).toFixed(0) }}%</span>
           </template>
           <template v-else-if="column.dataIndex === 'priority'">
-            <a-tag :color="priorityColor(record.priority)" class="priority-tag">{{ priorityLabel(record.priority) }}</a-tag>
+            <a-tag
+              :color="priorityColor(record.priority)"
+              class="priority-tag"
+            >
+              {{ priorityLabel(record.priority) }}
+            </a-tag>
           </template>
         </template>
       </a-table>
@@ -81,7 +107,12 @@
     </div>
 
     <div class="result-footer">
-      <a-button size="small" @click="$emit('close')">关闭</a-button>
+      <a-button
+        size="small"
+        @click="$emit('close')"
+      >
+        关闭
+      </a-button>
     </div>
   </div>
 </template>

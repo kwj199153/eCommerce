@@ -6,7 +6,9 @@
         <span class="result-icon">📄</span>
         <div>
           <h3>A+ Content 产品描述生成</h3>
-          <p class="subtitle">{{ resultData.style }} 风格 · {{ resultData.word_count }} 字</p>
+          <p class="subtitle">
+            {{ resultData.style }} 风格 · {{ resultData.word_count }} 字
+          </p>
         </div>
       </div>
       <div class="header-actions">
@@ -15,12 +17,15 @@
           v-if="sourceMode === 'product' && productId"
           type="primary"
           size="small"
-          @click="handleSaveToProduct"
           :loading="saving"
+          @click="handleSaveToProduct"
         >
           <SaveOutlined /> 应用到当前产品 Listing
         </a-button>
-        <a-button size="small" @click="$emit('close')">
+        <a-button
+          size="small"
+          @click="$emit('close')"
+        >
           <CloseOutlined /> 关闭
         </a-button>
       </div>
@@ -29,8 +34,16 @@
     <!-- 内容预览区 -->
     <div class="content-preview">
       <!-- 品牌横幅 -->
-      <img v-if="resultData.brand_banner" :src="resultData.brand_banner" alt="" class="banner-img" />
-      <div class="banner-placeholder" v-else>
+      <img
+        v-if="resultData.brand_banner"
+        :src="resultData.brand_banner"
+        alt=""
+        class="banner-img"
+      >
+      <div
+        v-else
+        class="banner-placeholder"
+      >
         <span class="brand-name">{{ displayBrandName }}</span>
         <span class="brand-slogan">{{ displayBrandSlogan }}</span>
       </div>
@@ -44,9 +57,17 @@
           :class="module.type"
         >
           <div class="module-toolbar">
-            <a-tag color="blue">{{ moduleTypeLabel(module.type) }}</a-tag>
+            <a-tag color="blue">
+              {{ moduleTypeLabel(module.type) }}
+            </a-tag>
             <div class="module-toolbar-actions">
-              <a-button type="text" size="small" danger @click="removeModule(idx)" title="删除此模块">
+              <a-button
+                type="text"
+                size="small"
+                danger
+                title="删除此模块"
+                @click="removeModule(idx)"
+              >
                 <DeleteOutlined /> 删除
               </a-button>
             </div>
@@ -75,7 +96,10 @@
               />
             </div>
             <!-- 预览 -->
-            <div class="module-body" v-html="module.content"></div>
+            <div
+              class="module-body"
+              v-html="module.content"
+            />
           </template>
 
           <!-- 图文混排模块 -->
@@ -88,7 +112,11 @@
                 class="field-input"
               />
             </div>
-            <div class="module-field" v-for="(para, pidx) in module.paragraphs" :key="pidx">
+            <div
+              v-for="(para, pidx) in module.paragraphs"
+              :key="pidx"
+              class="module-field"
+            >
               <label>段落 {{ pidx + 1 }}</label>
               <div class="para-row">
                 <a-textarea
@@ -97,10 +125,22 @@
                   class="field-input"
                   placeholder="段落文字，可编辑"
                 />
-                <a-button type="text" size="small" danger @click="removeParagraph(module, pidx)">删</a-button>
+                <a-button
+                  type="text"
+                  size="small"
+                  danger
+                  @click="removeParagraph(module, pidx)"
+                >
+                  删
+                </a-button>
               </div>
             </div>
-            <a-button size="small" type="dashed" block @click="addParagraph(module)">
+            <a-button
+              size="small"
+              type="dashed"
+              block
+              @click="addParagraph(module)"
+            >
               <PlusOutlined /> 新增段落
             </a-button>
           </template>
@@ -111,15 +151,32 @@
               <thead>
                 <tr>
                   <th>特性</th>
-                  <th v-for="(col, ci) in module.columns" :key="ci">{{ col }}</th>
+                  <th
+                    v-for="(col, ci) in module.columns"
+                    :key="ci"
+                  >
+                    {{ col }}
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(row, ri) in module.rows" :key="ri">
-                  <td class="feature-name">{{ row.feature }}</td>
-                  <td v-for="(val, vi) in row.values" :key="vi" :class="{ highlight: val.highlight }">
+                <tr
+                  v-for="(row, ri) in module.rows"
+                  :key="ri"
+                >
+                  <td class="feature-name">
+                    {{ row.feature }}
+                  </td>
+                  <td
+                    v-for="(val, vi) in row.values"
+                    :key="vi"
+                    :class="{ highlight: val.highlight }"
+                  >
                     {{ val.text }}
-                    <CheckOutlined v-if="val.check" class="check-icon" />
+                    <CheckOutlined
+                      v-if="val.check"
+                      class="check-icon"
+                    />
                   </td>
                 </tr>
               </tbody>
@@ -128,11 +185,29 @@
 
           <!-- 要点列表模块 -->
           <template v-else-if="module.type === 'highlights'">
-            <div class="module-field" v-for="(item, iidx) in module.items" :key="iidx">
+            <div
+              v-for="(item, iidx) in module.items"
+              :key="iidx"
+              class="module-field"
+            >
               <label>要点 {{ iidx + 1 }}</label>
-              <a-input-group compact style="display: flex; gap: var(--space-6); align-items: center">
-                <a-input v-model:value="item.title" style="flex: 1" placeholder="要点标题" />
-                <a-button type="text" size="small" danger @click="removeHighlight(module, iidx)">删</a-button>
+              <a-input-group
+                compact
+                style="display: flex; gap: var(--space-6); align-items: center"
+              >
+                <a-input
+                  v-model:value="item.title"
+                  style="flex: 1"
+                  placeholder="要点标题"
+                />
+                <a-button
+                  type="text"
+                  size="small"
+                  danger
+                  @click="removeHighlight(module, iidx)"
+                >
+                  删
+                </a-button>
               </a-input-group>
               <a-textarea
                 v-model:value="item.description"
@@ -142,13 +217,21 @@
                 placeholder="要点说明，可编辑"
               />
             </div>
-            <a-button size="small" type="dashed" block @click="addHighlight(module)">
+            <a-button
+              size="small"
+              type="dashed"
+              block
+              @click="addHighlight(module)"
+            >
               <PlusOutlined /> 新增要点
             </a-button>
           </template>
         </div>
 
-        <a-empty v-if="!displayModules.length" description="暂无内容模块" />
+        <a-empty
+          v-if="!displayModules.length"
+          description="暂无内容模块"
+        />
 
         <!-- 新增模块 -->
         <a-select
@@ -161,8 +244,13 @@
       </div>
 
       <!-- 品牌故事底部 -->
-      <div class="brand-footer" v-if="resultData.brand_story">
-        <div class="footer-logo">{{ resultData.brand_name?.[0] || 'B' }}</div>
+      <div
+        v-if="resultData.brand_story"
+        class="brand-footer"
+      >
+        <div class="footer-logo">
+          {{ resultData.brand_name?.[0] || 'B' }}
+        </div>
         <div class="footer-text">
           <h4>{{ resultData.brand_name }}</h4>
           <p>{{ resultData.brand_story }}</p>
@@ -197,7 +285,10 @@
     <!-- 操作按钮 -->
     <div class="action-bar">
       <a-space>
-        <a-button type="primary" @click="copyFullContent">
+        <a-button
+          type="primary"
+          @click="copyFullContent"
+        >
           <CopyOutlined /> 复制全部内容
         </a-button>
         <a-button @click="exportHTML">

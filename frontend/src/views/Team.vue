@@ -6,11 +6,18 @@
              订阅页走的是 `<a-page-header @back>` 自带的返回；本页是自绘表头，
              此前**没有任何返回入口** —— 从侧栏账户菜单进来后只能按浏览器后退键。
              语义与订阅页保持一致：`router.back()`。 -->
-        <a-button type="text" class="team-back" aria-label="返回" @click="router.back()">
+        <a-button
+          type="text"
+          class="team-back"
+          aria-label="返回"
+          @click="router.back()"
+        >
           <ArrowLeftOutlined />
         </a-button>
         <div>
-          <h1 class="team-title">团队成员</h1>
+          <h1 class="team-title">
+            团队成员
+          </h1>
           <p class="team-sub">
             一个团队下可以有多名成员，成员按角色共享团队下的店铺。
             成员数只有 1 时它就是"你自己的"团队（也是默认的建店落点）。
@@ -27,11 +34,20 @@
           style="min-width: 230px"
           @change="onAccountChange"
         >
-          <a-select-option v-for="a in accounts" :key="a.id" :value="a.id">
+          <a-select-option
+            v-for="a in accounts"
+            :key="a.id"
+            :value="a.id"
+          >
             {{ a.name }}（{{ roleLabel(a.role) }}）
           </a-select-option>
         </a-select>
-        <a-button :disabled="needsLogin" @click="showCreateAccount = true">新建团队</a-button>
+        <a-button
+          :disabled="needsLogin"
+          @click="showCreateAccount = true"
+        >
+          新建团队
+        </a-button>
       </a-space>
     </div>
 
@@ -46,8 +62,16 @@
       message="需要登录后才能管理团队成员"
       description="团队成员属于身份数据，必须绑定真实账号。当前是演示模式的临时身份（后端不认），请先登录后再试。"
     />
-    <div v-if="needsLogin" class="team-login-row">
-      <a-button type="primary" @click="goLogin">去登录</a-button>
+    <div
+      v-if="needsLogin"
+      class="team-login-row"
+    >
+      <a-button
+        type="primary"
+        @click="goLogin"
+      >
+        去登录
+      </a-button>
       <span class="team-login-hint">登录后会回到本页并重新加载。</span>
     </div>
 
@@ -58,8 +82,14 @@
       />
 
       <template v-else-if="currentAccount">
-        <a-card :bordered="false" class="team-card">
-          <a-descriptions :column="4" size="small">
+        <a-card
+          :bordered="false"
+          class="team-card"
+        >
+          <a-descriptions
+            :column="4"
+            size="small"
+          >
             <a-descriptions-item label="名称">
               <!-- ★ 第 110 轮：此处曾有 [个人] / [团队] 标签，已删除。
                    那个二分被证伪 —— 容器只有一种，"私有"是**成员数**的一个取值
@@ -71,7 +101,12 @@
               <a-tag :color="roleColor(currentAccount.role)">
                 {{ roleLabel(currentAccount.role) }}
               </a-tag>
-              <a-tag v-if="currentAccount.is_platform_admin" color="red">平台超管</a-tag>
+              <a-tag
+                v-if="currentAccount.is_platform_admin"
+                color="red"
+              >
+                平台超管
+              </a-tag>
             </a-descriptions-item>
             <a-descriptions-item label="店铺数">
               {{ currentAccount.store_count }}
@@ -82,10 +117,17 @@
           </a-descriptions>
         </a-card>
 
-        <a-card :bordered="false" class="team-card" title="成员列表">
+        <a-card
+          :bordered="false"
+          class="team-card"
+          title="成员列表"
+        >
           <template #extra>
             <a-space>
-              <a-checkbox v-model:checked="includeRemoved" @change="loadMembers">
+              <a-checkbox
+                v-model:checked="includeRemoved"
+                @change="loadMembers"
+              >
                 含已移除
               </a-checkbox>
               <a-button
@@ -131,12 +173,21 @@
                   :loading="busyId === record.id"
                   @change="(v: any) => onChangeRole(record, v)"
                 >
-                  <a-select-option v-for="r in ASSIGNABLE_ROLES" :key="r.value" :value="r.value">
+                  <a-select-option
+                    v-for="r in ASSIGNABLE_ROLES"
+                    :key="r.value"
+                    :value="r.value"
+                  >
                     {{ r.label }}
                   </a-select-option>
                 </a-select>
-                <a-tooltip v-else :title="record.is_owner ? '所有者不可变更角色' : ''">
-                  <a-tag :color="roleColor(record.role)">{{ roleLabel(record.role) }}</a-tag>
+                <a-tooltip
+                  v-else
+                  :title="record.is_owner ? '所有者不可变更角色' : ''"
+                >
+                  <a-tag :color="roleColor(record.role)">
+                    {{ roleLabel(record.role) }}
+                  </a-tag>
                 </a-tooltip>
               </template>
 
@@ -158,56 +209,87 @@
                   cancel-text="取消"
                   @confirm="onRemove(record)"
                 >
-                  <a-button size="small" danger type="link">移除</a-button>
+                  <a-button
+                    size="small"
+                    danger
+                    type="link"
+                  >
+                    移除
+                  </a-button>
                 </a-popconfirm>
-                <a-tooltip v-else-if="record.is_owner" title="团队必须有所有者，不能移除">
+                <a-tooltip
+                  v-else-if="record.is_owner"
+                  title="团队必须有所有者，不能移除"
+                >
                   <span class="muted">—</span>
                 </a-tooltip>
               </template>
             </template>
           </a-table>
 
-          <a-empty v-if="!loading && members.length === 0" description="还没有其他成员" />
+          <a-empty
+            v-if="!loading && members.length === 0"
+            description="还没有其他成员"
+          />
         </a-card>
       </template>
     </a-spin>
 
-    <a-modal :width="WINDOW_W.md"
+    <a-modal
       v-model:open="showInvite"
+      :width="WINDOW_W.md"
       title="邀请成员"
       :confirm-loading="inviting"
       @ok="onInvite"
     >
       <a-form layout="vertical">
         <a-form-item label="对方邮箱">
-          <a-input v-model:value="inviteForm.email" placeholder="teammate@example.com" />
+          <a-input
+            v-model:value="inviteForm.email"
+            placeholder="teammate@example.com"
+          />
           <div class="form-hint">
             对方需已注册本站账号；按邮箱邀请，不需要（也不应该）知道对方的用户 ID。
           </div>
         </a-form-item>
         <a-form-item label="角色">
-          <a-select v-model:value="inviteForm.role" style="width: 100%">
-            <a-select-option v-for="r in ASSIGNABLE_ROLES" :key="r.value" :value="r.value">
+          <a-select
+            v-model:value="inviteForm.role"
+            style="width: 100%"
+          >
+            <a-select-option
+              v-for="r in ASSIGNABLE_ROLES"
+              :key="r.value"
+              :value="r.value"
+            >
               {{ r.label }} —— {{ r.desc }}
             </a-select-option>
           </a-select>
-          <div class="form-hint">「所有者」不可分配：团队只能有一个所有者。</div>
+          <div class="form-hint">
+            「所有者」不可分配：团队只能有一个所有者。
+          </div>
         </a-form-item>
       </a-form>
     </a-modal>
 
-    <a-modal :width="WINDOW_W.md"
+    <a-modal
       v-model:open="showCreateAccount"
+      :width="WINDOW_W.md"
       title="新建团队"
       :confirm-loading="creatingAccount"
       @ok="onCreateAccount"
     >
       <a-form layout="vertical">
         <a-form-item label="团队名称">
-          <a-input v-model:value="newAccountName" placeholder="例如：跨境一组" />
+          <a-input
+            v-model:value="newAccountName"
+            placeholder="例如：跨境一组"
+          />
         </a-form-item>
       </a-form>
-      <div class="form-hint">你将成为该团队的所有者。</div>
+      <div class="form-hint">
+        你将成为该团队的所有者。
+      </div>
     </a-modal>
   </div>
 </template>

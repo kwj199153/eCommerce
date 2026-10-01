@@ -15,13 +15,25 @@
       <!-- 数据概要 -->
       <div class="em-summary">
         <span>📦 共 <b>{{ count }}</b> 条{{ unit }}</span>
-        <a-tag color="blue" v-if="canPicker">已选「另存为」模式</a-tag>
-        <a-tag color="orange" v-else>将下载到默认下载目录</a-tag>
+        <a-tag
+          v-if="canPicker"
+          color="blue"
+        >
+          已选「另存为」模式
+        </a-tag>
+        <a-tag
+          v-else
+          color="orange"
+        >
+          将下载到默认下载目录
+        </a-tag>
       </div>
 
       <!-- 格式选择 -->
       <div class="em-field">
-        <div class="em-label">导出格式</div>
+        <div class="em-label">
+          导出格式
+        </div>
         <div class="em-formats">
           <div
             v-for="f in formatList"
@@ -30,16 +42,24 @@
             :class="{ active: format === f.key }"
             @click="format = f.key"
           >
-            <div class="em-f-icon">{{ f.icon }}</div>
-            <div class="em-f-label">{{ f.label }}</div>
-            <div class="em-f-ext">.{{ f.ext }}</div>
+            <div class="em-f-icon">
+              {{ f.icon }}
+            </div>
+            <div class="em-f-label">
+              {{ f.label }}
+            </div>
+            <div class="em-f-ext">
+              .{{ f.ext }}
+            </div>
           </div>
         </div>
       </div>
 
       <!-- 文件名（可改，用于另存为建议名） -->
       <div class="em-field">
-        <div class="em-label">文件名</div>
+        <div class="em-label">
+          文件名
+        </div>
         <a-input
           v-model:value="fileName"
           :addon-after="'.' + EXPORT_FORMAT_META[format].ext"

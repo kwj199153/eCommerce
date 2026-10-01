@@ -42,7 +42,12 @@ const emit = defineEmits<{ retry: [] }>()
 
 <template>
   <a-empty :description="error ? `${label}加载失败，请重试` : emptyDescription">
-    <a-button v-if="error" size="small" type="primary" @click="emit('retry')">
+    <a-button
+      v-if="error"
+      size="small"
+      type="primary"
+      @click="emit('retry')"
+    >
       重试
     </a-button>
   </a-empty>

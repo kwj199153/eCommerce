@@ -1131,7 +1131,8 @@ await check('L10 点名残留窗口有**可见 chip** + 显式撤销出口（第
   // ★ 这里读的是**原始** .vue（含 template）—— 本条的靶子就是"模板里有没有那个元素"。
   //   为免注释蒙混过关，判据把 v-if 与 class **绑在一起**判整个开标签。
   const panel = readTs(P_PANEL)
-  assert(/<div\s+v-if="pendingSkillCard"\s+class="pending-skill-chip">/.test(panel),
+  // ★ 结尾用 `\s*>`：自动格式化会把 `class="…"` 与 `>` 拆到两行（F-2 第 348 轮实测）。
+  assert(/<div\s+v-if="pendingSkillCard"\s+class="pending-skill-chip"\s*>/.test(panel),
     'ChatPanel 没有渲染 pendingSkillCard chip（或 v-if 与 class 不在同一个开标签里）⇒ ' +
     '残留窗口对用户仍然不可见 —— 这恰恰是本条判据存在的全部意义')
   assert(/@click="dismissPendingSkill\(\)"/.test(panel),

@@ -6,11 +6,16 @@
         <span class="result-icon">📊</span>
         <div>
           <h3>Listing SEO 诊断报告</h3>
-          <p class="subtitle">对当前 Listing 文本的 SEO 诊断（后端真实分析结果）</p>
+          <p class="subtitle">
+            对当前 Listing 文本的 SEO 诊断（后端真实分析结果）
+          </p>
         </div>
       </div>
       <div class="header-actions">
-        <a-button size="small" @click="$emit('close')">
+        <a-button
+          size="small"
+          @click="$emit('close')"
+        >
           <CloseOutlined /> 关闭
         </a-button>
       </div>
@@ -27,9 +32,16 @@
         >
           <template #format>
             <div class="score-inner">
-              <div class="score-number">{{ resultData.overall_score }}</div>
-              <div class="score-label">综合评分</div>
-              <div class="score-grade" :class="gradeClass">
+              <div class="score-number">
+                {{ resultData.overall_score }}
+              </div>
+              <div class="score-label">
+                综合评分
+              </div>
+              <div
+                class="score-grade"
+                :class="gradeClass"
+              >
                 {{ resultData.grade || gradeOf(resultData.overall_score) }}
               </div>
             </div>
@@ -37,8 +49,14 @@
         </a-progress>
       </div>
       <div class="score-details">
-        <div class="detail-item" v-for="dim in resultData.dimensions" :key="dim.key">
-          <div class="detail-label">{{ dim.name }}</div>
+        <div
+          v-for="dim in resultData.dimensions"
+          :key="dim.key"
+          class="detail-item"
+        >
+          <div class="detail-label">
+            {{ dim.name }}
+          </div>
           <a-progress
             :percent="dim.score"
             :stroke-color="getScoreColor(dim.score)"
@@ -46,12 +64,18 @@
             size="small"
           />
         </div>
-        <a-empty v-if="!resultData.dimensions?.length" description="后端未返回分维度评分" />
+        <a-empty
+          v-if="!resultData.dimensions?.length"
+          description="后端未返回分维度评分"
+        />
       </div>
     </div>
 
     <!-- 检查项清单（后端 checklist 真值：通过 / 未通过） -->
-    <div class="dimension-cards" v-if="resultData.checklist?.length">
+    <div
+      v-if="resultData.checklist?.length"
+      class="dimension-cards"
+    >
       <div class="benchmark-title">
         <CheckCircleOutlined /> SEO 检查项
         <span class="check-summary">
@@ -72,14 +96,25 @@
     </div>
 
     <!-- 待改进项（后端 improvement_areas 真值） -->
-    <div class="improvement-box" v-if="resultData.improvement_areas?.length">
+    <div
+      v-if="resultData.improvement_areas?.length"
+      class="improvement-box"
+    >
       <h4>💡 待改进项</h4>
       <ul>
-        <li v-for="(imp, i) in resultData.improvement_areas" :key="i">{{ imp }}</li>
+        <li
+          v-for="(imp, i) in resultData.improvement_areas"
+          :key="i"
+        >
+          {{ imp }}
+        </li>
       </ul>
     </div>
 
-    <div class="improvement-box" v-if="!resultData.improvement_areas?.length && !resultData.checklist?.length">
+    <div
+      v-if="!resultData.improvement_areas?.length && !resultData.checklist?.length"
+      class="improvement-box"
+    >
       <a-empty description="后端本次未返回检查项与改进建议" />
     </div>
   </div>

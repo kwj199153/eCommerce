@@ -7,8 +7,14 @@
       </div>
 
       <!-- 登录/注册切换 -->
-      <a-tabs v-model:activeKey="activeTab" centered>
-        <a-tab-pane key="login" tab="登录">
+      <a-tabs
+        v-model:active-key="activeTab"
+        centered
+      >
+        <a-tab-pane
+          key="login"
+          tab="登录"
+        >
           <!-- ★ 第 113 轮：最近登录过的账号（数据来自 config/knownAccounts.ts）
                三条约束：
                  · 一个账号都没记过时整块不渲染，不留空标题；
@@ -20,10 +26,17 @@
                    ★ 这与「不接受没点就发生的事」不矛盾：那条防的是**页面
                      自己替你提交**，而这里是用户点了一个具体账号。详见
                      pickAccount() 的注释。 -->
-          <div v-if="knownAccounts.length" class="recent-accounts">
+          <div
+            v-if="knownAccounts.length"
+            class="recent-accounts"
+          >
             <div class="ra-title">
               <span>最近登录</span>
-              <button type="button" class="ra-clear" @click="clearKnownAccounts">
+              <button
+                type="button"
+                class="ra-clear"
+                @click="clearKnownAccounts"
+              >
                 清除
               </button>
             </div>
@@ -72,9 +85,9 @@
 
           <a-form
             :model="loginForm"
-            @finish="handleLogin"
             layout="vertical"
             class="login-form"
+            @finish="handleLogin"
           >
             <a-form-item
               name="email"
@@ -106,7 +119,7 @@
               </a-input-password>
             </a-form-item>
 
-          <!-- ★ 第 122 轮：「记住登录状态」勾选框。
+            <!-- ★ 第 122 轮：「记住登录状态」勾选框。
                它**替代**了第 120 轮那条解释性说明条（老板实测后要求去掉）：
                与其用一段文字告诉用户「这次输完密码之后就会免密」，不如把
                这件事做成他自己可控的开关 —— 本项目既有判据是「不接受
@@ -126,7 +139,11 @@
                      ★ 这个入口此前**不存在**：全仓 `forgot-password` 调用 0 处，
                        而它背后的邮件链接 `/reset-password` 也没有落地页 ⇒
                        「忘记密码」这件事在整条链路上**没有任何入口**。 -->
-                <button type="button" class="forgot-link" @click="openForgot">
+                <button
+                  type="button"
+                  class="forgot-link"
+                  @click="openForgot"
+                >
                   忘记密码？
                 </button>
               </div>
@@ -146,12 +163,15 @@
           </a-form>
         </a-tab-pane>
 
-        <a-tab-pane key="register" tab="注册">
+        <a-tab-pane
+          key="register"
+          tab="注册"
+        >
           <a-form
             :model="registerForm"
-            @finish="handleRegister"
             layout="vertical"
             class="login-form"
+            @finish="handleRegister"
           >
             <a-form-item
               name="email"
@@ -285,7 +305,10 @@
             class="forgot-alert"
           />
 
-          <a-form layout="vertical" @finish="submitForgot">
+          <a-form
+            layout="vertical"
+            @finish="submitForgot"
+          >
             <a-form-item label="注册邮箱">
               <a-input
                 v-model:value="forgotEmail"

@@ -13,28 +13,75 @@
       本卡不推算、不补齐任何后端没给的值 —— 缺什么就显示「—」或整块不渲染
       （本仓判据：空状态优于虚构默认）。
   -->
-  <ConversationCard icon="🧾" :title="title" :badge="periodText" badge-color="geekblue">
-    <p v-if="summary" class="rr-summary">{{ summary }}</p>
+  <ConversationCard
+    icon="🧾"
+    :title="title"
+    :badge="periodText"
+    badge-color="geekblue"
+  >
+    <p
+      v-if="summary"
+      class="rr-summary"
+    >
+      {{ summary }}
+    </p>
 
-    <div v-if="metrics.length" class="rr-grid">
-      <div v-for="m in metrics" :key="m.label" class="rr-cell">
-        <div class="rr-k">{{ m.label }}</div>
-        <div class="rr-v" :class="statusClass(m.status)">{{ metricTextOf(m) }}</div>
+    <div
+      v-if="metrics.length"
+      class="rr-grid"
+    >
+      <div
+        v-for="m in metrics"
+        :key="m.label"
+        class="rr-cell"
+      >
+        <div class="rr-k">
+          {{ m.label }}
+        </div>
+        <div
+          class="rr-v"
+          :class="statusClass(m.status)"
+        >
+          {{ metricTextOf(m) }}
+        </div>
       </div>
     </div>
-    <div v-else class="rr-empty">本次没有返回指标。</div>
+    <div
+      v-else
+      class="rr-empty"
+    >
+      本次没有返回指标。
+    </div>
 
-    <div v-if="table" class="rr-table-wrap">
-      <div class="rr-caption">{{ table.caption }}</div>
+    <div
+      v-if="table"
+      class="rr-table-wrap"
+    >
+      <div class="rr-caption">
+        {{ table.caption }}
+      </div>
       <table class="rr-table">
         <thead>
           <tr>
-            <th v-for="c in table.columns" :key="c.key" :class="{ num: c.num }">{{ c.label }}</th>
+            <th
+              v-for="c in table.columns"
+              :key="c.key"
+              :class="{ num: c.num }"
+            >
+              {{ c.label }}
+            </th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(row, i) in table.rows" :key="i">
-            <td v-for="c in table.columns" :key="c.key" :class="{ num: c.num }">
+          <tr
+            v-for="(row, i) in table.rows"
+            :key="i"
+          >
+            <td
+              v-for="c in table.columns"
+              :key="c.key"
+              :class="{ num: c.num }"
+            >
               {{ c.render(row) }}
             </td>
           </tr>
@@ -43,16 +90,36 @@
     </div>
 
     <template v-if="insights.length || actions.length">
-      <div v-if="insights.length" class="rr-list-block">
-        <div class="rr-caption">观察</div>
+      <div
+        v-if="insights.length"
+        class="rr-list-block"
+      >
+        <div class="rr-caption">
+          观察
+        </div>
         <ul class="rr-list">
-          <li v-for="(t, i) in insights" :key="i">{{ t }}</li>
+          <li
+            v-for="(t, i) in insights"
+            :key="i"
+          >
+            {{ t }}
+          </li>
         </ul>
       </div>
-      <div v-if="actions.length" class="rr-list-block">
-        <div class="rr-caption">建议动作</div>
+      <div
+        v-if="actions.length"
+        class="rr-list-block"
+      >
+        <div class="rr-caption">
+          建议动作
+        </div>
         <ul class="rr-list">
-          <li v-for="(t, i) in actions" :key="i">{{ t }}</li>
+          <li
+            v-for="(t, i) in actions"
+            :key="i"
+          >
+            {{ t }}
+          </li>
         </ul>
       </div>
     </template>
@@ -66,18 +133,26 @@
         老板不知道到底进没进库（本仓：失败路径必须回写界面状态）。
     -->
     <template #footer>
-      <span v-if="archiveState === 'done'" class="rr-ok">
+      <span
+        v-if="archiveState === 'done'"
+        class="rr-ok"
+      >
         <CheckCircleOutlined />
         {{ archiveNote }}
       </span>
-      <span v-else-if="archiveState === 'failed'" class="rr-err">
+      <span
+        v-else-if="archiveState === 'failed'"
+        class="rr-err"
+      >
         {{ archiveError }}
       </span>
       <a-button
         v-if="archiveState === 'done'"
         size="small"
         @click="goLibrary"
-      >查看复盘库</a-button>
+      >
+        查看复盘库
+      </a-button>
       <a-button
         v-if="canArchive"
         size="small"
@@ -95,7 +170,11 @@
           为什么要有：界面只渲染了报告的一部分（`details` 里的 sales/ad/
           commission 汇总、以及恒空的观察/建议两块），导出得让老板拿到全量。
       -->
-      <a-button v-if="exportRows.length" size="small" @click="exportOpen = true">
+      <a-button
+        v-if="exportRows.length"
+        size="small"
+        @click="exportOpen = true"
+      >
         <DownloadOutlined />
         导出
       </a-button>

@@ -7,8 +7,15 @@
     :note="scopeNote"
   >
     <!-- ===== 主列表：商品 ===== -->
-    <div v-if="products.length" class="bo-list">
-      <div v-for="(p, i) in products" :key="p.asin || i" class="bo-item">
+    <div
+      v-if="products.length"
+      class="bo-list"
+    >
+      <div
+        v-for="(p, i) in products"
+        :key="p.asin || i"
+        class="bo-item"
+      >
         <div class="bo-line">
           <span class="bo-rank">{{ i + 1 }}</span>
           <span class="bo-name">{{ p.title }}</span>
@@ -18,8 +25,13 @@
             title="翻译标题"
             data-stl-trigger=""
             @click.stop="translateFromEvent(p.title || '', $event)"
-          >译</button>
-          <span class="bo-roi" :class="roiClass(p.roi ?? p.roi_estimated)">
+          >
+            译
+          </button>
+          <span
+            class="bo-roi"
+            :class="roiClass(p.roi ?? p.roi_estimated)"
+          >
             ROI {{ pct1(p.roi ?? p.roi_estimated) }}
           </span>
         </div>
@@ -40,7 +52,10 @@
         </div>
 
         <!-- 市场层：词不再是独立卡片，而是商品的来源标注 -->
-        <div v-if="p.source_keyword" class="bo-src">
+        <div
+          v-if="p.source_keyword"
+          class="bo-src"
+        >
           来源词 <b>{{ p.source_keyword }}</b>
           <span><span class="bo-sep">·</span>月搜索 {{ num(p.keyword_search_volume) }}</span>
           <span :class="compClass(p.keyword_competition)">
@@ -54,13 +69,25 @@
     </div>
 
     <!-- ===== 降级：商品池无匹配，只能给词方向 ===== -->
-    <div v-else-if="items.length" class="bo-list">
-      <div class="bo-fallback">商品池暂无匹配商品，以下是识别到的蓝海方向：</div>
-      <div v-for="(opp, i) in items" :key="`${opp.category}-${i}`" class="bo-item">
+    <div
+      v-else-if="items.length"
+      class="bo-list"
+    >
+      <div class="bo-fallback">
+        商品池暂无匹配商品，以下是识别到的蓝海方向：
+      </div>
+      <div
+        v-for="(opp, i) in items"
+        :key="`${opp.category}-${i}`"
+        class="bo-item"
+      >
         <div class="bo-line">
           <span class="bo-rank">{{ i + 1 }}</span>
           <span class="bo-name">{{ opp.category }}</span>
-          <span class="bo-score" :class="scoreClass(opp.opportunity_score)">
+          <span
+            class="bo-score"
+            :class="scoreClass(opp.opportunity_score)"
+          >
             {{ Math.round(Number(opp.opportunity_score) || 0) }} 分
           </span>
         </div>
@@ -69,11 +96,21 @@
           <span :class="compClass(opp.competition)"><span class="bo-sep">·</span>竞争度 {{ pct(opp.competition) }}</span>
           <span :class="trendClass(opp.trend)"><span class="bo-sep">·</span>{{ trendLabel(opp.trend) }}</span>
         </div>
-        <div v-if="opp.reason" class="bo-reason">{{ opp.reason }}</div>
+        <div
+          v-if="opp.reason"
+          class="bo-reason"
+        >
+          {{ opp.reason }}
+        </div>
       </div>
     </div>
 
-    <div v-else class="bo-empty">{{ summary || '本次没有评分达标的蓝海机会。' }}</div>
+    <div
+      v-else
+      class="bo-empty"
+    >
+      {{ summary || '本次没有评分达标的蓝海机会。' }}
+    </div>
   </ConversationCard>
 </template>
 

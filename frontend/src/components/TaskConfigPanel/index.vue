@@ -18,7 +18,10 @@
       </div>
       <div class="header-actions">
         <a-tooltip :title="collapsed ? '展开面板' : '收起面板'">
-          <button class="collapse-trigger" @click="handleToggle">
+          <button
+            class="collapse-trigger"
+            @click="handleToggle"
+          >
             <LeftOutlined v-if="!collapsed" />
             <RightOutlined v-else />
           </button>
@@ -32,7 +35,10 @@
          ★ 显示条件 = Workspace 注入的 `isWideBoardDataMode`（整页大屏布局**真的生效**），
            不是 `reviewMode === 'data'`（那只是"用户偏好"）。两者不一致时会出现
            「中间退回对话模式、右栏却还挂着这排 Tab」的错位 —— 第 313 轮故障。 -->
-    <div v-if="isAigcAgent && isWideBoardDataMode" class="aigc-tool-tabs">
+    <div
+      v-if="isAigcAgent && isWideBoardDataMode"
+      class="aigc-tool-tabs"
+    >
       <button
         v-for="tab in aigcTabs"
         :key="tab.id"
@@ -52,7 +58,10 @@
            第 313 轮故障原样：这里曾只认 `reviewMode === 'data'`，而 Workspace 那边
            的整页大屏判据漏了蓝海/利润 ⇒ 点这两个工具时「布局退回对话模式、
            右栏却还挂着这排 Tab」（老板 09-29 截图）。 -->
-    <div v-if="isProductResearchAgent && isWideBoardDataMode" class="aigc-tool-tabs">
+    <div
+      v-if="isProductResearchAgent && isWideBoardDataMode"
+      class="aigc-tool-tabs"
+    >
       <button
         v-for="tab in productResearchTabs"
         :key="tab.id"
@@ -79,7 +88,7 @@
       <!-- Listing 优化师：统一工作区（未选工具时默认展示，落在标题模块） -->
       <ListingBoard
         v-else-if="!currentTool && isListingAgent"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- 广告分析师：未选工具时默认展示「账户总览」数据看板（对话/数据模式一致） -->
@@ -89,7 +98,10 @@
       />
 
       <!-- 无工具选中（其它 Agent） -->
-      <div v-else-if="!currentTool" class="empty-hint">
+      <div
+        v-else-if="!currentTool"
+        class="empty-hint"
+      >
         <SettingOutlined style="font-size: var(--font-size-32); color: var(--text-tertiary); margin-bottom: var(--space-12)" />
         <p>选择工具后</p>
         <p>在此配置任务参数</p>
@@ -102,37 +114,37 @@
       <ListingBoard
         v-else-if="isListingAgent && LISTING_TOOL_IDS.includes(currentTool.id)"
         :current-tool-id="currentTool.id"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- 蓝海挖掘配置 -->
       <BlueOceanConfig
         v-else-if="currentTool.id === 'blue-ocean'"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- 痛点分析配置 -->
       <PainPointConfig
         v-else-if="currentTool.id === 'pain-points'"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- 竞品对比配置 -->
       <CompetitorConfig
         v-else-if="currentTool.id === 'competitor'"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- 选品避坑配置 -->
       <PitfallsConfig
         v-else-if="currentTool.id === 'pitfalls'"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- 利润测算配置 -->
       <ProfitConfig
         v-else-if="currentTool.id === 'profit-calc'"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- ★ 选品市场洞察大盘云图（第 305 轮）：选品分析师功能栏「选品大盘」落点。
@@ -146,40 +158,40 @@
       <KeywordMinerConfig
         v-else-if="currentTool.id === 'keyword-miner'"
         :working-product="workingProduct"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- 标题生成配置 -->
       <ListingOptimConfig
         v-else-if="currentTool.id === 'title-gen'"
         :working-product="workingProduct"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- 五点描述配置 -->
       <BulletConfig
         v-else-if="currentTool.id === 'bullet-gen'"
         :working-product="workingProduct"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- 描述生成配置 -->
       <DescConfig
         v-else-if="currentTool.id === 'desc-gen'"
         :working-product="workingProduct"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- SEO 诊断配置 -->
       <SEOConfig
         v-else-if="currentTool.id === 'seo-audit'"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- A/B 测试配置 -->
       <ABTestConfig
         v-else-if="currentTool.id === 'ab-test'"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- ====== 广告分析师：统一大面板，4 个工具共用（:key 强制切换时重建） ====== -->
@@ -188,7 +200,7 @@
         v-else-if="['ad-diagnosis','keyword-report','bid-suggest','competitor-ad'].includes(currentTool.id)"
         :key="'ad-' + currentTool.id"
         :current-tool-id="currentTool.id"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- ★ 差评工作台（第 289 轮 P1 / 第 291 轮收敛）：客服 Agent 功能栏
@@ -201,7 +213,7 @@
       <!-- 订单追踪配置 -->
       <OrderTrackConfig
         v-else-if="currentTool.id === 'order-track'"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- ====== AIGC 媒体生成器（3 工具各自独立配置面板） ======
@@ -211,15 +223,15 @@
             `isWideBoardDataMode` 的注释 —— 别在这里再展开第二份。） -->
       <StaticAssetConfig
         v-else-if="currentTool.id === 'static-asset-gen'"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
       <VideoScriptConfig
         v-else-if="currentTool.id === 'video-script-gen'"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
       <VideoGeneratorConfig
         v-else-if="currentTool.id === 'ai-video-generator'"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- ====== 运营复盘师（统一大面板，5个工具共用，:key 强制切换时重建） ====== -->
@@ -227,14 +239,19 @@
         v-else-if="['weekly-report','monthly-review','product-performance','inventory-health','profit-audit'].includes(currentTool.id)"
         :key="'review-' + currentTool.id"
         :current-tool-id="currentTool.id"
-        @startAnalysis="handleStartAnalysis"
+        @start-analysis="handleStartAnalysis"
       />
 
       <!-- 通用占位（兜底） -->
-      <div v-else class="empty-hint">
+      <div
+        v-else
+        class="empty-hint"
+      >
         <ToolOutlined style="font-size: var(--font-size-32); color: var(--text-tertiary); margin-bottom: var(--space-12)" />
         <p>{{ currentTool.name }}</p>
-        <p class="hint">配置面板开发中</p>
+        <p class="hint">
+          配置面板开发中
+        </p>
       </div>
     </div>
   </div>

@@ -21,17 +21,33 @@
         >
           复制
         </button>
-        <button class="stl-btn" type="button" title="关闭（Esc）" @click="hide">关闭</button>
+        <button
+          class="stl-btn"
+          type="button"
+          title="关闭（Esc）"
+          @click="hide"
+        >
+          关闭
+        </button>
       </div>
 
-      <div class="stl-src">{{ state.original }}</div>
+      <div class="stl-src">
+        {{ state.original }}
+      </div>
       <div class="stl-sep" />
-      <div class="stl-dst" :class="{ 'is-error': !!state.error }">
+      <div
+        class="stl-dst"
+        :class="{ 'is-error': !!state.error }"
+      >
         <template v-if="state.loading">
           <span class="stl-spin" />正在翻译…
         </template>
-        <template v-else-if="state.error">{{ state.error }}</template>
-        <template v-else>{{ state.translation }}</template>
+        <template v-else-if="state.error">
+          {{ state.error }}
+        </template>
+        <template v-else>
+          {{ state.translation }}
+        </template>
       </div>
     </div>
   </Teleport>

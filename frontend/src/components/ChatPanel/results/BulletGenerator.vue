@@ -6,7 +6,9 @@
         <span class="result-icon">✨</span>
         <div>
           <h3>五点描述生成</h3>
-          <p class="subtitle">高转化的卖点提炼与情感触发</p>
+          <p class="subtitle">
+            高转化的卖点提炼与情感触发
+          </p>
         </div>
       </div>
       <div class="header-actions">
@@ -15,12 +17,15 @@
           v-if="sourceMode === 'product' && productId"
           type="primary"
           size="small"
-          @click="handleSaveToProduct"
           :loading="saving"
+          @click="handleSaveToProduct"
         >
           <SaveOutlined /> 应用到当前产品 Listing
         </a-button>
-        <a-button size="small" @click="$emit('close')">
+        <a-button
+          size="small"
+          @click="$emit('close')"
+        >
           <CloseOutlined /> 关闭
         </a-button>
       </div>
@@ -28,12 +33,25 @@
 
     <!-- 五点描述列表 -->
     <div class="bullets-container">
-      <div class="bullets-toolbar" v-if="editableBullets.length">
+      <div
+        v-if="editableBullets.length"
+        class="bullets-toolbar"
+      >
         <a-space>
-          <a-button size="small" type="link" @click="addBullet">
+          <a-button
+            size="small"
+            type="link"
+            @click="addBullet"
+          >
             <PlusOutlined /> 新增一条
           </a-button>
-          <a-button size="small" type="text" @click="resetBullets" :disabled="!isBulletsEdited" title="还原为 AI 生成内容">
+          <a-button
+            size="small"
+            type="text"
+            :disabled="!isBulletsEdited"
+            title="还原为 AI 生成内容"
+            @click="resetBullets"
+          >
             <UndoOutlined /> 还原
           </a-button>
         </a-space>
@@ -61,10 +79,21 @@
             </a-tag>
           </div>
           <div class="bullet-header-actions">
-            <a-button type="text" size="small" @click="copyBullet(idx)" title="复制本条">
+            <a-button
+              type="text"
+              size="small"
+              title="复制本条"
+              @click="copyBullet(idx)"
+            >
               <CopyOutlined />
             </a-button>
-            <a-button type="text" size="small" danger @click="removeBullet(idx)" title="删除本条">
+            <a-button
+              type="text"
+              size="small"
+              danger
+              title="删除本条"
+              @click="removeBullet(idx)"
+            >
               <DeleteOutlined />
             </a-button>
           </div>
@@ -101,30 +130,57 @@
       </div>
       <div class="overview-grid">
         <div class="overview-item">
-          <div class="item-label">核心卖点</div>
-          <div class="item-value primary">{{ resultData.core_selling_points }}</div>
-          <div class="item-desc">直接驱动购买决策</div>
+          <div class="item-label">
+            核心卖点
+          </div>
+          <div class="item-value primary">
+            {{ resultData.core_selling_points }}
+          </div>
+          <div class="item-desc">
+            直接驱动购买决策
+          </div>
         </div>
         <div class="overview-item">
-          <div class="item-label">差异化卖点</div>
-          <div class="item-value success">{{ resultData.differentiation_points }}</div>
-          <div class="item-desc">区别于竞争对手</div>
+          <div class="item-label">
+            差异化卖点
+          </div>
+          <div class="item-value success">
+            {{ resultData.differentiation_points }}
+          </div>
+          <div class="item-desc">
+            区别于竞争对手
+          </div>
         </div>
         <div class="overview-item">
-          <div class="item-label">信任构建点</div>
-          <div class="item-value warning">{{ resultData.trust_builders }}</div>
-          <div class="item-desc">消除购买顾虑</div>
+          <div class="item-label">
+            信任构建点
+          </div>
+          <div class="item-value warning">
+            {{ resultData.trust_builders }}
+          </div>
+          <div class="item-desc">
+            消除购买顾虑
+          </div>
         </div>
         <div class="overview-item">
-          <div class="item-label">场景化卖点</div>
-          <div class="item-value info">{{ resultData.scenario_points }}</div>
-          <div class="item-desc">激发使用想象</div>
+          <div class="item-label">
+            场景化卖点
+          </div>
+          <div class="item-value info">
+            {{ resultData.scenario_points }}
+          </div>
+          <div class="item-desc">
+            激发使用想象
+          </div>
         </div>
       </div>
     </div>
 
     <!-- 情感触发词统计 -->
-    <div class="emotion-stats" v-if="resultData.emotion_triggers?.length">
+    <div
+      v-if="resultData.emotion_triggers?.length"
+      class="emotion-stats"
+    >
       <div class="stats-title">
         <HeartOutlined /> 情感触发词库
       </div>
@@ -152,9 +208,18 @@
           class="tip-item"
           :class="tip.status"
         >
-          <CheckCircleFilled v-if="tip.status === 'pass'" class="tip-icon pass" />
-          <WarningFilled v-else-if="tip.status === 'warn'" class="tip-icon warn" />
-          <CloseCircleFilled v-else class="tip-icon fail" />
+          <CheckCircleFilled
+            v-if="tip.status === 'pass'"
+            class="tip-icon pass"
+          />
+          <WarningFilled
+            v-else-if="tip.status === 'warn'"
+            class="tip-icon warn"
+          />
+          <CloseCircleFilled
+            v-else
+            class="tip-icon fail"
+          />
           <span class="tip-text">{{ tip.message }}</span>
         </div>
       </div>

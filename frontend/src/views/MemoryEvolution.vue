@@ -1,31 +1,47 @@
 <template>
   <a-drawer
     :open="visible"
-    @update:open="onOpenChange"
     title="记忆与进化"
     :width="WINDOW_W.xl"
     placement="right"
     :closable="true"
-    :maskClosable="true"
+    :mask-closable="true"
     class="memory-drawer"
+    @update:open="onOpenChange"
   >
     <!-- 加载中（首次） -->
-    <div v-if="loading && !snapshot" class="loading-box">
+    <div
+      v-if="loading && !snapshot"
+      class="loading-box"
+    >
       <a-spin />
       <span class="loading-text">正在读取长期记忆…</span>
     </div>
 
     <!-- 读失败：失败必须回写到界面上 -->
-    <div v-else-if="loadError" class="section-card error-card">
+    <div
+      v-else-if="loadError"
+      class="section-card error-card"
+    >
       <div class="error-title">
         <WarningOutlined /> 长期记忆加载失败
       </div>
-      <div class="error-detail">{{ loadError.message }}</div>
+      <div class="error-detail">
+        {{ loadError.message }}
+      </div>
       <a-space>
-        <a-button size="small" @click="loadAll">
+        <a-button
+          size="small"
+          @click="loadAll"
+        >
           <ReloadOutlined /> 重试
         </a-button>
-        <a-button v-if="loadError.needLogin" size="small" type="primary" @click="goLogin">
+        <a-button
+          v-if="loadError.needLogin"
+          size="small"
+          type="primary"
+          @click="goLogin"
+        >
           <LoginOutlined /> 去登录
         </a-button>
       </a-space>
@@ -36,7 +52,9 @@
       <div class="section-card">
         <div class="section-row">
           <div class="section-info">
-            <div class="section-label">生成对话记忆</div>
+            <div class="section-label">
+              生成对话记忆
+            </div>
             <div class="section-desc">
               允许 AI 从对话中提取并记住相关上下文，以便在未来对话中提供更连贯、个性化的响应。
               关闭后每晚任务会跳过，注入到对话框的记忆块也会为空。
@@ -48,7 +66,9 @@
             @change="onToggleAutoMemory"
           />
         </div>
-        <div class="section-sub">上次整理：{{ lastDistilledText }}</div>
+        <div class="section-sub">
+          上次整理：{{ lastDistilledText }}
+        </div>
       </div>
 
       <!-- 管理记忆：查看 / 编辑 / 重置 / 导入 / 立即整理 -->
@@ -58,25 +78,53 @@
           <span class="section-hint">每晚自动整理更新，可随时查看和编辑</span>
         </div>
         <div class="memory-actions">
-          <a-button size="small" type="primary" ghost :loading="distilling" @click="onDistillNow">
+          <a-button
+            size="small"
+            type="primary"
+            ghost
+            :loading="distilling"
+            @click="onDistillNow"
+          >
             <SyncOutlined /> 立即整理
           </a-button>
-          <a-button danger ghost size="small" :disabled="busy" @click="onResetMemory">
+          <a-button
+            danger
+            ghost
+            size="small"
+            :disabled="busy"
+            @click="onResetMemory"
+          >
             <ReloadOutlined /> 重置
           </a-button>
-          <a-button size="small" :disabled="busy" @click="toggleEdit">
+          <a-button
+            size="small"
+            :disabled="busy"
+            @click="toggleEdit"
+          >
             <EditOutlined /> {{ isEditing ? '取消编辑' : '编辑' }}
           </a-button>
-          <a-button size="small" :disabled="busy" @click="onImportMemory">
+          <a-button
+            size="small"
+            :disabled="busy"
+            @click="onImportMemory"
+          >
             <ImportOutlined /> 导入
           </a-button>
           <span class="count-hint">{{ countHint }}</span>
         </div>
 
         <!-- 上一次「立即整理」的结论（三分支） -->
-        <div v-if="distillOutcome" class="distill-panel" :class="distillOutcome.tone">
-          <div class="distill-title">{{ distillOutcome.title }}</div>
-          <div class="distill-body">{{ distillOutcome.body }}</div>
+        <div
+          v-if="distillOutcome"
+          class="distill-panel"
+          :class="distillOutcome.tone"
+        >
+          <div class="distill-title">
+            {{ distillOutcome.title }}
+          </div>
+          <div class="distill-body">
+            {{ distillOutcome.body }}
+          </div>
           <a-button
             v-if="distillOutcome.reason === 'disabled'"
             size="small"
@@ -92,11 +140,15 @@
         <div class="memory-content-wrapper">
           <textarea
             v-if="isEditing"
-            class="memory-editor"
             v-model="editingContent"
+            class="memory-editor"
             spellcheck="false"
           />
-          <div v-else-if="snapshot.markdown" class="memory-view" v-html="renderedMemory"></div>
+          <div
+            v-else-if="snapshot.markdown"
+            class="memory-view"
+            v-html="renderedMemory"
+          />
           <a-empty
             v-else
             class="memory-empty"
@@ -106,16 +158,32 @@
         </div>
 
         <!-- 编辑态底部操作栏 -->
-        <div v-if="isEditing" class="editor-footer">
+        <div
+          v-if="isEditing"
+          class="editor-footer"
+        >
           <div class="editor-left">
             <span class="editor-hint">直接修改上方内容，点击保存生效</span>
-            <div v-if="saveError" class="save-error">
+            <div
+              v-if="saveError"
+              class="save-error"
+            >
               <WarningOutlined /> {{ saveError }}
             </div>
           </div>
           <a-space>
-            <a-button size="small" @click="cancelEdit">取消</a-button>
-            <a-button size="small" type="primary" :loading="saving" @click="onSaveMemory">
+            <a-button
+              size="small"
+              @click="cancelEdit"
+            >
+              取消
+            </a-button>
+            <a-button
+              size="small"
+              type="primary"
+              :loading="saving"
+              @click="onSaveMemory"
+            >
               <CheckOutlined /> 保存修改
             </a-button>
           </a-space>
@@ -128,11 +196,23 @@
           <span class="section-title">学习时间线</span>
           <span class="section-hint">{{ logs.length }} 条记录，按时间倒序</span>
         </div>
-        <div v-if="logsError" class="logs-error">
+        <div
+          v-if="logsError"
+          class="logs-error"
+        >
           <WarningOutlined /> {{ logsError }}
-          <a-button size="small" type="link" @click="loadLogs">重试</a-button>
+          <a-button
+            size="small"
+            type="link"
+            @click="loadLogs"
+          >
+            重试
+          </a-button>
         </div>
-        <a-timeline v-if="logs.length" class="log-timeline">
+        <a-timeline
+          v-if="logs.length"
+          class="log-timeline"
+        >
           <a-timeline-item
             v-for="log in logs"
             :key="log.id"
@@ -142,8 +222,13 @@
               {{ fmtTime(log.created_at) }}
               <span class="log-kind">{{ KIND_LABEL[log.kind] || log.kind }}</span>
             </div>
-            <div class="log-content">{{ log.content }}</div>
-            <div v-if="log.is_failure && log.detail && log.detail.error" class="log-error">
+            <div class="log-content">
+              {{ log.content }}
+            </div>
+            <div
+              v-if="log.is_failure && log.detail && log.detail.error"
+              class="log-error"
+            >
               {{ log.detail.error }}
             </div>
           </a-timeline-item>
@@ -163,7 +248,7 @@
       accept=".md,.txt"
       style="display: none"
       @change="handleFileImport"
-    />
+    >
   </a-drawer>
 </template>
 

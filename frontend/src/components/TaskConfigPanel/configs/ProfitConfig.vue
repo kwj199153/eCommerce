@@ -1,7 +1,13 @@
 <template>
-  <div class="profit-config" :class="{ 'data-mode': isDataMode }">
+  <div
+    class="profit-config"
+    :class="{ 'data-mode': isDataMode }"
+  >
     <!-- 大屏模式：左表单 + 右计算结果窗口（第 312 轮对齐 AIGC 范式） -->
-    <div class="profit-content" :class="{ 'data-layout': isDataMode }">
+    <div
+      class="profit-content"
+      :class="{ 'data-layout': isDataMode }"
+    >
       <div class="profit-form">
         <!-- ====== 智能统一输入框 ====== -->
         <div class="form-group">
@@ -17,8 +23,15 @@
               <template #prefix>
                 <SearchOutlined style="color: #bfbfbf" />
               </template>
-              <template v-if="detectedType" #suffix>
-                <a-tag :color="platformTagColor" size="small" style="margin-right: var(--space-4); font-size: var(--font-size-10)">
+              <template
+                v-if="detectedType"
+                #suffix
+              >
+                <a-tag
+                  :color="platformTagColor"
+                  size="small"
+                  style="margin-right: var(--space-4); font-size: var(--font-size-10)"
+                >
                   {{ platformLabel }}
                 </a-tag>
               </template>
@@ -42,21 +55,27 @@
         </div>
 
         <!-- 已识别商品信息 -->
-        <div v-if="detectedProduct" class="product-card-mini">
+        <div
+          v-if="detectedProduct"
+          class="product-card-mini"
+        >
           <ShopOutlined />
           <span class="mini-platform">{{ detectedProduct.platform || '商品' }}</span>
           <span class="mini-id">{{ detectedProduct.displayId }}</span>
-          <CloseOutlined class="mini-clear" @click="clearProduct" />
+          <CloseOutlined
+            class="mini-clear"
+            @click="clearProduct"
+          />
         </div>
 
         <!-- ====== 成本明细表（Excel 风格）====== -->
         <div class="cost-sheet">
           <table class="cost-table">
             <colgroup>
-              <col class="col-group" />
-              <col class="col-item" />
-              <col class="col-value" />
-              <col class="col-hint" />
+              <col class="col-group">
+              <col class="col-item">
+              <col class="col-value">
+              <col class="col-hint">
             </colgroup>
             <thead>
               <tr>
@@ -67,9 +86,20 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in costRows" :key="row.key">
-                <td v-if="row.span" :rowspan="row.span" class="cell-group">{{ row.group }}</td>
-                <td class="cell-item">{{ row.label }}</td>
+              <tr
+                v-for="row in costRows"
+                :key="row.key"
+              >
+                <td
+                  v-if="row.span"
+                  :rowspan="row.span"
+                  class="cell-group"
+                >
+                  {{ row.group }}
+                </td>
+                <td class="cell-item">
+                  {{ row.label }}
+                </td>
                 <td class="cell-value">
                   <a-input-number
                     v-model:value="row.value"
@@ -82,30 +112,60 @@
                     :disabled="row.disabled"
                   />
                 </td>
-                <td class="cell-hint">{{ row.hint }}</td>
+                <td class="cell-hint">
+                  {{ row.hint }}
+                </td>
               </tr>
             </tbody>
           </table>
-          <div class="sheet-note">正向计算：填「目标售价」算利润；逆向定价：填「目标毛利」算售价（「目标售价」自动禁用）。其余空值一律按 0 计算。</div>
+          <div class="sheet-note">
+            正向计算：填「目标售价」算利润；逆向定价：填「目标毛利」算售价（「目标售价」自动禁用）。其余空值一律按 0 计算。
+          </div>
         </div>
 
         <!-- ====== 计算模式 + 操作 ====== -->
         <div class="mode-bar">
-          <a-radio-group v-model:value="form.mode" size="small" button-style="solid">
-            <a-radio-button value="forward">正向计算</a-radio-button>
-            <a-radio-button value="reverse">逆向定价</a-radio-button>
+          <a-radio-group
+            v-model:value="form.mode"
+            size="small"
+            button-style="solid"
+          >
+            <a-radio-button value="forward">
+              正向计算
+            </a-radio-button>
+            <a-radio-button value="reverse">
+              逆向定价
+            </a-radio-button>
           </a-radio-group>
 
-          <div v-if="form.mode === 'reverse'" class="mode-target">
+          <div
+            v-if="form.mode === 'reverse'"
+            class="mode-target"
+          >
             <label>目标毛利 ($)</label>
-            <a-input-number v-model:value="form.targetProfit" placeholder="期望利润" :min="0" :precision="2" size="small" style="width: 100%" />
+            <a-input-number
+              v-model:value="form.targetProfit"
+              placeholder="期望利润"
+              :min="0"
+              :precision="2"
+              size="small"
+              style="width: 100%"
+            />
           </div>
 
           <div class="mode-actions">
-            <a-button size="small" @click="handleReset">
+            <a-button
+              size="small"
+              @click="handleReset"
+            >
               <ReloadOutlined /> 重置
             </a-button>
-            <a-button type="primary" size="small" :loading="loading" @click="handleSubmit">
+            <a-button
+              type="primary"
+              size="small"
+              :loading="loading"
+              @click="handleSubmit"
+            >
               <CalculatorOutlined /> {{ form.mode === 'forward' ? '计算利润' : '计算售价' }}
             </a-button>
           </div>
@@ -113,12 +173,18 @@
 
         <!-- ====== 实时预览（后端唯一计算源）======
              对话模式下在表单下方；大屏模式下「计算结果」移入右栏，这里只留实时预览。 -->
-        <div v-if="preview" class="quick-preview">
+        <div
+          v-if="preview"
+          class="quick-preview"
+        >
           <div class="preview-metrics">
             <template v-if="form.mode === 'forward'">
               <div class="preview-item">
                 <span class="preview-label">预估毛利</span>
-                <span class="preview-value" :class="{ positive: preview.net_profit > 0, negative: preview.net_profit <= 0 }">
+                <span
+                  class="preview-value"
+                  :class="{ positive: preview.net_profit > 0, negative: preview.net_profit <= 0 }"
+                >
                   {{ preview.net_profit > 0 ? '+' : '' }}${{ (preview.net_profit ?? 0).toFixed(2) }}
                 </span>
               </div>
@@ -142,13 +208,26 @@
               </div>
             </template>
           </div>
-          <div v-if="form.mode === 'reverse'" class="preview-hint">
+          <div
+            v-if="form.mode === 'reverse'"
+            class="preview-hint"
+          >
             要实现 ${{ (form.targetProfit || 0).toFixed(2) }} 目标毛利，需定价不低于 ${{ (preview.listing_price ?? 0).toFixed(2) }}
           </div>
-          <div class="preview-source">{{ preview.platform }} · {{ preview.currency }} · 费率取当前店铺</div>
+          <div class="preview-source">
+            {{ preview.platform }} · {{ preview.currency }} · 费率取当前店铺
+          </div>
         </div>
-        <div v-else-if="previewError" class="quick-preview quick-preview--error">{{ previewError }}</div>
-        <div v-else class="quick-preview quick-preview--idle">
+        <div
+          v-else-if="previewError"
+          class="quick-preview quick-preview--error"
+        >
+          {{ previewError }}
+        </div>
+        <div
+          v-else
+          class="quick-preview quick-preview--idle"
+        >
           {{ previewLoading
             ? '正在按当前店铺费率测算…'
             : `填好「采购成本」和${form.mode === 'forward' ? '目标售价' : '目标毛利'}，这里会实时给出店铺费率下的结果。` }}
@@ -156,7 +235,10 @@
       </div>
 
       <!-- 大屏模式：右栏计算结果窗口（复用 ProfitResult，结果不进对话流） -->
-      <div v-if="isDataMode" class="profit-result-panel">
+      <div
+        v-if="isDataMode"
+        class="profit-result-panel"
+      >
         <ProfitResult
           v-if="latestResult"
           :data="latestResult"

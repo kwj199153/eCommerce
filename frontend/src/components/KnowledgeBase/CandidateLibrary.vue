@@ -3,20 +3,36 @@
     <!-- 统计卡片：评审状态机概览 -->
     <div class="stat-cards">
       <div class="stat-card">
-        <div class="stat-value">{{ store.totalCount }}</div>
-        <div class="stat-label">候选总数</div>
+        <div class="stat-value">
+          {{ store.totalCount }}
+        </div>
+        <div class="stat-label">
+          候选总数
+        </div>
       </div>
       <div class="stat-card stat-reviewing">
-        <div class="stat-value orange">{{ store.underReviewCount }}</div>
-        <div class="stat-label">评审中</div>
+        <div class="stat-value orange">
+          {{ store.underReviewCount }}
+        </div>
+        <div class="stat-label">
+          评审中
+        </div>
       </div>
       <div class="stat-card stat-approved">
-        <div class="stat-value green">{{ store.approvedCount }}</div>
-        <div class="stat-label">已通过</div>
+        <div class="stat-value green">
+          {{ store.approvedCount }}
+        </div>
+        <div class="stat-label">
+          已通过
+        </div>
       </div>
       <div class="stat-card stat-rejected">
-        <div class="stat-value gray">{{ store.rejectedCount }}</div>
-        <div class="stat-label">已淘汰</div>
+        <div class="stat-value gray">
+          {{ store.rejectedCount }}
+        </div>
+        <div class="stat-label">
+          已淘汰
+        </div>
       </div>
     </div>
 
@@ -29,7 +45,9 @@
           style="width: 260px"
           allow-clear
         >
-          <template #prefix><SearchOutlined /></template>
+          <template #prefix>
+            <SearchOutlined />
+          </template>
         </a-input-search>
         <a-select
           v-model:value="store.filterReviewStatus"
@@ -37,18 +55,41 @@
           placeholder="全部评审状态"
           allow-clear
         >
-          <a-select-option value="pending">草稿 ({{ store.pendingCount }})</a-select-option>
-          <a-select-option value="under_review">🔵 评审中 ({{ store.underReviewCount }})</a-select-option>
-          <a-select-option value="approved">🟢 已通过 ({{ store.approvedCount }})</a-select-option>
-          <a-select-option value="rejected">🔴 已淘汰 ({{ store.rejectedCount }})</a-select-option>
+          <a-select-option value="pending">
+            草稿 ({{ store.pendingCount }})
+          </a-select-option>
+          <a-select-option value="under_review">
+            🔵 评审中 ({{ store.underReviewCount }})
+          </a-select-option>
+          <a-select-option value="approved">
+            🟢 已通过 ({{ store.approvedCount }})
+          </a-select-option>
+          <a-select-option value="rejected">
+            🔴 已淘汰 ({{ store.rejectedCount }})
+          </a-select-option>
         </a-select>
-        <a-select v-model:value="store.sortBy" style="width: 140px">
-          <a-select-option value="updated_at">最近更新</a-select-option>
-          <a-select-option value="blue_ocean_score">蓝海评分</a-select-option>
-          <a-select-option value="roi">ROI</a-select-option>
-          <a-select-option value="sales">预估月销</a-select-option>
-          <a-select-option value="rating">评分</a-select-option>
-          <a-select-option value="price">售价</a-select-option>
+        <a-select
+          v-model:value="store.sortBy"
+          style="width: 140px"
+        >
+          <a-select-option value="updated_at">
+            最近更新
+          </a-select-option>
+          <a-select-option value="blue_ocean_score">
+            蓝海评分
+          </a-select-option>
+          <a-select-option value="roi">
+            ROI
+          </a-select-option>
+          <a-select-option value="sales">
+            预估月销
+          </a-select-option>
+          <a-select-option value="rating">
+            评分
+          </a-select-option>
+          <a-select-option value="price">
+            售价
+          </a-select-option>
         </a-select>
       </div>
       <div class="toolbar-right">
@@ -73,14 +114,20 @@
             <UploadOutlined /> 导入候选
           </a-button>
         </a-tooltip>
-        <a-button type="primary" @click="openAddModal">
+        <a-button
+          type="primary"
+          @click="openAddModal"
+        >
           <PlusOutlined /> 新增候选
         </a-button>
       </div>
     </div>
 
     <!-- 已应用的过滤条件（chip 行，一键清除） -->
-    <div v-if="store.hasActiveFilters" class="active-filters">
+    <div
+      v-if="store.hasActiveFilters"
+      class="active-filters"
+    >
       <span class="af-label">
         <FilterOutlined /> 已启用过滤 ({{ store.activeFilterCount }})
       </span>
@@ -89,9 +136,9 @@
       <a-tag
         v-if="store.currentGroupId"
         closable
-        @close="store.selectGroup(null)"
         :color="currentGroupColor"
         class="af-chip"
+        @close="store.selectGroup(null)"
       >
         {{ currentGroupLabel }}
       </a-tag>
@@ -100,9 +147,9 @@
       <a-tag
         v-if="store.filterReviewStatus && store.filterReviewStatus !== 'all'"
         closable
-        @close="store.filterReviewStatus = undefined"
         :color="COLOR_INFO"
         class="af-chip"
+        @close="store.filterReviewStatus = undefined"
       >
         评审：{{ reviewStatusMeta(store.filterReviewStatus as ReviewStatus).label }}
       </a-tag>
@@ -111,9 +158,9 @@
       <a-tag
         v-if="store.filterCategory && store.filterCategory !== 'all'"
         closable
-        @close="store.filterCategory = undefined"
         :color="COLOR_INFO"
         class="af-chip"
+        @close="store.filterCategory = undefined"
       >
         分类：{{ CATEGORY_ICON[store.filterCategory] || '📦' }} {{ CATEGORY_LABEL[store.filterCategory] || store.filterCategory }}
       </a-tag>
@@ -122,15 +169,20 @@
       <a-tag
         v-if="store.searchQuery.trim()"
         closable
-        @close="store.searchQuery = ''"
         :color="COLOR_INFO"
         class="af-chip"
+        @close="store.searchQuery = ''"
       >
         搜索："{{ store.searchQuery }}"
       </a-tag>
 
       <!-- 一键清空 -->
-      <a-button type="link" size="small" danger @click="store.clearAllFilters()">
+      <a-button
+        type="link"
+        size="small"
+        danger
+        @click="store.clearAllFilters()"
+      >
         <ClearOutlined /> 清空全部
       </a-button>
     </div>
@@ -159,63 +211,125 @@
       <template #bodyCell="{ column, record }">
         <!-- 标题列 -->
         <template v-if="column.key === 'title'">
-          <a-popover placement="rightTop" trigger="hover" :overlayStyle="{ width: '320px' }">
+          <a-popover
+            placement="rightTop"
+            trigger="hover"
+            :overlay-style="{ width: '320px' }"
+          >
             <template #content>
               <div class="hover-preview">
-                <img v-if="record.main_image" :src="record.main_image" alt="" class="hp-img" @error="(e: Event) => (e.target as HTMLImageElement).style.display = 'none'" />
+                <img
+                  v-if="record.main_image"
+                  :src="record.main_image"
+                  alt=""
+                  class="hp-img"
+                  @error="(e: Event) => (e.target as HTMLImageElement).style.display = 'none'"
+                >
                 <div class="hp-body">
-                  <div class="hp-title">{{ record.title }}</div>
+                  <div class="hp-title">
+                    {{ record.title }}
+                  </div>
                   <div class="hp-meta">
-                    <a-tag color="blue" size="small">{{ record.asin }}</a-tag>
-                    <span v-if="record.brand" class="hp-brand">{{ record.brand }}</span>
-                    <span v-if="record.sub_category" class="hp-cat">{{ record.sub_category }}</span>
+                    <a-tag
+                      color="blue"
+                      size="small"
+                    >
+                      {{ record.asin }}
+                    </a-tag>
+                    <span
+                      v-if="record.brand"
+                      class="hp-brand"
+                    >{{ record.brand }}</span>
+                    <span
+                      v-if="record.sub_category"
+                      class="hp-cat"
+                    >{{ record.sub_category }}</span>
                   </div>
                   <div class="hp-stats">
-                    <div class="hp-stat"><span class="hp-label">售价</span><strong>${{ record.price?.toFixed(2) }}</strong></div>
-                    <div class="hp-stat"><span class="hp-label">月销</span><strong>{{ record.estimated_monthly_sales || '-' }}</strong></div>
-                    <div class="hp-stat"><span class="hp-label">ROI</span><strong :class="{ 'roi-high': record.roi_estimated >= 100 }">{{ record.roi_estimated }}%</strong></div>
+                    <div class="hp-stat">
+                      <span class="hp-label">售价</span><strong>${{ record.price?.toFixed(2) }}</strong>
+                    </div>
+                    <div class="hp-stat">
+                      <span class="hp-label">月销</span><strong>{{ record.estimated_monthly_sales || '-' }}</strong>
+                    </div>
+                    <div class="hp-stat">
+                      <span class="hp-label">ROI</span><strong :class="{ 'roi-high': record.roi_estimated >= 100 }">{{ record.roi_estimated }}%</strong>
+                    </div>
                   </div>
                   <div class="hp-score-row">
                     <span class="hp-label">蓝海评分</span>
-                    <a-progress :percent="record.blue_ocean_score" :stroke-color="getScoreColor(record.blue_ocean_score)" :show-info="false" size="small" style="flex:1; max-width: 120px;" />
+                    <a-progress
+                      :percent="record.blue_ocean_score"
+                      :stroke-color="getScoreColor(record.blue_ocean_score)"
+                      :show-info="false"
+                      size="small"
+                      style="flex:1; max-width: 120px;"
+                    />
                     <strong :style="{ color: getScoreColor(record.blue_ocean_score), marginLeft: 6 }">{{ record.blue_ocean_score }}</strong>
                   </div>
-                  <div v-if="record.selling_points" class="hp-points">
-                    <div v-for="(sp, i) in record.selling_points.split(' | ').slice(0, 3)" :key="i" class="hp-point">{{ sp }}</div>
+                  <div
+                    v-if="record.selling_points"
+                    class="hp-points"
+                  >
+                    <div
+                      v-for="(sp, i) in record.selling_points.split(' | ').slice(0, 3)"
+                      :key="i"
+                      class="hp-point"
+                    >
+                      {{ sp }}
+                    </div>
                   </div>
-                  <div v-if="record.notes" class="hp-notes">{{ record.notes }}</div>
+                  <div
+                    v-if="record.notes"
+                    class="hp-notes"
+                  >
+                    {{ record.notes }}
+                  </div>
                 </div>
               </div>
             </template>
             <div class="title-cell">
-            <img
-              v-if="record.main_image"
-              class="title-thumb"
-              :src="record.main_image"
-              alt=""
-              loading="lazy"
-              @error="onImgError"
-            />
-            <span v-else class="title-thumb-ph">🖼️</span>
-            <div class="title-text-wrap">
-              <div class="title-line">
-                <a-tooltip :title="record.title">
-                  <span class="title-text">{{ record.title }}</span>
-                </a-tooltip>
-                <button
-                  class="title-translate-btn"
-                  type="button"
-                  title="翻译标题"
-                  data-stl-trigger=""
-                  @click.stop="translateFromEvent(record.title, $event)"
-                >译</button>
-              </div>
-              <div class="title-sub">
-                <a-tag color="blue" size="small">{{ record.asin }}</a-tag>
-                <span v-if="record.brand" class="title-brand">{{ record.brand }}</span>
+              <img
+                v-if="record.main_image"
+                class="title-thumb"
+                :src="record.main_image"
+                alt=""
+                loading="lazy"
+                @error="onImgError"
+              >
+              <span
+                v-else
+                class="title-thumb-ph"
+              >🖼️</span>
+              <div class="title-text-wrap">
+                <div class="title-line">
+                  <a-tooltip :title="record.title">
+                    <span class="title-text">{{ record.title }}</span>
+                  </a-tooltip>
+                  <button
+                    class="title-translate-btn"
+                    type="button"
+                    title="翻译标题"
+                    data-stl-trigger=""
+                    @click.stop="translateFromEvent(record.title, $event)"
+                  >
+                    译
+                  </button>
+                </div>
+                <div class="title-sub">
+                  <a-tag
+                    color="blue"
+                    size="small"
+                  >
+                    {{ record.asin }}
+                  </a-tag>
+                  <span
+                    v-if="record.brand"
+                    class="title-brand"
+                  >{{ record.brand }}</span>
+                </div>
               </div>
             </div>
-          </div>
           </a-popover>
         </template>
 
@@ -228,7 +342,10 @@
               :show-info="false"
               size="small"
             />
-            <span class="score-value" :style="{ color: getScoreColor(record.blue_ocean_score) }">
+            <span
+              class="score-value"
+              :style="{ color: getScoreColor(record.blue_ocean_score) }"
+            >
               {{ record.blue_ocean_score }}
             </span>
           </div>
@@ -251,22 +368,45 @@
         <!-- 操作列：高频外露「对标竞品」+ 低频收进 ⋮更多下拉（评审状态仅展示、修改入口全部走下拉） -->
         <template v-else-if="column.key === 'action'">
           <div class="row-action-cell">
-            <a-button type="link" size="small" class="act-primary" @click="openReviewCompetitors(record)">
+            <a-button
+              type="link"
+              size="small"
+              class="act-primary"
+              @click="openReviewCompetitors(record)"
+            >
               <TeamOutlined /> 对标竞品
             </a-button>
-            <a-dropdown :trigger="['click']" overlay-class-name="row-more-menu">
-              <a-button type="text" size="small" class="act-more">
+            <a-dropdown
+              :trigger="['click']"
+              overlay-class-name="row-more-menu"
+            >
+              <a-button
+                type="text"
+                size="small"
+                class="act-more"
+              >
                 <MoreOutlined />
               </a-button>
               <template #overlay>
                 <a-menu @click="(e: any) => handleMenuClick(e, record)">
-                  <a-menu-item v-if="record.review_status !== 'approved'" key="approve-menu" :disabled="approvingId === record.id">
+                  <a-menu-item
+                    v-if="record.review_status !== 'approved'"
+                    key="approve-menu"
+                    :disabled="approvingId === record.id"
+                  >
                     <CheckOutlined /> 评审通过
                   </a-menu-item>
-                  <a-menu-item v-if="record.review_status === 'pending'" key="reviewing">
+                  <a-menu-item
+                    v-if="record.review_status === 'pending'"
+                    key="reviewing"
+                  >
                     <MinusCircleOutlined /> 标记评审中
                   </a-menu-item>
-                  <a-menu-item v-if="record.review_status !== 'rejected'" key="reject" danger>
+                  <a-menu-item
+                    v-if="record.review_status !== 'rejected'"
+                    key="reject"
+                    danger
+                  >
                     <CloseOutlined /> 标记已淘汰
                   </a-menu-item>
                   <a-menu-item
@@ -276,7 +416,10 @@
                     <UndoOutlined /> 重新打开为草稿
                   </a-menu-item>
                   <a-menu-divider />
-                  <a-menu-item key="delete" danger>
+                  <a-menu-item
+                    key="delete"
+                    danger
+                  >
                     <DeleteOutlined /> 删除
                   </a-menu-item>
                 </a-menu>
@@ -298,38 +441,71 @@
       <a-form layout="vertical">
         <a-row :gutter="12">
           <a-col :span="12">
-            <a-form-item label="ASIN" required>
-              <a-input v-model:value="addForm.asin" placeholder="如 B0XXXXXXX" />
+            <a-form-item
+              label="ASIN"
+              required
+            >
+              <a-input
+                v-model:value="addForm.asin"
+                placeholder="如 B0XXXXXXX"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="标题" required>
-              <a-input v-model:value="addForm.title" placeholder="商品标题" />
+            <a-form-item
+              label="标题"
+              required
+            >
+              <a-input
+                v-model:value="addForm.title"
+                placeholder="商品标题"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="售价 (USD)">
-              <a-input-number v-model:value="addForm.price" :min="0" style="width: 100%" />
+              <a-input-number
+                v-model:value="addForm.price"
+                :min="0"
+                style="width: 100%"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="预估月销">
-              <a-input-number v-model:value="addForm.estimated_monthly_sales" :min="0" style="width: 100%" />
+              <a-input-number
+                v-model:value="addForm.estimated_monthly_sales"
+                :min="0"
+                style="width: 100%"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="蓝海评分">
-              <a-input-number v-model:value="addForm.blue_ocean_score" :min="0" :max="100" style="width: 100%" />
+              <a-input-number
+                v-model:value="addForm.blue_ocean_score"
+                :min="0"
+                :max="100"
+                style="width: 100%"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="ROI 估算 (%)">
-              <a-input-number v-model:value="addForm.roi_estimated" :min="0" style="width: 100%" />
+              <a-input-number
+                v-model:value="addForm.roi_estimated"
+                :min="0"
+                style="width: 100%"
+              />
             </a-form-item>
           </a-col>
         </a-row>
         <a-form-item label="备注">
-          <a-textarea v-model:value="addForm.notes" :rows="2" placeholder="选品来源、风险提示等" />
+          <a-textarea
+            v-model:value="addForm.notes"
+            :rows="2"
+            placeholder="选品来源、风险提示等"
+          />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -352,24 +528,40 @@
           <p class="ant-upload-drag-icon">
             <InboxOutlined />
           </p>
-          <p class="ant-upload-text">点击或拖拽文件到此区域上传</p>
+          <p class="ant-upload-text">
+            点击或拖拽文件到此区域上传
+          </p>
           <p class="ant-upload-hint">
-            支持 JSON / CSV / TXT 格式<br/>
-            JSON：数组，每项含 asin / title / price 等<br/>
-            CSV：asin, title, category, price, sales, roi, score<br/>
+            支持 JSON / CSV / TXT 格式<br>
+            JSON：数组，每项含 asin / title / price 等<br>
+            CSV：asin, title, category, price, sales, roi, score<br>
             TXT：每行 "ASIN /// 标题"
           </p>
         </a-upload-dragger>
 
-        <div v-if="importResult" class="import-result" :class="{ error: importResult.failed > 0 }">
+        <div
+          v-if="importResult"
+          class="import-result"
+          :class="{ error: importResult.failed > 0 }"
+        >
           <a-alert
             :type="importResult.failed > 0 ? 'warning' : 'success'"
             :message="`导入完成：成功 ${importResult.success} 条${importResult.failed > 0 ? `，失败 ${importResult.failed} 条` : ''}`"
           >
-            <template v-if="importResult.errors.length" #description>
+            <template
+              v-if="importResult.errors.length"
+              #description
+            >
               <ul class="error-list">
-                <li v-for="(err, i) in importResult.errors.slice(0, 5)" :key="i">{{ err }}</li>
-                <li v-if="importResult.errors.length > 5">... 还有 {{ importResult.errors.length - 5 }} 条错误</li>
+                <li
+                  v-for="(err, i) in importResult.errors.slice(0, 5)"
+                  :key="i"
+                >
+                  {{ err }}
+                </li>
+                <li v-if="importResult.errors.length > 5">
+                  ... 还有 {{ importResult.errors.length - 5 }} 条错误
+                </li>
               </ul>
             </template>
           </a-alert>

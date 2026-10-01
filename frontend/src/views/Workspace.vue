@@ -19,12 +19,25 @@
       <!-- data-tour：新手引导锚点。取值必须逐字对齐 src/config/tourAnchors.ts，
            双向对账（注册了没标 / 标了没注册）由 scripts/check-tour-anchors.cjs 钉住 -->
 
-      <div class="logo-row" data-tour="tour-brand">
-        <div class="logo-brand" :title="!sidebarCollapsed ? '回到店秘书' : ''" @click="goHome">
+      <div
+        class="logo-row"
+        data-tour="tour-brand"
+      >
+        <div
+          class="logo-brand"
+          :title="!sidebarCollapsed ? '回到店秘书' : ''"
+          @click="goHome"
+        >
           <span class="logo-avatar"><RobotOutlined /></span>
-          <span v-if="!sidebarCollapsed" class="logo-name">
+          <span
+            v-if="!sidebarCollapsed"
+            class="logo-name"
+          >
             <span class="logo-title">店管家 AI</span>
-            <span v-if="currentShop" class="logo-shop-name">· {{ currentShop.name }}</span>
+            <span
+              v-if="currentShop"
+              class="logo-shop-name"
+            >· {{ currentShop.name }}</span>
           </span>
         </div>
         <!-- 店铺群小图标（右上角） -->
@@ -32,7 +45,7 @@
           v-model:open="shopPopoverVisible"
           trigger="click"
           placement="bottomRight"
-          :overlayStyle="{ width: '340px' }"
+          :overlay-style="{ width: '340px' }"
         >
           <template #content>
             <ShopPopoverContent @close="shopPopoverVisible = false" />
@@ -43,7 +56,10 @@
             data-tour="tour-shop-switch"
           >
             <ShopOutlined />
-            <span v-if="!sidebarCollapsed" class="shop-trigger-count">{{ shopCount }}</span>
+            <span
+              v-if="!sidebarCollapsed"
+              class="shop-trigger-count"
+            >{{ shopCount }}</span>
           </button>
         </a-popover>
       </div>
@@ -52,7 +68,10 @@
       <SidebarAgentList />
 
       <!-- 资料库 -->
-      <SidebarKnowledgeBase ref="knowledgeBaseRef" @navigate="handleKnowledgeNavigate" />
+      <SidebarKnowledgeBase
+        ref="knowledgeBaseRef"
+        @navigate="handleKnowledgeNavigate"
+      />
 
       <!-- 底部账户菜单 -->
       <SidebarAccountMenu :sidebar-collapsed="sidebarCollapsed" />
@@ -66,15 +85,18 @@
           <!-- 折叠按钮 -->
           <a-button
             type="text"
-            @click="toggleSidebar"
             class="collapse-btn"
+            @click="toggleSidebar"
           >
             <MenuUnfoldOutlined v-if="sidebarCollapsed" />
             <MenuFoldOutlined v-else />
           </a-button>
 
           <!-- 紧凑工具栏（选中 Agent 且在对话视图时显示） -->
-          <div v-if="currentAgent && currentView === 'chat'" class="inline-toolbar">
+          <div
+            v-if="currentAgent && currentView === 'chat'"
+            class="inline-toolbar"
+          >
             <span class="toolbar-agent-label">{{ currentAgent.name }}</span>
 
             <!-- 竞品监控员：顶部不展示工具卡片（看数面板收敛到监控看板；推理走输入框上方 chip） -->
@@ -86,7 +108,10 @@
                    `scripts/cdp-review-desk-ui-probe-panel-bug.mjs` 的 R6）。
                    ⇒ 判据：**只有「面板里真的另有入口」才允许隐藏这一排。** -->
             <template v-if="!isSecretaryAgent && !isCompetitorIntelAgent && !(isReviewAgent && reviewMode === 'data') && !(isAdAnalyst && reviewMode === 'data') && !(isAigcAgent && reviewMode === 'data')">
-              <a-divider type="vertical" :margin="8" />
+              <a-divider
+                type="vertical"
+                :margin="8"
+              />
               <div class="toolbar-tools">
                 <div
                   v-for="tool in currentAgentTools"
@@ -130,7 +155,10 @@
           />
 
           <!-- 未选 Agent 提示（仅对话视图且确实未选 Agent） -->
-          <span v-else-if="!currentAgent && currentView === 'chat'" class="no-agent-hint">选择左侧 Agent 开始</span>
+          <span
+            v-else-if="!currentAgent && currentView === 'chat'"
+            class="no-agent-hint"
+          >选择左侧 Agent 开始</span>
         </div>
         <div class="header-right">
           <!-- 对话工具栏（查找 / 分享 / 历史提问）—— 对齐 WorkBuddy 的对话窗口右上角。
@@ -165,7 +193,10 @@
                  一份「是否大屏」的判定不许两处各写一遍，故三个工具收进同一判据。
                差评台账**进**：同样是工具级，但台账是 8 列表格，528 不够 ⇒ 要双模式
                （它不是 Agent 级 ⇒ 只在选中该工具时出现，见 isReviewDeskTool）。 -->
-          <div v-if="hasWideBoard && currentView === 'chat'" class="mode-switch">
+          <div
+            v-if="hasWideBoard && currentView === 'chat'"
+            class="mode-switch"
+          >
             <button
               class="mode-switch-btn"
               :class="{ active: reviewMode === 'chat' }"
@@ -185,7 +216,10 @@
           </div>
 
           <!-- 通知铃铛 -->
-          <a-badge :count="0" dot>
+          <a-badge
+            :count="0"
+            dot
+          >
             <BellOutlined style="font-size: 18px; cursor: pointer" />
           </a-badge>
 
@@ -248,8 +282,8 @@
     >
       <TaskConfigPanel
         :key="currentAgent?.id || 'none'"
-        :currentTool="currentSelectedTool"
-        @startAnalysis="handleToolAnalysis"
+        :current-tool="currentSelectedTool"
+        @start-analysis="handleToolAnalysis"
       />
     </a-layout-sider>
 

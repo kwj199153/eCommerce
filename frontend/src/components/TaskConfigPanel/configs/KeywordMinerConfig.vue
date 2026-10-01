@@ -1,14 +1,35 @@
 <template>
   <div class="keyword-miner-config">
-    <a-collapse v-model:activeKey="activeKeys" ghost>
+    <a-collapse
+      v-model:active-key="activeKeys"
+      ghost
+    >
       <!-- 种子词来源 -->
-      <a-collapse-panel key="seed" header="🌱 种子词来源">
-        <a-form layout="vertical" :model="form">
-          <a-form-item label="挖掘模式" required>
-            <a-radio-group v-model:value="form.mode" @change="onModeChange; saveForm()">
-              <a-radio-button value="product">产品驱动</a-radio-button>
-              <a-radio-button value="asin">竞品 ASIN</a-radio-button>
-              <a-radio-button value="custom">自定义种子词</a-radio-button>
+      <a-collapse-panel
+        key="seed"
+        header="🌱 种子词来源"
+      >
+        <a-form
+          layout="vertical"
+          :model="form"
+        >
+          <a-form-item
+            label="挖掘模式"
+            required
+          >
+            <a-radio-group
+              v-model:value="form.mode"
+              @change="onModeChange; saveForm()"
+            >
+              <a-radio-button value="product">
+                产品驱动
+              </a-radio-button>
+              <a-radio-button value="asin">
+                竞品 ASIN
+              </a-radio-button>
+              <a-radio-button value="custom">
+                自定义种子词
+              </a-radio-button>
             </a-radio-group>
           </a-form-item>
 
@@ -28,16 +49,27 @@
                   @select="onProductSelect"
                 />
               </div>
-              <div v-if="productTitle" class="seed-preview">
-                <a-tag color="blue">📦 {{ productTitle }}</a-tag>
-                <span v-if="productAsin" class="text-hint">ASIN: {{ productAsin }}</span>
+              <div
+                v-if="productTitle"
+                class="seed-preview"
+              >
+                <a-tag color="blue">
+                  📦 {{ productTitle }}
+                </a-tag>
+                <span
+                  v-if="productAsin"
+                  class="text-hint"
+                >ASIN: {{ productAsin }}</span>
               </div>
             </a-form-item>
           </template>
 
           <!-- 模式2：竞品 ASIN -->
           <template v-if="form.mode === 'asin'">
-            <a-form-item label="竞品 ASIN 列表" required>
+            <a-form-item
+              label="竞品 ASIN 列表"
+              required
+            >
               <div class="input-with-picker">
                 <a-textarea
                   v-model:value="form.seed_asins"
@@ -56,7 +88,10 @@
 
           <!-- 模式3：自定义种子词 -->
           <template v-if="form.mode === 'custom'">
-            <a-form-item label="种子关键词" required>
+            <a-form-item
+              label="种子关键词"
+              required
+            >
               <a-select
                 v-model:value="form.seed_keywords"
                 mode="tags"
@@ -77,36 +112,70 @@
       </a-collapse-panel>
 
       <!-- 挖掘策略 -->
-      <a-collapse-panel key="strategy" header="⚙️ 挖掘策略">
-        <a-form layout="vertical" :model="form">
+      <a-collapse-panel
+        key="strategy"
+        header="⚙️ 挖掘策略"
+      >
+        <a-form
+          layout="vertical"
+          :model="form"
+        >
           <a-form-item label="关键词类型">
-            <a-checkbox-group v-model:value="form.keyword_types" @change="saveForm" class="keyword-type-grid">
-              <div class="kw-type-card" :class="{ active: form.keyword_types.includes('long_tail') }" @click="toggleKeywordType('long_tail')">
+            <a-checkbox-group
+              v-model:value="form.keyword_types"
+              class="keyword-type-grid"
+              @change="saveForm"
+            >
+              <div
+                class="kw-type-card"
+                :class="{ active: form.keyword_types.includes('long_tail') }"
+                @click="toggleKeywordType('long_tail')"
+              >
                 <span class="kw-icon">🔍</span>
                 <span class="kw-label">长尾词</span>
                 <span class="kw-desc">低竞争高转化</span>
               </div>
-              <div class="kw-type-card" :class="{ active: form.keyword_types.includes('high_volume') }" @click="toggleKeywordType('high_volume')">
+              <div
+                class="kw-type-card"
+                :class="{ active: form.keyword_types.includes('high_volume') }"
+                @click="toggleKeywordType('high_volume')"
+              >
                 <span class="kw-icon">📈</span>
                 <span class="kw-label">大流量词</span>
                 <span class="kw-desc">品牌曝光</span>
               </div>
-              <div class="kw-type-card" :class="{ active: form.keyword_types.includes('competitor') }" @click="toggleKeywordType('competitor')">
+              <div
+                class="kw-type-card"
+                :class="{ active: form.keyword_types.includes('competitor') }"
+                @click="toggleKeywordType('competitor')"
+              >
                 <span class="kw-icon">🎯</span>
                 <span class="kw-label">竞品词</span>
                 <span class="kw-desc">截流对手</span>
               </div>
-              <div class="kw-type-card" :class="{ active: form.keyword_types.includes('question') }" @click="toggleKeywordType('question')">
+              <div
+                class="kw-type-card"
+                :class="{ active: form.keyword_types.includes('question') }"
+                @click="toggleKeywordType('question')"
+              >
                 <span class="kw-icon">❓</span>
                 <span class="kw-label">问答词</span>
                 <span class="kw-desc">匹配用户疑问</span>
               </div>
-              <div class="kw-type-card" :class="{ active: form.keyword_types.includes('seasonal') }" @click="toggleKeywordType('seasonal')">
+              <div
+                class="kw-type-card"
+                :class="{ active: form.keyword_types.includes('seasonal') }"
+                @click="toggleKeywordType('seasonal')"
+              >
                 <span class="kw-icon">📅</span>
                 <span class="kw-label">季节性词</span>
                 <span class="kw-desc">时效流量</span>
               </div>
-              <div class="kw-type-card" :class="{ active: form.keyword_types.includes('trend') }" @click="toggleKeywordType('trend')">
+              <div
+                class="kw-type-card"
+                :class="{ active: form.keyword_types.includes('trend') }"
+                @click="toggleKeywordType('trend')"
+              >
                 <span class="kw-icon">🔥</span>
                 <span class="kw-label">趋势词</span>
                 <span class="kw-desc">新兴搜索</span>
@@ -115,13 +184,28 @@
           </a-form-item>
 
           <a-form-item label="目标市场/站点">
-            <a-select v-model:value="form.marketplace" @change="saveForm">
-              <a-select-option value="us">🇺🇸 美国 (amazon.com)</a-select-option>
-              <a-select-option value="uk">🇬🇧 英国 (amazon.co.uk)</a-select-option>
-              <a-select-option value="de">🇩🇪 德国 (amazon.de)</a-select-option>
-              <a-select-option value="jp">🇯🇵 日本 (amazon.co.jp)</a-select-option>
-              <a-select-option value="ca">🇨🇦 加拿大 (amazon.ca)</a-select-option>
-              <a-select-option value="au">🇦🇺 澳大利亚 (amazon.com.au)</a-select-option>
+            <a-select
+              v-model:value="form.marketplace"
+              @change="saveForm"
+            >
+              <a-select-option value="us">
+                🇺🇸 美国 (amazon.com)
+              </a-select-option>
+              <a-select-option value="uk">
+                🇬🇧 英国 (amazon.co.uk)
+              </a-select-option>
+              <a-select-option value="de">
+                🇩🇪 德国 (amazon.de)
+              </a-select-option>
+              <a-select-option value="jp">
+                🇯🇵 日本 (amazon.co.jp)
+              </a-select-option>
+              <a-select-option value="ca">
+                🇨🇦 加拿大 (amazon.ca)
+              </a-select-option>
+              <a-select-option value="au">
+                🇦🇺 澳大利亚 (amazon.com.au)
+              </a-select-option>
             </a-select>
           </a-form-item>
 
@@ -137,19 +221,36 @@
           </a-form-item>
 
           <a-form-item label="排序方式">
-            <a-radio-group v-model:value="form.sort_by" @change="saveForm">
-              <a-radio-button value="search_volume">搜索量</a-radio-button>
-              <a-radio-button value="competition">竞争度(低→高)</a-radio-button>
-              <a-radio-button value="suggested_bid">建议竞价</a-radio-button>
-              <a-radio-button value="relevance">相关度</a-radio-button>
+            <a-radio-group
+              v-model:value="form.sort_by"
+              @change="saveForm"
+            >
+              <a-radio-button value="search_volume">
+                搜索量
+              </a-radio-button>
+              <a-radio-button value="competition">
+                竞争度(低→高)
+              </a-radio-button>
+              <a-radio-button value="suggested_bid">
+                建议竞价
+              </a-radio-button>
+              <a-radio-button value="relevance">
+                相关度
+              </a-radio-button>
             </a-radio-group>
           </a-form-item>
         </a-form>
       </a-collapse-panel>
 
       <!-- 过滤条件 -->
-      <a-collapse-panel key="filter" header="🔎 过滤条件">
-        <a-form layout="vertical" :model="form">
+      <a-collapse-panel
+        key="filter"
+        header="🔎 过滤条件"
+      >
+        <a-form
+          layout="vertical"
+          :model="form"
+        >
           <a-form-item label="最低搜索量阈值">
             <a-input-number
               v-model:value="form.min_search_volume"
@@ -171,13 +272,28 @@
             />
           </a-form-item>
           <a-form-item label="语言">
-            <a-select v-model:value="form.language" @change="saveForm">
-              <a-select-option value="all">全部</a-select-option>
-              <a-select-option value="en">English</a-select-option>
-              <a-select-option value="zh">中文</a-select-option>
-              <a-select-option value="es">Español</a-select-option>
-              <a-select-option value="de">Deutsch</a-select-option>
-              <a-select-option value="ja">日本語</a-select-option>
+            <a-select
+              v-model:value="form.language"
+              @change="saveForm"
+            >
+              <a-select-option value="all">
+                全部
+              </a-select-option>
+              <a-select-option value="en">
+                English
+              </a-select-option>
+              <a-select-option value="zh">
+                中文
+              </a-select-option>
+              <a-select-option value="es">
+                Español
+              </a-select-option>
+              <a-select-option value="de">
+                Deutsch
+              </a-select-option>
+              <a-select-option value="ja">
+                日本語
+              </a-select-option>
             </a-select>
           </a-form-item>
         </a-form>
@@ -185,10 +301,21 @@
     </a-collapse>
 
     <div class="config-actions">
-      <a-button type="primary" block size="large" @click="handleMine" :loading="mining">
+      <a-button
+        type="primary"
+        block
+        size="large"
+        :loading="mining"
+        @click="handleMine"
+      >
         <ThunderboltOutlined /> 开始挖掘
       </a-button>
-      <a-button block @click="handleReset"><ReloadOutlined /> 重置</a-button>
+      <a-button
+        block
+        @click="handleReset"
+      >
+        <ReloadOutlined /> 重置
+      </a-button>
     </div>
   </div>
 </template>

@@ -5,23 +5,39 @@
         <th>归因</th>
         <th>规则代号</th>
         <th>名称</th>
-        <th class="num">优先级</th>
+        <th class="num">
+          优先级
+        </th>
         <th>命中条件</th>
         <th>补偿方案</th>
-        <th class="num">单笔上限</th>
+        <th class="num">
+          单笔上限
+        </th>
         <th>启用</th>
-        <th class="rd-table-act"></th>
+        <th class="rd-table-act" />
       </tr>
     </thead>
     <tbody>
-      <tr v-for="r in rules" :key="r.id" :class="{ 'rd-rule-off': !r.enabled }">
+      <tr
+        v-for="r in rules"
+        :key="r.id"
+        :class="{ 'rd-rule-off': !r.enabled }"
+      >
         <td><a-tag>{{ r.cause_label }}</a-tag></td>
         <td><code>{{ r.code }}</code></td>
         <td>{{ r.name || '—' }}</td>
-        <td class="num">{{ r.priority }}</td>
-        <td class="rd-rule-cond">{{ ruleCondText(r) }}</td>
-        <td class="rd-rule-action">{{ ruleActionText(r) }}</td>
-        <td class="num">{{ r.budget_cap > 0 ? r.budget_cap : '未设' }}</td>
+        <td class="num">
+          {{ r.priority }}
+        </td>
+        <td class="rd-rule-cond">
+          {{ ruleCondText(r) }}
+        </td>
+        <td class="rd-rule-action">
+          {{ ruleActionText(r) }}
+        </td>
+        <td class="num">
+          {{ r.budget_cap > 0 ? r.budget_cap : '未设' }}
+        </td>
         <td>
           <a-switch
             :checked="r.enabled"
@@ -30,12 +46,24 @@
           />
         </td>
         <td class="rd-table-act">
-          <a-button type="link" size="small" @click="emit('edit', r)">编辑</a-button>
+          <a-button
+            type="link"
+            size="small"
+            @click="emit('edit', r)"
+          >
+            编辑
+          </a-button>
           <a-popconfirm
             title="确定删除这条规则？已生成的处置不受影响（存的是方案快照）。"
             @confirm="emit('remove', r)"
           >
-            <a-button type="link" size="small" danger>删除</a-button>
+            <a-button
+              type="link"
+              size="small"
+              danger
+            >
+              删除
+            </a-button>
           </a-popconfirm>
         </td>
       </tr>

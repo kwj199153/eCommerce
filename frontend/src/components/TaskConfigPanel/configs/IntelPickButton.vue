@@ -12,7 +12,7 @@
     v-model:open="popoverOpen"
     trigger="click"
     placement="bottomLeft"
-    :overlayStyle="{ width: '460px', maxHeight: '560px' }"
+    :overlay-style="{ width: '460px', maxHeight: '560px' }"
   >
     <template #content>
       <IntelCompetitorPick />

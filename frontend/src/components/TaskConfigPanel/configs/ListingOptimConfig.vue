@@ -17,10 +17,16 @@
     </a-alert>
 
     <!-- 统一表单（手动输入 / 产品库回填 共用） -->
-    <a-form layout="vertical" :model="form" class="optim-form">
-
+    <a-form
+      layout="vertical"
+      :model="form"
+      class="optim-form"
+    >
       <!-- 产品名称 -->
-      <a-form-item :label="isSimplified ? '商品名称' : '产品名称'" required>
+      <a-form-item
+        :label="isSimplified ? '商品名称' : '产品名称'"
+        required
+      >
         <a-input
           v-model:value="form.product_name"
           :placeholder="isSimplified ? '例：便携式加湿器 USB静音卧室（Temu/Shopee 短标题）' : '例：便携式加湿器 USB静音卧室'"
@@ -34,7 +40,10 @@
       <a-row :gutter="12">
         <a-col :span="12">
           <a-form-item label="品牌名">
-            <a-input v-model:value="form.brand" placeholder="例：AirComfort" />
+            <a-input
+              v-model:value="form.brand"
+              placeholder="例：AirComfort"
+            />
           </a-form-item>
         </a-col>
         <a-col :span="12">
@@ -42,22 +51,48 @@
             <a-select v-model:value="form.site">
               <!-- 亚马逊站点 -->
               <template v-if="!isSimplified">
-                <a-select-option value="com">美国 (amazon.com)</a-select-option>
-                <a-select-option value="co.uk">英国 (amazon.co.uk)</a-select-option>
-                <a-select-option value="de">德国 (amazon.de)</a-select-option>
-                <a-select-option value="jp">日本 (amazon.co.jp)</a-select-option>
+                <a-select-option value="com">
+                  美国 (amazon.com)
+                </a-select-option>
+                <a-select-option value="co.uk">
+                  英国 (amazon.co.uk)
+                </a-select-option>
+                <a-select-option value="de">
+                  德国 (amazon.de)
+                </a-select-option>
+                <a-select-option value="jp">
+                  日本 (amazon.co.jp)
+                </a-select-option>
               </template>
               <!-- Temu / Shopee 站点 -->
               <template v-else>
-                <a-select-option value="temu_us">Temu 美国站</a-select-option>
-                <a-select-option value="temu_uk">Temu 英国站</a-select-option>
-                <a-select-option value="shopee_my">Shopee 马来西亚</a-select-option>
-                <a-select-option value="shopee_tw">Shopee 台湾</a-select-option>
-                <a-select-option value="shopee_ph">Shopee 菲律宾</a-select-option>
-                <a-select-option value="shopee_th">Shopee 泰国</a-select-option>
-                <a-select-option value="shopee_sg">Shopee 新加坡</a-select-option>
-                <a-select-option value="shopee_vn">Shopee 越南</a-select-option>
-                <a-select-option value="shopee_id">Shopee 印尼</a-select-option>
+                <a-select-option value="temu_us">
+                  Temu 美国站
+                </a-select-option>
+                <a-select-option value="temu_uk">
+                  Temu 英国站
+                </a-select-option>
+                <a-select-option value="shopee_my">
+                  Shopee 马来西亚
+                </a-select-option>
+                <a-select-option value="shopee_tw">
+                  Shopee 台湾
+                </a-select-option>
+                <a-select-option value="shopee_ph">
+                  Shopee 菲律宾
+                </a-select-option>
+                <a-select-option value="shopee_th">
+                  Shopee 泰国
+                </a-select-option>
+                <a-select-option value="shopee_sg">
+                  Shopee 新加坡
+                </a-select-option>
+                <a-select-option value="shopee_vn">
+                  Shopee 越南
+                </a-select-option>
+                <a-select-option value="shopee_id">
+                  Shopee 印尼
+                </a-select-option>
               </template>
             </a-select>
           </a-form-item>
@@ -66,7 +101,10 @@
 
       <!-- 分类 -->
       <a-form-item label="产品分类">
-        <a-input v-model:value="form.category" placeholder="例：Home & Kitchen > Humidifiers" />
+        <a-input
+          v-model:value="form.category"
+          placeholder="例：Home & Kitchen > Humidifiers"
+        />
       </a-form-item>
 
       <!-- 核心关键词 -->
@@ -79,7 +117,10 @@
       </a-form-item>
 
       <!-- 竞品 ASIN（仅亚马逊模式，Temu/Shopee 用站内竞品链接更合适） -->
-      <a-form-item v-if="!isSimplified" label="竞品 ASIN（可选，用于对标分析）">
+      <a-form-item
+        v-if="!isSimplified"
+        label="竞品 ASIN（可选，用于对标分析）"
+      >
         <div class="input-with-picker">
           <a-select
             v-model:value="form.competitors"
@@ -104,7 +145,10 @@
       </a-form-item>
 
       <!-- 简化模式：商品详情（Temu/Shopee） -->
-      <a-form-item v-if="isSimplified" label="商品详情（详情页描述）">
+      <a-form-item
+        v-if="isSimplified"
+        label="商品详情（详情页描述）"
+      >
         <a-textarea
           v-model:value="form.detail_desc"
           placeholder="填写商品的完整详情描述，AI 将据此生成结构化商品详情页文案…"
@@ -117,7 +161,9 @@
 
       <!-- 生成选项：本工具只产出标题（+ Temu/Shopee 商品详情），五点/A+ 走各自独立工具 -->
       <div class="option-section">
-        <div class="section-title">生成内容</div>
+        <div class="section-title">
+          生成内容
+        </div>
         <div class="scope-hint">
           <span class="scope-tag">{{ isSimplified ? '短标题 + 商品详情' : '标题（含备选变体）' }}</span>
           <span class="scope-note">
@@ -129,20 +175,42 @@
       </div>
 
       <div class="option-section">
-        <div class="section-title">优化风格</div>
-        <a-select v-model:value="genOptions.style" style="width: 100%">
-          <a-select-option value="conversion">高转化型（突出卖点+痛点解决）</a-select-option>
-          <a-select-option value="seo">SEO 权重型（关键词密集覆盖）</a-select-option>
-          <a-select-option value="brand">品牌调性型（故事化+情感连接）</a-select-option>
-          <a-select-option value="balanced">均衡型（转化+SEO平衡）</a-select-option>
+        <div class="section-title">
+          优化风格
+        </div>
+        <a-select
+          v-model:value="genOptions.style"
+          style="width: 100%"
+        >
+          <a-select-option value="conversion">
+            高转化型（突出卖点+痛点解决）
+          </a-select-option>
+          <a-select-option value="seo">
+            SEO 权重型（关键词密集覆盖）
+          </a-select-option>
+          <a-select-option value="brand">
+            品牌调性型（故事化+情感连接）
+          </a-select-option>
+          <a-select-option value="balanced">
+            均衡型（转化+SEO平衡）
+          </a-select-option>
         </a-select>
       </div>
 
       <div class="option-section">
-        <div class="section-title">语言</div>
-        <a-radio-group v-model:value="genOptions.language" size="small">
-          <a-radio-button value="zh">中文</a-radio-button>
-          <a-radio-button value="en">English</a-radio-button>
+        <div class="section-title">
+          语言
+        </div>
+        <a-radio-group
+          v-model:value="genOptions.language"
+          size="small"
+        >
+          <a-radio-button value="zh">
+            中文
+          </a-radio-button>
+          <a-radio-button value="en">
+            English
+          </a-radio-button>
         </a-radio-group>
       </div>
     </a-form>
@@ -153,13 +221,18 @@
         type="primary"
         block
         size="large"
-        @click="handleGenerate"
         :loading="generating"
         :disabled="!form.product_name.trim()"
+        @click="handleGenerate"
       >
         <ThunderboltOutlined /> {{ isSimplified ? '生成商品详情' : (workingProduct ? '开始生成 Listing' : '生成文案') }}
       </a-button>
-      <a-button block @click="handleReset"><ReloadOutlined /> 重置</a-button>
+      <a-button
+        block
+        @click="handleReset"
+      >
+        <ReloadOutlined /> 重置
+      </a-button>
     </div>
   </div>
 </template>

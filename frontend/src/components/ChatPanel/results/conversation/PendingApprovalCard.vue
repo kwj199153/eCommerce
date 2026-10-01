@@ -26,21 +26,33 @@
     <div class="pa-note">
       {{
         description ||
-        `这一步会真正执行「${actionLabel}」，在批准之前它不会被执行。`
+          `这一步会真正执行「${actionLabel}」，在批准之前它不会被执行。`
       }}
     </div>
 
     <!-- 将写入的参数：后端真有才显示，没有就整块隐藏 -->
-    <div v-if="argEntries.length" class="pa-args">
-      <div class="pa-args-title">将执行的参数</div>
-      <div v-for="[k, v] in argEntries" :key="k" class="pa-arg">
+    <div
+      v-if="argEntries.length"
+      class="pa-args"
+    >
+      <div class="pa-args-title">
+        将执行的参数
+      </div>
+      <div
+        v-for="[k, v] in argEntries"
+        :key="k"
+        class="pa-arg"
+      >
         <span class="pa-arg-k">{{ k }}</span>
         <span class="pa-arg-v">{{ formatValue(v) }}</span>
       </div>
     </div>
 
     <!-- 决策区：做出决策后收起，改为终态文案 -->
-    <div v-if="!decided" class="pa-actions">
+    <div
+      v-if="!decided"
+      class="pa-actions"
+    >
       <a-button
         type="primary"
         size="small"
@@ -50,51 +62,103 @@
       >
         批准执行
       </a-button>
-      <a-button size="small" danger :disabled="submitting" @click="toggle('reject')">
+      <a-button
+        size="small"
+        danger
+        :disabled="submitting"
+        @click="toggle('reject')"
+      >
         拒绝
       </a-button>
-      <a-button size="small" :disabled="submitting" @click="toggle('edit')">
+      <a-button
+        size="small"
+        :disabled="submitting"
+        @click="toggle('edit')"
+      >
         改写后执行
       </a-button>
-      <a-button size="small" :disabled="submitting" @click="toggle('response')">
+      <a-button
+        size="small"
+        :disabled="submitting"
+        @click="toggle('response')"
+      >
         直接回复
       </a-button>
     </div>
 
     <!-- 拒绝原因（decision=reject） -->
-    <div v-if="panel === 'reject' && !decided" class="pa-panel">
+    <div
+      v-if="panel === 'reject' && !decided"
+      class="pa-panel"
+    >
       <a-textarea
         v-model:value="reason"
         :rows="2"
         placeholder="拒绝原因（会展示给模型与用户）"
       />
-      <a-button type="primary" size="small" danger :loading="submitting" @click="decide('reject')">
+      <a-button
+        type="primary"
+        size="small"
+        danger
+        :loading="submitting"
+        @click="decide('reject')"
+      >
         确认拒绝
       </a-button>
     </div>
 
     <!-- 改写入参（decision=edit）：args 是双层，后端会把它当工具入参再执行 -->
-    <div v-if="panel === 'edit' && !decided" class="pa-panel">
-      <a-textarea v-model:value="argsDraft" :rows="5" placeholder="改写后的工具入参（JSON）" />
-      <a-button type="primary" size="small" :loading="submitting" @click="decide('edit')">
+    <div
+      v-if="panel === 'edit' && !decided"
+      class="pa-panel"
+    >
+      <a-textarea
+        v-model:value="argsDraft"
+        :rows="5"
+        placeholder="改写后的工具入参（JSON）"
+      />
+      <a-button
+        type="primary"
+        size="small"
+        :loading="submitting"
+        @click="decide('edit')"
+      >
         确认并执行
       </a-button>
     </div>
 
     <!-- 直接回复（decision=response）：不执行操作，把 feedback 当回复 -->
-    <div v-if="panel === 'response' && !decided" class="pa-panel">
+    <div
+      v-if="panel === 'response' && !decided"
+      class="pa-panel"
+    >
       <a-textarea
         v-model:value="feedback"
         :rows="3"
         placeholder="不执行该操作，改为直接回复这段内容"
       />
-      <a-button type="primary" size="small" :loading="submitting" @click="decide('response')">
+      <a-button
+        type="primary"
+        size="small"
+        :loading="submitting"
+        @click="decide('response')"
+      >
         确认回复
       </a-button>
     </div>
 
-    <div v-if="formError" class="pa-err">{{ formError }}</div>
-    <div v-if="decided" class="pa-decided">{{ decidedText }}</div>
+    <div
+      v-if="formError"
+      class="pa-err"
+    >
+      {{ formError }}
+    </div>
+    <div
+      v-if="decided"
+      class="pa-decided"
+    >
+      {{ decidedText }}
+    </div>
   </ConversationCard>
 </template>
 

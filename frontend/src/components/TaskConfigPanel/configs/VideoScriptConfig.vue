@@ -12,7 +12,10 @@
            ⇒ 参数项 / 取值 / 文案天然只有一份，不存在「改一处要同步另一处」。
            原 ④分镜表 / ⑤首帧参考 已删除：分镜结构改由「分镜数」参数描述，
            逐镜细节在**生成结果表**里就地编辑（AIGCMediaResult.vue，已实现）。 -->
-    <div class="content" :class="{ 'data-layout': isDataMode }">
+    <div
+      class="content"
+      :class="{ 'data-layout': isDataMode }"
+    >
       <div class="form-body">
         <!-- ① 载入产品：脚本只要卖点/痛点，不需要上传图片 -->
         <section class="cfg-section">
@@ -36,15 +39,25 @@
             <span class="pi-label">痛点</span>
             <span class="pi-text">{{ autoFilledPainPoints || '—' }}</span>
           </div>
-          <div v-else class="picker-empty">
+          <div
+            v-else
+            class="picker-empty"
+          >
             <span>👆 点右上角文件夹按钮从产品库选</span>
           </div>
         </section>
 
         <!-- ② 两个 Tab：视频参数（结构化选项）/ 自定义脚本要求（自由文字）
              对齐 StaticAssetConfig.vue 的「素材类型与参数 / 自定义 prompt」分法。 -->
-        <a-tabs v-model:active-key="paramTab" size="small" class="param-tabs">
-          <a-tab-pane key="params" tab="视频参数">
+        <a-tabs
+          v-model:active-key="paramTab"
+          size="small"
+          class="param-tabs"
+        >
+          <a-tab-pane
+            key="params"
+            tab="视频参数"
+          >
             <div class="tab-pane-body">
               <!-- ②-1 视频基本信息：视频时长 / 分镜数 / 单镜时长三者恒联动（时长 = 分镜数 × 单镜时长） -->
               <section class="cfg-section">
@@ -55,8 +68,18 @@
                 <div class="form-row">
                   <div class="form-group flex-1">
                     <label>目标平台</label>
-                    <a-select v-model:value="form.platform" size="small" style="width: 100%">
-                      <a-select-option v-for="p in platforms" :key="p.id" :value="p.id">{{ p.icon }} {{ p.name }}</a-select-option>
+                    <a-select
+                      v-model:value="form.platform"
+                      size="small"
+                      style="width: 100%"
+                    >
+                      <a-select-option
+                        v-for="p in platforms"
+                        :key="p.id"
+                        :value="p.id"
+                      >
+                        {{ p.icon }} {{ p.name }}
+                      </a-select-option>
                     </a-select>
                   </div>
                   <div class="form-group flex-1">
@@ -103,11 +126,22 @@
                 </p>
                 <div class="form-group">
                   <label>脚本风格</label>
-                  <a-radio-group v-model:value="form.videoStyle" size="small">
-                    <a-radio-button value="problem-solution">痛点驱动</a-radio-button>
-                    <a-radio-button value="product-showcase">产品展示</a-radio-button>
-                    <a-radio-button value="story-telling">故事化</a-radio-button>
-                    <a-radio-button value="comparison">对比测评</a-radio-button>
+                  <a-radio-group
+                    v-model:value="form.videoStyle"
+                    size="small"
+                  >
+                    <a-radio-button value="problem-solution">
+                      痛点驱动
+                    </a-radio-button>
+                    <a-radio-button value="product-showcase">
+                      产品展示
+                    </a-radio-button>
+                    <a-radio-button value="story-telling">
+                      故事化
+                    </a-radio-button>
+                    <a-radio-button value="comparison">
+                      对比测评
+                    </a-radio-button>
                   </a-radio-group>
                 </div>
               </section>
@@ -126,7 +160,10 @@
                     :checked="form.scriptOptions.includes(opt.value)"
                     @change="toggleScriptOption(opt.value)"
                   >
-                    <span class="opt-label" :title="opt.desc">{{ opt.label }}</span>
+                    <span
+                      class="opt-label"
+                      :title="opt.desc"
+                    >{{ opt.label }}</span>
                   </a-checkbox>
                 </div>
               </section>
@@ -134,7 +171,10 @@
           </a-tab-pane>
 
           <!-- Tab2：自定义脚本要求（自由文字，全权限定脚本写法） -->
-          <a-tab-pane key="prompt" tab="自定义脚本要求">
+          <a-tab-pane
+            key="prompt"
+            tab="自定义脚本要求"
+          >
             <div class="tab-pane-body">
               <section class="cfg-section">
                 <div class="section-title">
@@ -146,7 +186,11 @@
                   <!-- 提示词增强：这段文字是「写脚本的硬约束」，整段会送进模型 ⇒ 最值得扩写的输入点 -->
                   <div class="label-row">
                     <label>完整脚本要求（可选）</label>
-                    <PromptEnhanceButton v-model="form.extraScriptPrompt" context="video-script" size="sm" />
+                    <PromptEnhanceButton
+                      v-model="form.extraScriptPrompt"
+                      context="video-script"
+                      size="sm"
+                    />
                   </div>
                   <a-textarea
                     v-model:value="form.extraScriptPrompt"
@@ -155,7 +199,9 @@
                     size="small"
                   />
                 </div>
-                <p class="prompt-note">💡 填写后优先按你的文字写脚本；留空则按「视频参数」里的结构化选项自动生成。</p>
+                <p class="prompt-note">
+                  💡 填写后优先按你的文字写脚本；留空则按「视频参数」里的结构化选项自动生成。
+                </p>
               </section>
             </div>
           </a-tab-pane>
@@ -164,11 +210,21 @@
 
       <!-- 大屏模式右半边：预览区 —— 复用 AIGCMediaResult（与对话流同一渲染真源，
            自带归档 / 逐项失败提示，避免本文件自己再维护一套分镜预览） -->
-      <div v-if="isDataMode" class="split-preview">
-        <div v-if="isGenerating" class="preview-loading">
+      <div
+        v-if="isDataMode"
+        class="split-preview"
+      >
+        <div
+          v-if="isGenerating"
+          class="preview-loading"
+        >
           <a-spin size="large" />
-          <p class="preview-loading-title">正在生成带货脚本…</p>
-          <p class="preview-loading-sub">含分镜表与文案，约 10-20s，请勿关闭页面</p>
+          <p class="preview-loading-title">
+            正在生成带货脚本…
+          </p>
+          <p class="preview-loading-sub">
+            含分镜表与文案，约 10-20s，请勿关闭页面
+          </p>
         </div>
         <AIGCMediaResult
           v-else-if="latestResult"
@@ -185,8 +241,18 @@
 
     <!-- 操作按钮：大屏/对话两态都在容器底部（flex column 第二项），不参与 .form-body 滚动 -->
     <div class="action-bar">
-      <a-button size="small" @click="handleReset"><ReloadOutlined /> 重置</a-button>
-      <a-button type="primary" size="small" :loading="loading" @click="handleSubmit">
+      <a-button
+        size="small"
+        @click="handleReset"
+      >
+        <ReloadOutlined /> 重置
+      </a-button>
+      <a-button
+        type="primary"
+        size="small"
+        :loading="loading"
+        @click="handleSubmit"
+      >
         <VideoCameraOutlined /> {{ latestResult ? '重新生成脚本' : '生成带货脚本' }}
       </a-button>
     </div>

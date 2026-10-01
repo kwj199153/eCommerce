@@ -5,12 +5,21 @@
       v-model:open="menuOpen"
       :trigger="['click']"
       placement="topLeft"
-      :overlayStyle="{ width: '240px' }"
+      :overlay-style="{ width: '240px' }"
     >
       <!-- 触发器：头像 + 用户名 + 切换账号 + 右侧 chevron -->
-      <div class="user-trigger" :class="{ open: menuOpen }" @click.prevent>
-        <div class="avatar">{{ avatarLetter }}</div>
-        <div v-if="!sidebarCollapsed" class="user-meta">
+      <div
+        class="user-trigger"
+        :class="{ open: menuOpen }"
+        @click.prevent
+      >
+        <div class="avatar">
+          {{ avatarLetter }}
+        </div>
+        <div
+          v-if="!sidebarCollapsed"
+          class="user-meta"
+        >
           <span class="username">{{ displayName }}</span>
           <span class="user-role">{{ userRoleLabel }}</span>
         </div>
@@ -27,7 +36,7 @@
           v-model:open="switchOpen"
           trigger="click"
           placement="topRight"
-          :overlayStyle="{ width: '272px' }"
+          :overlay-style="{ width: '272px' }"
         >
           <template #content>
             <div class="switch-panel">
@@ -36,10 +45,16 @@
                 <span class="sp-count">{{ knownAccounts.length }}/{{ MAX_KNOWN_ACCOUNTS }}</span>
               </div>
 
-              <div v-if="!knownAccounts.length" class="sp-empty">
+              <div
+                v-if="!knownAccounts.length"
+                class="sp-empty"
+              >
                 还没有登录记录。同一个浏览器登录过的账号会出现在这里。
               </div>
-              <ul v-else class="sp-list">
+              <ul
+                v-else
+                class="sp-list"
+              >
                 <li
                   v-for="a in knownAccounts"
                   :key="a.id"
@@ -56,7 +71,10 @@
                     <span class="sp-meta">
                       <span class="sp-name">
                         {{ a.name }}
-                        <span v-if="isCurrent(a)" class="sp-badge">当前</span>
+                        <span
+                          v-if="isCurrent(a)"
+                          class="sp-badge"
+                        >当前</span>
                       </span>
                       <span class="sp-mail">{{ a.email }}</span>
                     </span>
@@ -64,9 +82,18 @@
                          原来只有「免密」一个徽标，未免密的账号**什么都不显示** ——
                          用户于是以为列表里每个账号都能免密，点下去才发现要输密码，
                          而界面上没有任何线索解释为什么。 -->
-                    <span v-if="!isCurrent(a) && hasCred(a)" class="sp-freed">免密</span>
-                    <span v-else-if="!isCurrent(a)" class="sp-first">需密码</span>
-                    <span v-if="!isCurrent(a)" class="sp-time">{{ formatLastLogin(a.last_login_at) }}</span>
+                    <span
+                      v-if="!isCurrent(a) && hasCred(a)"
+                      class="sp-freed"
+                    >免密</span>
+                    <span
+                      v-else-if="!isCurrent(a)"
+                      class="sp-first"
+                    >需密码</span>
+                    <span
+                      v-if="!isCurrent(a)"
+                      class="sp-time"
+                    >{{ formatLastLogin(a.last_login_at) }}</span>
                   </button>
                   <button
                     class="sp-del"
@@ -88,7 +115,10 @@
                      服务端只能拿到登录后签发的凭据，拿不到密码本身，
                      所以**第一次不可能免密**。这是固有语义，
                      不说明白，用户就只会认为「这个功能没用」。 -->
-              <div v-if="knownAccounts.length" class="sp-note">
+              <div
+                v-if="knownAccounts.length"
+                class="sp-note"
+              >
                 <template v-if="rememberedCount">
                   已记住 {{ rememberedCount }} 个账号的登录状态，可直接免密切换。
                 </template>
@@ -96,7 +126,10 @@
               </div>
 
               <div class="sp-foot">
-                <button class="sp-foot-btn" @click.stop="goLoginPage()">
+                <button
+                  class="sp-foot-btn"
+                  @click.stop="goLoginPage()"
+                >
                   <PlusOutlined /> 登录其它账号
                 </button>
                 <button
@@ -111,19 +144,28 @@
             </div>
           </template>
 
-          <button class="switch-btn" title="切换账号" @click.stop>
+          <button
+            class="switch-btn"
+            title="切换账号"
+            @click.stop
+          >
             <UserSwitchOutlined />
           </button>
         </a-popover>
 
-        <DownOutlined v-if="!sidebarCollapsed" class="caret" />
+        <DownOutlined
+          v-if="!sidebarCollapsed"
+          class="caret"
+        />
       </div>
 
       <template #overlay>
         <div class="account-overlay">
           <!-- 顶部身份头：头像 + 名字 + 复制按钮（参考 workbuddy） -->
           <div class="menu-header">
-            <div class="mh-avatar">{{ avatarLetter }}</div>
+            <div class="mh-avatar">
+              {{ avatarLetter }}
+            </div>
             <div class="mh-info">
               <div class="mh-name-row">
                 <span class="mh-name">{{ displayName }}</span>
@@ -135,38 +177,55 @@
                   <CopyOutlined />
                 </button>
               </div>
-              <div class="mh-role">{{ userRoleLabel }}</div>
+              <div class="mh-role">
+                {{ userRoleLabel }}
+              </div>
             </div>
           </div>
           <a-divider :margin="0" />
 
-          <a-menu class="account-menu" :selectedKeys="[]">
+          <a-menu
+            class="account-menu"
+            :selected-keys="[]"
+          >
             <!-- 1. 设置 -->
-            <a-menu-item key="settings" @click="openSettings">
+            <a-menu-item
+              key="settings"
+              @click="openSettings"
+            >
               <span class="mi-icon"><SettingOutlined /></span>
               <span class="mi-label">设置</span>
-              <span class="mi-extra"></span>
+              <span class="mi-extra" />
             </a-menu-item>
 
             <!-- 1.5 订阅与计费 -->
-            <a-menu-item key="subscription" @click="openSubscription">
+            <a-menu-item
+              key="subscription"
+              @click="openSubscription"
+            >
               <span class="mi-icon"><CrownOutlined /></span>
               <span class="mi-label">订阅与计费</span>
-              <span class="mi-extra"></span>
+              <span class="mi-extra" />
             </a-menu-item>
 
             <!-- 2. 记忆与进化 -->
-            <a-menu-item key="memory" @click="openMemoryDrawer">
+            <a-menu-item
+              key="memory"
+              @click="openMemoryDrawer"
+            >
               <span class="mi-icon"><ExperimentOutlined /></span>
               <span class="mi-label">记忆与进化</span>
-              <span class="mi-extra"></span>
+              <span class="mi-extra" />
             </a-menu-item>
 
             <!-- 2.5 团队成员（★ 第 100 轮：接上后端 9 个此前零调用的 /accounts 端点） -->
-            <a-menu-item key="team" @click="openTeam">
+            <a-menu-item
+              key="team"
+              @click="openTeam"
+            >
               <span class="mi-icon"><TeamOutlined /></span>
               <span class="mi-label">团队成员</span>
-              <span class="mi-extra"></span>
+              <span class="mi-extra" />
             </a-menu-item>
 
             <!-- 2.6 审计日志（★ 第 328 轮：后端 P0-5 读口 `GET /api/v1/audit/*` 的界面入口）
@@ -175,15 +234,21 @@
                    收掉入口只为别让普通用户看到一个必然失败的按钮。
                  ★ 事件名沿用既有的 `open-*-drawer` 约定（与设置 / 记忆与进化同一条通路），
                    账户菜单因此**不需要 import 审计面板的任何东西**。 -->
-            <a-menu-item v-if="isPlatformAdmin" key="audit" @click="openAuditDrawer">
+            <a-menu-item
+              v-if="isPlatformAdmin"
+              key="audit"
+              @click="openAuditDrawer"
+            >
               <span class="mi-icon"><FileSearchOutlined /></span>
               <span class="mi-label">审计日志</span>
-              <span class="mi-extra"></span>
+              <span class="mi-extra" />
             </a-menu-item>
 
             <!-- 3. 外观（子菜单：主题切换） -->
             <a-sub-menu key="appearance">
-              <template #icon><span class="mi-icon"><BgColorsOutlined /></span></template>
+              <template #icon>
+                <span class="mi-icon"><BgColorsOutlined /></span>
+              </template>
               <template #title>
                 <span class="mi-label">外观</span>
                 <span class="mi-extra">{{ modeLabel }} ›</span>
@@ -208,24 +273,33 @@
             <a-divider :margin="0" />
 
             <!-- 4. 帮助与反馈 -->
-            <a-menu-item key="help" @click="handleHelpFeedback">
+            <a-menu-item
+              key="help"
+              @click="handleHelpFeedback"
+            >
               <span class="mi-icon"><QuestionCircleOutlined /></span>
               <span class="mi-label">帮助与反馈</span>
-              <span class="mi-extra"></span>
+              <span class="mi-extra" />
             </a-menu-item>
 
             <!-- 4.5 重看新手引导（第 284 轮）
                  ★ 必须保留这个入口：引导是一次性的（看完就记不住了），
                    而被跳过的步骤（比如当时没选 Agent ⇒ 右栏那步没讲）
                    只有在用户把它叫出来之后才有机会补上。 -->
-            <a-menu-item key="tour-replay" @click="handleTourReplay">
+            <a-menu-item
+              key="tour-replay"
+              @click="handleTourReplay"
+            >
               <span class="mi-icon"><CompassOutlined /></span>
               <span class="mi-label">重看新手引导</span>
-              <span class="mi-extra"></span>
+              <span class="mi-extra" />
             </a-menu-item>
 
             <!-- 5. 检查更新 -->
-            <a-menu-item key="update" @click="checkUpdate">
+            <a-menu-item
+              key="update"
+              @click="checkUpdate"
+            >
               <span class="mi-icon"><ReloadOutlined /></span>
               <span class="mi-label">检查更新</span>
               <span class="version-tag">v0.7.0</span>
@@ -254,21 +328,31 @@
             >
               <span class="mi-icon"><UserSwitchOutlined /></span>
               <span class="mi-label">切换账号</span>
-              <span class="mi-extra"></span>
+              <span class="mi-extra" />
             </a-menu-item>
 
             <!-- ★ 未真实登录时必须给「登录」入口：否则用户在演示模式下点了
                  需要身份的功能（如团队成员），既看到"请先登录"，又在界面上
                  找不到任何能登录的地方 —— 这正是"提示要登录可是没有入口"。 -->
-            <a-menu-item v-if="isRealLogin" key="logout" @click="handleLogout" class="logout-item">
+            <a-menu-item
+              v-if="isRealLogin"
+              key="logout"
+              class="logout-item"
+              @click="handleLogout"
+            >
               <span class="mi-icon"><LogoutOutlined /></span>
               <span class="mi-label">退出登录</span>
-              <span class="mi-extra"></span>
+              <span class="mi-extra" />
             </a-menu-item>
-            <a-menu-item v-else key="login" @click="goLogin" class="login-item">
+            <a-menu-item
+              v-else
+              key="login"
+              class="login-item"
+              @click="goLogin"
+            >
               <span class="mi-icon"><LoginOutlined /></span>
               <span class="mi-label">登录</span>
-              <span class="mi-extra"></span>
+              <span class="mi-extra" />
             </a-menu-item>
           </a-menu>
         </div>

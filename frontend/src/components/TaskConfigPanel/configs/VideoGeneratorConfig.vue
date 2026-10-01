@@ -1,12 +1,20 @@
 <template>
-  <div class="video-generator-config" :class="{ 'data-mode': isDataMode }">
+  <div
+    class="video-generator-config"
+    :class="{ 'data-mode': isDataMode }"
+  >
     <!-- ====== 内容区：对话模式单列平铺 / 大屏模式左右分栏（左完整表单 + 右视频预览） ======
          复用同一份表单，大屏不精简任何参数（此前 split-form 手工精简导致配置缺漏，已修复）。
          右侧预览仅在大屏模式渲染。 -->
-    <div class="content" :class="{ 'data-layout': isDataMode }">
+    <div
+      class="content"
+      :class="{ 'data-layout': isDataMode }"
+    >
       <div class="form-body">
         <!-- ====== 第一层：选择生成模式（2 张大卡片，互斥） ====== -->
-        <div class="section-title">生成模式</div>
+        <div class="section-title">
+          生成模式
+        </div>
         <div class="mode-cards">
           <div
             class="mode-card"
@@ -37,15 +45,29 @@
 
           <!-- 工具栏：生成 / 导入 入口收成一行，纵向空间尽量留给脚本表 -->
           <div class="script-toolbar">
-            <span class="section-title" style="margin: 0">
+            <span
+              class="section-title"
+              style="margin: 0"
+            >
               分镜脚本<template v-if="form.storyboardScenes.length">（{{ form.storyboardScenes.length }} 镜）</template>
             </span>
             <div class="toolbar-actions">
-              <a-button type="primary" size="small" :loading="storyboardLoading" @click="generateStoryboard">
+              <a-button
+                type="primary"
+                size="small"
+                :loading="storyboardLoading"
+                @click="generateStoryboard"
+              >
                 <RobotOutlined /> {{ form.storyboardScenes.length ? '重新生成' : 'AI 自动生成分镜表' }}
               </a-button>
-              <a-tooltip v-if="videoScriptsStore.lastScript" title="复用「短视频带货脚本」最近一次结果">
-                <a-button size="small" @click="importScript">
+              <a-tooltip
+                v-if="videoScriptsStore.lastScript"
+                title="复用「短视频带货脚本」最近一次结果"
+              >
+                <a-button
+                  size="small"
+                  @click="importScript"
+                >
                   <ImportOutlined /> 导入带货脚本（{{ videoScriptsStore.sceneCount() }} 镜）
                 </a-button>
               </a-tooltip>
@@ -70,7 +92,10 @@
               <template v-else-if="column.key === 'duration'">
                 <a-input-number
                   v-model:value="record.duration"
-                  :min="1" :max="15" size="small" style="width: 100%"
+                  :min="1"
+                  :max="15"
+                  size="small"
+                  style="width: 100%"
                   addon-after="s"
                 />
               </template>
@@ -78,20 +103,23 @@
                 <a-textarea
                   v-model:value="record.desc"
                   :auto-size="{ minRows: 1, maxRows: 3 }"
-                  size="small" placeholder="画面描述"
+                  size="small"
+                  placeholder="画面描述"
                 />
               </template>
               <template v-else-if="column.key === 'narration'">
                 <a-textarea
                   v-model:value="record.narration"
                   :auto-size="{ minRows: 1, maxRows: 3 }"
-                  size="small" placeholder="文案 / 旁白"
+                  size="small"
+                  placeholder="文案 / 旁白"
                 />
               </template>
               <template v-else-if="column.key === 'source'">
                 <a-select
                   :value="record.source"
-                  size="small" style="width: 100%"
+                  size="small"
+                  style="width: 100%"
                   :options="SOURCE_OPTIONS"
                   @change="(v: any) => setSceneSource(index, v)"
                 />
@@ -105,66 +133,107 @@
                     title="点击更换首帧"
                     @error="onImgError"
                     @click="openSourcePicker('scene', index)"
-                  />
+                  >
                   <button
                     v-else
                     class="frame-folder-btn"
                     title="从素材库选取 / 本地上传"
                     @click="openSourcePicker('scene', index)"
-                  ><FolderOpenOutlined /></button>
+                  >
+                    <FolderOpenOutlined />
+                  </button>
                 </div>
               </template>
               <template v-else-if="column.key === 'camera'">
                 <a-select
                   v-model:value="record.cameraMovement"
-                  size="small" style="width: 100%"
+                  size="small"
+                  style="width: 100%"
                   :options="CAMERA_OPTIONS"
                 />
               </template>
               <template v-else-if="column.key === 'ops'">
                 <a-space :size="0">
                   <a-button
-                    size="small" type="text" title="上移"
+                    size="small"
+                    type="text"
+                    title="上移"
                     :disabled="index === 0"
                     @click="moveScene(index, -1)"
-                  ><ArrowUpOutlined /></a-button>
+                  >
+                    <ArrowUpOutlined />
+                  </a-button>
                   <a-button
-                    size="small" type="text" title="下移"
+                    size="small"
+                    type="text"
+                    title="下移"
                     :disabled="index === form.storyboardScenes.length - 1"
                     @click="moveScene(index, 1)"
-                  ><ArrowDownOutlined /></a-button>
+                  >
+                    <ArrowDownOutlined />
+                  </a-button>
                   <a-button
-                    size="small" type="text" danger title="删除"
+                    size="small"
+                    type="text"
+                    danger
+                    title="删除"
                     :disabled="form.storyboardScenes.length <= 1"
                     @click="removeScene(index)"
-                  ><DeleteOutlined /></a-button>
+                  >
+                    <DeleteOutlined />
+                  </a-button>
                 </a-space>
               </template>
             </template>
           </a-table>
 
           <!-- 空态：不放虚构默认数据（空状态优于虚构默认） -->
-          <div v-else class="storyboard-empty">
+          <div
+            v-else
+            class="storyboard-empty"
+          >
             <span class="empty-icon">🎬</span>
             <span class="empty-text">
               由 AI 根据产品卖点自动生成 5-6 个镜头的分镜表；生成后可为每个镜头选择素材来源（产品素材库 / 手动上传）。
             </span>
-            <span v-if="!videoScriptsStore.lastScript" class="empty-hint">
+            <span
+              v-if="!videoScriptsStore.lastScript"
+              class="empty-hint"
+            >
               💡 也可先到「短视频带货脚本」工具生成，再回来一键导入复用。
             </span>
           </div>
 
-          <a-button size="small" type="dashed" block style="margin-top: 6px" @click="addScene">
+          <a-button
+            size="small"
+            type="dashed"
+            block
+            style="margin-top: 6px"
+            @click="addScene"
+          >
             <PlusOutlined /> 添加镜头
           </a-button>
 
-          <div v-if="form.storyboardScenes.length" class="table-foot-row">
-            <a-button type="text" size="small" @click="resetStoryboard">清空分镜</a-button>
+          <div
+            v-if="form.storyboardScenes.length"
+            class="table-foot-row"
+          >
+            <a-button
+              type="text"
+              size="small"
+              @click="resetStoryboard"
+            >
+              清空分镜
+            </a-button>
             <a-button
               v-if="videoScriptsStore.lastScript"
-              type="text" size="small" danger
+              type="text"
+              size="small"
+              danger
               @click="clearScriptImport"
-            >清除脚本缓存</a-button>
+            >
+              清除脚本缓存
+            </a-button>
           </div>
         </template>
 
@@ -176,21 +245,40 @@
           <a-divider style="margin: 12px 0" />
 
           <!-- 底图（素材来源：素材库 / 手动上传 / AI 生成一张参考图） -->
-          <div class="section-title">挑选一张底图</div>
+          <div class="section-title">
+            挑选一张底图
+          </div>
           <p style="font-size: 11px; color: #8c8c8c; margin: 0 0 8px">
             选一张产品图作为起点，AI 将围绕它自动绘制全部画面
           </p>
-          <div class="single-image-picker" @click="openSourcePicker('single', 0)">
-            <img v-if="form.singleImageUrl" :src="form.singleImageUrl" alt="底图" class="single-img" />
-            <div v-else class="single-placeholder">
+          <div
+            class="single-image-picker"
+            @click="openSourcePicker('single', 0)"
+          >
+            <img
+              v-if="form.singleImageUrl"
+              :src="form.singleImageUrl"
+              alt="底图"
+              class="single-img"
+            >
+            <div
+              v-else
+              class="single-placeholder"
+            >
               <PictureOutlined style="font-size: 22px; color: #d9d9d9" />
               <span>点击从{{ form.singleSource === 'upload' ? '本地上传' : '产品素材库' }}选取底图</span>
             </div>
-            <span v-if="form.singleImageUrl" class="single-img-tag">{{ sourceLabel(form.singleSource) }}</span>
+            <span
+              v-if="form.singleImageUrl"
+              class="single-img-tag"
+            >{{ sourceLabel(form.singleSource) }}</span>
           </div>
 
           <!-- 产品文案 -->
-          <div class="form-group" style="margin-top: 10px">
+          <div
+            class="form-group"
+            style="margin-top: 10px"
+          >
             <label>产品文案（AI 据此创作）</label>
             <a-textarea
               v-model:value="form.singleCopyText"
@@ -199,7 +287,10 @@
               size="small"
             />
           </div>
-          <div class="form-group" style="margin-top: 6px">
+          <div
+            class="form-group"
+            style="margin-top: 6px"
+          >
             <label>一句话修正文案逻辑（可选）</label>
             <a-input
               v-model:value="form.copyRefine"
@@ -211,68 +302,139 @@
 
         <!-- ====== 视频参数（两种模式通用） ====== -->
         <a-divider style="margin: 12px 0" />
-        <div class="section-title">视频参数</div>
+        <div class="section-title">
+          视频参数
+        </div>
         <div class="form-row">
           <div class="form-group flex-1">
             <label>目标平台</label>
-            <a-select v-model:value="form.targetPlatform" size="small" style="width: 100%">
-              <a-select-option value="tiktok">TikTok (9:16)</a-select-option>
-              <a-select-option value="reels">Instagram Reels (9:16)</a-select-option>
-              <a-select-option value="youtube-shorts">YouTube Shorts (9:16)</a-select-option>
-              <a-select-option value="amazon-video">Amazon 视频 (16:9)</a-select-option>
+            <a-select
+              v-model:value="form.targetPlatform"
+              size="small"
+              style="width: 100%"
+            >
+              <a-select-option value="tiktok">
+                TikTok (9:16)
+              </a-select-option>
+              <a-select-option value="reels">
+                Instagram Reels (9:16)
+              </a-select-option>
+              <a-select-option value="youtube-shorts">
+                YouTube Shorts (9:16)
+              </a-select-option>
+              <a-select-option value="amazon-video">
+                Amazon 视频 (16:9)
+              </a-select-option>
             </a-select>
           </div>
           <div class="form-group flex-1">
             <label>BGM 风格</label>
-            <a-select v-model:value="form.bgmStyle" size="small" style="width: 100%">
-              <a-select-option value="auto">AI 自动匹配</a-select-option>
-              <a-select-option value="upbeat">轻快节奏</a-select-option>
-              <a-select-option value="cinematic">电影感</a-select-option>
-              <a-select-option value="electronic">电子/科技</a-select-option>
-              <a-select-option value="lo-fi">Lo-Fi 放松</a-select-option>
+            <a-select
+              v-model:value="form.bgmStyle"
+              size="small"
+              style="width: 100%"
+            >
+              <a-select-option value="auto">
+                AI 自动匹配
+              </a-select-option>
+              <a-select-option value="upbeat">
+                轻快节奏
+              </a-select-option>
+              <a-select-option value="cinematic">
+                电影感
+              </a-select-option>
+              <a-select-option value="electronic">
+                电子/科技
+              </a-select-option>
+              <a-select-option value="lo-fi">
+                Lo-Fi 放松
+              </a-select-option>
             </a-select>
           </div>
         </div>
         <div class="form-row">
           <div class="form-group flex-1">
             <label>帧率 (FPS)</label>
-            <a-select v-model:value="form.fps" size="small" style="width: 100%">
-              <a-select-option value="24">24 FPS</a-select-option>
-              <a-select-option value="30">30 FPS</a-select-option>
-              <a-select-option value="60">60 FPS</a-select-option>
+            <a-select
+              v-model:value="form.fps"
+              size="small"
+              style="width: 100%"
+            >
+              <a-select-option value="24">
+                24 FPS
+              </a-select-option>
+              <a-select-option value="30">
+                30 FPS
+              </a-select-option>
+              <a-select-option value="60">
+                60 FPS
+              </a-select-option>
             </a-select>
           </div>
           <div class="form-group flex-1">
             <label>画面比例</label>
-            <a-select v-model:value="form.aspectRatio" size="small" style="width: 100%">
-              <a-select-option value="9:16">9:16 竖版</a-select-option>
-              <a-select-option value="16:9">16:9 横版</a-select-option>
-              <a-select-option value="1:1">1:1 方形</a-select-option>
+            <a-select
+              v-model:value="form.aspectRatio"
+              size="small"
+              style="width: 100%"
+            >
+              <a-select-option value="9:16">
+                9:16 竖版
+              </a-select-option>
+              <a-select-option value="16:9">
+                16:9 横版
+              </a-select-option>
+              <a-select-option value="1:1">
+                1:1 方形
+              </a-select-option>
             </a-select>
           </div>
         </div>
 
         <!-- 字幕与文字 -->
         <a-divider style="margin: 12px 0" />
-        <div class="section-title">字幕 & 文字叠加</div>
+        <div class="section-title">
+          字幕 & 文字叠加
+        </div>
         <a-checkbox-group v-model:value="form.textOptions">
           <div class="text-options-row">
-            <a-checkbox value="auto-subtitle">自动字幕</a-checkbox>
-            <a-checkbox value="product-name">产品名</a-checkbox>
-            <a-checkbox value="price-tag">价格标签</a-checkbox>
-            <a-checkbox value="cta-button">CTA 按钮</a-checkbox>
-            <a-checkbox value="brand-logo">品牌 Logo</a-checkbox>
+            <a-checkbox value="auto-subtitle">
+              自动字幕
+            </a-checkbox>
+            <a-checkbox value="product-name">
+              产品名
+            </a-checkbox>
+            <a-checkbox value="price-tag">
+              价格标签
+            </a-checkbox>
+            <a-checkbox value="cta-button">
+              CTA 按钮
+            </a-checkbox>
+            <a-checkbox value="brand-logo">
+              品牌 Logo
+            </a-checkbox>
           </div>
         </a-checkbox-group>
 
         <!-- 高级选项 -->
-        <a-collapse ghost size="small" style="margin-top: 4px">
-          <a-collapse-panel key="advanced" header="高级选项">
+        <a-collapse
+          ghost
+          size="small"
+          style="margin-top: 4px"
+        >
+          <a-collapse-panel
+            key="advanced"
+            header="高级选项"
+          >
             <div class="form-group">
               <!-- 提示词增强：这段额外指令会直接拼进视频生成的要求里 -->
               <div class="label-row">
                 <label>额外指令（可选）</label>
-                <PromptEnhanceButton v-model="form.extraPrompt" context="aigc-video" size="sm" />
+                <PromptEnhanceButton
+                  v-model="form.extraPrompt"
+                  context="aigc-video"
+                  size="sm"
+                />
               </div>
               <a-textarea
                 v-model:value="form.extraPrompt"
@@ -292,11 +454,21 @@
 
       <!-- ====== 大屏模式：右侧视频预览（仅 data 模式渲染）—— 复用 AIGCMediaResult：
            与对话流共用同一渲染真源，自带「归档到素材库」/ 逐项失败提示。 ====== -->
-      <div v-if="isDataMode" class="split-preview">
-        <div v-if="isGenerating" class="preview-loading">
+      <div
+        v-if="isDataMode"
+        class="split-preview"
+      >
+        <div
+          v-if="isGenerating"
+          class="preview-loading"
+        >
           <a-spin size="large" />
-          <p class="preview-loading-title">正在生成视频…</p>
-          <p class="preview-loading-sub">逐镜头合成，耗时较长，请勿关闭页面</p>
+          <p class="preview-loading-title">
+            正在生成视频…
+          </p>
+          <p class="preview-loading-sub">
+            逐镜头合成，耗时较长，请勿关闭页面
+          </p>
         </div>
         <AIGCMediaResult
           v-else-if="latestResult"
@@ -313,10 +485,20 @@
 
     <!-- 操作按钮：大屏/对话两态都在容器底部，不参与表单滚动 -->
     <div class="action-bar">
-      <a-button @click="handleReset" block size="small">
+      <a-button
+        block
+        size="small"
+        @click="handleReset"
+      >
         <ReloadOutlined /> 重置
       </a-button>
-      <a-button type="primary" @click="handleSubmit" block size="small" :loading="loading">
+      <a-button
+        type="primary"
+        block
+        size="small"
+        :loading="loading"
+        @click="handleSubmit"
+      >
         <VideoCameraAddOutlined /> {{ latestResult ? '重新生成视频' : '开始生成视频' }}
       </a-button>
     </div>
@@ -334,42 +516,87 @@
       :closable="true"
       :mask-closable="true"
     >
-      <a-tabs v-model:active-key="pickerTab" size="small">
+      <a-tabs
+        v-model:active-key="pickerTab"
+        size="small"
+      >
         <!-- Tab1 产品素材库（默认）—— 进入即可点击图片直接选中 -->
-        <a-tab-pane key="library" tab="📁 产品素材库">
-          <div v-if="staticAssets.length" class="picker-asset-grid">
+        <a-tab-pane
+          key="library"
+          tab="📁 产品素材库"
+        >
+          <div
+            v-if="staticAssets.length"
+            class="picker-asset-grid"
+          >
             <div
               v-for="asset in staticAssets"
               :key="asset.id"
               class="picker-asset"
               @click="pickFromLibrary(asset)"
             >
-              <img :src="asset.url" :alt="asset.type" loading="lazy" @error="onImgError" />
+              <img
+                :src="asset.url"
+                :alt="asset.type"
+                loading="lazy"
+                @error="onImgError"
+              >
               <span class="picker-asset-tag">{{ assetTypeLabel(asset.type) }}</span>
               <span class="picker-asset-check">✓</span>
             </div>
           </div>
-          <a-empty v-else description="素材库暂无图片，请到「手动上传」" :image-style="{ height: '40px' }" />
+          <a-empty
+            v-else
+            description="素材库暂无图片，请到「手动上传」"
+            :image-style="{ height: '40px' }"
+          />
         </a-tab-pane>
 
         <!-- Tab2 手动上传 -->
-        <a-tab-pane key="upload" tab="📤 手动上传">
-          <div class="upload-drop" @click="pickerFileRef?.click()">
+        <a-tab-pane
+          key="upload"
+          tab="📤 手动上传"
+        >
+          <div
+            class="upload-drop"
+            @click="pickerFileRef?.click()"
+          >
             <input
               ref="pickerFileRef"
               type="file"
               accept="image/*"
               style="display: none"
               @change="handlePickerFileChange"
-            />
+            >
             <CloudUploadOutlined style="font-size: 30px; color: #1890ff" />
-            <p style="margin: 8px 0 0; font-size: 12px; color: #595959">点击选择本地图片</p>
-            <p style="margin: 2px 0 0; font-size: 11px; color: #bfbfbf">JPG / PNG / WebP，建议 1080×1920</p>
+            <p style="margin: 8px 0 0; font-size: 12px; color: #595959">
+              点击选择本地图片
+            </p>
+            <p style="margin: 2px 0 0; font-size: 11px; color: #bfbfbf">
+              JPG / PNG / WebP，建议 1080×1920
+            </p>
           </div>
-          <div v-if="pickerUploadPreview" class="upload-preview-row">
-            <img :src="pickerUploadPreview" alt="" />
-            <a-button type="primary" size="small" @click="confirmUpload">使用此图</a-button>
-            <a-button size="small" @click="pickerUploadPreview = ''">重选</a-button>
+          <div
+            v-if="pickerUploadPreview"
+            class="upload-preview-row"
+          >
+            <img
+              :src="pickerUploadPreview"
+              alt=""
+            >
+            <a-button
+              type="primary"
+              size="small"
+              @click="confirmUpload"
+            >
+              使用此图
+            </a-button>
+            <a-button
+              size="small"
+              @click="pickerUploadPreview = ''"
+            >
+              重选
+            </a-button>
           </div>
         </a-tab-pane>
       </a-tabs>

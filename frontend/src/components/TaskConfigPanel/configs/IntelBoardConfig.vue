@@ -11,7 +11,10 @@
   -->
   <div class="ib-config">
     <!-- 胶囊 Tab。窄边栏（对话模式）下不渲染，避免挤成一坨没法点 -->
-    <div v-if="isDataMode" class="ib-tabs">
+    <div
+      v-if="isDataMode"
+      class="ib-tabs"
+    >
       <button
         v-for="t in TABS"
         :key="t.key"
@@ -25,50 +28,106 @@
     </div>
 
     <!-- 告警条：全池提醒聚合，跨面板常驻 -->
-    <div v-if="alertList.length" class="ib-alert-bar">
+    <div
+      v-if="alertList.length"
+      class="ib-alert-bar"
+    >
       <span class="ib-alert-title">🔔 今日需关注</span>
-      <a-tag v-for="(a, i) in alertList" :key="i" :color="a.color">{{ a.text }}</a-tag>
+      <a-tag
+        v-for="(a, i) in alertList"
+        :key="i"
+        :color="a.color"
+      >
+        {{ a.text }}
+      </a-tag>
     </div>
 
     <!-- ================= 监控池 ================= -->
-    <section v-if="activeTab === 'pool'" class="ib-pane">
+    <section
+      v-if="activeTab === 'pool'"
+      class="ib-pane"
+    >
       <div class="pane-head">
         <div>
           <div class="pane-title">
             🗂️ 监控池
-            <a-tag color="default" class="mini-tag">{{ pool.totalCount }} 个 ASIN</a-tag>
+            <a-tag
+              color="default"
+              class="mini-tag"
+            >
+              {{ pool.totalCount }} 个 ASIN
+            </a-tag>
           </div>
-          <div class="pane-sub">勾选要分析的竞品，右侧六个视角共用这一份数据；增删与分组到「资料库 → 竞品监控池」</div>
+          <div class="pane-sub">
+            勾选要分析的竞品，右侧六个视角共用这一份数据；增删与分组到「资料库 → 竞品监控池」
+          </div>
         </div>
-        <a-button size="small" @click="goToLibrary"><FolderOpenOutlined /> 资料库</a-button>
+        <a-button
+          size="small"
+          @click="goToLibrary"
+        >
+          <FolderOpenOutlined /> 资料库
+        </a-button>
       </div>
 
       <div class="kpi-grid">
         <div class="kpi-card">
-          <div class="kpi-label">在池竞品</div>
-          <div class="kpi-value">{{ pool.totalCount }}</div>
+          <div class="kpi-label">
+            在池竞品
+          </div>
+          <div class="kpi-value">
+            {{ pool.totalCount }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">已圈选</div>
-          <div class="kpi-value" :class="{ success: selectedCount > 0 }">{{ selectedCount }}</div>
+          <div class="kpi-label">
+            已圈选
+          </div>
+          <div
+            class="kpi-value"
+            :class="{ success: selectedCount > 0 }"
+          >
+            {{ selectedCount }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">分组</div>
-          <div class="kpi-value soft">{{ pool.groups.length }}</div>
+          <div class="kpi-label">
+            分组
+          </div>
+          <div class="kpi-value soft">
+            {{ pool.groups.length }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">待关注</div>
-          <div class="kpi-value" :class="{ danger: alertTotal > 0 }">{{ alertTotal }}</div>
+          <div class="kpi-label">
+            待关注
+          </div>
+          <div
+            class="kpi-value"
+            :class="{ danger: alertTotal > 0 }"
+          >
+            {{ alertTotal }}
+          </div>
         </div>
       </div>
 
       <div class="panel-card grow-card">
         <div class="card-head">
           竞品清单
-          <a-button size="small" type="link" :disabled="!pool.totalCount" @click="pool.setSelected(pool.records.map(r => r.asin))">
+          <a-button
+            size="small"
+            type="link"
+            :disabled="!pool.totalCount"
+            @click="pool.setSelected(pool.records.map(r => r.asin))"
+          >
             全选
           </a-button>
-          <a-button size="small" type="link" :disabled="!selectedCount" @click="pool.clearSelected()">
+          <a-button
+            size="small"
+            type="link"
+            :disabled="!selectedCount"
+            @click="pool.clearSelected()"
+          >
             清空
           </a-button>
         </div>
@@ -88,10 +147,16 @@
               <span class="pr-brand">{{ r.brand }}</span>
             </span>
             <span class="pr-price">${{ r.latest_price.toFixed(2) }}</span>
-            <span class="pr-delta" :class="r.price_change_7d < 0 ? 'down' : r.price_change_7d > 0 ? 'up' : 'muted'">
+            <span
+              class="pr-delta"
+              :class="r.price_change_7d < 0 ? 'down' : r.price_change_7d > 0 ? 'up' : 'muted'"
+            >
               {{ r.price_change_7d > 0 ? '+' : '' }}{{ r.price_change_7d }}%
             </span>
-            <span class="pr-stock" :class="stockClass(r.stock_status)">{{ stockLabel(r.stock_status) }}</span>
+            <span
+              class="pr-stock"
+              :class="stockClass(r.stock_status)"
+            >{{ stockLabel(r.stock_status) }}</span>
           </label>
           <a-empty
             v-if="!pool.records.length"
@@ -103,44 +168,87 @@
     </section>
 
     <!-- ================= 价格历史 ================= -->
-    <section v-else-if="activeTab === 'price'" class="ib-pane">
+    <section
+      v-else-if="activeTab === 'price'"
+      class="ib-pane"
+    >
       <div class="pane-head">
-        <div class="pane-title">📉 价格历史 <a-tag color="default" class="mini-tag">近 30 天</a-tag></div>
-        <div class="pane-sub">圈选竞品的每日价格曲线，'auto' 基线避免 $20→$22 的小波动被压成直线</div>
+        <div class="pane-title">
+          📉 价格历史 <a-tag
+            color="default"
+            class="mini-tag"
+          >
+            近 30 天
+          </a-tag>
+        </div>
+        <div class="pane-sub">
+          圈选竞品的每日价格曲线，'auto' 基线避免 $20→$22 的小波动被压成直线
+        </div>
       </div>
 
       <div class="kpi-grid">
         <div class="kpi-card">
-          <div class="kpi-label">均价</div>
-          <div class="kpi-value">${{ avgPrice.toFixed(2) }}</div>
+          <div class="kpi-label">
+            均价
+          </div>
+          <div class="kpi-value">
+            ${{ avgPrice.toFixed(2) }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">最大降幅</div>
-          <div class="kpi-value" :class="minDelta < 0 ? 'danger' : ''">{{ minDelta }}%</div>
+          <div class="kpi-label">
+            最大降幅
+          </div>
+          <div
+            class="kpi-value"
+            :class="minDelta < 0 ? 'danger' : ''"
+          >
+            {{ minDelta }}%
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">涨价中</div>
-          <div class="kpi-value" :class="riseCount > 0 ? 'warning' : ''">{{ riseCount }}</div>
+          <div class="kpi-label">
+            涨价中
+          </div>
+          <div
+            class="kpi-value"
+            :class="riseCount > 0 ? 'warning' : ''"
+          >
+            {{ riseCount }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">有促销</div>
-          <div class="kpi-value soft">{{ dealCount }}</div>
+          <div class="kpi-label">
+            有促销
+          </div>
+          <div class="kpi-value soft">
+            {{ dealCount }}
+          </div>
         </div>
       </div>
 
       <div class="panel-card chart-card">
-        <div class="card-head">价格走势（最多同时画 5 条）</div>
+        <div class="card-head">
+          价格走势（最多同时画 5 条）
+        </div>
         <LineChart
           v-if="priceSeries.length"
           :series="priceSeries"
           :labels="chartLabels"
           baseline="auto"
         />
-        <div v-else class="chart-empty">先在「监控池」勾选竞品</div>
+        <div
+          v-else
+          class="chart-empty"
+        >
+          先在「监控池」勾选竞品
+        </div>
       </div>
 
       <div class="panel-card scroll-card">
-        <div class="card-head">当前价 / 7 日变化</div>
+        <div class="card-head">
+          当前价 / 7 日变化
+        </div>
         <div
           v-for="r in chartRecords"
           :key="r.asin"
@@ -156,111 +264,224 @@
     </section>
 
     <!-- ================= BSR 趋势 ================= -->
-    <section v-else-if="activeTab === 'bsr'" class="ib-pane">
+    <section
+      v-else-if="activeTab === 'bsr'"
+      class="ib-pane"
+    >
       <div class="pane-head">
-        <div class="pane-title">📈 BSR 趋势 <a-tag color="default" class="mini-tag">近 30 天</a-tag></div>
-        <div class="pane-sub">类目排名走势 —— 排名是逆序量，数值下降代表上升</div>
+        <div class="pane-title">
+          📈 BSR 趋势 <a-tag
+            color="default"
+            class="mini-tag"
+          >
+            近 30 天
+          </a-tag>
+        </div>
+        <div class="pane-sub">
+          类目排名走势 —— 排名是逆序量，数值下降代表上升
+        </div>
       </div>
 
       <div class="kpi-grid">
         <div class="kpi-card">
-          <div class="kpi-label">最佳排名</div>
-          <div class="kpi-value">#{{ bestBsr.toLocaleString() }}</div>
+          <div class="kpi-label">
+            最佳排名
+          </div>
+          <div class="kpi-value">
+            #{{ bestBsr.toLocaleString() }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">排名上升</div>
-          <div class="kpi-value" :class="bsrUpCount > 0 ? 'success' : ''">{{ bsrUpCount }}</div>
+          <div class="kpi-label">
+            排名上升
+          </div>
+          <div
+            class="kpi-value"
+            :class="bsrUpCount > 0 ? 'success' : ''"
+          >
+            {{ bsrUpCount }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">排名下滑</div>
-          <div class="kpi-value" :class="bsrDownCount > 0 ? 'danger' : ''">{{ bsrDownCount }}</div>
+          <div class="kpi-label">
+            排名下滑
+          </div>
+          <div
+            class="kpi-value"
+            :class="bsrDownCount > 0 ? 'danger' : ''"
+          >
+            {{ bsrDownCount }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">平均 BSR</div>
-          <div class="kpi-value soft">#{{ Math.round(avgBsr).toLocaleString() }}</div>
+          <div class="kpi-label">
+            平均 BSR
+          </div>
+          <div class="kpi-value soft">
+            #{{ Math.round(avgBsr).toLocaleString() }}
+          </div>
         </div>
       </div>
 
       <div class="panel-card chart-card">
-        <div class="card-head">BSR 走势（最多同时画 5 条）</div>
+        <div class="card-head">
+          BSR 走势（最多同时画 5 条）
+        </div>
         <LineChart
           v-if="bsrSeries.length"
           :series="bsrSeries"
           :labels="chartLabels"
           baseline="auto"
         />
-        <div v-else class="chart-empty">先在「监控池」勾选竞品</div>
+        <div
+          v-else
+          class="chart-empty"
+        >
+          先在「监控池」勾选竞品
+        </div>
       </div>
     </section>
 
     <!-- ================= 评论 & 星级 ================= -->
-    <section v-else-if="activeTab === 'review'" class="ib-pane">
+    <section
+      v-else-if="activeTab === 'review'"
+      class="ib-pane"
+    >
       <div class="pane-head">
-        <div class="pane-title">💬 评论 &amp; 星级</div>
-        <div class="pane-sub">近 7 天新增评论与差评预警，用来判断竞品口碑是否在恶化</div>
+        <div class="pane-title">
+          💬 评论 &amp; 星级
+        </div>
+        <div class="pane-sub">
+          近 7 天新增评论与差评预警，用来判断竞品口碑是否在恶化
+        </div>
       </div>
 
       <div class="kpi-grid">
         <div class="kpi-card">
-          <div class="kpi-label">平均评分</div>
-          <div class="kpi-value">★ {{ avgRating.toFixed(1) }}</div>
+          <div class="kpi-label">
+            平均评分
+          </div>
+          <div class="kpi-value">
+            ★ {{ avgRating.toFixed(1) }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">7 日新增</div>
-          <div class="kpi-value soft">+{{ reviewsAdded7d }}</div>
+          <div class="kpi-label">
+            7 日新增
+          </div>
+          <div class="kpi-value soft">
+            +{{ reviewsAdded7d }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">有差评</div>
-          <div class="kpi-value" :class="negativeCount > 0 ? 'danger' : ''">{{ negativeCount }}</div>
+          <div class="kpi-label">
+            有差评
+          </div>
+          <div
+            class="kpi-value"
+            :class="negativeCount > 0 ? 'danger' : ''"
+          >
+            {{ negativeCount }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">累计评论</div>
-          <div class="kpi-value soft">{{ totalReviewCount.toLocaleString() }}</div>
+          <div class="kpi-label">
+            累计评论
+          </div>
+          <div class="kpi-value soft">
+            {{ totalReviewCount.toLocaleString() }}
+          </div>
         </div>
       </div>
 
       <div class="panel-card scroll-card">
-        <div class="card-head">逐竞品明细</div>
-        <div v-for="r in chartRecords" :key="r.asin" class="blk-row">
+        <div class="card-head">
+          逐竞品明细
+        </div>
+        <div
+          v-for="r in chartRecords"
+          :key="r.asin"
+          class="blk-row"
+        >
           <div class="blk-head">
             <span class="blk-asin">{{ r.asin }}</span>
             <span class="blk-meta">★ {{ r.rating.toFixed(1) }} · {{ r.review_count.toLocaleString() }} 条 · 7 日 +{{ r.reviews_added_7d }}</span>
           </div>
-          <div v-if="recentNegatives(r).length" class="neg-list">
-            <div v-for="(e, i) in recentNegatives(r)" :key="i" class="neg-item">
+          <div
+            v-if="recentNegatives(r).length"
+            class="neg-list"
+          >
+            <div
+              v-for="(e, i) in recentNegatives(r)"
+              :key="i"
+              class="neg-item"
+            >
               🔴 {{ e.date }} 新增差评：{{ e.snippet }}
             </div>
           </div>
-          <div v-else class="neg-none">近 7 天无差评预警</div>
+          <div
+            v-else
+            class="neg-none"
+          >
+            近 7 天无差评预警
+          </div>
         </div>
       </div>
     </section>
 
     <!-- ================= 变体 ================= -->
-    <section v-else-if="activeTab === 'variation'" class="ib-pane">
+    <section
+      v-else-if="activeTab === 'variation'"
+      class="ib-pane"
+    >
       <div class="pane-head">
-        <div class="pane-title">🧩 变体</div>
-        <div class="pane-sub">竞品在卖的颜色/规格组合，缺货的子 SKU 往往是对手的软肋</div>
+        <div class="pane-title">
+          🧩 变体
+        </div>
+        <div class="pane-sub">
+          竞品在卖的颜色/规格组合，缺货的子 SKU 往往是对手的软肋
+        </div>
       </div>
 
       <div class="kpi-grid">
         <div class="kpi-card">
-          <div class="kpi-label">变体总数</div>
-          <div class="kpi-value">{{ totalVariations }}</div>
+          <div class="kpi-label">
+            变体总数
+          </div>
+          <div class="kpi-value">
+            {{ totalVariations }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">平均变体</div>
-          <div class="kpi-value soft">{{ avgVariations.toFixed(1) }}</div>
+          <div class="kpi-label">
+            平均变体
+          </div>
+          <div class="kpi-value soft">
+            {{ avgVariations.toFixed(1) }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">缺货子体</div>
-          <div class="kpi-value" :class="outOfStockVars > 0 ? 'danger' : ''">{{ outOfStockVars }}</div>
+          <div class="kpi-label">
+            缺货子体
+          </div>
+          <div
+            class="kpi-value"
+            :class="outOfStockVars > 0 ? 'danger' : ''"
+          >
+            {{ outOfStockVars }}
+          </div>
         </div>
       </div>
 
       <div class="panel-card scroll-card">
-        <div class="card-head">逐竞品变体</div>
-        <div v-for="r in chartRecords" :key="r.asin" class="blk-row">
+        <div class="card-head">
+          逐竞品变体
+        </div>
+        <div
+          v-for="r in chartRecords"
+          :key="r.asin"
+          class="blk-row"
+        >
           <div class="blk-head">
             <span class="blk-asin">{{ r.asin }}</span>
             <span class="blk-meta">{{ r.variations.length }} 个变体</span>
@@ -281,35 +502,64 @@
     </section>
 
     <!-- ================= Listing 快照 ================= -->
-    <section v-else-if="activeTab === 'listing'" class="ib-pane">
+    <section
+      v-else-if="activeTab === 'listing'"
+      class="ib-pane"
+    >
       <div class="pane-head">
-        <div class="pane-title">📄 Listing 快照</div>
-        <div class="pane-sub">竞品近期改动过的字段 —— 对手改标题/改主图通常意味着要打新品或换卖点</div>
+        <div class="pane-title">
+          📄 Listing 快照
+        </div>
+        <div class="pane-sub">
+          竞品近期改动过的字段 —— 对手改标题/改主图通常意味着要打新品或换卖点
+        </div>
       </div>
 
       <div class="kpi-grid">
         <div class="kpi-card">
-          <div class="kpi-label">改动条数</div>
-          <div class="kpi-value">{{ totalListingChanges }}</div>
+          <div class="kpi-label">
+            改动条数
+          </div>
+          <div class="kpi-value">
+            {{ totalListingChanges }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">活跃竞品</div>
-          <div class="kpi-value soft">{{ changedRecords }}</div>
+          <div class="kpi-label">
+            活跃竞品
+          </div>
+          <div class="kpi-value soft">
+            {{ changedRecords }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">最近改动</div>
-          <div class="kpi-value soft">{{ latestChangeDate || '—' }}</div>
+          <div class="kpi-label">
+            最近改动
+          </div>
+          <div class="kpi-value soft">
+            {{ latestChangeDate || '—' }}
+          </div>
         </div>
       </div>
 
       <div class="panel-card scroll-card">
-        <div class="card-head">改动日志</div>
-        <div v-for="r in chartRecords" :key="r.asin" class="blk-row">
+        <div class="card-head">
+          改动日志
+        </div>
+        <div
+          v-for="r in chartRecords"
+          :key="r.asin"
+          class="blk-row"
+        >
           <div class="blk-head">
             <span class="blk-asin">{{ r.asin }}</span>
             <span class="blk-meta">{{ r.listing_changes.length }} 条改动</span>
           </div>
-          <div v-for="c in r.listing_changes" :key="c.id" class="lc-row">
+          <div
+            v-for="c in r.listing_changes"
+            :key="c.id"
+            class="lc-row"
+          >
             <span class="lc-field">{{ c.field_name }}</span>
             <span class="lc-date">{{ c.changed_at }}</span>
             <span class="lc-prev">{{ c.new_preview }}</span>
@@ -319,34 +569,69 @@
     </section>
 
     <!-- ================= 库存 / 入仓 ================= -->
-    <section v-else class="ib-pane">
+    <section
+      v-else
+      class="ib-pane"
+    >
       <div class="pane-head">
-        <div class="pane-title">📦 库存 / 入仓</div>
-        <div class="pane-sub">竞品断货窗口就是我方抢排名的窗口</div>
+        <div class="pane-title">
+          📦 库存 / 入仓
+        </div>
+        <div class="pane-sub">
+          竞品断货窗口就是我方抢排名的窗口
+        </div>
       </div>
 
       <div class="kpi-grid">
         <div class="kpi-card">
-          <div class="kpi-label">在售</div>
-          <div class="kpi-value success">{{ inStockCount }}</div>
+          <div class="kpi-label">
+            在售
+          </div>
+          <div class="kpi-value success">
+            {{ inStockCount }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">库存告急</div>
-          <div class="kpi-value" :class="lowStockCount > 0 ? 'warning' : ''">{{ lowStockCount }}</div>
+          <div class="kpi-label">
+            库存告急
+          </div>
+          <div
+            class="kpi-value"
+            :class="lowStockCount > 0 ? 'warning' : ''"
+          >
+            {{ lowStockCount }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">已断货</div>
-          <div class="kpi-value" :class="outStockCount > 0 ? 'danger' : ''">{{ outStockCount }}</div>
+          <div class="kpi-label">
+            已断货
+          </div>
+          <div
+            class="kpi-value"
+            :class="outStockCount > 0 ? 'danger' : ''"
+          >
+            {{ outStockCount }}
+          </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">月销估算</div>
-          <div class="kpi-value soft">{{ estMonthlySales.toLocaleString() }}</div>
+          <div class="kpi-label">
+            月销估算
+          </div>
+          <div class="kpi-value soft">
+            {{ estMonthlySales.toLocaleString() }}
+          </div>
         </div>
       </div>
 
       <div class="panel-card scroll-card">
-        <div class="card-head">逐竞品库存</div>
-        <div v-for="r in chartRecords" :key="r.asin" class="kv-row">
+        <div class="card-head">
+          逐竞品库存
+        </div>
+        <div
+          v-for="r in chartRecords"
+          :key="r.asin"
+          class="kv-row"
+        >
           <span>{{ r.asin }} <em class="row-brand">{{ r.brand }}</em></span>
           <span>
             <b :class="stockClass(r.stock_status)">{{ stockLabel(r.stock_status) }}</b>
@@ -355,7 +640,6 @@
         </div>
       </div>
     </section>
-
   </div>
 </template>
 

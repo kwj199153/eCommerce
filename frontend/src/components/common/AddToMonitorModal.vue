@@ -9,9 +9,17 @@
   >
     <!-- 待监控 ASIN 清单 -->
     <div class="atm-summary">
-      <div class="atm-label">本次将开启定时采集的候选（{{ items.length }} 条）</div>
+      <div class="atm-label">
+        本次将开启定时采集的候选（{{ items.length }} 条）
+      </div>
       <div class="atm-asins">
-        <a-tag v-for="a in items" :key="a.asin" color="blue">{{ a.asin }}</a-tag>
+        <a-tag
+          v-for="a in items"
+          :key="a.asin"
+          color="blue"
+        >
+          {{ a.asin }}
+        </a-tag>
       </div>
       <div class="atm-note">
         开启监控 ≠ 进入选品库；仅把该 ASIN 纳入监控池，由后台定时抓取
@@ -21,11 +29,18 @@
 
     <!-- 分组选择 -->
     <div class="atm-group">
-      <div class="atm-label">归入监控分组</div>
+      <div class="atm-label">
+        归入监控分组
+      </div>
       <!-- 快捷创建预设组 -->
       <div class="atm-quick">
         <span class="atm-q-label">快捷分组：</span>
-        <a-button v-for="p in QUICK_PRESETS" :key="p.name" size="small" @click="usePreset(p)">
+        <a-button
+          v-for="p in QUICK_PRESETS"
+          :key="p.name"
+          size="small"
+          @click="usePreset(p)"
+        >
           {{ p.emoji }} {{ p.name }}
         </a-button>
       </div>
@@ -37,8 +52,15 @@
         style="width: 100%"
         class="atm-select"
       >
-        <a-select-option v-for="g in pool.groups" :key="g.id" :value="g.id">
-          <span class="gdot" :style="{ background: g.color }"></span>{{ g.name }}
+        <a-select-option
+          v-for="g in pool.groups"
+          :key="g.id"
+          :value="g.id"
+        >
+          <span
+            class="gdot"
+            :style="{ background: g.color }"
+          />{{ g.name }}
         </a-select-option>
       </a-select>
       <!-- 就地新建分组 -->
@@ -47,22 +69,36 @@
           v-model:value="newGroupName"
           placeholder="或就地新建分组，如：待评估候选"
           style="flex: 1"
-          @pressEnter="createNewGroup"
+          @press-enter="createNewGroup"
         />
-        <a-button type="primary" ghost :disabled="!newGroupName.trim()" @click="createNewGroup">
+        <a-button
+          type="primary"
+          ghost
+          :disabled="!newGroupName.trim()"
+          @click="createNewGroup"
+        >
           <PlusOutlined /> 新建并归入
         </a-button>
       </div>
     </div>
 
-    <div v-if="pool.quotaReached" class="atm-quota">
+    <div
+      v-if="pool.quotaReached"
+      class="atm-quota"
+    >
       ⚠️ 已监控 {{ pool.monitoringCount }}/{{ pool.monitorQuota }}，接近额度上限；超额后需升级套餐（本轮为提示，不拦截）。
     </div>
 
     <div class="atm-footer">
       <a-space>
-        <a-button @click="close">取消</a-button>
-        <a-button type="primary" :loading="submitting" @click="confirm">
+        <a-button @click="close">
+          取消
+        </a-button>
+        <a-button
+          type="primary"
+          :loading="submitting"
+          @click="confirm"
+        >
           <FundOutlined /> 开始监控
         </a-button>
       </a-space>
