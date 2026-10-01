@@ -34,8 +34,20 @@
   这是**有意的**：一张会撒谎的基线表比没有基线更糟。
 
 ━━━ 已知边界（如实登记，不写成断言）━━━
-  · 本门禁只管**行数**。「`def _get_router` ×7 / `def _dump` ×8」这类
-    **模板复制**是另一个维度（体量不大、重复度高），不在本判据覆盖内。
+  · 本门禁只管**行数**。「模板复制」是另一个维度（体量不大、重复度高），
+    不在本判据覆盖内。★ 第 356 轮把该维度的**现状与承载判据**登记如下
+    （改这两处符号前先看对应判据，别只数份数）：
+      – `_dump`：8 份 → **4 份**。5 个「三态版」已收口到唯一真源
+        `ai_infra/tools/serialization.py::dump_result`（5 个消费方均写
+        `... import dump_result as _dump`）；剩 `aigc_media`（两态）与
+        `library` / `trade`（单行）**有意不收** —— 统一会改变工具回给 LLM
+        的字符串；行为对照表见 `ai_infra/tools/serialization.py` 模块 docstring。
+        判据：`tests/test_tool_result_serialization.py`。
+      – `_get_router`：仍 **7 份**，**有意不收进基类** —— 理由见
+        `modules/product_research/agent_routing.py` 模块 docstring
+        （「藏进基类只会让耦合从『可以数的参数』变成『看不见的继承链』」）。
+        改为加**一致性门禁** `tests/test_agent_router_getter_uniform.py`：
+        钉「7 份函数体逐字相同（docstring 除外）」，防漂移而不牺牲可数性。
   · `.vue` 行数**不可跨格式化版本比**（353 轮已记：F-2 格式化让
     `ReviewDeskConfig.vue` 从真码 1692 变成 2002 行）。
   · 阈值 800 沿用的是 353 轮既有口径，不是本轮新定的。

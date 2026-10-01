@@ -323,7 +323,19 @@ async def _generate_assets_tool(
 
 
 def _dump(resp) -> str:
-    """统一序列化：优先 data，其次 message/error。"""
+    """统一序列化：`dict` 直接 dump，其余 `str()`。
+
+    ★★ 第 356 轮修**假承诺**：原 docstring 写「统一序列化：优先 data，其次
+      message/error」—— 实现里**从来没有**这个逻辑（没有 `resp["data"]` 取值，
+      也没有 `message` / `error` 分支）。本仓「声明承诺型假门禁」的同族形态：
+      文档承诺了一件事，代码不做，而**没有任何判据会发现**。
+    ★ 本模块的 `_dump` 与其它 5 个模块那份**逐字相同的三态版**不同：它只有
+      **两态**且**不带 `default=str`** —— `dict` 里混进 `date` / `Decimal` 会抛
+      `TypeError`；有 `model_dump()` 的对象也**不走** `model_dump()`，直接 `str()`。
+      行为本轮**有意不动**（统一它会改变工具回给 LLM 的字符串），但如实写明，
+      并由 `tests/test_tool_result_serialization.py` 把实测行为钉住 ——
+      这样「文档」与「行为」再也不会各说各话。
+    """
     import json
 
     if isinstance(resp, dict):

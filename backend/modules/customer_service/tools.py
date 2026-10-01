@@ -16,6 +16,7 @@ import json
 from typing import Optional
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.serialization import dump_result as _dump
 from ai_infra.tools.side_effects import READ_ONLY_METADATA, SIDE_EFFECT_METADATA
 
 from .service import CustomerServiceService
@@ -57,15 +58,6 @@ def _shop_id():
 from modules.trade import set_shop_id_resolver  # noqa: E402
 
 set_shop_id_resolver(_shop_id)
-
-
-def _dump(resp) -> str:
-    """统一序列化：dict 直接 dump，Pydantic 走 model_dump。"""
-    if isinstance(resp, dict):
-        return json.dumps(resp, ensure_ascii=False, default=str)
-    if hasattr(resp, "model_dump"):
-        return json.dumps(resp.model_dump(), ensure_ascii=False, default=str)
-    return str(resp)
 
 
 async def _search_faq_tool(

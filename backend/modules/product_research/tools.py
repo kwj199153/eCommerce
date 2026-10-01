@@ -21,6 +21,7 @@ from typing import List, Optional
 from core.library_query import LibraryQueryError, count_library, query_library
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.serialization import dump_result as _dump
 from ai_infra.tools.side_effects import READ_ONLY_METADATA, SIDE_EFFECT_METADATA
 from modules.candidates import (
     approve_candidate as _approve_candidate,
@@ -42,15 +43,6 @@ from .schemas import (
 # 早前这里又 `ProductResearchService()` 了一次，与 router 各持一个 Agent，
 # 导致会话状态（蓝海结果 / 待补槽位）在工具路径上不可见。
 _service = product_research_service
-
-
-def _dump(resp) -> str:
-    """统一序列化：dict 直接 dump，Pydantic 走 model_dump。"""
-    if isinstance(resp, dict):
-        return json.dumps(resp, ensure_ascii=False, default=str)
-    if hasattr(resp, "model_dump"):
-        return json.dumps(resp.model_dump(), ensure_ascii=False, default=str)
-    return str(resp)
 
 
 async def _analyze_blue_ocean_tool(

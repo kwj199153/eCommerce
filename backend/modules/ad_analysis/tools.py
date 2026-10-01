@@ -15,10 +15,10 @@
 - 工具层只做「调用 service + 序列化」，不碰 agent 本体。
 """
 
-import json
 from typing import Optional
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.serialization import dump_result as _dump
 from ai_infra.tools.side_effects import READ_ONLY_METADATA
 
 from .service import AdAnalysisService
@@ -49,15 +49,6 @@ def _shop_id():
     """
     from .agent_ad import _current_shop_id
     return _current_shop_id.get()
-
-
-def _dump(resp) -> str:
-    """统一序列化：dict 直接 dump，Pydantic 走 model_dump。"""
-    if isinstance(resp, dict):
-        return json.dumps(resp, ensure_ascii=False, default=str)
-    if hasattr(resp, "model_dump"):
-        return json.dumps(resp.model_dump(), ensure_ascii=False, default=str)
-    return str(resp)
 
 
 async def _diagnose_tool(

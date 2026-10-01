@@ -36,10 +36,10 @@ ContextVar，工具侧 `_store_id()` 读回。
    「看起来正常、其实不知属于谁」的报表，那是归因错误。
 """
 
-import json
 from typing import Optional
 
 from langchain_core.tools import StructuredTool
+from ai_infra.tools.serialization import dump_result as _dump
 from ai_infra.tools.side_effects import READ_ONLY_METADATA
 from core.library_query import LibraryQueryError
 
@@ -79,15 +79,6 @@ def _deny_missing_shop() -> str:
             "reason": "missing_shop_context",
         }
     )
-
-
-def _dump(resp) -> str:
-    """统一序列化。"""
-    if isinstance(resp, dict):
-        return json.dumps(resp, ensure_ascii=False, default=str)
-    if hasattr(resp, "model_dump"):
-        return json.dumps(resp.model_dump(), ensure_ascii=False, default=str)
-    return str(resp)
 
 
 async def _weekly_report_tool(days: int = 7) -> str:
