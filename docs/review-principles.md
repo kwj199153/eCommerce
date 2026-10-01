@@ -199,7 +199,7 @@
 > （**2 条**；判据用 `compile()` 走 CPython 词法分析器，而非 grep 转义表）。
 > ④ **P3 复算**：生产源码 >800 行 **51 个** / `def _get_router` **×7** / `def _dump` **×8**
 > —— 后两条与 r335/r350/r353 **完全一致**（**未改善**）。
-> pytest 由 **2527 → 2542**（153 → **156** 文件，delta = +3 文件 / +15 用例）；
+> pytest 由 **2527 → 2543**（153 → **156** 文件，delta = +3 文件 / +16 用例）；
 > `mypy core ai_infra` 仍 89 文件。反向注入 **9 组全红**（L3-17/L3-14 共 3 组 + L3-5 共 3 组 + 第 3 批 3 组）
 > + 逐字节还原 sha 一致 + 回绿复核。
 > ★ **P3 口径敏感（新增，防下次误判）**：「>800 行」在同一份代码上随口径变化 ——
@@ -236,13 +236,24 @@
 >   本轮漏了 `APP_NAME`，代价是「本地恒绿、CI 恒红」，且要等第一次 CI 运行才暴露。
 > 结论落 `docs/reviews/2026-10-01-第354轮-P1-3与P3落地.md` §10。
 
+>
+> **更新 · 第 354 轮（第 3 批 · 收尾补记）**：收尾验证时**被门禁自己抓到**第 4 个缺陷 ——
+> `test_no_syntax_warnings` 的扫描面未排除 pytest basetemp，被**它自己的元测试产物**
+> （`tmp_path` 里「故意含 `\d`」的文件）打红（修于 `801c45f`）。
+> 根因是本仓第 238 轮起约定 `--basetemp` 必须落在 `backend/` 内
+> （否则 `atexit` 清 `%TEMP%/pytest-of-*/garbage-*` 会撞沙箱批量删除守卫）⇒ 临时产物**就在被测树里**。
+> 修它时又**加了 1 条用例**（`test_scan_excludes_pytest_basetemp`）⇒ 权威用例数再 +1：
+> **2542 → 2543**（156 文件不变）；本节上方各处已按现值改写。
+> ★ 口径提醒：**2542 是批次 3 提交（`20d0b1c`）时的读数，2543 是本批收尾终态** ——
+>   两个都对，差别只在**取证时刻**；引用时必须连时刻一起说。
+
 > 目的：下次审查直接从 L2 开始，不必重走 L1 盘点。**有变化时更新本节。**
 
 ### CI（`.github/workflows/ci.yml` 430 行 / `cd.yml` 261 行）
 
 | Job | 步骤 |
 |---|---|
-| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 353 轮实测 `Success, 89 source files`）** → pytest（**2542 用例**）+ 覆盖率棘轮（`fail_under=65`） |
+| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 353 轮实测 `Success, 89 source files`）** → pytest（**2543 用例**）+ 覆盖率棘轮（`fail_under=65`） |
 | 前端 | 门禁 glob `check-*.*` + **覆盖率自证**（漏跑即红）→ `vue-tsc` → `vite build`（`VITE_DEMO_MODE=false`） |
 | 资产 | 必需文件存在 → `docker compose config` → `nginx -t` → 敏感文件未被 git 跟踪 → **CD 资产门禁** |
 | 安全 | bandit（Medium+ = 0）/ pip-audit / npm audit（阈值 `critical` —— 按原则四锁在「当前已绿」） |
@@ -261,8 +272,8 @@
 > 2295@09-30(137 文件) → 2347@r332 → 2435@r347(148 文件) → 2450@r351(149 文件)
 > → 2523@r351(153 文件)（同轮四道新门禁：`test_amazon_sp_oauth` / `test_prompt_versions` /
 > `test_legal_docs` / `test_pitr`）→ **2527@r352(153 文件)**（`test_legal_docs` 由 5 条涨到 9 条）→
-> **2542@r354(156 文件)**（`test_openapi_contract_gate` **10**（第 3 批由 8 涨到 10）
-> + `test_tenant_isolation_gate` 3 + `test_no_syntax_warnings` 2）。
+> **2543@r354(156 文件)**（`test_openapi_contract_gate` **10**（第 3 批由 8 涨到 10）
+> + `test_tenant_isolation_gate` 3 + `test_no_syntax_warnings` **3**（收尾再 +1：basetemp 回归用例））。
 > ⇒ 本节是**快照**：更新时必须重跑上面这条命令，**不要沿用旧数**。
 > ★ 为什么之前会写错：`11276` 既不是用例数、也不是 coverage statements 数
 > （实测 statements ≈ 27150），属纯错记；根因是「写现状快照时没有当场取数」。
