@@ -160,6 +160,54 @@
 > L8 对外文本须链接清单）。pytest 由 **2523 → 2527**（仍 153 文件）、`mypy core ai_infra` 仍 **89 文件**；
 > 8 组反向注入全红 + 逐字节还原。结论落 `docs/reviews/2026-10-01-第352轮-法务文本落地.md`。
 >
+> **更新 · 第 353 轮**：**全量复审**（L1 取证 + 反向注入 + P0/L3 逐条重锚）。本节同步：
+> 门禁仍 **39 部 `.cjs` + 4 部 `.py`**；**注入开口 38 道 / 无开口 1 道**（本轮独立复验；
+> ★ 须注意：r350 的探针只认 `process.env.LITERAL`，认不出 r351 引入的 `pick('NAME')` 动态键
+> ⇒ **修正口径后**才得到 38/0/1，沿用旧口径会误报成 26/0/13）；
+> pytest **2527 用例 / 153 文件**（delta 0；2523 passed / 1 环境假红 / 3 skipped）、
+> `mypy core ai_infra` 仍 **89 文件**；P0 九项重锚 → **已闭合 8**（P0-2 的 PITR / P0-6 / P0-7 B 档
+> 均已在 r351 落地，本轮逐个验承载物：`pg_pitr.py`+beat 两条 / `amazon_sp/router.py`+`main.py:641` /
+> `modules/prompt_versions/`+迁移 `l8d5e2a9c3f6`）。
+> ★ **新增 L3-17**：`backend/scripts/check_tenant_isolation.py` **无任何自动入口**
+> （AST 判据复核：4 部后端脚本门禁中仅此 1 部无 pytest 包装、CI 也不跑它 —— **更正 r350 §5
+> 「4 部由 pytest 包着跑」的错记，实为 3 部有包装 + 1 部裸奔**）
+> \+ **期望值过期**（演示模式那条停在 r177 之前的「演示身份无条件放行」；
+> 现行为是「演示店 200 / 真实店 403」，已用探针实证 ⇒ **非真回归**）。
+> ★ 另两处旧结论被时间改写：**L3-14 由 1 → 3 个文件**（两条 alembic 迁移也带 `invalid escape sequence`，
+> 其中 `e7b2c9d4a1f8_review_reports_library.py:34` 污染**每次 alembic 运行**的输出）；
+> **L3-16 的「死表」举证失效**（`amazon_credentials` / `amazon_auth_logs` 已有真实写入者，来自 r351 的 P0-6）。
+> 结论落 `docs/reviews/2026-10-01-第353轮-项目复审.md`。
+>
+> **更新 · 第 354 轮**：批次 3 落地（**P1-1 = L3-17** / **P1-3 = L3-5** / **P2-1 = L3-14**）
+> + **P3 复算**。本节同步：
+> ① **L3-17 闭合**：`scripts/check_tenant_isolation.py` 的期望改贴第 177 轮口径
+> （演示身份只放行演示店 ⇒ 演示店 200 / 真实店 403，**两个方向都测**）+ 补第 182 轮
+> **哨兵身份**路径（此前零覆盖）+ 新增 `tests/test_tenant_isolation_gate.py`（**3 条**，
+> 两种模式各跑一次）。⇒ 后端脚本门禁由「4 部中 3 部有 pytest 包装」变为 **5 部 5/5**。
+> ② **L3-5 闭合**：新增 `scripts/check_openapi_contract.py` + 快照
+> `backend/docs/api/openapi.json`（**236 路径 / 151 schema / 579 KiB**，快照本身即交付物）
+> + `tests/test_openapi_contract_gate.py`（**8 条**）。
+> ★ **实测口径**：契约**只有一根环境敏感轴** —— `VOICE_CLONE_ENABLED`（off 少 8 条
+> `/api/v1/voice-clone*` 路径与 5 个 schema）；`AUTH_REQUIRED` / `DEBUG` /
+> `METRICS_ENABLED`（`/metrics` 是 `include_in_schema=False`）/ `DEMO_MODE` **无影响**；
+> `ENVIRONMENT=production` **测不了**（被 `_enforce_production_safety` 拒启）
+> ⇒ 门禁固定 `development` + `VOICE_CLONE_ENABLED=true` 取最大面。
+> ★ 固定环境的代价是**其它 env 轴的影响会隐身** ⇒ 门禁带 `--env-axes` 子模式，
+> 用子进程把 `AUTH_REQUIRED` 翻一次并断言**逐字节不变**，
+> 把「路由不得条件挂载」（r351 前的缺陷形态）钉住。
+> ③ **L3-14 闭合**：三处 `r""` 前缀 + **门禁化** `tests/test_no_syntax_warnings.py`
+> （**2 条**；判据用 `compile()` 走 CPython 词法分析器，而非 grep 转义表）。
+> ④ **P3 复算**：生产源码 >800 行 **51 个** / `def _get_router` **×7** / `def _dump` **×8**
+> —— 后两条与 r335/r350/r353 **完全一致**（**未改善**）。
+> pytest 由 **2527 → 2540**（153 → **156** 文件，delta = +3 文件 / +13 用例）；
+> `mypy core ai_infra` 仍 89 文件。反向注入 **6 组全红**（L3-17/L3-14 共 3 组 + L3-5 共 3 组）
+> + 逐字节还原 sha 一致 + 回绿复核。
+> ★ **P3 口径敏感（新增，防下次误判）**：「>800 行」在同一份代码上随口径变化 ——
+> 计入 `modules/*/seed.py` ⇒ **51**，剔除 seed ⇒ **50**（= r353 记的数），
+> 再剔 `frontend/src/mock/` ⇒ **49**。⇒ 报这个数**必须连口径一起报**；
+> r353 的「50」与本轮「51」**不是代码变了，是口径不同**。
+> 结论落 `docs/reviews/2026-10-01-第354轮-P1-3与P3落地.md`。
+>
 > **更新 · 第 347 轮**：**核正 pytest 用例数口径** —— 下表原写「11276 用例」是
 > **无来源的错记**（全仓 grep 只此一处，且与同类快照 2295/r332 2347 差 4.6 倍）。
 > 真实口径见表格下方脚注（**2435 用例 / 148 文件**）。
@@ -170,7 +218,7 @@
 
 | Job | 步骤 |
 |---|---|
-| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 352 轮实测 `Success, 89 source files`）** → pytest（**2527 用例**）+ 覆盖率棘轮（`fail_under=65`） |
+| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 353 轮实测 `Success, 89 source files`）** → pytest（**2540 用例**）+ 覆盖率棘轮（`fail_under=65`） |
 | 前端 | 门禁 glob `check-*.*` + **覆盖率自证**（漏跑即红）→ `vue-tsc` → `vite build`（`VITE_DEMO_MODE=false`） |
 | 资产 | 必需文件存在 → `docker compose config` → `nginx -t` → 敏感文件未被 git 跟踪 → **CD 资产门禁** |
 | 安全 | bandit（Medium+ = 0）/ pip-audit / npm audit（阈值 `critical` —— 按原则四锁在「当前已绿」） |
@@ -188,7 +236,9 @@
 > ★ 这个数**每轮都在涨**，历史快照：867@r126 → 1674@09-27 → 2025@r283 →
 > 2295@09-30(137 文件) → 2347@r332 → 2435@r347(148 文件) → 2450@r351(149 文件)
 > → 2523@r351(153 文件)（同轮四道新门禁：`test_amazon_sp_oauth` / `test_prompt_versions` /
-> `test_legal_docs` / `test_pitr`）→ **2527@r352(153 文件)**（`test_legal_docs` 由 5 条涨到 9 条）。
+> `test_legal_docs` / `test_pitr`）→ **2527@r352(153 文件)**（`test_legal_docs` 由 5 条涨到 9 条）→
+> **2540@r354(156 文件)**（`test_openapi_contract_gate` 8 + `test_tenant_isolation_gate` 3
+> + `test_no_syntax_warnings` 2）。
 > ⇒ 本节是**快照**：更新时必须重跑上面这条命令，**不要沿用旧数**。
 > ★ 为什么之前会写错：`11276` 既不是用例数、也不是 coverage statements 数
 > （实测 statements ≈ 27150），属纯错记；根因是「写现状快照时没有当场取数」。
@@ -198,8 +248,11 @@
 - 前端 `frontend/scripts/check-*.{cjs,py}`：**39 部 `.cjs` + 4 部 `.py`**（第 351 轮实测；
   ★ 其中 **38 部自带 env 注入开口**（`pick(env, fallback)` / `process.env[var]` 两种写法都算），
   **1 部没有**：`check-eslint-ratchet.cjs` —— 它读的是 **ESLint 配置面**、不读源码 ⇒ **非缺口**）
-- 后端 `backend/scripts/check_*.py`：**4 部**（由 pytest 包着跑：`test_alert_rules_gate.py` /
-  `test_compose_secrets_gate.py` / `test_agent_session_memory.py` / `test_import_boundaries.py`）
+- 后端 `backend/scripts/check_*.py`：**5 部**，且**全部**由 pytest 包着跑：
+  `test_alert_rules_gate.py` / `test_compose_secrets_gate.py` / `test_agent_session_memory.py` /
+  `test_import_boundaries.py` / `test_openapi_contract_gate.py`
+  ★ r350 曾记「4 部由 pytest 包着跑」为**错记**（r353 更正为 3/4：`check_tenant_isolation.py` 裸奔）；
+  r354 新增第 5 部的同时把那处缺口补平 ⇒ **5/5**（「有几部」与「有几部被跑」从此同值）
 - 另有一批 CDP 行为探针（`frontend/scripts/cdp-*.mjs`），其中
   `cdp-review-desk-config-baseline.mjs` 是拆 `ReviewDeskConfig.vue` 的**行为安全网**（33 条判据，含计算样式）
 
@@ -210,6 +263,12 @@
 | 租户隔离 / 越权 | `scripts/check_tenant_isolation.py` + `test_tenant_scoping.py` / `test_shop_scope_consistency.py` / `test_tenant_id_spaces.py` / `test_auth_and_tenant.py` / `test_voice_clone_isolation.py` |
 | 模块边界（跨包 import 形态） | `tests/test_import_boundaries.py`（AST 形态判据，覆盖「数据源必须经工厂」+「跨包禁 import 私有符号」） |
 | 路由盘点 | `scripts/route_inventory.py`（唯一真源；容器识别走**结构**不钉私有名，遇不识对象**必须炸**） |
+| **OpenAPI 契约快照** | `scripts/check_openapi_contract.py` + `docs/api/openapi.json`
+  （236 路径 / 151 schema）+ `tests/test_openapi_contract_gate.py`（8 条）。
+  ★ 快照**本身是交付物**（前端/第三方直接读，不必起服务）；★ 判据全部住在脚本里，
+  用例只断言退出码与关键行（0=一致 / 1=漂移 / 2=环境错，三档分开）；
+  ★ 带 `--env-axes` 子模式：固定环境让契约可复现，代价是其它 env 轴的影响会隐身 ⇒
+  用子进程把 `AUTH_REQUIRED` 翻一次断言逐字节不变，把「不得条件挂载」钉住 |
 | LLM 预算 | `ai_infra/budget.py`（`AgentBudget` + 三档 + `check_budget`）+ `base_agent.py:1383` **真消费** + `test_agent_budget.py` |
 | RBAC | `core/auth/accounts.py`（`role_allows` / `resolve_account_role()`；团队角色与平台超管**两条链路**分开） |
 | 密钥加密 | `core/security/credentials.py`（Fernet + 三类显式错误） |
@@ -354,9 +413,10 @@
 | L3-11 | ✅ 闭合（r351）：**8 道真缺口**全部补 `pick` 开口 + 空源自证 **8/8**；余 1 道（`check-eslint-ratchet.cjs`）是配置面例外 | P1 | `.workbuddy/probes/r351/revinject_emptysrc.py` |
 | L3-12 | **本地 venv 缺 `ruff`/`bandit`/`pip-audit`** ⇒ 这 3 道 CI 步骤本地不可复现 | P2 | 三者均 `No module named …` |
 | L3-13 | **欠账表注释数字漂移** | P3 | `eslint.config.mjs:80` 写 `no-undef 13 条`，实测 **19**；`:85` 写 `112`，实测 **115** |
-| L3-14 | `backend/scripts/patch_nav_view_ids_comment.py:6` 的 `invalid escape sequence '\s'` 污染每次 pytest 输出 | P3 | pytest stdout 尾部实测 |
+| L3-14 | **`SyntaxWarning` 污染输出**（第 353 轮实测 **3 个文件**，其中 **2 条是 alembic 迁移** ⇒ 污染**每次 alembic 运行**） | P3 | 全仓 `compile()` 捕 `SyntaxWarning`：`b8d4e2f6c3a5_memory_tables.py:11` · **`e7b2c9d4a1f8_review_reports_library.py:34`** · `patch_nav_view_ids_comment.py:6` |
 | L3-15 | **仓库根无 `LICENSE`**（文本在 `docs/legal/LICENSE`） | P1 | `LICENSE` 不存在 |
-| L3-16 | **无「表必须有写入者」门禁**（r332 §8 建议 4 未做） | P2 | `test_schema_parity.py` 只判外键 |
+| L3-16 | **无「表必须有写入者」门禁**（r332 §8 建议 4 未做） | P2 | `test_schema_parity.py` 只判外键。★ 第 353 轮更正：原举证「`amazon_credentials`/`amazon_auth_logs` 零实例化」**已失效** —— r351 的 P0-6 给它们接上了真实写入者（`amazon_sp/router.py` ×2 / ×1）⇒ 举证案例须另找 |
+| **L3-17** | **`backend/scripts/check_tenant_isolation.py` 无任何自动入口 + 期望值过期** | **P1** | 第 353 轮：AST 判据实测「4 部后端脚本门禁中**唯一**没有 pytest 包装、CI 也不跑它」；实跑 **1/2 通过**（演示模式那条期望 200、实得 403）⇒ 探针证得系**期望过期**（现行口径是「演示店 200 / 真实店 403」）。★ 与 L3-11 方向相反：L3-11 是「**红不了**」，本条是「**红了没人看**」 |
 
 > 完整重锚（含 P0 九项逐条）见 `docs/reviews/2026-10-01-项目复审与进度归档.md`。
 

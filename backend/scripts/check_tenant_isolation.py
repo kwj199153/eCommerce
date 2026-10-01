@@ -8,7 +8,9 @@
   - 平台超管跨账户访问                             -> 放行（设计如此）
   - 无 token / 伪造 token                          -> 401
   - 无 X-Shop-ID 头：读方法 -> None（端点回空列表）；写方法 -> 400
-  - 演示模式（AUTH_REQUIRED=false）                -> 全部放行（不破坏本地演示）
+  - 演示模式（AUTH_REQUIRED=false）                -> 演示身份**只**放行演示店铺：
+                                                     演示店 -> 放行；真实店 -> 403
+                                                     （第 177 轮收紧；**不是**「全部放行」）
 
 ★★★ P1-c 改造（2026-09-16）：本脚本原先打的是**账户侧**
     `get_tenant_from_header` / `require_shop_owner`（查 `shops` 表 / UUID）。
@@ -27,9 +29,16 @@
     钉住（本处是它挖出的**唯一**真实违规）。
     行为等价性有实测：改造前后本脚本均 `10/10 通过`、逐条 PASS 文案一致。
 
-运行方式（必须在生产模式下才会拦截）：
+运行方式（两个分支都有真断言，**两种模式都要跑**）：
     cd backend
-    AUTH_REQUIRED=true python scripts/check_tenant_isolation.py
+    python scripts/check_tenant_isolation.py                     # 演示模式分支
+    AUTH_REQUIRED=true python scripts/check_tenant_isolation.py  # 生产模式分支
+
+★★★ 第 353 轮：此前本脚本**不在任何自动入口**（`tests/` 里对它的 3 处提及
+    全是注释 / docstring / assert 样例字符串，没有任何一处**执行**它；CI 也不跑）。
+    ⇒ 它 1/2 通过这件事，没有任何流程会看见。本轮的配套动作：
+      · 新增 `tests/test_tenant_isolation_gate.py`（pytest 包装 ⇒ 进 CI）；
+      · 本文件的两个分支各有独立断言，包装里**各跑一次**。
 
 退出码：0 = 全部通过；1 = 有用例失败
 """
@@ -48,6 +57,7 @@ from starlette.requests import Request  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
 from core.auth.accounts import ensure_owner_member, ensure_default_account  # noqa: E402
+from core.auth.demo_identity import DEMO_SENTINEL_PREFIX  # noqa: E402
 from core.auth.jwt_handler import create_token_pair  # noqa: E402
 from core.config import config  # noqa: E402
 from core.database import get_async_session  # noqa: E402
@@ -59,6 +69,7 @@ from core.tenant.middleware import (  # noqa: E402
     get_current_shop_id_optional,
 )
 from core.stores import StoreRecord  # noqa: E402
+from modules.stores.demo import demo_account_id  # noqa: E402
 
 
 def make_request(shop_id: str = None, token: str = None, method: str = "GET") -> Request:
@@ -135,6 +146,53 @@ async def ensure_store(session, owner: User, name: str) -> StoreRecord:
     return store
 
 
+async def ensure_demo_store(session) -> StoreRecord:
+    """
+    按**生产形态**造一家演示店：落在演示账号名下，并标 `is_demo=True`。
+
+    ★ 为什么不"随便造一家店再硬贴 `is_demo=True`"：
+      生产里 `is_demo` 不是手填的，是从**账户归属**推导出来的
+      （`modules/stores/demo.py::ensure_demo_stores`：
+      `is_demo = (store.account_id == 演示账号)`）。
+      硬贴标记等于验证一个**生产里不存在的形态** —— 那种"通过"没有意义，
+      而且一旦有人把推导规则改成别的依据，本脚本照样绿。
+
+    ⇒ 两个条件都做：先落在演示账号（`config.demo_account_email`）名下，
+      再按同一规则标 `is_demo`。二者缺一就报出来，不静默通过。
+    """
+    email = (config.demo_account_email or "").strip()
+    if not email:
+        print()
+        print("★ DEMO_ACCOUNT_EMAIL 为空 ⇒ 演示身份已降级为匿名，演示分支不适用。")
+        return None
+
+    owner = await ensure_user(session, email)
+    store = await ensure_store(session, owner, "TenantA-Demo-Store")
+
+    # ★ 一致性自检：这家店的 `account_id` 必须**就是**演示账号。
+    #   为什么这条值得写出来而不是"应该相等"：
+    #     `ensure_store` 走 `ensure_default_account`（取「最早创建的容器」），
+    #     `demo_account_id()` 取的是**同一条排序** —— 两处口径若哪天分了叉，
+    #     演示店就会挂在 A 账号、而演示身份命中 B 账号，表现为「演示模式半死不活」。
+    #     这种失效**不会报错**，只会让演示一片空白，所以必须在这里当场断言。
+    demo_acct = await demo_account_id()
+    if demo_acct is not None and getattr(store, "account_id", None) != demo_acct:
+        print(
+            f"  ✘ 演示店归属不一致：store.account_id={getattr(store, 'account_id', None)!r} "
+            f"≠ demo_account_id()={demo_acct!r} —— 两处口径已分叉"
+        )
+        return None
+
+    if not bool(getattr(store, "is_demo", False)):
+        store.is_demo = True
+        await session.commit()
+        await session.refresh(store)
+
+    print()
+    print(f"演示店铺 [{store.name}] ({store.id}) 已标 is_demo={getattr(store, 'is_demo', None)}")
+    return store
+
+
 async def expect(coro_func, expected, label: str, results: list, *, expect_value=None):
     """
     执行一个依赖调用并断言结果。
@@ -172,8 +230,9 @@ async def main() -> int:
     print(f"判定实现      = core/auth/accounts.py::can_access_store")
     if not config.auth_required:
         print()
-        print("提示：当前为演示模式，归属校验按设计放行。")
-        print("      要验证拦截行为，请用 AUTH_REQUIRED=true 运行本脚本。")
+        print("提示：当前为演示模式 —— 归属校验**仍然生效**（第 177 轮起）：")
+        print("      演示身份只放行 `is_demo` 店铺；真实店铺一律 403。")
+        print("      要验证真实身份之间的越权拦截，请用 AUTH_REQUIRED=true 运行本脚本。")
 
     results = []
     created_store_ids = []
@@ -184,6 +243,11 @@ async def main() -> int:
         admin = await ensure_user(session, "tenant-test-admin@example.com", role="admin")
         store_b = await ensure_store(session, user_b, "TenantB-Store")
         created_store_ids.append(store_b.id)
+
+        # 演示店（真实店 vs 演示店 = 第 177 轮收口后**唯一**有意义的对照）
+        store_demo = await ensure_demo_store(session)
+        if store_demo is not None:
+            created_store_ids.append(store_demo.id)
 
         token_a = create_token_pair(user_a.id, user_a.email, user_a.role.value).access_token
         token_b = create_token_pair(user_b.id, user_b.email, user_b.role.value).access_token
@@ -258,16 +322,61 @@ async def main() -> int:
             )
         else:
             print("用例：")
-            await expect(
-                lambda: get_current_shop_id(
-                    make_request(store_b.id, None), session),
-                200, "演示模式：无 token 也放行（保证演示可用）", results,
-            )
+            # ★★★ 第 353 轮修正：本分支的期望值此前**停在修复之前**。
+            #
+            #   旧写法只有两条，第一条断言「演示身份 + 真实店 ⇒ 200」，与
+            #   `core/tenant/middleware.py:256-262`（第 177 轮）直接矛盾 ——
+            #   那一轮已删掉「user is None ⇒ 直接放行」，改为「演示身份也走
+            #   can_access_store：演示店铺 200 / 真实店铺 403」。
+            #   ⇒ 这不是"发现了回归"，而是**期望值过期**（负资产）：既误导
+            #     （让人以为演示坏了），又不设防（真坏时也没人知道）。
+            #   定性过程见 `docs/reviews/2026-10-01-第353轮-项目复审.md` §3。
+            #
+            #   ★ 修正后**两个方向都测** —— 只验"演示店放行"会漏掉真正的回归
+            #     （有人把 `_matches` 改回 `return True` 时，只测演示店仍然绿）。
+            if store_demo is None:
+                # ★ 演示店造不出来 ⇒ 依赖它的用例**必须记红**，不能"少跑两条"。
+                #   少跑会让 `结果: 3/3 通过` 看起来与 `5/5 通过` 一样漂亮 ——
+                #   那正是本门禁原来的病（红着没人知道）换了张皮。
+                results.append(False)
+                print(
+                    "  [FAIL] 演示店不可用（DEMO_ACCOUNT_EMAIL 未指向"
+                    "「名下有容器的账号」）⇒ 演示身份的两条用例无法执行，按失败计"
+                )
+            else:
+                await expect(
+                    lambda: get_current_shop_id(
+                        make_request(store_demo.id, None), session),
+                    200, "演示身份 + 演示店铺（应放行：演示能力完好）", results,
+                )
+                await expect(
+                    lambda: get_current_shop_id(
+                        make_request(store_b.id, None), session),
+                    403, "演示身份 + 真实店铺（应 403：第 177 轮收紧）", results,
+                )
             await expect(
                 lambda: get_current_shop_id(
                     make_request(None, None, method="POST"), session),
                 400, "演示模式：写方法缺头仍 400（空值守卫与身份无关）", results,
             )
+
+            # ★ 第 182 轮那条身份路径（前端哨兵 ⇒ 演示账号主人）此前**零覆盖**：
+            #   本脚本只测了「完全不带凭据」这一种演示身份。哨兵身份走的是
+            #   `resolve_demo_user`（三重守卫），与匿名不是同一条路。
+            if config.demo_mode:
+                sentinel = f"{DEMO_SENTINEL_PREFIX}sentinel"
+                # 真实店这条**不依赖演示店** ⇒ 先跑，哪怕演示店造不出来也有读数
+                await expect(
+                    lambda: get_current_shop_id(
+                        make_request(store_b.id, sentinel), session),
+                    403, "演示哨兵 token + 真实店铺（不得因哨兵放大可见面）", results,
+                )
+                if store_demo is not None:
+                    await expect(
+                        lambda: get_current_shop_id(
+                            make_request(store_demo.id, sentinel), session),
+                        200, "演示哨兵 token + 演示店铺（第 182 轮路径）", results,
+                    )
 
         # ---- 清理：只删本脚本造出来的店（保留用户，便于复跑）----
         for sid in created_store_ids:

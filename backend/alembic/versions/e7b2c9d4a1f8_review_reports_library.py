@@ -1,4 +1,4 @@
-"""review library: 新增复盘库表 review_reports（资料库 → 复盘库）
+r"""review library: 新增复盘库表 review_reports（资料库 → 复盘库）
 
 Revision ID: e7b2c9d4a1f8
 Revises: d6a1b3c8e4f7

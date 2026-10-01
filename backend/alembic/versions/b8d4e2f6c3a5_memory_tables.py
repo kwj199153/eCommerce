@@ -1,4 +1,4 @@
-"""memory: 新增 memory_profiles / memory_entries / memory_logs 三张表（第 149 轮批 C2）
+r"""memory: 新增 memory_profiles / memory_entries / memory_logs 三张表（第 149 轮批 C2）
 
 Revision ID: b8d4e2f6c3a5
 Revises: a7f3c1e9d2b4
