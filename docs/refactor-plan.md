@@ -243,6 +243,48 @@ S2 之后已确认的存活状态：
 | S4 知识库三姐妹 | 未开始 | |
 | S5 结果卡收尾 | 未开始 | |
 
+### 附：`ReviewDeskConfig.vue` 五刀（第 341 轮四刀 + 第 347 轮第五刀）
+
+该组件不在 S0–S5 序列里（它随「差评工作台」功能迭代长起来的），单列记录：
+
+| 刀 | 轮次 | 内容 | 行数 |
+|---|---|---|---|
+| 1 | 341 | 外移纯展示词汇 + 视图状态（`reviewDeskVocabulary.ts` / `useReviewDeskViews.ts`） | 2646 → 2474 |
+| 2 | 341 | 外移抽屉编辑区状态（`useReviewDeskEdits.ts`） | 2474 → 2367 |
+| 3 | 341 | `<style scoped>` 外移独立 CSS（`reviewDesk.css` / `rdTable.css`） | 2367 → 1854 |
+| 4 | 341 | 拆出规则表子组件（`ReviewDeskRulesTable.vue`） | 1854 → 1820 |
+| 5 | 347 | 拆出弹窗层（`ReviewDeskModals.vue` + `rdModals.css`）；`RuleForm` 提到 vocabulary 做唯一真源 | 1820 → 1693 |
+
+**第五刀的方法论（可复用）**：这个面板的拆分**不是自由的** —— 六道门禁把一批**调用点**
+钉死在 `ReviewDeskConfig.vue` 这**一个**文件上，所以「能搬什么」要由门禁反推：
+
+| 门禁 | 钉住的东西 | 后果 |
+|---|---|---|
+| `check-review-risk-view.cjs` | `showRiskEvidence` 的实现**与调用点**、`listKeyOf`、`clearRisk`、`riskListKey`、`riskMap` / `riskMeta`、`scanReviewsRisk` | 差评列表与风险逻辑**不能搬** |
+| `check-review-chat-entries.cjs` | `window.dispatchEvent` 恰好 1 处 + `class="rd-act-chat"` / `class="rd-item-chat"` / `@click="sendToChat"` 三处锚点 | 台账行、差评卡片、**抽屉里的对话出口**不能搬 |
+| `check-disposition-execution-honesty.cjs` | `const CHANNEL_META` **块本身**必须在本文件 | 通道真源不能搬 |
+| `check-disposition-write-exit.cjs` C1/C2 | 8 个写 API 的 `.vue` 出口**唯一且在本面板**，且 `.ts` 层必须 0 处 | 写动作**不能**下沉到 composable |
+
+⇒ 可搬面 = 只消费表单态、不碰上述符号的部分 ⇒ 三个弹窗（确认 / 规则编辑器 / 补归因）。
+搬完后再盘：剩余模板（tabs / 风险条 / 台账 / 规则条 / 差评列表 / 抽屉）与脚本
+（风险链路 / 对话出口 / 通道真源 / 写动作）**几乎全被门禁钉住** ⇒ **本组件的拆分到此告一段落**；
+再往下走必须先动门禁（另一量级，需老板拍板）。
+
+**第五刀的两个实测坑**：
+
+1. **双向绑定不能用「prop + 手写事件」的朴素写法**：把 `ruleForm` 当 prop 传进子组件后，
+   `v-model:value="props.ruleForm.code"` 会被 `vue/no-mutating-props` 判为 **error**
+   （**嵌套**属性也算）。正确做法是 `defineModel` —— 实测其 ref 允许直接改写。
+2. **「只有弹窗在用」必须按「块外是否还用」来判**：`.rd-body-full` / `.rd-tip` 弹窗在用的
+   同时在**抽屉里还有 1 + 11 处**；误当弹窗专用就会把抽屉的样式一起删掉。
+
+**验证手段与已知噪声**：唯一的行为判据是 `scripts/cdp-review-desk-config-baseline.mjs`
+（本面板 PASS=33）。它在**限流压力下会假红** —— 后端限流是 60s 窗口，连跑探针会打出 429
+⇒ 台账 / 规则视图**拿不到数据** ⇒ B3/B4 一片 FAIL（更严重时首屏空白，报 `bodyLen=0`）。
+判读看形态即可区分：**「B0/B1 过、B3/B4 数据为空」= 限流假红**，隔 60s 重跑即回 33/0；
+真回归的形态是首屏直接不渲染且**重跑仍不渲染**。第 347 轮实测：同一份代码连跑 6 次，
+4 次 33/0、2 次被限流打红；用 `git stash` 造干净对照 2 次均 33/0 ⇒ 与改动无关。
+
 ### 实机验证清单（S3 后，`npm run dev` 手动点）
 
 因为 S3 动的是行为主干，构建通过 ≠ 运行正确，以下两条真跑 SSE 的路径需要点一遍：

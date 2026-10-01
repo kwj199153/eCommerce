@@ -1,0 +1,79 @@
+/* ============================================================================
+ * 差评工作台「弹窗层」样式（第 347 轮第五刀，从 `reviewDesk.css` 拆出）
+ * ----------------------------------------------------------------------------
+ * ★ 为什么拆：三个弹窗已迁到 `ReviewDeskModals.vue`，而 Vue 的 `<style scoped>`
+ *   **不跨组件**（每条规则都会带上本组件的 data-v 属性）⇒ 子组件必须有自己的一份。
+ *
+ * ★ 为什么大部分是「迁走」而不是「复制」：9 个类经实测**只有弹窗在用**
+ *   （`.rd-confirm-text` / `.rd-receipt-input` / `.rd-rule-*` / `.rd-attr-form`），
+ *   留在 `reviewDesk.css` 就是没人消费的死 CSS。
+ *
+ * ★ 例外两个必须**两处各留一份**（抽屉也在用，实测 `.rd-body-full` 1 处、
+ *   `.rd-tip` 11 处）：`.rd-body-full` / `.rd-tip`。
+ *   ⇒ 改这两个类的中文/尺寸时，**两个文件都要改**，否则抽屉与弹窗会漂移。
+ * ==========================================================================*/
+
+.rd-body-full {
+  padding: var(--space-8);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-6);
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.rd-tip {
+  margin-top: var(--space-8);
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
+}
+
+.rd-confirm-text {
+  margin-bottom: var(--space-8);
+}
+
+.rd-receipt-input { margin-bottom: var(--space-2); }
+
+.rd-rule-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}
+
+.rd-rule-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.rd-rule-label {
+  font-size: var(--font-size-12);
+  color: var(--text-secondary);
+}
+
+.rd-rule-cond-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  align-items: center;
+}
+
+.rd-rule-cond-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--font-size-12);
+}
+
+.rd-rule-action-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  align-items: center;
+}
+
+.rd-attr-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}

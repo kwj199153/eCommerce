@@ -304,9 +304,6 @@
   font-size: var(--font-size-12);
   color: var(--text-secondary);
 }
-.rd-confirm-text {
-  margin-bottom: var(--space-8);
-}
 .rd-disp-proposed { color: #d46b08; }
 .rd-disp-approved { color: #1677ff; }
 .rd-disp-issued { color: #52c41a; }
@@ -330,7 +327,6 @@
 /* ===== 处置编辑区（第 292 轮）=====
    ★ 第 304 轮：常驻的「读 / 写分界 chip」按老板指令取消（信息改挂按钮 title），
      对应的 `.rd-flow*` 样式一并删除 —— 留着就是没人用的死 CSS。 */
-.rd-receipt-input { margin-bottom: var(--space-2); }
 
 .rd-steps {
   display: flex;
@@ -409,43 +405,6 @@
   gap: var(--space-8);
 }
 
-.rd-rule-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-10);
-}
-.rd-rule-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-.rd-rule-label {
-  font-size: var(--font-size-12);
-  color: var(--text-secondary);
-}
-.rd-rule-cond-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-  align-items: center;
-}
-.rd-rule-cond-item {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-4);
-  font-size: var(--font-size-12);
-}
-.rd-rule-action-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-  align-items: center;
-}
-.rd-attr-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-10);
-}
 /* 差评列表行 meta 里的「补归因」入口：右对齐、不抢正文视觉 */
 .rd-attr-entry {
   margin-left: auto;

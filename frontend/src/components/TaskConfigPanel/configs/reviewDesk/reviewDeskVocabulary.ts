@@ -31,7 +31,32 @@ import {
   type SystemicVerdict,
   type CompensationRule,
   type Disposition,
+  type AttributionCause,
 } from '@/api/trade'
+
+/**
+ * 补偿规则表单态（新建与编辑共用一份）。
+ *
+ * ★ 第 347 轮第五刀：从 `ReviewDeskConfig.vue` 提到这里，因为**两个组件**都要它 ——
+ *   父组件持有实例（`saveRule` / `toRulePayload` 读它），`ReviewDeskModals.vue`
+ *   通过 `v-model:rule-form` 绑它的字段。放 `.ts` 里而不是各自抄一份，
+ *   是为了避免「加字段只改一处」的漂移。
+ */
+export interface RuleForm {
+  code: string
+  name: string
+  cause: AttributionCause
+  priority: number
+  max_rating: number | null
+  min_delay_days: number | null
+  verified_purchase: boolean
+  action_type: 'coupon' | 'refund' | 'none'
+  amount: number | null
+  currency: string
+  budget_cap: number
+  enabled: boolean
+  notes: string
+}
 
 /** 差评状态中文名 */
 export const REVIEW_STATUS_LABELS: Record<string, string> = {
