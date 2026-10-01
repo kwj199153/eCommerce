@@ -199,8 +199,8 @@
 > （**2 条**；判据用 `compile()` 走 CPython 词法分析器，而非 grep 转义表）。
 > ④ **P3 复算**：生产源码 >800 行 **51 个** / `def _get_router` **×7** / `def _dump` **×8**
 > —— 后两条与 r335/r350/r353 **完全一致**（**未改善**）。
-> pytest 由 **2527 → 2540**（153 → **156** 文件，delta = +3 文件 / +13 用例）；
-> `mypy core ai_infra` 仍 89 文件。反向注入 **6 组全红**（L3-17/L3-14 共 3 组 + L3-5 共 3 组）
+> pytest 由 **2527 → 2542**（153 → **156** 文件，delta = +3 文件 / +15 用例）；
+> `mypy core ai_infra` 仍 89 文件。反向注入 **9 组全红**（L3-17/L3-14 共 3 组 + L3-5 共 3 组 + 第 3 批 3 组）
 > + 逐字节还原 sha 一致 + 回绿复核。
 > ★ **P3 口径敏感（新增，防下次误判）**：「>800 行」在同一份代码上随口径变化 ——
 > 计入 `modules/*/seed.py` ⇒ **51**，剔除 seed ⇒ **50**（= r353 记的数），
@@ -212,13 +212,37 @@
 > **无来源的错记**（全仓 grep 只此一处，且与同类快照 2295/r332 2347 差 4.6 倍）。
 > 真实口径见表格下方脚注（**2435 用例 / 148 文件**）。
 
+>
+> **更新 · 第 354 轮（第 3 批）**：§8 的「三处未验证」前两条**从推理变成读数**。
+> ① **L3-5 门禁在 CI 里从未实跑 → 已实跑，并抓到真缺陷**：
+>    用 `git worktree add --detach <tmp> HEAD` 建一份**无 `.env` 的干净检出**（= CI 等价条件），
+>    实测 **rc=1** —— `info.title` 本地是 `CrossBorder-AI-SaaS`、无 `.env` 时是 `跨境电商AI SaaS`。
+>    根因：`main.py` 的 `FastAPI(title=config.app_name, version=config.app_version)` 把两个
+>    config 字段**直接写进 `info`** ⇒ 它们是**第二根 env 敏感轴**；而上一轮的矩阵只比了
+>    「有 `.env`」那一档（`.env` 恰好改了 `APP_NAME`）⇒ 整条轴隐身，docstring 里
+>    「只有一根轴」的结论一并失效。
+>    ⇒ `FORCED_ENV` 补 `APP_NAME`/`APP_VERSION` + `--env-axes` 新增**轴 3**；
+>    快照随之重生成，差异**恰好 1 行**。复验（同一 worktree + CI `env:` 段）：
+>    `--check` rc=0 / `--env-axes` rc=0 / `pytest` **10 passed**。
+> ② **production env 契约 → 静态取证**：`main.py` 里按 config 条件挂载路由的**只有**
+>    `if config.voice_clone_enabled`（`metrics_enabled` 那块只有 `include_in_schema=False`
+>    的 `/metrics`；`docs_url`/`redoc_url` 不进 schema；`BUSINESS_AUTH` 自 09-17 起是无条件常量）
+>    ⇒ 生产 env 不产生额外差异，且该轴已被轴 2 翻转钉住。
+> ③ **前端消费点仍为「未做」**（不硬造）：L3-5 的触发条件本就是「有外部消费者」。
+> ★ 并补两条用例把「新轴会隐身」堵死（8 → 10）：
+>   `test_conditional_mount_axes_are_registered`（AST 实测条件挂载字段集合 == 登记集合，**双向**）
+>   + `test_registered_axes_are_actually_flipped`（登记的轴必须真被 `--env-axes` 翻过）。
+> ★ 教训：**「在一处绿」≠「在部署处绿」** —— 固定环境时，**被固定的字段集合本身**也要数清；
+>   本轮漏了 `APP_NAME`，代价是「本地恒绿、CI 恒红」，且要等第一次 CI 运行才暴露。
+> 结论落 `docs/reviews/2026-10-01-第354轮-P1-3与P3落地.md` §10。
+
 > 目的：下次审查直接从 L2 开始，不必重走 L1 盘点。**有变化时更新本节。**
 
 ### CI（`.github/workflows/ci.yml` 430 行 / `cd.yml` 261 行）
 
 | Job | 步骤 |
 |---|---|
-| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 353 轮实测 `Success, 89 source files`）** → pytest（**2540 用例**）+ 覆盖率棘轮（`fail_under=65`） |
+| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 353 轮实测 `Success, 89 source files`）** → pytest（**2542 用例**）+ 覆盖率棘轮（`fail_under=65`） |
 | 前端 | 门禁 glob `check-*.*` + **覆盖率自证**（漏跑即红）→ `vue-tsc` → `vite build`（`VITE_DEMO_MODE=false`） |
 | 资产 | 必需文件存在 → `docker compose config` → `nginx -t` → 敏感文件未被 git 跟踪 → **CD 资产门禁** |
 | 安全 | bandit（Medium+ = 0）/ pip-audit / npm audit（阈值 `critical` —— 按原则四锁在「当前已绿」） |
@@ -237,8 +261,8 @@
 > 2295@09-30(137 文件) → 2347@r332 → 2435@r347(148 文件) → 2450@r351(149 文件)
 > → 2523@r351(153 文件)（同轮四道新门禁：`test_amazon_sp_oauth` / `test_prompt_versions` /
 > `test_legal_docs` / `test_pitr`）→ **2527@r352(153 文件)**（`test_legal_docs` 由 5 条涨到 9 条）→
-> **2540@r354(156 文件)**（`test_openapi_contract_gate` 8 + `test_tenant_isolation_gate` 3
-> + `test_no_syntax_warnings` 2）。
+> **2542@r354(156 文件)**（`test_openapi_contract_gate` **10**（第 3 批由 8 涨到 10）
+> + `test_tenant_isolation_gate` 3 + `test_no_syntax_warnings` 2）。
 > ⇒ 本节是**快照**：更新时必须重跑上面这条命令，**不要沿用旧数**。
 > ★ 为什么之前会写错：`11276` 既不是用例数、也不是 coverage statements 数
 > （实测 statements ≈ 27150），属纯错记；根因是「写现状快照时没有当场取数」。
