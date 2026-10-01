@@ -25,6 +25,7 @@ grep 只能命中你**已经想到**的那几种转义（本轮就有 `\\``、`\
 from __future__ import annotations
 
 import pathlib
+import shutil
 import warnings
 
 import pytest
@@ -32,14 +33,32 @@ import pytest
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
 
 #: 不进扫描的目录（第三方 / 缓存 / 生成物）
-_SKIP_PARTS = {".venv", "venv", "__pycache__", "node_modules", ".mypy_cache", ".ruff_cache"}
+_SKIP_PARTS = {
+    ".venv", "venv", "__pycache__", "node_modules",
+    ".mypy_cache", ".ruff_cache", ".pytest_cache",
+}
+
+#: 按**前缀**排除的目录。
+#: ★ 为什么必须有这一条：本仓第 238 轮起约定跑 pytest 用
+#:   `--basetemp=.pytest-tmp-<tag>`，且该目录**必须落在 backend/ 内**
+#:   （否则 atexit 清 `%TEMP%/pytest-of-*/garbage-*` 会撞沙箱批量删除守卫，
+#:   而且是**跑完之后**才抛 ⇒ 退出码会骗人）。
+#:   代价：basetemp 里的文件**就在被测树里**。
+#:   `test_gate_detects_injected_warning` 用 `tmp_path` 造的
+#:   `injected_bad_escape.py`（**故意**含 `\d`）正落在其中，不排除就会被
+#:   `_iter_sources()` 扫到 ⇒ 正向用例无端变红（**自伤假红**）。
+#:   第 354 轮实测：`backend/` 下累积了 17 个 `.pytest-tmp-*` / 68 文件，
+#:   其中 10 个 `.py` 已进入扫描面。
+_SKIP_PREFIXES = (".pytest-tmp",)
 
 
 def _iter_sources() -> list[pathlib.Path]:
     return sorted(
         p
         for p in BACKEND.rglob("*.py")
-        if not (_SKIP_PARTS & set(p.parts)) and p.is_file()
+        if not (_SKIP_PARTS & set(p.parts))
+        and not any(part.startswith(_SKIP_PREFIXES) for part in p.parts)
+        and p.is_file()
     )
 
 
@@ -116,3 +135,35 @@ def test_gate_detects_injected_warning(tmp_path):
     good = tmp_path / "injected_good_raw.py"
     good.write_bytes(b'r"""docstring with a raw escape: \\d{4}"""\n')
     assert _syntax_warnings(good) == [], "加 r 前缀后仍报警 ⇒ 门禁会误伤正常写法"
+
+
+def test_scan_excludes_pytest_basetemp():
+    """★ 自伤假红的反面：**元测试自己造的产物不得被同批扫描面收进来**。
+
+    本仓跑 pytest 固定用 `--basetemp=.pytest-tmp-<tag>`（理由见 `_SKIP_PREFIXES`
+    注释），该目录就落在 `BACKEND` 之内 ⇒ 本文件另一条用例
+    `test_gate_detects_injected_warning` 用 `tmp_path` 造的
+    `injected_bad_escape.py`（**故意**含 `\\d`）会出现在扫描面里。
+
+    本用例**真的**在 `backend/` 下建一个 `.pytest-tmp-*/` 目录：
+      · 先断言这份内容确实会触发 `SyntaxWarning`（否则本用例是空跑，见本仓铁律
+        「没有反例的断言 = 没有断言」）；
+      · 再断言 `_iter_sources()` **不**把它收进来。
+
+    反向注入：删掉 `_SKIP_PREFIXES` 那行（或 `_iter_sources` 里的 startswith 过滤）
+    ⇒ 第二条断言变红。
+    """
+    root = BACKEND / ".pytest-tmp-scancheck"
+    bad = root / "injected_bad_escape.py"
+    try:
+        root.mkdir(exist_ok=True)
+        bad.write_bytes(b'"""docstring with a bad escape: \\d{4}"""\n')
+        assert _syntax_warnings(bad), (
+            "前置断言失效：这份内容本该触发 SyntaxWarning ⇒ 本用例已成空跑"
+        )
+        assert bad not in _iter_sources(), (
+            "扫描面把 pytest basetemp（`.pytest-tmp-*`）收进来了 ⇒ "
+            "门禁自己的元测试产物会把它打红（自伤假红）"
+        )
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
