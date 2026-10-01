@@ -133,6 +133,10 @@
 ## 5. 本仓 L1 现状快照（2026-10-01 实测）
 
 > **更新 · 第 346 轮**：批次 1 已落地（L3-1 前端 ESLint 棘轮 `4835dea`；L3-2 后端 mypy 棘轮 `5b2df09`）。下表与附录 A 已同步。
+>
+> **更新 · 第 347 轮**：**核正 pytest 用例数口径** —— 下表原写「11276 用例」是
+> **无来源的错记**（全仓 grep 只此一处，且与同类快照 2295/r332 2347 差 4.6 倍）。
+> 真实口径见表格下方脚注（**2435 用例 / 148 文件**）。
 
 > 目的：下次审查直接从 L2 开始，不必重走 L1 盘点。**有变化时更新本节。**
 
@@ -140,10 +144,26 @@
 
 | Job | 步骤 |
 |---|---|
-| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入）** → pytest（**11276 用例**）+ 覆盖率棘轮（`fail_under=65`） |
+| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入）** → pytest（**2435 用例**）+ 覆盖率棘轮（`fail_under=65`） |
 | 前端 | 门禁 glob `check-*.*` + **覆盖率自证**（漏跑即红）→ `vue-tsc` → `vite build`（`VITE_DEMO_MODE=false`） |
 | 资产 | 必需文件存在 → `docker compose config` → `nginx -t` → 敏感文件未被 git 跟踪 → **CD 资产门禁** |
 | 安全 | bandit（Medium+ = 0）/ pip-audit / npm audit（阈值 `critical` —— 按原则四锁在「当前已绿」） |
+
+> **用例数口径（第 347 轮核正）**：取数命令（**不要手写数字**）——
+>
+> ```bash
+> # Windows 本机：./.venv/Scripts/python.exe ；Linux/CI：pytest（或 .venv/bin/python -m pytest）
+> cd backend && ./.venv/Scripts/python.exe -m pytest tests/ --collect-only -q --no-header \
+>   | python -c "import sys,re;print(sum(int(m.group(1)) for m in \
+>     (re.match(r'^tests/\S+\.py: (\d+)$', l.strip()) for l in sys.stdin) if m))"
+> ```
+>
+> 第 347 轮实测 = **2435 用例 / 148 个文件**（`--collect-only` 按文件求和）。
+> ★ 这个数**每轮都在涨**，历史快照：867@r126 → 1674@09-27 → 2025@r283 →
+> 2295@09-30(137 文件) → 2347@r332 → **2435@r347(148 文件)**。
+> ⇒ 本节是**快照**：更新时必须重跑上面这条命令，**不要沿用旧数**。
+> ★ 为什么之前会写错：`11276` 既不是用例数、也不是 coverage statements 数
+> （实测 statements ≈ 27150），属纯错记；根因是「写现状快照时没有当场取数」。
 
 ### 门禁总数
 
