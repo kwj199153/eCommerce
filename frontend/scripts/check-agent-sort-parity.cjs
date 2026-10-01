@@ -44,12 +44,30 @@
  *   这是它存在的全部意义（跨端口径）。两棵树在本仓是固定兄弟目录；
  *   后端文件读不到时**报 FAIL**，绝不静默放行。
  * ★ 判据一律在**剥离注释后**的源码上跑（本仓铁律：注释里的旧文案会骗过检查）。
+ *
+ * ## 读集注入开口（★ 第 351 轮 L3-11：零副作用自证）
+ *
+ * 扫描根可用环境变量指向**空源**（空目录 / 空文件）。空源时本门禁**必须变红** ——
+ * 仍绿即说明判据没真读它（fail-open）。
+ * ★ 边界：空源注入只能**证伪**（证明判据读了内容），**不证明**它读对了字段。
+ *
+ *   SORT_FE_ROOT=<副本或空目录>      ⇒ ② / ③ 红（store / 页面读不到）
+ *   SORT_SERVICE_SRC=<副本或空文件>  ⇒ ① 红（后端白名单读不到）
+ *
  */
 const fs = require('fs')
 const path = require('path')
 
-const FE = path.resolve(__dirname, '..')
-const SERVICE = path.resolve(FE, '..', 'backend', 'modules', 'candidates', 'service.py')
+/** ★ 第 351 轮 L3-11：读集注入开口 —— 把扫描根指向副本树 / 空源，用于零副作用自证。
+ *  空源（空目录 / 空文件）时本门禁**必须变红**；仍绿即说明判据没真读它。 */
+const pick = (env, fallback) =>
+  process.env[env] ? path.resolve(process.env[env]) : fallback
+
+const FE = pick('SORT_FE_ROOT', path.resolve(__dirname, '..'))
+const SERVICE = pick(
+  'SORT_SERVICE_SRC',
+  path.resolve(__dirname, '..', '..', 'backend', 'modules', 'candidates', 'service.py'),
+)
 const STORE = 'src/stores/candidateLibrary.ts'
 const VUE = 'src/components/KnowledgeBase/CandidateLibrary.vue'
 

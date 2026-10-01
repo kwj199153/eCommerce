@@ -45,10 +45,10 @@
   而是「注册 / 引导」。把两档混在一起数会得出偏大的数字
   （实测 50 + 7 条；混算成 57 条）。
 
-## 实测值（第 140 轮建立 / 第 327·328·331 轮复算 / 第 335 轮再复算 / 第 340 轮复算）
+## 实测值（第 140 轮建立 / 第 327·328·331 轮复算 / 第 335 轮再复算 / 第 340 轮复算 / 第 351 轮复算）
 
-  `core/**/*.py` = **63** 个；unit = **22** 个；
-  import 期边 = **54** 条（唯一对）；函数内边 = **7** 条；
+  `core/**/*.py` = **64** 个；unit = **22** 个；
+  import 期边 = **55** 条（唯一对）；函数内边 = **7** 条；
   含环的强连通块 = **1** 个：[['auth', 'identity', 'stores']]；
   `STANDALONE_UNITS` = ['<core>', 'profit_engine', 'timefmt']。
   复算方式：底部的 `_scan_core_graph()` 就是判据本体，直接调用即可，
@@ -158,6 +158,33 @@
     「这条路在 import 期和调用期都被走过」，而"从函数内挪到顶层"正是
     本门禁要拦下的那次耦合升级 —— 现在它是一次**被看见**的升级。
 
+## 第 351 轮 · L3-3（trace 三段）：新增 1 条边（必须记住）
+
+  给请求加 DB 分段耗时（`core/database.py` 的 SQLAlchemy cursor 事件 →
+  `core/observability/request_timing.add_db_ms`）后，`database` 这个 unit
+  新增 1 条 **import 期**出边：
+
+    · `database -> observability`  DB 分段耗时出口（响应头 X-DB-Time-Ms）
+
+  ★ 为什么这 1 条**可以**在 import 期存在，而不是降级进函数体：
+    与 `identity -> observability`（身份域保留期清理的指标出口）、
+    `middleware -> observability`（请求上下文 + HTTP 指标出口）**逐字同款**
+    —— 它们是「内核报告自己的开销 / 状态」的**定义性依赖**。
+    `event.listens_for` 必须在 import 期注册到模块级唯一引擎上；
+    把 import 藏进事件回调里只会让本门禁**看不见耦合**（自欺），
+    而且那是个热路径（每条 SQL 都走）。
+
+  ★ 为什么计时不用普通 ContextVar 累加（这才是本轮真正的坑）：
+    中间件的 `call_next` 会**另起一个 asyncio task**，而 Task 在创建时
+    `copy_context()` ⇒ 子任务里的 `ContextVar.set()` 只改自己那份拷贝，
+    父任务读不到（实测：子任务 set 999 ⇒ 中间件读回 0）。
+    必须用一个 ContextVar 承载**可变对象**、下游只改它的字段
+    （实测：改字段 777 ⇒ 中间件读回 777）。
+    探针：`.workbuddy/probes/r351/l3_3_task_boundary.py`。
+
+  实测：SCC 仍**恰好 1 个**（`{auth, identity, stores}`）、孤立单元仍**恰好 3 个**
+  （`database -> config` 早已存在，新增这条不引入环、不引入孤岛）。
+
 ## 第 335 轮 · P0-7：模型注册 / 引导清单外移到组合根（必须记住）
 
   老板点名的「取消分层方向被打破」：`core/` 反向依赖 `modules/` 曾达 36 处
@@ -246,6 +273,12 @@ IMPORT_TIME_EDGES: set[tuple[str, str]] = {
     ("bootstrap", "logger"),
     ("checkpoint", "config"),
     ("database", "config"),
+    # ★ 第 351 轮（L3-3 trace 分段）：`database -> observability`
+    #   DB 分段耗时出口（`add_db_ms`）。与 `identity -> observability`
+    #   / `middleware -> observability` 同族：内核报告自己的开销，
+    #   是「计时」这个能力的**定义性依赖**，不是顺手拿一下。
+    #   理由见文件头「第 351 轮新增的 1 条边」。
+    ("database", "observability"),
     ("identity", "auth"),
     ("identity", "config"),
     ("identity", "database"),

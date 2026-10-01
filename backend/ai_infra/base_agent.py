@@ -58,7 +58,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, AsyncIterable, Dict, List, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any, AsyncIterable, Dict, List, Mapping, Optional, Union
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import Runnable
@@ -101,6 +101,11 @@ from ai_infra.prompt_sections import (
 from core.config import config
 from core.logger import get_logger
 from core.observability.context import current_user_id
+
+if TYPE_CHECKING:  # ★ L3-4（第 351 轮）：仅为**返回注解**服务，运行期不 import ——
+    #   本模块对 `ai_infra.llm` 一律用函数内延迟 import（581 / 722 / 835 / 1375 行），
+    #   这里保持同一约定，不新增模块级依赖（也就不会有循环导入）。
+    from ai_infra.llm.prompt_spec import RenderedPrompt
 
 logger = get_logger(__name__)
 
@@ -821,7 +826,7 @@ class BaseAgent:
 
     # ---- Prompt 模板管理 ----
 
-    def get_prompt_template(self, name: str, **kwargs) -> str:
+    def get_prompt_template(self, name: str, **kwargs) -> "RenderedPrompt":
         """获取并填充业务 Prompt 模板（委派给 `ai_infra.llm` 的注册表）。
 
         ★ 三处同名方法（本方法 / `DashScopeLLM.get_prompt_template` /
@@ -829,6 +834,21 @@ class BaseAgent:
           抛 `KeyError`，不再有「某一处返回空串」的第二套语义。
           原实现 `.get(name, "")` 返回空串 ⇒ 拿着空 system prompt 请求 LLM，
           不报错不降级，属静默失效。
+
+        ★ L3-4（第 351 轮）：返回注解 `-> str` → `-> "RenderedPrompt"`。
+          运行期**零变化** —— `RenderedPrompt` 就是 `str` 的子类，全仓所有
+          `system_prompt=self.get_prompt_template(...)` 调用点一字不改。
+          变的是**静态可观测性**：旧注解把「我返回的是哪一版提示词」**擦除**了，
+          于是 `prompt_spec` 明明携带 `.version` / `.fingerprint`，静态检查与
+          读者都看不见它们存在。
+          注解写成**字符串**有两个原因：① 本模块没有
+          `from __future__ import annotations`，运行期会真的求值这个名字；
+          ② `RenderedPrompt` 只在 `TYPE_CHECKING` 下 import（见文件头）。
+
+        ★ 留痕**不在这里**，在 `ai_infra.llm.prompt_spec.render_prompt()`
+          —— 那是全仓唯一的渲染实现。原因很实在：消费方会把返回值再加工成
+          普通 `str`（例如店秘书把店铺事实拼在提示词之后），元数据在那一层
+          就丢了；把日志埋进渲染点才能保证「每一次渲染都有痕」。
 
         业务提示词在各业务模块的 `prompts.py`，由该模块 import 时注册。
         """

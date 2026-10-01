@@ -3,7 +3,18 @@
 
 为每个请求生成 / 透传 X-Request-ID，记录一行结构化访问日志，并回写：
     X-Request-ID        请求追踪 ID（便于串联前后端与网关日志）
-    X-Process-Time-Ms   服务端处理耗时（毫秒）
+    X-Process-Time-Ms   服务端处理耗时（毫秒，**总耗时**）
+    X-DB-Time-Ms        其中 SQL 执行耗时（★ L3-3，第 351 轮）
+    X-LLM-Time-Ms       其中 LLM 调用耗时（★ L3-3，第 351 轮）
+
+★ L3-3 分段口径与边界：
+    · 总耗时只说明「慢」，分段才说明「慢在哪」（等数据库 / 等模型 / 应用自身）。
+      三段关系：应用自身 = X-Process-Time-Ms - X-DB-Time-Ms - X-LLM-Time-Ms。
+    · 分段由**业务层自己累加**（core/database.py 的引擎事件、
+      ai_infra/llm/dashscope_client.py 的调用点），中间件只归零与回写 ——
+      中间件看不到 SQL 与 LLM，硬塞进来的数字只能是编的。
+    · ⚠️ 与上面的 TTFB 口径同源：SSE 的**正文流**发生在响应头回写之后，
+      所以流式接口的 X-LLM-Time-Ms 只含「建连接 + 首段」，不含整条流的时长。
 
 日志级别按状态码区分：5xx → error，4xx → warning，其余 → info；
 超过 slow_request_ms 的请求额外打一条 warning，方便排查慢接口。
@@ -41,6 +52,14 @@ from core.logger import get_logger
 # ★ P0-2：客户端 IP 提取收敛到唯一实现（原先本文件与 rate_limit 各抄了一份）
 from core.middleware.client_ip import client_ip
 from core.observability.context import clear_request_context, set_request_context
+# ★ L3-3（第 351 轮）：请求级**分段**计时（响应头 X-DB-Time-Ms / X-LLM-Time-Ms）。
+#   与 context 分开一个模块：context 管字符串标识（日志出口），它管毫秒累加
+#   （响应头出口）。详见 request_timing.py 的「为什么必须是可变容器」。
+from core.observability.request_timing import (
+    clear_timing,
+    current_timing,
+    start_timing,
+)
 from core.observability.metrics import (
     HTTP_DURATION,
     HTTP_IN_FLIGHT,
@@ -88,6 +107,10 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             client_ip=client_ip(request),
         )
 
+        # ★ L3-3：分段计时归零 —— 必须与 set_request_context 同处（call_next 之前），
+        #   下游 app 作为独立 task 启动时会与此刻的对象**共享引用**。
+        start_timing()
+
         path = request.url.path
         method = request.method
         route_label = normalize_path(path)  # 低基数标签
@@ -111,6 +134,14 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             cost_ms = (time.perf_counter() - started) * 1000
             response.headers["X-Request-ID"] = request_id
             response.headers["X-Process-Time-Ms"] = f"{cost_ms:.1f}"
+            # ★ L3-3：把总耗时拆成 DB / LLM 两段 —— 总耗时只说明「慢」，
+            #   分段才说明「慢在哪」（等数据库还是等模型）。
+            #   两段都是**纯耗时**（DB=SQL 执行、LLM=网络往返）。
+            timing = current_timing()
+            db_ms = timing.db_ms if timing is not None else 0.0
+            llm_ms = timing.llm_ms if timing is not None else 0.0
+            response.headers["X-DB-Time-Ms"] = f"{db_ms:.1f}"
+            response.headers["X-LLM-Time-Ms"] = f"{llm_ms:.1f}"
 
             status_code = response.status_code
 
@@ -146,3 +177,5 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             HTTP_IN_FLIGHT.dec()
             # ★ 必须清 —— keep-alive 下同一任务会复用于后续请求
             clear_request_context()
+            # ★ L3-3：分段计时同样必须清（同一理由，keep-alive 复用同一任务）
+            clear_timing()

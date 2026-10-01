@@ -30,12 +30,26 @@
  *   · 「不得再有 X」用**剥注释后的零出现**判，不用「X 不在某处」这种可绕过的写法。
  *   · 断言「纵向 padding 为 0」时解析 shorthand 的**上/下两个位置**，
  *     而不是匹配 `${'padding: 0 ...'}` 这种字面量（改个变量名就会假红/假绿）。
+ *
+ * ## 读集注入开口（★ 第 351 轮 L3-11：零副作用自证）
+ *
+ * 扫描根可用环境变量指向**空源**（空目录 / 空文件）。空源时本门禁**必须变红** ——
+ * 仍绿即说明判据没真读它（fail-open）。
+ * ★ 边界：空源注入只能**证伪**（证明判据读了内容），**不证明**它读对了字段。
+ *
+ *   SIDEBAR_SRC_ROOT=<副本或空目录>   ⇒ 唯一真源 / 类名引用判据全体红
+ *
  */
 
 const fs = require('fs')
 const path = require('path')
 
-const ROOT = path.join(__dirname, '..', 'src')
+/** ★ 第 351 轮 L3-11：读集注入开口 —— 把扫描根指向副本树 / 空源，用于零副作用自证。
+ *  空源（空目录 / 空文件）时本门禁**必须变红**；仍绿即说明判据没真读它。 */
+const pick = (env, fallback) =>
+  process.env[env] ? path.resolve(process.env[env]) : fallback
+
+const ROOT = pick('SIDEBAR_SRC_ROOT', path.join(__dirname, '..', 'src'))
 const results = []
 function check(ok, label, detail) {
   results.push({ ok: !!ok, label, detail })

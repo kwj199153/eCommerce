@@ -361,3 +361,70 @@ groups:
             ★ 本条 severity 取 critical（比 audit / identity 的 warning 高一档）：
               没有备份是**数据不可恢复**级别的事故，不是"该清理没清理"。
           runbook: "docker compose logs --tail=200 beat | grep db-backup-daily"
+
+  # ==========================================================================
+  # 7. PITR / WAL 归档（第 351 轮 / P0-2）
+  # ==========================================================================
+  # ★ 为什么这一节**不能**由第 6 节覆盖：「逻辑 dump 每天在跑」与
+  #   「能不能恢复到任意时间点」是两件事。第 6 节全绿时，PITR 仍可能
+  #   完全残废 —— 那正是本轮修掉的形态（`archive_mode` 在生产代码里 0 命中）。
+  # ★ 三条规则对应三种互不覆盖的失效：
+  #   WalFetchFailing  = 外送跑了但失败（容器不在 / 归档目录不可读 / docker 不可用）；
+  #   BasebackupFailing= 物理基线跑了但失败（archive_mode=off 时脚本会**主动拒绝**）；
+  #   BasebackupStalled= 压根没跑（beat 没起 / 任务名两处不一致）。
+  # ★ 外送为什么用 **[2h]**：它每 15 分钟一次，2 小时 = 8 次，
+  #   漏掉一两次（docker 忙）不该告警；连续失败才是问题。
+  - name: storekeeper-pitr
+    rules:
+      - alert: WalFetchFailing
+        expr: increase(pitr_runs_total{kind="wal_fetch",status="failed"}[2h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "WAL 归档外送失败（最近 2 小时）"
+          description: >-
+            `core/backup/tasks.py::wal_archive_fetch` 抛异常。
+            ★ 后果不是"没归档"（归档是 PostgreSQL 自己做的），而是**归档段只留在
+            容器可写层**：`my-postgres` 是 `docker run` 手工创建的容器，没有第二个
+            挂载点 ⇒ `/var/lib/postgresql/wal-archive` 不在卷里，
+            `docker stop/start` 不丢、**`docker rm` 全丢**。外送断了就是在攒风险。
+            ★ 常见原因：容器不在 / `archive_mode` 被改回 off / docker CLI 不可用 /
+              宿主 backups 目录不可写。
+          runbook: "docker exec my-postgres ls /var/lib/postgresql/wal-archive；再手动跑 python scripts/pg_pitr.py archive-fetch"
+
+      - alert: PitrBasebackupFailing
+        expr: increase(pitr_runs_total{kind="basebackup",status="failed"}[8d]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "PITR 物理基线失败（最近 8 天）"
+          description: >-
+            `core/backup/tasks.py::pg_basebackup_weekly` 抛异常。本任务每周一次，
+            窗口取 8 天是为了"漏一周也报出来"。
+            ★ 没有物理基线时，**WAL 段本身恢复不了任何东西** —— PITR 的等式是
+            「基线 + 基线之后的 WAL」。所以这条比"归档外送失败"更硬。
+            ★ 最可能的两个原因：① `archive_mode=off`（脚本会主动拒绝，不静默降级）；
+              ② 容器不在 / 磁盘满 / `pg_basebackup` 权限不足。
+          runbook: "python scripts/pg_pitr.py status；再手动跑 python scripts/pg_pitr.py basebackup"
+
+      - alert: PitrBasebackupStalled
+        expr: sum(increase(pitr_runs_total{kind="basebackup"}[8d])) == 0
+        for: 1h
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "PITR 物理基线 8 天无任何记录"
+          description: >-
+            本任务每周触发一次，8 天内正常至少有 1 条记录（status 可能是 ok /
+            failed 之一）。无记录 ⇒ beat 没跑、`core/redis.py::beat_schedule` 里
+            的任务名（**字面量**）与 `core/backup/tasks.py::TASK_PG_BASEBACKUP`
+            不一致，或 `autodiscover_tasks([...])` 漏了 `"core.backup"`。
+            两处由 `tests/test_pitr.py` 钉住。
+            ★ 与 BackupStalled 同款注意：指标序列**完全不存在**时 increase 返回空
+              ⇒ 本规则不触发；纯"从未跑过"由 WorkerDown 覆盖。
+          runbook: "docker compose logs --tail=200 beat | grep pg-basebackup-weekly"

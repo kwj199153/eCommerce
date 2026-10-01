@@ -23,12 +23,26 @@
  *   · **必须自证没空跑**：扫到 0 个窗口标签时直接失败。历史上出现过「扫描器坏了 ⇒
  *     命中 0 ⇒ 全部通过」的假绿。
  *   · **不钉「恰好 51 处」**：数量是钉住旧形态的负资产；判据是**每个窗口的形态**。
+ *
+ * ## 读集注入开口（★ 第 351 轮 L3-11：零副作用自证）
+ *
+ * 扫描根可用环境变量指向**空源**（空目录 / 空文件）。空源时本门禁**必须变红** ——
+ * 仍绿即说明判据没真读它（fail-open）。
+ * ★ 边界：空源注入只能**证伪**（证明判据读了内容），**不证明**它读对了字段。
+ *
+ *   WINDOW_SRC_ROOT=<副本或空目录>    ⇒ 规格表与窗口扫描全线红（含「扫到 0 直接失败」）
+ *
  */
 
 const fs = require('fs')
 const path = require('path')
 
-const SRC = path.join(__dirname, '..', 'src')
+/** ★ 第 351 轮 L3-11：读集注入开口 —— 把扫描根指向副本树 / 空源，用于零副作用自证。
+ *  空源（空目录 / 空文件）时本门禁**必须变红**；仍绿即说明判据没真读它。 */
+const pick = (env, fallback) =>
+  process.env[env] ? path.resolve(process.env[env]) : fallback
+
+const SRC = pick('WINDOW_SRC_ROOT', path.join(__dirname, '..', 'src'))
 const results = []
 function check(ok, label, detail) {
   results.push({ ok: !!ok, label, detail })

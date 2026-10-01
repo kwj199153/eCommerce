@@ -57,13 +57,27 @@
  *   · 摘掉解说层的 `new SpeechSynthesisUtterance(`     ⇒ ⑧b 红（改回单通道）
  *   · 把克隆音频缓存键改成只按文案                      ⇒ ⑧c 红（跨店铺串味）
  *   · 摘掉气泡上的 `v-if="channelLabel"`               ⇒ ⑧d 红（降级变静默）
+ *
+ * ## 读集注入开口（★ 第 351 轮 L3-11：零副作用自证）
+ *
+ * 扫描根可用环境变量指向**空源**（空目录 / 空文件）。空源时本门禁**必须变红** ——
+ * 仍绿即说明判据没真读它（fail-open）。
+ * ★ 边界：空源注入只能**证伪**（证明判据读了内容），**不证明**它读对了字段。
+ *
+ *   TOUR_SRC_ROOT=<副本或空目录>      ⇒ ①~⑥ 红（8 个源文件与扫描面读不到）
+ *
  */
 
 const fs = require('node:fs')
 const path = require('node:path')
 
+/** ★ 第 351 轮 L3-11：读集注入开口 —— 把扫描根指向副本树 / 空源，用于零副作用自证。
+ *  空源（空目录 / 空文件）时本门禁**必须变红**；仍绿即说明判据没真读它。 */
+const pick = (env, fallback) =>
+  process.env[env] ? path.resolve(process.env[env]) : fallback
+
 const ROOT = path.resolve(__dirname, '..')
-const SRC = path.join(ROOT, 'src')
+const SRC = pick('TOUR_SRC_ROOT', path.join(ROOT, 'src'))
 
 const ANCHOR_FILE = path.join(SRC, 'config', 'tourAnchors.ts')
 const STEPS_FILE = path.join(SRC, 'config', 'tourSteps.ts')

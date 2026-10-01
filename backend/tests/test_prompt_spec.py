@@ -22,6 +22,7 @@ import pathlib
 import re
 
 import pytest
+from loguru import logger as _loguru
 
 BACKEND = pathlib.Path(__file__).resolve().parent.parent
 
@@ -259,3 +260,141 @@ def test_stray_prompt_gate_is_not_vacuous():
     #   也会被匹配到 —— 首跑就是这么红的，留作注释以免有人再踩）
     unnamed = f'SOME_LONG_TEXT = """{body}"""\n'
     assert not _scan_text(unnamed), "名字不含 PROMPT/INSTRUCTIONS/TEMPLATE 的常量被误报"
+
+
+# ----------------------------------------------------------- 5. 留痕（L3-4）
+
+def _capture_loguru(level: str = "INFO"):
+    """把 loguru 的 `level` 及以上收进列表（返回 `(messages, handler_id)`）。
+
+    ★ **不要用 pytest 的 `caplog`**：它抓的是 stdlib `logging`，而
+      `core.logger.get_logger()` 返回的是 **loguru** —— 本仓两套日志栈并存。
+      用 caplog 抓 loguru 会「抓不到、但不报错」，于是这条判据永远假绿
+      （同款注释见 `tests/test_llm_model_routing.py::_capture_loguru`）。
+
+    ★ 默认级别取 **INFO 而不是 DEBUG**：这本身就是判据的一半 —— 留痕必须在
+      **生产默认级别**就可见（`core/logger.py::_add_sinks`：非 debug 时 INFO）。
+    """
+    messages: list = []
+
+    def sink(message):  # pragma: no cover - 纯转发
+        messages.append(message.record["message"])
+
+    handler_id = _loguru.add(sink, level=level)
+    return messages, handler_id
+
+
+def test_render_emits_fingerprint_trace_at_info_level():
+    """★ 渲染必须留痕，且**在 INFO 级就能看到**。
+
+    A 档给了 `version` / `fingerprint`，但只要**没有任何一处把它打出来**，
+    这套元数据在生产上就等于不存在 —— 回答质量突变时仍然只能翻 git log 猜。
+    用 INFO 抓（而不是 DEBUG）守的正是「别把它写成 DEBUG ⇒ 线上永远不打印」。
+    """
+    from ai_infra.llm import PromptSpec, render_prompt
+
+    spec = PromptSpec(name="trace_probe", content="你是 {market} 分析师", version="7")
+    messages, handler_id = _capture_loguru("INFO")
+    try:
+        render_prompt(spec, market="全球")
+    finally:
+        _loguru.remove(handler_id)
+
+    joined = "\n".join(messages)
+    assert messages, "渲染没有留下任何 INFO 日志（是不是写成 DEBUG 了？）"
+    assert "trace_probe" in joined, f"留痕里没有提示词名：{messages}"
+    assert spec.fingerprint in joined, f"留痕里没有指纹 —— 答不出「跑的是哪一版」：{messages}"
+    assert "v7" in joined, f"留痕里没有版本：{messages}"
+
+
+def test_render_trace_follows_the_content():
+    """留痕里的指纹必须**跟着正文走** —— 否则它只是个恒定的装饰串。"""
+    from ai_infra.llm import PromptSpec, render_prompt
+
+    a = PromptSpec(name="trace_probe2", content="你是 {market} 分析师")
+    b = PromptSpec(name="trace_probe2", content="你是 {market} 分析师。")  # 只差一个句号
+    assert a.fingerprint != b.fingerprint, "夹具前提：改一个字符指纹就应变"
+
+    seen = []
+    for spec in (a, b):
+        messages, handler_id = _capture_loguru("INFO")
+        try:
+            render_prompt(spec, market="全球")
+        finally:
+            _loguru.remove(handler_id)
+        seen.append("\n".join(messages))
+
+    assert a.fingerprint in seen[0] and b.fingerprint in seen[1]
+    assert a.fingerprint not in seen[1], "正文改了，留痕里的指纹却没跟着变"
+
+
+def test_render_trace_logs_variable_names_but_not_values():
+    """只记**变量名**、不记变量值 —— 值是业务数据，日志不该承载它。"""
+    from ai_infra.llm import PromptSpec, render_prompt
+
+    secret = "SECRET-VALUE-FROM-SHOP-FACT"
+    spec = PromptSpec(name="trace_probe3", content="本轮事实：{shop_fact}")
+    messages, handler_id = _capture_loguru("INFO")
+    try:
+        render_prompt(spec, shop_fact=secret)
+    finally:
+        _loguru.remove(handler_id)
+
+    joined = "\n".join(messages)
+    assert "shop_fact" in joined, f"变量名应出现在留痕里（否则不知道渲染了什么）：{messages}"
+    assert secret not in joined, f"变量值泄漏进了日志：{messages}"
+
+
+# --------------------------------------------- 6. 返回注解不得擦除（L3-4）
+
+def _return_annotation(src: str, func_name: str, cls: str | None = None) -> str | None:
+    """取 `func_name` 的返回注解源码文本（`cls=None` 取模块级函数）。
+
+    ★ 返回**源码文本**（`ast.unparse`）而不是求值结果：注解写成字符串
+      （`-> "RenderedPrompt"`）时求值会 `NameError`，而本仓正是这么写的。
+    """
+    tree = ast.parse(src)
+    scope = tree.body
+    if cls is not None:
+        node = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == cls)
+        scope = node.body
+    for n in scope:
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == func_name:
+            return None if n.returns is None else ast.unparse(n.returns)
+    raise AssertionError(f"没找到 {cls or '<module>'}.{func_name}")
+
+
+def test_prompt_template_return_annotation_is_not_erased():
+    """三处同名 `get_prompt_template` 的返回注解都必须是 `RenderedPrompt`。
+
+    ★ 为什么钉注解而不是钉运行期：`RenderedPrompt` **是** `str` 的子类，
+      所以「返回值的运行期类型」在这件事上**永远判不出来**
+      （`isinstance(x, str)` 对两者都为真）。L3-4 报的就是「注解把元数据擦除了」，
+      而注解只在静态层面可见 —— 判据也就只能落在静态层面。
+    """
+    llm_src = (BACKEND / "ai_infra" / "llm" / "dashscope_client.py").read_text(encoding="utf-8")
+    agent_src = (BACKEND / "ai_infra" / "base_agent.py").read_text(encoding="utf-8")
+
+    got = {
+        "DashScopeLLM.get_prompt_template": _return_annotation(
+            llm_src, "get_prompt_template", "DashScopeLLM"),
+        "llm.get_prompt_template": _return_annotation(llm_src, "get_prompt_template"),
+        "BaseAgent.get_prompt_template": _return_annotation(
+            agent_src, "get_prompt_template", "BaseAgent"),
+    }
+    bad = {k: v for k, v in got.items() if (v or "").strip("'\"") != "RenderedPrompt"}
+    assert not bad, (
+        f"返回注解把「是哪一版提示词」擦除了：{bad} —— 应为 RenderedPrompt"
+        "（写成字符串亦可，只要指向同一个名字）"
+    )
+
+
+def test_return_annotation_gate_is_not_vacuous():
+    """★ 门禁自检：人造 `-> str` 样本必须被抓到，合格样本不得误报。
+
+    没有这条，「解析器写错」与「注解都合格」在读数上完全一样（都返回同一个值）。
+    """
+    dirty = "def get_prompt_template(name, **kw) -> str:\n    return 1\n"
+    clean = 'def get_prompt_template(name, **kw) -> "RenderedPrompt":\n    return 1\n'
+    assert _return_annotation(dirty, "get_prompt_template") == "str"
+    assert _return_annotation(clean, "get_prompt_template").strip("'\"") == "RenderedPrompt"

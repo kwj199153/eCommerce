@@ -14,6 +14,7 @@ if sys.platform == "win32":
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +28,48 @@ from core.bootstrap import seed_base_data
 from wiring import MODEL_MODULES, SEED_STEPS
 
 _log = get_logger("main")
+
+
+async def _sync_prompt_overrides() -> Optional[dict]:
+    """把库里启用的提示词覆写同步进**内存注册表**（第 351 轮 · P0-7 B 档）。
+
+    ★ 为什么必须在启动期做一次：渲染路径打的是内存注册表
+      （`get_prompt_template()`），不是数据库 —— 那样每次 LLM 调用都不用
+      等一个 DB 往返。代价是「库里改了、内存没改」是一种**可能的中间状态**，
+      而启动期这一次同步就是它的收敛点（另一个是管理端点的 `POST /apply`）。
+
+    ★ 为什么抽成独立函数、不内联在 `lifespan` 里：**为了可测**。
+      内联时唯一能"验证"它的办法是断言「main.py 源码里有这行字符串」——
+      那正是本仓禁止的形态（注释与 docstring 都会骗过它 ⇒ 恒真）。
+      抽出来之后有了两条**行为**判据：
+        · 单条 stale ⇒ 照样装其它条，并把 skipped 报出来（不静默）；
+        · 整块失败 ⇒ 返回 `None` 且**不抛**（覆写是配置，不该让整站起不来）。
+      两者各有一个只靠它才红的反向注入（见 `tests/test_prompt_versions.py`
+      的 `test_startup_hook_is_fail_open`）。
+
+    Returns:
+        成功 → `{"applied": [...], "reset": [...], "skipped": [...]}`；
+        失败 → `None`（已记 WARNING，**不抛**）。
+    """
+    try:
+        from modules.prompt_versions import apply_all_overrides
+
+        report = await apply_all_overrides()
+    except Exception as e:  # noqa: BLE001 —— 配置问题不得阻断启动，但必须可见
+        _log.warning("⚠️ 提示词覆写同步失败（已按源码版继续）: {}", e)
+        return None
+
+    if report["skipped"]:
+        _log.warning(
+            "⚠️ 提示词覆写部分未生效（源码版继续生效）: {}", report["skipped"]
+        )
+    _log.info(
+        "✅ 提示词覆写同步完成: applied={} reset={} skipped={}",
+        len(report["applied"]),
+        len(report["reset"]),
+        len(report["skipped"]),
+    )
+    return report
 
 
 @asynccontextmanager
@@ -72,6 +115,10 @@ async def lifespan(app: FastAPI):
     # ============================================================
     seeded_map = await seed_base_data(SEED_STEPS)
     _log.info("✅ 基础数据引导完成: {}", seeded_map)
+
+    # 提示词覆写层：把库里启用的覆写同步进**内存注册表**（第 351 轮 · P0-7 B 档）
+    # 详见 `_sync_prompt_overrides()` 的 docstring（含「为什么失败不阻断启动」）。
+    await _sync_prompt_overrides()
 
     # ★ P0-3（2026-09-30）：依赖探活必须是**周期性**的，
     #   不能只在有人访问 /health 时才更新 —— 理由见
@@ -169,6 +216,22 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # ★ L3-3（第 351 轮）：跨域下**未 expose 的自定义响应头对浏览器 JS 不可读**。
+    #   后端早就回写了 X-Request-ID / X-Process-Time-Ms，但前端
+    #   `response.headers.get('x-request-id')` 在跨域部署下恒为 null ⇒
+    #   trace 链路断在最后一跳（后端有、前端拿不到），而本地同源 dev 下看不出来。
+    #   X-RateLimit-* / Retry-After 是同族缺口（限流提示想显示「还剩几次」也读不到），
+    #   一并补上。
+    expose_headers=[
+        "X-Request-ID",
+        "X-Process-Time-Ms",
+        "X-DB-Time-Ms",
+        "X-LLM-Time-Ms",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset",
+        "Retry-After",
+    ],
 )
 
 # 租户上下文中间件：从 X-Shop-ID / ?shop_id= 提取当前店铺写入请求级 ContextVar
@@ -565,6 +628,19 @@ app.include_router(aigc_media_router, prefix="/api/v1", dependencies=BUSINESS_AU
 from modules.review_analyst.router import router as review_analyst_router
 app.include_router(review_analyst_router, prefix="/api/v1", dependencies=BUSINESS_AUTH + API_QUOTA)
 
+# Amazon SP-API 按店 OAuth 授权链路（第 351 轮 · P0-6）
+# ★ 此前 `modules/amazon_sp/` **有表、有 schema、有数据源，就是没有 router、
+#   也没挂载** ⇒ `amazon_credentials` 在生产代码里没有任何写入者，
+#   那句「凭据由 SP-API 授权流程写入」描述的是一个不存在的流程。
+# ★ 为什么**不**挂 BUSINESS_AUTH：本模块的 `GET /oauth/callback` 是 Amazon 的
+#   服务器把卖家浏览器跳过来的，请求里没有我方凭据 —— 挂成 router 级依赖会让
+#   回调永远 401，且症状**伪装成「用户没登录」**（用户改什么都没用）。
+#   照 `billing/payment_router` 的既有范式：免鉴权按**端点**给，
+#   本模块每个需要身份的端点自带 `Depends(require_acting_user)`，
+#   回调端点靠签名 state 认证 + 归属二次校验。详见该 router 的文件头。
+from modules.amazon_sp.router import router as amazon_sp_router
+app.include_router(amazon_sp_router)  # 路由已包含 /api/v1 前缀
+
 # 店铺群管理 + 动态利润测算模块 (Phase 10)
 from modules.stores.router import router as stores_router
 app.include_router(stores_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
@@ -634,6 +710,17 @@ app.include_router(memory_router, prefix="/api/v1")
 #   写口由服务层对无身份硬拒绝（403），见 modules/skills/router.py 的 docstring。
 from modules.skills.router import router as skills_router
 app.include_router(skills_router, dependencies=BUSINESS_AUTH)
+
+# 提示词覆写层（第 351 轮 · P0-7 B 档）—— 「提示词覆写」管理页的真后端。
+#
+# ★ 为什么**不**挂 BUSINESS_AUTH / API_QUOTA，与 `core.audit/router.py` 同款：
+#   本模块是**平台级配置**（表里刻意没有 store_id / account_id，不属于任何租户），
+#   所以「按归属过滤」那条判据不适用 ⇒ 读口必须**更严**（平台超管）。
+#   每个端点自带 `Depends(get_admin_user)`：匿名 401、非超管 403。
+#   挂上 optional-auth 只会把「匿名」放行到 handler 再被兜住，让 401 难追。
+#   纯 CRUD、不调模型 ⇒ 不挂 API_QUOTA（配额门只挂真正烧钱的端点）。
+from modules.prompt_versions.router import router as prompt_versions_router
+app.include_router(prompt_versions_router)  # 路由已包含 /api/v1 前缀
 
 
 # ====== 附加模块（可插拔，默认关闭）======

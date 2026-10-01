@@ -33,23 +33,51 @@
  * 强行要求与后端逐字相同会变成「钉住旧形态」的负资产。
  * ⇒ 本门禁钉**键集合**（这是「字典必须覆盖实际数据」的最小不变量），
  *   label 只要求非空。`review` 的命名分歧（后端「评价」）本轮已按真源对齐。
+ *
+ * ## 读集注入开口（★ 第 351 轮 L3-11：零副作用自证）
+ *
+ * 扫描根可用环境变量指向**空源**（空目录 / 空文件）。空源时本门禁**必须变红** ——
+ * 仍绿即说明判据没真读它（fail-open）。
+ * ★ 边界：空源注入只能**证伪**（证明判据读了内容），**不证明**它读对了字段。
+ *
+ *   FAQ_FE_ROOT=<副本或空目录>       ⇒ F4 / F5 红（前端字典与扫描面读不到）
+ *   FAQ_BE_SPEC_SRC=<副本或空文件>   ⇒ F1 红（后端 code 真源读不到）
+ *   FAQ_BE_LABELS_SRC=<副本或空文件> ⇒ F1 红（客服 label 层读不到）
+ *
  */
 
 const fs = require('fs')
 const path = require('path')
 
-const ROOT = path.resolve(__dirname, '..')
-const FE_FILE = path.join(ROOT, 'src', 'stores', 'knowledge.ts')
-const BE_SPEC = path.join(
-  ROOT, '..', 'backend', 'modules', 'knowledge_base', 'ai_split_faq.py',
-)
-const BE_LABELS = path.join(
-  ROOT, '..', 'backend', 'modules', 'customer_service', 'faq_source.py',
-)
+/** ★ 第 351 轮 L3-11：读集注入开口 —— 把扫描根指向副本树 / 空源，用于零副作用自证。
+ *  空源（空目录 / 空文件）时本门禁**必须变红**；仍绿即说明判据没真读它。 */
+const pick = (env, fallback) =>
+  process.env[env] ? path.resolve(process.env[env]) : fallback
 
+const ROOT = pick('FAQ_FE_ROOT', path.resolve(__dirname, '..'))
+/** 后端真源根：与前端根**解耦**，避免前端注入把它一起带走（不可注入的兜底） */
+const REPO = path.resolve(__dirname, '..', '..')
+const FE_FILE = path.join(ROOT, 'src', 'stores', 'knowledge.ts')
+const BE_SPEC = pick('FAQ_BE_SPEC_SRC', path.join(
+  REPO, 'backend', 'modules', 'knowledge_base', 'ai_split_faq.py',
+))
+const BE_LABELS = pick('FAQ_BE_LABELS_SRC', path.join(
+  REPO, 'backend', 'modules', 'customer_service', 'faq_source.py',
+))
+
+/**
+ * ★ 第 351 轮 L3-11：读不到源 ⇒ 打印**可读 FAIL** 后退出（不再抛裸异常）。
+ * 裸异常只有栈、没有「哪条判据红了」——外部聚合会把「门禁坏了」误当成「真红」。
+ * 「拿不到权威清单 ≠ 清单为空」⇒ 红也要红得可读，且绝不放行。
+ */
 const read = (p) => {
-  if (!fs.existsSync(p)) throw new Error(`文件不存在：${p}`)
-  return fs.readFileSync(p, 'utf8')
+  try {
+    return fs.readFileSync(p, 'utf8')
+  } catch (e) {
+    console.log(`FAIL  F0 读不到源文件：${p}`)
+    console.log(`        ${e.code || 'ENOENT'} —— 本门禁靠它做判定，拿不到不许放行`)
+    process.exit(1)
+  }
 }
 
 const results = []

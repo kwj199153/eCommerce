@@ -29,6 +29,22 @@ from .prompt_spec import (  # noqa: E402  —— 与上面同包，放在后面�
     extract_required_vars,
     render_prompt,
 )
+# ★ 第 351 轮 P0-7 B 档：提示词**覆写层**的应用侧（读表侧在 modules/prompt_versions）。
+#   分两半的理由见该模块文件头：`ai_infra` 不得 import `modules.*`（硬红线），
+#   所以「读表」住业务侧、「应用」住本侧，中间只过一个受控入口。
+from .prompt_overrides import (  # noqa: E402
+    PromptOverrideError,
+    PromptOverrideRejected,
+    applied_overrides,
+    apply_override,
+    describe_override,
+    preview_override,
+    registered_names,
+    reset_override,
+    source_fingerprint,
+    validate_override,
+    variables_of,
+)
 
 __all__ = [
     "DashScopeLLM",
@@ -53,4 +69,15 @@ __all__ = [
     "RenderedPrompt",
     "extract_required_vars",
     "render_prompt",
+    "PromptOverrideError",
+    "PromptOverrideRejected",
+    "applied_overrides",
+    "apply_override",
+    "describe_override",
+    "preview_override",
+    "registered_names",
+    "reset_override",
+    "source_fingerprint",
+    "validate_override",
+    "variables_of",
 ]

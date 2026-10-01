@@ -91,6 +91,16 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # ★ 第 351 轮 / P0-2（PITR）：WAL 归档段的落点。
+      #   为什么必须是一个**卷**而不是容器内的普通目录：
+      #     `archive_command` 把每个写满的 16MB 段 `cp` 到这个目录，而它默认会落在
+      #     容器的**可写层** —— `docker stop/start` 还在，**`docker rm -f` 全丢**。
+      #     PITR 的恢复粒度完全依赖这些段，所以它们必须住在卷里。
+      #   ★ 与 `pgdata` 分开是刻意的：归档段是**只增**的，放在数据目录里会让
+      #     每次 `pg_basebackup` 把整份归档一起打包（基线体积随归档无限膨胀）。
+      #   ★ 路径必须与 `backend/scripts/pg_pitr.py::ARCHIVE_IN_CONTAINER` 一致 ——
+      #     `tests/test_pitr.py` 会把两边钉住。
+      - walarchive:/var/lib/postgresql/wal-archive
     healthcheck:
       # 用户名/库名与上面的 POSTGRES_* 同源：改了一处而漏改这里，
       # 健康检查会永久 unhealthy，容器起不来但报错指向健康检查（难查）。
@@ -330,6 +340,11 @@ volumes:
   #    现象是「所有店铺/用户都不见了」，极易误判成数据丢失。
   pgdata:
     name: pgdata
+  # WAL 归档段（P0-2 · PITR）。★ 裸卷名 `pgwal`：本机手工起的 my-postgres
+  # 若将来换成 compose 管理，卷名要保持跨环境一致，否则同一条
+  # `pg_pitr.py drill` 在两种部署下读到的是不同的归档。
+  walarchive:
+    name: pgwal
   redisdata:
     name: ecommerce_redisdata
   uploads:

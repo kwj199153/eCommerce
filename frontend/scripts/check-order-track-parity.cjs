@@ -35,17 +35,35 @@
  * ==========================================
  * T2/T3 是**行为**（哪个字段进清单）而不是源码形态。源码字符串能被注释骗过
  * （本仓已有教训），运行期观测不能。
+ *
+ * ## 读集注入开口（★ 第 351 轮 L3-11：零副作用自证）
+ *
+ * 扫描根可用环境变量指向**空源**（空目录 / 空文件）。空源时本门禁**必须变红** ——
+ * 仍绿即说明判据没真读它（fail-open）。
+ * ★ 边界：空源注入只能**证伪**（证明判据读了内容），**不证明**它读对了字段。
+ *
+ *   ORDER_SRC_ROOT=<副本或空目录>     ⇒ T1~T5 / T7 / T8 红（真源与四个消费方读不到）
+ *   ORDER_BACKEND_SRC=<副本或空文件>  ⇒ T6 红（后端字段清单读不到）
+ *
  */
 
 const fs = require('fs')
 const path = require('path')
+
+/** ★ 第 351 轮 L3-11：读集注入开口 —— 把扫描根指向副本树 / 空源，用于零副作用自证。
+ *  空源（空目录 / 空文件）时本门禁**必须变红**；仍绿即说明判据没真读它。 */
+const pick = (env, fallback) =>
+  process.env[env] ? path.resolve(process.env[env]) : fallback
 const vm = require('vm')
 const ts = require(path.join(__dirname, '..', 'node_modules', 'typescript'))
 
 const ROOT = path.resolve(__dirname, '..')
-const SRC = path.join(ROOT, 'src')
+const SRC = pick('ORDER_SRC_ROOT', path.join(ROOT, 'src'))
 const TS_SRC = path.join(SRC, 'utils', 'orderTracking.ts')
-const BACKEND_CS = path.resolve(ROOT, '..', 'backend', 'modules', 'customer_service', 'agent_cs.py')
+const BACKEND_CS = pick(
+  'ORDER_BACKEND_SRC',
+  path.resolve(ROOT, '..', 'backend', 'modules', 'customer_service', 'agent_cs.py'),
+)
 
 /** 四个消费方（id → { 文件, 必须出现的符号, 说明 }） */
 const CONSUMERS = [
@@ -87,8 +105,19 @@ const BACKEND_KEYS = [
   'delay_days', 'last_location', 'last_event_text', 'data_source', 'is_mock_data',
 ]
 
+/**
+ * ★ 第 351 轮 L3-11：读不到源 ⇒ 打印**可读 FAIL** 后退出（不再抛裸异常）。
+ * 裸异常只有栈、没有「哪条判据红了」——外部聚合会把「门禁坏了」误当成「真红」。
+ * 「拿不到权威清单 ≠ 清单为空」⇒ 红也要红得可读，且绝不放行。
+ */
 function read(p) {
-  return fs.readFileSync(p, 'utf8')
+  try {
+    return fs.readFileSync(p, 'utf8')
+  } catch (e) {
+    console.log(`  FAIL  读不到源文件：${p}`)
+    console.log(`        ${e.code || 'ENOENT'} —— 本门禁靠它做判定，拿不到不许放行`)
+    process.exit(1)
+  }
 }
 
 /** 把 TS 源码转成 CJS 并在独立沙箱里取导出（每例新沙箱，避免 module.exports 互相污染） */

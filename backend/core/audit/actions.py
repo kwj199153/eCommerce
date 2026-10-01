@@ -57,6 +57,10 @@ TARGET_STORE = "store"
 TARGET_ACCOUNT = "account"
 TARGET_MEMBER = "member"
 TARGET_SESSION = "session"
+#: 提示词覆写（`prompt_versions` 表的一行）。
+#: ★ 它不是租户资源，是**平台级配置** —— 见
+#:   `modules/prompt_versions/db_model.py` 文件头「没有 store_id / account_id」那一节。
+TARGET_PROMPT = "prompt"
 
 TARGET_TYPES: tuple[str, ...] = (
     TARGET_USER,
@@ -64,6 +68,7 @@ TARGET_TYPES: tuple[str, ...] = (
     TARGET_ACCOUNT,
     TARGET_MEMBER,
     TARGET_SESSION,
+    TARGET_PROMPT,
 )
 
 
@@ -89,6 +94,14 @@ ACTION_MEMBER_UPDATE = "account.member.update"
 #: 移除账户成员（软删 `status=REMOVED`）—— 权限回收。
 ACTION_MEMBER_REMOVE = "account.member.remove"
 
+#: 写入 / 替换一条提示词覆写 —— 改的是**线上所有会话**吃到的指令文本。
+#: ★ 为什么它必须审计：这条改动**不会**触发任何代码评审（它不在 git 里），
+#:   却能改掉每一个 Agent 的行为与口吻。本仓所有「平台级配置」里，
+#:   它的影响面最大、留痕最少 ⇒ 不记审计就完全不可追溯。
+ACTION_PROMPT_OVERRIDE_WRITE = "prompt.override.write"
+#: 删除一条提示词覆写 —— 让源码版重新生效（等价于一次**静默的行为回退**）。
+ACTION_PROMPT_OVERRIDE_DELETE = "prompt.override.delete"
+
 
 #: 动作目录：`(动作, 中文说明, 目标类型)`。
 #:
@@ -104,6 +117,8 @@ ACTIONS: tuple[tuple[str, str, str], ...] = (
     (ACTION_STORE_DELETE, "删除店铺", TARGET_STORE),
     (ACTION_MEMBER_UPDATE, "修改账户成员角色/状态", TARGET_MEMBER),
     (ACTION_MEMBER_REMOVE, "移除账户成员", TARGET_MEMBER),
+    (ACTION_PROMPT_OVERRIDE_WRITE, "写入/替换提示词覆写", TARGET_PROMPT),
+    (ACTION_PROMPT_OVERRIDE_DELETE, "删除提示词覆写", TARGET_PROMPT),
 )
 
 #: 已知动作集合。

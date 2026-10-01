@@ -10,6 +10,10 @@
  * 故用 fetch + 手动解析。
  */
 
+// ★ L3-3（第 351 轮）：SSE 走的是**第二个** HTTP 出口（裸 fetch，不经 axios），
+//   所以它必须自己带 X-Request-ID、自己读响应头 —— 否则流式链路的 trace 永远是断的。
+//   生成/记忆规则与 axios 出口共用同一份实现（`api/traceId.ts`）。
+import { newTraceId, rememberTraceId } from '@/api/traceId'
 import { useUserStore } from '@/stores/user'
 
 /**
@@ -146,6 +150,10 @@ export async function streamSSE(
   if (shopId) {
     headers['X-Shop-ID'] = shopId
   }
+  // ★ L3-3：追踪 ID —— 与本仓另一个出口（axios 实例）用同一份生成规则。
+  const traceId = newTraceId()
+  headers['X-Request-ID'] = traceId
+  rememberTraceId(traceId)
 
   const fullUrl = url.startsWith('/api') ? url : `/api/v1${url}`
 
@@ -171,7 +179,14 @@ export async function streamSSE(
   if (!response.ok) {
     const detail = await response.text().catch(() => '')
     if (isAbort(null, signal)) throw new StreamCancelledError()
-    const message = `请求失败 (${response.status}) ${detail}`
+    // ★ L3-3：服务端回写的 X-Request-ID 优先于本地生成值（网关可能改写过）。
+    //   ⚠️ 尾巴只能加在 detail **之后** —— `请求失败 (${response.status}) `
+    //   这个前缀是既有契约（`check-chat-failure-path.cjs` 逐字引用它），
+    //   改前缀会打红门禁，也会让用户已经习惯的排障读法失效。
+    const serverTraceId = response.headers?.get?.('x-request-id') || ''
+    rememberTraceId(serverTraceId || traceId)
+    const trace = serverTraceId || traceId
+    const message = `请求失败 (${response.status}) ${detail}（追踪 ID：${trace}）`
     handlers.onError?.(message)
     throw new Error(message)
   }

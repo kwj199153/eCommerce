@@ -19,6 +19,8 @@ import {
   isAuthEndpoint,
   shouldAttemptRefresh,
 } from '@/api/authRefreshPolicy'
+// ★ L3-3（第 351 轮）：追踪 ID 的唯一实现（两个 HTTP 出口共用）。
+import { newTraceId, rememberTraceId, withTraceId } from '@/api/traceId'
 
 /**
  * 提示归属（第 267 轮定稿）：**成功提示归调用点，错误提示归拦截器**。
@@ -136,6 +138,14 @@ request.interceptors.request.use(
       config.headers['X-Shop-ID'] = shopId
     }
 
+    // ★ L3-3：追踪 ID —— 每个请求带一个 X-Request-ID，后端会原样回写到同名响应头。
+    //   前端必须**先发一个**：否则服务端日志有 ID、用户看到的报错没有，
+    //   两边对不上（这正是本项要修的三段断点之一）。
+    //   先本地记一份，作为「响应头没拿到」时的兜底值。
+    const traceId = newTraceId()
+    config.headers['X-Request-ID'] = traceId
+    rememberTraceId(traceId)
+
     return config
   },
   (error) => {
@@ -163,6 +173,12 @@ request.interceptors.response.use(
       message.error(data?.message || data?.detail || '操作失败')
     }
 
+    // ★ L3-3：服务端回写的 X-Request-ID 是**权威值**（中间件把上游的透传回来），
+    //   覆盖本地生成值 —— 网关改写过 ID 时，只有它对得上服务端那行日志。
+    //   ★ 必须放在 `return data` **之前**：这里返回的是 data 不是 response，
+    //     出了这个函数就拿不到响应头了。
+    rememberTraceId(response.headers?.['x-request-id'])
+
     return data
   },
   async (error) => {
@@ -172,7 +188,9 @@ request.interceptors.response.use(
 
     if (!response) {
       // 网络错误
-      if (!silentError) message.error('网络连接失败，请检查网络')
+      // ★ L3-3：网络错误也带 ID —— 请求可能已到服务端、只是响应丢了，
+      //   那时服务端日志里确实有这个 ID（这也是本项要修的那类「对不上」）。
+      if (!silentError) message.error(withTraceId('网络连接失败，请检查网络'))
       return Promise.reject(error)
     }
 
@@ -267,16 +285,20 @@ request.interceptors.response.use(
         if (current.name !== 'Login') {
           router.push({ name: 'Login', query: { redirect: current.fullPath } })
         }
+        // ★ L3-3：401 也带上追踪 ID —— 它恰恰是最需要的一档
+        //   （「我登录不了了」是用户最常回报的问题，而后端那行 401 日志必须有 ID 才找得到）。
         message.error(
-          needsIdentity
-            ? (data?.detail || '该功能需要登录后使用')
-            : '登录已过期，请重新登录'
+          withTraceId(
+            needsIdentity
+              ? (data?.detail || '该功能需要登录后使用')
+              : '登录已过期，请重新登录'
+          )
         )
         break
       }
 
       case 403:
-        if (!silentError) message.error(data?.detail || '没有权限执行此操作')
+        if (!silentError) message.error(withTraceId(data?.detail || '没有权限执行此操作'))
         break
 
       case 404:
@@ -285,20 +307,20 @@ request.interceptors.response.use(
           console.warn('[Demo Mode] API 返回 404，使用 Mock 数据')
           return Promise.reject(error)
         }
-        if (!silentError) message.error(data?.detail || '请求的资源不存在')
+        if (!silentError) message.error(withTraceId(data?.detail || '请求的资源不存在'))
         break
 
       case 429:
         // 限流
-        if (!silentError) message.warning(data?.detail || '操作过于频繁，请稍后再试')
+        if (!silentError) message.warning(withTraceId(data?.detail || '操作过于频繁，请稍后再试'))
         break
 
       case 500:
-        if (!silentError) message.error(data?.detail || '服务器内部错误')
+        if (!silentError) message.error(withTraceId(data?.detail || '服务器内部错误'))
         break
 
       default:
-        if (!silentError) message.error(data?.detail || `请求失败 (${status})`)
+        if (!silentError) message.error(withTraceId(data?.detail || `请求失败 (${status})`))
     }
 
     return Promise.reject(error)

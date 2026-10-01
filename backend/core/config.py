@@ -905,6 +905,17 @@ class Settings(BaseSettings):
     spapi_aws_secret_key: str = Field(default="", description="AWS Secret Access Key")
     spapi_aws_region: str = Field(default="us-east-1", description="AWS Region (SP-API)")
     spapi_use_sandbox: bool = Field(default=True, description="使用 Sandbox 环境")
+    # ★ 第 351 轮 · P0-6：授权同意页的基址。
+    #   北美 / 欧洲 / 远东三站的域名不同，而授权 URL 必须落在卖家**自己那一站**
+    #   的 Seller Central 上（跳错站 = 卖家看到的是一份与他无关的应用）。
+    #   为什么可配而不是写死：这是**部署事实**（面向哪个站点的卖家），
+    #   写死常数意味着换市场要改代码 + 重新发布。
+    #   ★ `application_id` **就是** LWA Client ID（复用 spapi_lwa_client_id），
+    #     所以这里只需要一个域名，不需要第二份应用凭据。
+    spapi_auth_base_url: str = Field(
+        default="https://sellercentral.amazon.com",
+        description="SP-API 授权同意页基址（欧洲站 https://sellercentral-europe.amazon.com）",
+    )
 
 
 @lru_cache()

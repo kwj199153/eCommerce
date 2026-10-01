@@ -140,6 +140,18 @@
 > ★ 本轮另得两条**度量口径**（防下次误判，已写进该报告 §9）：F-2 格式化后 `.vue` 行数**不可跨版本比**；
 > 度量脚本**必须排除 `.workbuddy/`**（否则探针留痕把「>800 行文件」从 51 撑到 336）。
 >
+> **更新 · 第 351 轮**：批次 2 落地（L3-11 门禁注入开口 + **L3-3 trace 三段** + **L3-4 prompt 指纹**）。本节同步：
+> 门禁数 38 → **39** `.cjs`（新增 `check-trace-propagation.cjs`）；**注入开口 38 道 / 无开口 1 道**
+> （`check-eslint-ratchet.cjs` 是**配置面**例外，不读源码 ⇒ 非缺口）。结论落
+> `docs/reviews/2026-10-01-第351轮-批次落地.md`。
+>
+> **更新 · 第 351 轮（同轮续 · P0 四项）**：同轮再落 **P0-9 法务占位符**（可客观确定的 5/36 + 新门禁
+> `tests/test_legal_docs.py`）、**P0-6 SP-API 按店 OAuth**（`modules/amazon_sp/router.py` 6 端点 + 30 用例）、
+> **P0-7 B 档 提示词 DB 覆写层**（表 `prompt_versions` + 迁移 `l8d5e2a9c3f6` + 19 用例）、
+> **P0-2 PITR**（`scripts/pg_pitr.py` 五子命令 + 端到端恢复演练 + 19 用例）。
+> pytest 由 **2450 → 2523**（153 文件）、`mypy core ai_infra` **88 → 89 文件**；
+> 分层门禁同步登记 `prompt_versions → PLUGIN`、`wiring.py::MODEL_MODULES` 加 `prompt_versions.db_model`。
+>
 > **更新 · 第 347 轮**：**核正 pytest 用例数口径** —— 下表原写「11276 用例」是
 > **无来源的错记**（全仓 grep 只此一处，且与同类快照 2295/r332 2347 差 4.6 倍）。
 > 真实口径见表格下方脚注（**2435 用例 / 148 文件**）。
@@ -150,7 +162,7 @@
 
 | Job | 步骤 |
 |---|---|
-| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 350 轮实测 `Success, 87 source files`）** → pytest（**2435 用例**）+ 覆盖率棘轮（`fail_under=65`） |
+| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 351 轮实测 `Success, 89 source files`）** → pytest（**2523 用例**）+ 覆盖率棘轮（`fail_under=65`） |
 | 前端 | 门禁 glob `check-*.*` + **覆盖率自证**（漏跑即红）→ `vue-tsc` → `vite build`（`VITE_DEMO_MODE=false`） |
 | 资产 | 必需文件存在 → `docker compose config` → `nginx -t` → 敏感文件未被 git 跟踪 → **CD 资产门禁** |
 | 安全 | bandit（Medium+ = 0）/ pip-audit / npm audit（阈值 `critical` —— 按原则四锁在「当前已绿」） |
@@ -166,15 +178,18 @@
 >
 > 第 347 轮实测 = **2435 用例 / 148 个文件**（`--collect-only` 按文件求和）。
 > ★ 这个数**每轮都在涨**，历史快照：867@r126 → 1674@09-27 → 2025@r283 →
-> 2295@09-30(137 文件) → 2347@r332 → **2435@r347(148 文件)**。
+> 2295@09-30(137 文件) → 2347@r332 → 2435@r347(148 文件) → 2450@r351(149 文件)
+> → **2523@r351(153 文件)**（同轮四道新门禁：`test_amazon_sp_oauth` / `test_prompt_versions` /
+> `test_legal_docs` / `test_pitr`）。
 > ⇒ 本节是**快照**：更新时必须重跑上面这条命令，**不要沿用旧数**。
 > ★ 为什么之前会写错：`11276` 既不是用例数、也不是 coverage statements 数
 > （实测 statements ≈ 27150），属纯错记；根因是「写现状快照时没有当场取数」。
 
 ### 门禁总数
 
-- 前端 `frontend/scripts/check-*.{cjs,py}`：**38 部 `.cjs` + 4 部 `.py`**（第 350 轮实测；
-  ★ 其中 **26 部自带 `*_SRC_ROOT`/`*_FILE` env 注入开口**，**12 部没有** ⇒ 见附录 A 新增的 L3-11）
+- 前端 `frontend/scripts/check-*.{cjs,py}`：**39 部 `.cjs` + 4 部 `.py`**（第 351 轮实测；
+  ★ 其中 **38 部自带 env 注入开口**（`pick(env, fallback)` / `process.env[var]` 两种写法都算），
+  **1 部没有**：`check-eslint-ratchet.cjs` —— 它读的是 **ESLint 配置面**、不读源码 ⇒ **非缺口**）
 - 后端 `backend/scripts/check_*.py`：**4 部**（由 pytest 包着跑：`test_alert_rules_gate.py` /
   `test_compose_secrets_gate.py` / `test_agent_session_memory.py` / `test_import_boundaries.py`）
 - 另有一批 CDP 行为探针（`frontend/scripts/cdp-*.mjs`），其中
@@ -191,6 +206,17 @@
 | RBAC | `core/auth/accounts.py`（`role_allows` / `resolve_account_role()`；团队角色与平台超管**两条链路**分开） |
 | 密钥加密 | `core/security/credentials.py`（Fernet + 三类显式错误） |
 | 备份 / 恢复演练 | `scripts/backup_db.py`（backup / 结构校验 / restore / **drill 演练** / 轮转） |
+| **PITR**（WAL 归档 / 物理基线 / 恢复到**具名还原点**） | `scripts/pg_pitr.py`（`status` / `enable` /
+  `archive-fetch` / `basebackup` / `drill`）+ `tests/test_pitr.py`（19 条，含端到端演练）+
+  beat 两条（外送每 15 分钟 / 基线周一 2:11）+ 告警三条。★ 与上一行**互补不重复**：
+  `pg_dump` 只能整库回退到某个 dump 瞬间，PITR 才能「恢复到 14:02 且保留 14:00 后的新单」 |
+| SP-API 按店 OAuth | `modules/amazon_sp/oauth.py`（纯逻辑，零 DB）+ `router.py`（6 端点）+
+  `tests/test_amazon_sp_oauth.py`（30 条；不存在与不属于你**同一响应**防枚举） |
+| 提示词 DB 覆写层（B 档） | `modules/prompt_versions/`（表 `prompt_versions` + 五态常量 + 6 端点）+
+  `ai_infra/llm/prompt_overrides.py`（应用半，避开 `ai_infra` 不得 import `modules.*` 的红线）+
+  `tests/test_prompt_versions.py`（19 条：落库前先校验、`applied` 由内存表现算） |
+| 法务文本与占位符 | `docs/legal/PLACEHOLDERS.md`（自证命令）+ `tests/test_legal_docs.py`（4 条：
+  无工程细节 / 天数 == 代码默认值 / 模板占位符 ⊆ 清单 / 自报数 == 实测数） |
 | 告警规则 / compose 密钥 | `check_alert_rules.py` / `check_compose_secrets.py`（各有 pytest 包装） |
 | 审计留存 | `core/audit/retention.py` |
 
@@ -208,7 +234,7 @@
 | 审查类型 | 触发时机 | 主要落在 | 谁执行 |
 |---|---|---|---|
 | 架构审查 | 大重构 / 模块拆分 / 新增 Agent 能力 / 库结构变更 | **L2**（取向与取舍机器判不了）；L1 兜底（`test_import_boundaries`） | 人 |
-| 代码审查（PR） | 每次合并 | **L1**（37+4 门禁 + pytest + `vue-tsc`）；L2 只审「门面有没有被绕过」 | 机器 + 人抽查 |
+| 代码审查（PR） | 每次合并 | **L1**（39+4 门禁 + pytest + `vue-tsc`）；L2 只审「门面有没有被绕过」 | 机器 + 人抽查 |
 | 安全审查 | 涉密钥 / 多租户 / 对外接口上线前 | **L1**（bandit / pip-audit / npm audit / `check_tenant_isolation`）；L2 审「授权模型要不要加角色」 | 机器 + 人 |
 | 测试与质量审查 | 版本发布前 / 重构后验收 | **L1 全自动**（覆盖率棘轮 + CDP 行为基线 33 条）；L2 审「新增路径有没有配对判据」 | 机器 |
 | 运维与部署审查 | 生产发布 / 环境变更 | **L1**（assets job + CD 资产门禁）；L2 审「回滚方案」 | 机器 + 人 |
@@ -296,8 +322,8 @@
 |---|---|---|
 | L3-1 | ✅ 闭合（r346），且已三轮收紧 | 棘轮 `FLOOR_ENFORCED` **181 → 193**、欠账 **21 → 9** |
 | L3-2 | ✅ 闭合（r346） | `mypy core ai_infra` → **Success, 87 source files**（74 → 0） |
-| L3-3 | ❌ 未做 | 三段全未动，见上 |
-| L3-4 | ❌ 未做 | `base_agent.py:824` 仍 `-> str` |
+| L3-3 | ✅ 闭合（r351） | 前端两出口注入 `X-Request-ID` + 后端 `request_timing.py` 三段计时 + CORS `expose_headers`；11 条新门禁 / 10 条 pytest / 真浏览器 5/5 / 反向注入 5 红 |
+| L3-4 | ✅ 闭合（r351） | 渲染留痕（`render_prompt` INFO 级，只记变量名） + `base_agent.py:824` → `-> "RenderedPrompt"`；5 条新判据 + 反向注入 5/5 + mypy 仍 88 文件 |
 | L3-5 | ❌ 未做 | `docs/openapi*` glob **0 命中** |
 | L3-6 | ❌ 未做 | `v-permission` / `hasPermission` 命中 **0** |
 | L3-7 | ❌ 未做 | `*.cdx.json` / `**/sbom*` 均 **0** |
@@ -309,7 +335,7 @@
 
 | # | 缺口 | 级别 | 实测证据 |
 |---|---|---|---|
-| L3-11 | **11 道门禁无 env 注入开口**（38 道里 26 道有） ⇒ 无法零副作用自证 | P1 | `.workbuddy/probes/r350/nohook_classify.py` |
+| L3-11 | ✅ 闭合（r351）：**8 道真缺口**全部补 `pick` 开口 + 空源自证 **8/8**；余 1 道（`check-eslint-ratchet.cjs`）是配置面例外 | P1 | `.workbuddy/probes/r351/revinject_emptysrc.py` |
 | L3-12 | **本地 venv 缺 `ruff`/`bandit`/`pip-audit`** ⇒ 这 3 道 CI 步骤本地不可复现 | P2 | 三者均 `No module named …` |
 | L3-13 | **欠账表注释数字漂移** | P3 | `eslint.config.mjs:80` 写 `no-undef 13 条`，实测 **19**；`:85` 写 `112`，实测 **115** |
 | L3-14 | `backend/scripts/patch_nav_view_ids_comment.py:6` 的 `invalid escape sequence '\s'` 污染每次 pytest 输出 | P3 | pytest stdout 尾部实测 |
@@ -325,7 +351,7 @@
   成本最低，且直接加固当前正在进行的重构（后端有 `vue-tsc` 的对位物，前端补 lint）。
   ★ 必须按**原则四**走棘轮：`eslint` 与 `mypy` 都不要直连全量（103 个 `.vue` + 后端存量无标注
   会一次爆几千条 ⇒ 常红 ⇒ 被绕过）。照 `ruff --select` 的范式，先圈已收敛的目录 / 规则。
-- **批次 2 ——「出事后能不能还原当时发生了什么」**（L3-3 + L3-4）
+- **批次 2 ——「出事后能不能还原当时发生了什么」**（L3-3 + L3-4）—— ✔ **第 351 轮两条全部闭合**
   两条回答**同一个问题**：Trace 管**链路**（前端请求 → FastAPI → Agent → DB），
   prompt 版本管**Agent 当时看到的是哪一版指令**。单独做 Trace 而不做 prompt 版本，
   Agent 那一段仍是黑盒。

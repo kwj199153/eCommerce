@@ -6,9 +6,11 @@
 
 import importlib
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Iterable
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     AsyncEngine,
@@ -18,6 +20,10 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from core.config import config
+# ★ L3-3（第 351 轮）：DB 分段耗时出口（响应头 X-DB-Time-Ms）。
+#   与 `identity -> observability`（指标出口）同族 —— 内核自己报告自己的开销。
+#   这条 import 期边已登记在 tests/test_core_internal_layering.py 的登记表 1。
+from core.observability.request_timing import add_db_ms
 
 
 logger = logging.getLogger(__name__)
@@ -41,6 +47,53 @@ def create_engine() -> AsyncEngine:
 
 # 全局引擎实例
 engine = create_engine()
+
+
+# ====== 请求级 DB 分段计时（L3-3，第 351 轮）======
+#: 已安装的监听器 `(sync_engine, before_fn, after_fn)` —— 供门禁用
+#: `sqlalchemy.event.contains(...)` 反查「装上了没有」（问库本身，禁自算复刻）。
+INSTALLED_TIMING_LISTENERS: list = []
+
+
+def install_db_timing(sync_engine) -> None:
+    """把「SQL 实际执行耗时」累加进请求级分段计时。
+
+    ★ 参数是**同步引擎**（`engine.sync_engine` / 一个 sync `Engine`）：
+      `event.listens_for` 只能挂在同步 Connectable 上。
+
+    ★ 为什么挂 cursor 事件，而不是包 `get_db` / `get_async_session`：
+      · 事件只在**真的发 SQL** 时触发（一次请求 0 条 SQL ⇒ 0ms），
+        而包 get_db 会把「拿到连接但没查询」也算成耗时；
+      · SQLAlchemy 的异步引擎通过 greenlet 调 DBAPI，事件回调与调用方
+        **共享同一个 Context** ⇒ 这里的 add_db_ms 能改到中间件那个计时对象。
+      （greenlet 共享 context 见 `.workbuddy/probes/r351/l3_3_greenlet_ctx.py`；
+        跨任务边界必须用可变容器见 `core/observability/request_timing.py`。）
+
+    ★ 对**同一个**引擎幂等：重复调用直接返回。
+      不加这道守卫的后果不是报错而是**静默翻倍** —— SQLAlchemy 会把同一个
+      `before_cursor_execute` 注册两次，于是每条 SQL 的耗时被累加两遍，
+      响应头里的数字看着"像那么回事"，其实全是错的。
+    """
+    if any(target is sync_engine for target, _b, _a in INSTALLED_TIMING_LISTENERS):
+        return
+
+    @event.listens_for(sync_engine, "before_cursor_execute")
+    def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        context._l3_3_sql_started = time.perf_counter()
+
+    @event.listens_for(sync_engine, "after_cursor_execute")
+    def _after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        started = getattr(context, "_l3_3_sql_started", None)
+        if started is not None:
+            add_db_ms((time.perf_counter() - started) * 1000.0)
+
+    INSTALLED_TIMING_LISTENERS.append(
+        (sync_engine, _before_cursor_execute, _after_cursor_execute)
+    )
+
+
+# ★ 装在模块级唯一引擎上：任何经 async_session_factory / get_db 的 SQL 都被计时。
+install_db_timing(engine.sync_engine)
 
 # ====== 会话工厂 ======
 async_session_factory = async_sessionmaker(

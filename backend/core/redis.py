@@ -173,6 +173,26 @@ IDENTITY_PURGE_MINUTE = 17
 #:     与"日终快照"的语义不符。
 BACKUP_HOUR = 2
 BACKUP_MINUTE = 41
+
+#: PITR 的两个触发时刻（★ 第 351 轮 / P0-2）。
+#:
+#: · **WAL 外送**取 `*/15`（每 15 分钟）。它与上面那条"每日一次"的差别是刻意的：
+#:   归档段落在 my-postgres 的**容器可写层**（手工 `docker run` 建的容器没有第二个
+#:   挂载点，加挂载只能重建容器），`docker stop/start` 不丢、`docker rm` 全丢。
+#:   外送窗口越短，"`docker rm` 那一刻"最多丢多少就越少。
+#:   ★ 分钟取 **7**（不是 0）：避开 `*/5` 家族（billing-expire-pending）的
+#:     整点边界，别让一次 tick 里挤进两条 docker exec。
+#:
+#: · **物理基线**取周一 **2:11**。基线体积 ~= 全库，它只提供"从哪开始回放"；
+#:   真正的恢复能力由 WAL 段提供 ⇒ 取密了是纯 IO 浪费，取疏了回放链太长。
+#:   ★ 排在每日 dump（2:41）**之前**：先备物理基线、再备逻辑 dump，
+#:     万一两者之间出事，"最近一次成功"的语义不容易被搅混。
+WAL_FETCH_MINUTE_INTERVAL = 15
+WAL_FETCH_MINUTE_OFFSET = 7
+PITR_BASEBACKUP_DAY_OF_WEEK = "monday"
+PITR_BASEBACKUP_HOUR = 2
+PITR_BASEBACKUP_MINUTE = 11
+
 # ★ 调度表定义在这里而不是 `modules/memory/tasks.py`：`beat_schedule` 是
 #   **应用级**配置，beat 进程只读它、不 import 任何任务模块。
 #   写在任务模块里的话，beat 就得先 import 业务代码才能知道"该调度什么" ——
@@ -301,6 +321,33 @@ celery_app.conf.beat_schedule = {
     "db-backup-daily": {
         "task": "backup.db_daily",
         "schedule": crontab(hour=BACKUP_HOUR, minute=BACKUP_MINUTE),
+        "options": {"queue": "default"},
+    },
+    # ====== PITR：WAL 归档外送（每 15 分钟）+ 周度物理基线（第 351 轮 / P0-2）======
+    #
+    # ★★ 为什么这两条**不能**省：「逻辑 dump 每天在跑」并不能替代它们。
+    #    `pg_dump` 的恢复粒度 = 一次 dump 的瞬间；要答"恢复到 14:02、
+    #    但 14:00 之后新签的两单保留"，必须有「物理基线 + 之后每个 WAL 段」。
+    #    两者各自能独立地坏 —— 外送停 = 归档只活在容器可写层；
+    #    基线停 = 有归档也没有可回放的起点。故两条调度条目分开。
+    #
+    # ★ 任务名同样是**字面量**（core 不得 import modules / tasks 模块），
+    #   与 `core/backup/tasks.py::TASK_WAL_FETCH` / `TASK_PG_BASEBACKUP`
+    #   构成"同一事实两份写法" ⇒ 由 `tests/test_pitr.py` 钉成相等。
+    "wal-archive-fetch": {
+        "task": "backup.wal_archive_fetch",
+        "schedule": crontab(
+            minute=f"{WAL_FETCH_MINUTE_OFFSET}-59/{WAL_FETCH_MINUTE_INTERVAL}"
+        ),
+        "options": {"queue": "default"},
+    },
+    "pg-basebackup-weekly": {
+        "task": "backup.pg_basebackup_weekly",
+        "schedule": crontab(
+            day_of_week=PITR_BASEBACKUP_DAY_OF_WEEK,
+            hour=PITR_BASEBACKUP_HOUR,
+            minute=PITR_BASEBACKUP_MINUTE,
+        ),
         "options": {"queue": "default"},
     },
 }

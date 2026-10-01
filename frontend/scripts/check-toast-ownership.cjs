@@ -72,11 +72,25 @@
  *     照样 PASS。已改 `blockByRegex`（词边界 + 紧跟 `{`）。
  *
  * 用法：node scripts/check-toast-ownership.cjs   （0 = 通过；1 = 有漂移）
+ *
+ * ## 读集注入开口（★ 第 351 轮 L3-11：零副作用自证）
+ *
+ * 扫描根可用环境变量指向**空源**（空目录 / 空文件）。空源时本门禁**必须变红** ——
+ * 仍绿即说明判据没真读它（fail-open）。
+ * ★ 边界：空源注入只能**证伪**（证明判据读了内容），**不证明**它读对了字段。
+ *
+ *   TOAST_FE_ROOT=<副本或空目录>      ⇒ ①②③④ 红（request.ts 与扫描面读不到）
+ *
  */
 const fs = require('fs')
 const path = require('path')
 
-const FE = path.resolve(__dirname, '..')
+/** ★ 第 351 轮 L3-11：读集注入开口 —— 把扫描根指向副本树 / 空源，用于零副作用自证。
+ *  空源（空目录 / 空文件）时本门禁**必须变红**；仍绿即说明判据没真读它。 */
+const pick = (env, fallback) =>
+  process.env[env] ? path.resolve(process.env[env]) : fallback
+
+const FE = pick('TOAST_FE_ROOT', path.resolve(__dirname, '..'))
 const SRC = path.join(FE, 'src')
 
 const read = (p) => fs.readFileSync(path.join(FE, p), 'utf8')

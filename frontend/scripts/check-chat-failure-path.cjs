@@ -80,6 +80,10 @@ const P_FALLBACK = pick('PROD_FALLBACK', ['composables', 'chat', 'replies', 'fal
 //   · 取消收口在 `composables/chat/streamCancel.ts`。
 //   反向注入要能单独替换它们，否则 G 组那段「真行为」判据没法证明自己会红。
 const P_STREAM = pick('PROD_STREAM', ['api', 'stream.ts'])
+// ★ 第 351 轮 L3-3：stream.ts 新增了追踪 ID 依赖（X-Request-ID）。
+//   台架必须补这一路 —— 不补的话 `loadTs` 会直接抛「本门禁未打桩的模块」，
+//   那是**台架缺桩**而不是被测代码坏了（本仓已登记的同族形态）。
+const P_TRACE_ID = pick('PROD_TRACE_ID', ['api', 'traceId.ts'])
 /**
  * ★ P5/P6 的扫描面。默认就是真目录；反向注入时整树指向副本。
  *   为什么必须可注入：这两条判据扫的是「所有回复链」，若只看真目录，
@@ -246,6 +250,9 @@ function extractSpecifiers(code) {
  */
 const REAL_STREAM = loadTs(P_STREAM, {
   '@/stores/user': () => ({ useUserStore: () => ({ token: '' }) }),
+  // ★ 用**真文件**而不是桩：traceId.ts 是零依赖纯函数，
+  //   桩一份假的等于让门禁自证（与 `@/utils/orderTracking` 同一条理由）。
+  '@/api/traceId': () => loadTs(P_TRACE_ID, {}),
 })
 
 /** 当前场景的 state。模块级桩要用它 —— 真实 stream.ts 只装载一次，没法闭包到每个 state。 */

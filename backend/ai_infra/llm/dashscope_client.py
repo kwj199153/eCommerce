@@ -26,6 +26,9 @@ from core.metering.llm_meter import record_llm_usage
 #   （base_agent.py / rag/hybrid_engine.py 都经 get_llm() 拿到 DashScopeLLM），
 #   所以在这里埋点 = 一处覆盖全部调用方，业务模块一行都不用改。
 from core.observability.metrics import LLM_CALLS, LLM_OUTPUT_INVALID, LLM_TOKENS
+# ★ L3-3（第 351 轮）：LLM 分段耗时（响应头 X-LLM-Time-Ms）。与上面的指标出口
+#   同源 —— 本文件是所有 Agent 的 LLM 唯一出口，一处埋点即全覆盖。
+from core.observability.request_timing import add_llm_ms
 # ★ 第 283 轮 A 档：提示词规格（版本 / 指纹 / 变量契约）。
 #   放在 `ai_infra.llm.prompt_spec`，与注册表同包 —— 机制层不认业务内容。
 from .prompt_spec import (
@@ -432,6 +435,9 @@ class DashScopeLLM:
             "stream": False,
         }
 
+        # ★ L3-3：只计**真的网络往返**（重试全在内）—— 解析 / 统计不计，
+        #   它们不是「等模型」的时间。
+        llm_t0 = time.perf_counter()
         try:
             response = await self._call_with_retry(
                 f"{LLMConfig.BASE_URL}/chat/completions",
@@ -442,6 +448,9 @@ class DashScopeLLM:
             #   永远不存在，"失败率"这个唯一有用的告警信号就无从计算。
             _emit_llm_metrics(payload["model"], "error")
             raise
+        finally:
+            # 失败也要累加：超时/重试耗掉的正是用户等的时间。
+            add_llm_ms((time.perf_counter() - llm_t0) * 1000.0)
 
         result = self._parse_response(response, start_time)
         self._update_stats(result)   # ← 成功指标在 _update_stats 里打
@@ -485,6 +494,10 @@ class DashScopeLLM:
         full_content = ""
         stream_usage: Dict = {}
         start_time = time.time()
+        # ★ L3-3：LLM 分段耗时 —— 覆盖「建连接 + 正文流」整段。
+        #   ★ 必须在**生成器体内**计时：本函数是 async generator，
+        #     函数体外测不到消费期（正文是上层一 chunk 一 chunk 拉走的）。
+        llm_t0 = time.perf_counter()
         # ★ P0-8：流式路径此前**完全不读** finish_reason，输出被截断时上层无从得知。
         #   这里只收集最后一个非空值（服务端只在最后一个内容 chunk 给）。
         stream_finish_reason = ""
@@ -537,6 +550,10 @@ class DashScopeLLM:
             #   （BaseException，不被 Exception 捕获），语义正确。
             _emit_llm_metrics(model, "error")
             raise
+        finally:
+            # ★ L3-3：成功 / 失败 / 被消费方提前关闭（生成器 close，抛 GeneratorExit）
+            #   三种出口都在这里累加一次 —— 否则「流到一半用户点了停止」的耗时永远丢失。
+            add_llm_ms((time.perf_counter() - llm_t0) * 1000.0)
 
         # 记录统计
         latency = (time.time() - start_time) * 1000

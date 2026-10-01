@@ -120,15 +120,16 @@
 
   | 数据类别 | 留存期 | 依据 |
   |---|---|---|
-  | 账号与店铺授权 | 账号存续期间；注销后 {{ACCOUNT_DELETION_GRACE_DAYS}} 天内删除 | 履行合同 |
-  | 审计日志 | {{AUDIT_RETENTION_DAYS}} 天（由 `AUDIT_RETENTION_DAYS` 配置并定时清理） | 安全与合规 |
-  | 登录尝试记录 | {{LOGIN_RETENTION_DAYS}} 天（由 `LOGIN_ATTEMPT_RETENTION_DAYS` 配置） | 安全风控 |
-  | 邮件一次性令牌 | {{EMAIL_TOKEN_RETENTION_DAYS}} 天（仅清已消费/已过期） | 安全 |
+  | 账号与店铺授权 | 账号存续期间；账号注销后按「你的权利」一节处理删除请求 | 履行合同 |
+  | 审计日志 | 90 天（由 `AUDIT_RETENTION_DAYS` 配置并定时清理） | 安全与合规 |
+  | 登录尝试记录 | 30 天（由 `LOGIN_ATTEMPT_RETENTION_DAYS` 配置） | 安全风控 |
+  | 邮件一次性令牌 | 7 天（仅清已消费/已过期） | 安全 |
   | 业务数据（商品/订单/评价等） | 随账号存续；你可在功能内删除或申请删除 | 履行合同 |
-  | AI 对话与 Agent 记忆 | {{CHAT_RETENTION_DAYS}} 天或随账号存续 | 服务连续性 |
+  | AI 对话与 Agent 记忆 | 随账号存续；账号注销后按「你的权利」一节处理 | 服务连续性 |
 
-> ★ 上表中的**加密字段名**应与你实际部署的配置取值逐一核对后回填——
-> 政策承诺的留存期不得长于实际清理行为。
+> ★ 上表的天数**不是手写**的：门禁 `backend/tests/test_legal_docs.py` 会从本表读出
+> 「该项由哪个配置决定」，再去 `backend/core/config.py` 取默认值比对，不一致即红。
+> 部署时若用环境变量把留存期**调长**，必须同步改本表 —— 否则政策就是一句假话。
 
 ---
 
@@ -215,24 +216,3 @@
 - 电话：{{COMPANY_CONTACT_PHONE}}
 
 ---
-
-<details>
-<summary><b>★ 工程侧事实核对表（**仅供内部/审阅使用，对外发布前请删除本节**）</b></summary>
-
-| 政策中的陈述 | 代码/配置依据（供律师核对"是否属实"） |
-|---|---|
-| 密码以不可逆哈希存储 | `core/identity/` 口令哈希（含轮数配置 `password_hash_rounds`） |
-| 店铺授权凭据加密存储 | 店铺凭据加密模块 + `SHOP_CREDENTIALS_ENCRYPTION_KEY` |
-| 登录尝试记录与账号锁定 | `login_attempts` 表 + `login_max_failures` / `login_lockout_minutes` |
-| 审计日志 + 留存期清理 | `audit_logs` + `audit_retention_days` + `core/audit/tasks.py` 定时清理 |
-| 登录审计留存期清理 | `login_attempt_retention_days` + `core/identity/tasks.py` |
-| 多租户隔离 | 租户归属过滤 + 店铺作用域（`X-Shop-ID` → `store_id`） |
-| 数据库每日备份与恢复演练 | `core/backup/tasks.py`（beat 每日）+ `scripts/backup_db.py drill` |
-| 大模型服务商 = 阿里云百炼（Qwen） | `ai_infra/llm/dashscope_client.py` + 图像 / 语音调用点 |
-| 平台数据接入 = Amazon / Shopee | `platforms/` 适配层 + 店铺连接端点 |
-| 语音克隆需单独同意 | 前端声音克隆面板中的同意书文本（`AGREEMENT_TEXT`） |
-
-★ 请**逐行**核对上表：任何一行在代码里找不到对应实现，就必须**删掉或改写**政策里的
-那一句 —— "写得比做得多"在隐私政策上是直接的合规风险。
-
-</details>

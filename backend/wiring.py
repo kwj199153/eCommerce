@@ -106,6 +106,12 @@ MODEL_MODULES: tuple[str, ...] = (
     # 选品市场洞察快照（market_snapshots）—— 第 305 轮「蓝海挖掘大盘云图」。
     # 「选品前市场洞察」六维度的数据落点，演示 mock 只灌演示账号（is_demo 标记）。
     "modules.product_research.db_model",
+    # 提示词覆写表（prompt_versions）—— 第 351 轮 · P0-7 B 档。
+    # ★ 它出现在「业务模块清单」里**不是**因为归属 —— 这张表刻意没有
+    #   store_id / account_id（平台级配置，不属于任何租户，见该模块文件头）。
+    #   登记它的唯一理由是 `target_metadata` 必须认识它的 ORM 实体，
+    #   否则 autogenerate 会**静默漏表**（不报错，只在全新库上表现为「表不存在」）。
+    "modules.prompt_versions.db_model",
 )
 
 

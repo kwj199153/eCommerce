@@ -102,6 +102,11 @@ MODULE_LAYERS: dict[str, str] = {
     "listing_generator": PLUGIN,
     "monitors": PLUGIN,
     "platform_rules": PLUGIN,
+    # ★ 第 351 轮：提示词覆写层。判 PLUGIN 的关键与 skills **同源** ——
+    #   机制（A 档注册表/渲染、B 档应用 + 两道闸门）住在 `ai_infra/llm/`，
+    #   本包只剩「表 + 表↔内存注册表的同步点 + 超管 HTTP 契约面」；
+    #   且**没有任何模块在顶层引用它**（消费是运行期经内存注册表，不是 import）。
+    "prompt_versions": PLUGIN,
     "product_research": PLUGIN,
     "review_analyst": PLUGIN,
     "secretary": PLUGIN,
@@ -155,6 +160,16 @@ MODULE_REASONS: dict[str, str] = {
     "listing_generator": "Listing 文案生成；自足功能，无其它模块顶层引用 ⇒ 插件",
     "monitors": "监控告警；自足功能，无其它模块顶层引用 ⇒ 插件",
     "platform_rules": "平台规则库；自足功能，无其它模块顶层引用 ⇒ 插件",
+    "prompt_versions":
+        "提示词覆写层（第 351 轮 · P0-7 B 档）：把「当前生效的提示词正文」从 .py "
+        "常量解耦到 `prompt_versions` 表，让平台超管不动代码就能换一版正文，"
+        "每次留痕、可回退、可对账。"
+        "★ 判 PLUGIN 而不是 SHARED 的关键与 skills **同源**：**机制不在本包** —— "
+        "A 档注册表 / 渲染（`ai_infra/llm/prompt_spec.py`）与 B 档应用侧 + "
+        "两道闸门（`ai_infra/llm/prompt_overrides.py`）都住在 `ai_infra/`，"
+        "本包只剩「表 + 表↔内存注册表的同步点 + 平台超管 HTTP 契约面」；"
+        "且**没有任何模块在顶层引用它**（消费是运行期经内存注册表，不是 import）。"
+        "它顶层只依赖 `ai_infra.*` 与 `core.*`（KERNEL）⇒ 方向合法。",
     "product_research": "选品研究；引用 candidates 走**函数内**延迟 import（非顶层）⇒ 插件",
     "review_analyst": "运营复盘；经数据源工厂消费 amazon_sp（SHARED），自身不被引用 ⇒ 插件",
     "secretary": "店秘书（主对话 Agent）；顶层依赖 products / stores / billing / conversation，"

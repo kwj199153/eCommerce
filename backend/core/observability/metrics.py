@@ -377,6 +377,27 @@ BACKUP_LAST_BYTES = _Gauge(
     (),
 )
 
+# --- PITR / WAL 归档（第 351 轮 / P0-2）---
+# ★ 为什么这两条**不能**复用 `backup_runs_total`：它们答的是不同的问题。
+#   `backup_runs_total` 只答「逻辑 dump 跑没跑成」；而 PITR 的两半
+#   （WAL 外送、物理基线）**各自都能独立地坏**，且坏法不同：
+#     · 外送停 ⇒ 归档段只活在容器可写层，`docker rm` 即丢（无异地副本）；
+#     · 基线停 ⇒ 只剩增量、没有可恢复的起点（有归档也回不去）。
+#   合并成一个计数器后，「备份 OK」会把「PITR 已残废」一起说成好的。
+PITR_RUNS = _Counter(
+    "pitr_runs_total",
+    "PITR 任务执行次数（kind=wal_fetch / basebackup，status=ok / failed）",
+    ("kind", "status"),
+)
+# ★ 为什么归档体积要单独一个 gauge：`pitr_runs_total{kind=wal_fetch}` 只说明
+#   "外送这个动作跑过"，答不了"归档是不是真的在长"。长期一个数 ⇒ 归档停了
+#   （archive_mode 被改回 off / 归档目录满了），而任务每天照样"成功"。
+PITR_WAL_ARCHIVE_BYTES = _Gauge(
+    "pitr_wal_archive_bytes",
+    "宿主 WAL 归档目录累计字节数（0 = 尚无归档）",
+    (),
+)
+
 # 对外暴露的顺序（/metrics 输出顺序稳定，便于 diff）
 _REGISTRY = (
     HTTP_REQUESTS,
@@ -398,6 +419,8 @@ _REGISTRY = (
     IDENTITY_PURGE_DELETED,
     BACKUP_RUNS,
     BACKUP_LAST_BYTES,
+    PITR_RUNS,
+    PITR_WAL_ARCHIVE_BYTES,
     DEPENDENCY_UP,
 )
 

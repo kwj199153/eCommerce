@@ -36,6 +36,25 @@ JSON 示例。所以这里的契约是：
 ★ 与 `ai_infra.prompt_sections` 的分工：那边管「system prompt 的**外部段落**」
 （跨会话记忆这类按人注入的增益块），这边管「业务提示词**模板正文**」。
 两者重名判据本轮统一为「当场 raise」。
+
+**④ 为什么还要「留痕日志」（第 351 轮 · L3-4）？**
+
+①②给了 `version` / `fingerprint`，但**没有任何一处会把它打出来** —— 于是
+线上回答质量突变时，仍然只能翻 git log 猜。留痕把这件事变成一次 `grep`：
+
+    ... | ab12cd34 | - | INFO | ai_infra.llm.prompt_spec:render_prompt - 
+    prompt rendered: name=... v3 fingerprint=9f2c... chars=4211 vars=['...']
+
+* 级别取 **INFO 而不是 DEBUG**：生产默认 `log_level=INFO`
+  （`core/logger.py::_add_sinks`），写 DEBUG 等于「写了但线上永远不打印」——
+  正是本仓 L3-1 / L3-2 归案的那类「配置写了却从未生效」。
+* 落点是 `render_prompt()`（全仓**唯一**的渲染实现），不是 `get_prompt_template()`
+  —— 因为消费方会把返回值再加工成普通 `str`（例如把店铺事实拼在后面），
+  元数据在那一层就丢了；埋在渲染点才能保证「每一次渲染都有痕」。
+* `request_id` 由 `core/logger.py` 的 patcher 自动注入**每一条**日志
+  （见 `core/observability/context.py` 模块 docstring），所以
+  「**某个请求用了哪一版提示词**」天然可串 —— 与 L3-3 的 `X-Request-ID` 同源。
+* **只记变量名、不记变量值**：值是业务数据，日志不该承载它。
 """
 
 from __future__ import annotations
@@ -44,6 +63,8 @@ import hashlib
 import string
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Tuple
+
+from core.logger import get_logger
 
 __all__ = [
     "PromptSpec",
@@ -58,6 +79,11 @@ _FORMATTER = string.Formatter()
 
 #: 指纹长度（12 hex = 48 bit，碰撞概率对「几百份提示词」量级可忽略）
 FINGERPRINT_LEN = 12
+
+#: ★ L3-4（第 351 轮）：`core.logger.get_logger()` 返回的是 **loguru** ——
+#: 占位符走 `str.format`（f-string / `{}`），**不要写 `%s`**：loguru 遇到 `%s`
+#: 不报错，但参数被静默丢弃，日志原样打出 `%s`。
+logger = get_logger(__name__)
 
 
 class PromptSpecError(ValueError):
@@ -262,4 +288,13 @@ def render_prompt(spec: PromptSpec, **kwargs: Any) -> RenderedPrompt:
         used[var] = value
         text = text.replace("{" + var + "}", str(value))
 
-    return RenderedPrompt(text, spec=spec, values=used)
+    rendered = RenderedPrompt(text, spec=spec, values=used)
+    # ★ L3-4（第 351 轮）：渲染留痕。级别**必须** INFO —— 生产默认
+    #   `log_level=INFO`（`core/logger.py::_add_sinks`），写 DEBUG 等于
+    #   「写了但线上永远不打印」，正是 L3-1 / L3-2 那类失效。
+    #   只记**变量名**、不记变量值：值是业务数据，日志不该承载它。
+    logger.info(
+        f"prompt rendered: name={spec.name} v{spec.version} "
+        f"fingerprint={spec.fingerprint} chars={len(rendered)} vars={sorted(used)}"
+    )
+    return rendered

@@ -43,12 +43,39 @@
  * 防止正则写错成恒真（「没有反例的断言 = 没有断言」）。
  *
  * 用法：node scripts/check-handoff-clarification.cjs   （0 = 通过；1 = 有退化）
+ *
+ * ## 读集注入开口（★ 第 351 轮 L3-11：零副作用自证）
+ *
+ * 扫描根可用环境变量指向**空源**（空目录 / 空文件）。空源时本门禁**必须变红** ——
+ * 仍绿即说明判据没真读它（fail-open）。
+ * ★ 边界：空源注入只能**证伪**（证明判据读了内容），**不证明**它读对了字段。
+ *
+ *   HANDOFF_FE_ROOT=<副本或空目录>    ⇒ ① …⑨ 全线红（四个源文件读不到）
+ *
  */
 const fs = require('fs')
 const path = require('path')
 
-const FE = path.resolve(__dirname, '..')
-const read = p => fs.readFileSync(path.join(FE, p), 'utf8')
+/** ★ 第 351 轮 L3-11：读集注入开口 —— 把扫描根指向副本树 / 空源，用于零副作用自证。
+ *  空源（空目录 / 空文件）时本门禁**必须变红**；仍绿即说明判据没真读它。 */
+const pick = (env, fallback) =>
+  process.env[env] ? path.resolve(process.env[env]) : fallback
+
+const FE = pick('HANDOFF_FE_ROOT', path.resolve(__dirname, '..'))
+/**
+ * ★ 第 351 轮 L3-11：读不到源 ⇒ 打印**可读 FAIL** 后退出（不再抛裸异常）。
+ * 裸异常只有栈、没有「哪条判据红了」——外部聚合会把「门禁坏了」误当成「真红」。
+ * 「拿不到权威清单 ≠ 清单为空」⇒ 红也要红得可读，且绝不放行。
+ */
+const read = (p) => {
+  try {
+    return fs.readFileSync(path.join(FE, p), 'utf8')
+  } catch (e) {
+    console.log(`  FAIL  读不到源文件：${p}`)
+    console.log(`        ${e.code || 'ENOENT'} —— 本门禁靠它做判定，拿不到不许放行`)
+    process.exit(1)
+  }
+}
 
 /**
  * 剥离注释：`//` 行注释、块注释、HTML 注释。

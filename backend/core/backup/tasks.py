@@ -62,7 +62,12 @@ from typing import Any, Dict
 
 from core.config import config
 from core.logger import get_logger
-from core.observability.metrics import BACKUP_LAST_BYTES, BACKUP_RUNS
+from core.observability.metrics import (
+    BACKUP_LAST_BYTES,
+    BACKUP_RUNS,
+    PITR_RUNS,
+    PITR_WAL_ARCHIVE_BYTES,
+)
 from core.redis import celery_app
 
 logger = get_logger("backup.tasks")
@@ -76,10 +81,23 @@ logger = get_logger("backup.tasks")
 #: ⇒ 由 `tests/test_backup_schedule.py` 把两边**钉成相等**（不是靠注释提醒）。
 TASK_DB_BACKUP = "backup.db_daily"
 
+#: PITR 的两个任务名（第 351 轮 / P0-2）。同样在 `core/redis.py::beat_schedule`
+#: 里以**字面量**出现 ⇒ 由 `tests/test_pitr.py` 钉成相等。
+#: ★ 为什么是**两个**任务而不是一个：它们的失效面不重叠 ——
+#:   · 外送停 ⇒ 归档段只活在容器可写层，`docker rm` 即丢（等于没有异地副本）；
+#:   · 基线停 ⇒ 有归档也没有可恢复的起点。
+#:   合并成一个任务后，其中一半坏掉时另一半的"成功"会把它盖住。
+TASK_PG_BASEBACKUP = "backup.pg_basebackup_weekly"
+TASK_WAL_FETCH = "backup.wal_archive_fetch"
+
 #: 仓库 `backend/` 目录（本文件在 `core/backup/` 下 ⇒ parents[2]）。
 BACKEND = Path(__file__).resolve().parents[2]
 #: 备份脚本（核）。零第三方依赖：只用标准库 + docker CLI。
 BACKUP_SCRIPT = BACKEND / "scripts" / "backup_db.py"
+#: PITR 脚本（核）：WAL 归档 / 物理基线 / 恢复演练。
+PITR_SCRIPT = BACKEND / "scripts" / "pg_pitr.py"
+#: 宿主 WAL 外送目录（`archive-fetch` 的落点，同时也被 `pitr_wal_archive_bytes` 度量）。
+WAL_ARCHIVE_DIR = BACKEND.parent / "backups" / "wal"
 
 #: 子进程超时（秒）。★ 必须**严格小于** Celery 的 `task_time_limit`（1800s，
 #: 见 `core/redis.py`）：否则超时那一刻先被 Celery 硬杀（任务被标 FAILURE 但
@@ -179,4 +197,115 @@ def db_backup_daily(self) -> Dict[str, Any]:
         config.db_backup_keep,
         elapsed_ms,
     )
+    return {"ok": True, **info, "elapsed_ms": elapsed_ms}
+
+
+# ===========================================================================
+# PITR：WAL 归档外送 + 周度物理基线（第 351 轮 / P0-2）
+# ===========================================================================
+# ★ 为什么逻辑备份（上面那条）已经在了，还要这两条：
+#   `pg_dump` 的恢复粒度 = **一次 dump 的瞬间**。它答不了「恢复到 14:02，
+#   但 14:00 之后新签的两单要保留」—— 那需要「物理基线 + 之后每个 WAL 段」。
+#   完整理由见 `scripts/pg_pitr.py` 的文件头。
+#
+# ★ 与 `db_backup_daily` 的**结构差异**：那一条用 `BACKUP_RUNS`（单标签），
+#   这一组用 `PITR_RUNS{kind,status}` —— 因为外送与基线**各自能独立地坏**，
+#   合并计数会让「一半坏了」被另一半的成功盖住。
+# ===========================================================================
+
+#: PITR 子进程超时（秒）。外送要 `docker cp`（可能是几百 MB 的段积压），
+#: 给得比每日 dump 更宽松；同样必须**严格小于** Celery 的 1800s 硬限。
+PITR_TIMEOUT_SECONDS = int(os.getenv("PG_PITR_TIMEOUT_SECONDS", "1500") or "1500")
+
+
+def _run_pitr(subcmd: str, *extra: str) -> Dict[str, Any]:
+    """跑一次 `pg_pitr.py <subcmd>`；**非 0 退出码一律抛错**。
+
+    ★ 与 `_run_backup` 同款取舍：脚本对外唯一稳定的契约是**退出码**
+      （0=成功 / 1=参数与环境错误 / 2=校验失败），所以用子进程而不是 import。
+      退出码必须翻译成异常 —— 吞掉它就会把「校验失败」记成「成功」。
+    """
+    if not PITR_SCRIPT.is_file():
+        raise FileNotFoundError(f"PITR 脚本不存在：{PITR_SCRIPT}")
+
+    proc = subprocess.run(
+        [sys.executable, str(PITR_SCRIPT), subcmd, *extra],
+        cwd=str(BACKEND),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=PITR_TIMEOUT_SECONDS,
+    )
+    if proc.returncode != 0:
+        tail = ((proc.stderr or "") + (proc.stdout or "")).strip()[-800:]
+        raise RuntimeError(
+            f"pg_pitr.py {subcmd} 退出码={proc.returncode}"
+            f"（0=成功 / 1=参数与环境错误 / 2=校验失败）。尾部输出：{tail}"
+        )
+    out = (proc.stdout or "").strip()
+    picked = ""
+    for line in out.splitlines():
+        if line.startswith("RESULT: OK"):
+            picked = line.split("RESULT: OK", 1)[1].strip()
+    return {"subcmd": subcmd, "detail": picked}
+
+
+def _wal_archive_bytes() -> int:
+    """宿主归档目录累计字节数（读不到返回 0）。"""
+    try:
+        return sum(p.stat().st_size for p in WAL_ARCHIVE_DIR.glob("*") if p.is_file())
+    except OSError:
+        return 0
+
+
+@celery_app.task(bind=True, name=TASK_WAL_FETCH)
+def wal_archive_fetch(self) -> Dict[str, Any]:
+    """beat 入口：把容器内的 WAL 归档段**外送**到宿主。
+
+    ★ 频率远高于每日 dump（默认每 15 分钟）：归档段落在**容器可写层**
+      （`my-postgres` 是 `docker run` 手工建的，没有第二个挂载点），
+      `docker stop/start` 不丢、`docker rm` 全丢 ⇒ 外送窗口越短越安全。
+    """
+    started = time.perf_counter()
+    try:
+        info = _run_pitr("archive-fetch")
+    except Exception:  # noqa: BLE001 —— 记完指标再原样抛出
+        PITR_RUNS.inc(kind="wal_fetch", status="failed")
+        logger.exception("WAL 归档外送失败")
+        raise
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    PITR_RUNS.inc(kind="wal_fetch", status="ok")
+    total = _wal_archive_bytes()
+    # ★ 体积单独一个 gauge：`runs{status=ok}` 只说明"外送这个动作跑过"，
+    #   答不了"归档是不是真的在长"。长期一个数 ⇒ 归档实际上停了。
+    PITR_WAL_ARCHIVE_BYTES.set(total)
+    logger.info(
+        "WAL 归档外送完成：{}（宿主累计 {} bytes），耗时 {}ms", info["detail"], total, elapsed_ms
+    )
+    return {"ok": True, **info, "archive_bytes": total, "elapsed_ms": elapsed_ms}
+
+
+@celery_app.task(bind=True, name=TASK_PG_BASEBACKUP)
+def pg_basebackup_weekly(self) -> Dict[str, Any]:
+    """beat 入口：每周取一份 `pg_basebackup` 物理基线。
+
+    ★ 为什么物理基线是**必需**的（不是"dump 已经够了"）：PITR 的等式是
+      「基线 + 基线之后的 WAL 段」。只有 WAL 段而没有基线，等于有一堆
+      增量却没有可以回放的起点 —— 恢复不了任何东西。
+    ★ 为什么是**每周**：基线的体积 ~= 全库，而它只提供"从哪开始回放"。
+      真正的恢复能力由 WAL 段提供；基线取太密是纯粹的 IO 浪费。
+    """
+    started = time.perf_counter()
+    try:
+        info = _run_pitr("basebackup")
+    except Exception:  # noqa: BLE001 —— 记完指标再原样抛出
+        PITR_RUNS.inc(kind="basebackup", status="failed")
+        logger.exception("PITR 物理基线失败")
+        raise
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    PITR_RUNS.inc(kind="basebackup", status="ok")
+    logger.info("PITR 物理基线完成：{}，耗时 {}ms", info["detail"], elapsed_ms)
     return {"ok": True, **info, "elapsed_ms": elapsed_ms}
