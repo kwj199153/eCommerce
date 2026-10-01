@@ -10,6 +10,9 @@
 #  ★ 有意不加 `* text=auto eol=lf`：那会让仓库里已有的 CRLF
 #    文件在下次 checkout 时批量重写，产生一个几百文件的"假改动"
 #    提交。这里只对「必须精确控制换行」的类型下规则。
+#    ▶ 第 347 轮更新：上面这个顾虑**已用数据排除**，见本文件末尾
+#      「源码 / 配置 / 文档：统一 LF」段 —— 实测 `i/crlf` = 0 个，
+#      下 eol=lf 规则不会触发任何 renormalize 假改动。
 # ============================================================
 
 # shell 脚本必须 LF，否则 git hook 直接报 bad interpreter
@@ -19,6 +22,45 @@
 # Windows 批处理必须 CRLF，否则 cmd 可能解析异常
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# ------------------------------------------------------------
+#  源码 / 配置 / 文档：统一 LF（2026-10-01 第 347 轮补）
+# ------------------------------------------------------------
+#  为什么必须补：本机 `core.autocrlf = true`，而上面刻意没给这些类型下规则，
+#  于是**全新检出**（`git clone` / `git worktree add`）会把它们变成 CRLF。
+#  后果不是"不美观"，而是**门禁按检出状态决定红绿**：
+#    · backend/tests/test_agent_session_state.py::test_state_module_line_endings_stay_lf
+#    · backend/tests/test_agent_context_trim.py::test_context_file_shape_is_stable
+#    · backend/tests/test_agent_budget.py::test_budget_file_shape_is_stable
+#  这三条断言的是 `ai_infra/{session_state,context,budget}.py` 磁盘字节不含 CRLF
+#  —— 在 CRLF 检出下**必红**，且看起来像"有人破坏了 LF 契约"，实为检出伪影。
+#
+#  ★ 为什么下这些规则是**零代价**的（第 347 轮实测，不是推测）：
+#    `git ls-files --eol` 全仓 1041 个被跟踪文件里 `i/crlf` = **0 个**
+#    （blob 全是 LF）。eol=lf 只影响"未来检出成什么"，不改 blob，
+#    所以不会产生 renormalize 假改动。
+#    注：worktree 侧曾有 343 个 CRLF —— 那是**检出态**（历史 checkout 的产物），
+#    不是 blob，与本规则无关；本规则恰恰是让它以后不再发生。
+# ------------------------------------------------------------
+*.py     text eol=lf
+*.ts     text eol=lf
+*.tsx    text eol=lf
+*.vue    text eol=lf
+*.js     text eol=lf
+*.mjs    text eol=lf
+*.cjs    text eol=lf
+*.css    text eol=lf
+*.json   text eol=lf
+*.md     text eol=lf
+*.html   text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.toml   text eol=lf
+*.ini    text eol=lf
+*.sql    text eol=lf
+*.txt    text eol=lf
+*.cfg    text eol=lf
+*.example text eol=lf
 
 # 二进制：不做任何换行/文本处理（避免 git 试图"修正"它们）
 *.png  binary
