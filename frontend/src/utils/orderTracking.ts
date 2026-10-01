@@ -72,6 +72,10 @@ export function orderStatusIcon(status?: string): string {
  * ★ 不写 `Number(total || 0).toFixed(2)` —— 那会把「后端没给金额」渲染成
  *   `$0.00`（编造一个具体数字），且真实币种未必是 USD。后端已给 `total_text`
  *   （带币种、查不到时是「—」），优先用它。
+ *
+ * ★ 第 357 轮：`orderFields()` 的 `total_text` 走 `text(orderAmountText(o))`
+ *   ⇒ 这里返回的 `'—'` 在**清单**里被归一成 `''`（不成行），与其它字段同口径。
+ *   本函数自身仍返回 `'—'`（它是「给人看的金额文案」，语义未变）。
  */
 export function orderAmountText(order: any): string {
   if (order?.total_text) return order.total_text
@@ -100,7 +104,12 @@ export function orderHeader(order: any): OrderHeader {
 
 const DASH = '—'
 
-/** 有值才成行：空串 / undefined / null / 'N/A' / '—' 一律丢弃（**不补占位**）。 */
+/**
+ * 有值才成行：空串 / undefined / null / 'N/A' / '—' 一律丢弃（**不补占位**）。
+ *
+ * ★ 第 357 轮起**无例外**：`total_text` 曾绕过本函数直接返回 `'—'`
+ *   （界面上「金额 | —」永远存在），现已与其它字段统一走本函数。
+ */
 function text(v: unknown): string {
   if (v === null || v === undefined) return ''
   const s = String(v).trim()
@@ -152,7 +161,10 @@ const ORDER_FIELD_SPECS: OrderFieldSpec[] = [
   },
   {
     key: 'total_text', label: '金额', group: 'base', emphasis: true, summary: true,
-    pick: (o) => orderAmountText(o),
+    // ★ 第 357 轮统一口径：`orderAmountText()` 查不到金额时返回 `'—'`（非空），
+    //   直接当值会让「金额 | —」这一行**永远存在** —— 成为「有值才成行」
+    //   的唯一例外。过一道 `text()` ⇒ `'—'` / `'N/A'` / 空串一律不成行。
+    pick: (o) => text(orderAmountText(o)),
   },
   { key: 'shipping_to', label: '收货地', group: 'base', summary: true, pick: (o) => text(o?.shipping_to) },
 
@@ -212,7 +224,7 @@ export interface OrderField {
   group: Exclude<OrderFieldGroup, 'header'>
 }
 
-/** 订单字段清单（**有值才成行**）—— 四个消费方共用的唯一真源。 */
+/** 订单字段清单（**有值才成行，无例外**）—— 四个消费方共用的唯一真源。 */
 export function orderFields(order: any): OrderField[] {
   const out: OrderField[] = []
   for (const s of ORDER_FIELD_SPECS) {

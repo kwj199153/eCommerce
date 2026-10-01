@@ -157,26 +157,31 @@ describe('orderTracking · 字段清单「有值才成行」（★ 不补占位�
       carrier: null,
       tracking_number: undefined,
     }).map((f) => f.key)
-    // `total_text` 是唯一例外（见下面单独那条），先把它剔掉看其余字段的口径
-    expect(keys.filter((k) => k !== 'total_text')).toEqual([])
+    expect(keys).toEqual([])
   })
 
   it('★ 正整数守卫：quantity / transit_days 为 0 或负数或非数字 ⇒ 丢（不是渲染成 0 件）', () => {
     const keys = orderFields({ quantity: 0, transit_days: -1, delay_days: 'abc' }).map((f) => f.key)
-    expect(keys.filter((k) => k !== 'total_text')).toEqual([])
+    expect(keys).toEqual([])
   })
 
-  it('★★ 例外：`total_text` **始终成行**，缺金额时值是「—」（不是被丢弃）', () => {
-    // ★ 这是本模块唯一的「有值才成行」例外，实测得出（写本文件时才发现）：
-    //   `total_text` 的 pick 走 `orderAmountText()`，而它在 `total` 缺失时返回 `'—'`
-    //   —— 沿用**后端语义**：后端自己的 `total_text` 在查不到时也是 `'—'`。
-    //   ⇒ 「金额」这一行永远存在，用 `—` 表达「查了但没查到」。
-    //   与 `text()` 的「'—' 也丢弃」口径不同，是**刻意的**：金额是用户必看的项，
-    //   缺了要说「没有」，而不是整行消失。
-    //   ★ 若哪天改成统一口径，这两条会红 —— 那时请连同本注释一起改（别只改断言）。
+  it('★★ 无例外：缺金额时「金额」也不成行（与其它字段同口径）', () => {
+    // ★ 第 357 轮修正。此前 `total_text` 的 pick 直接返回 `orderAmountText()`，
+    //   而它在拿不到金额时返回 `'—'`（**非空字符串**）⇒ 过得了 `if (!value) continue`，
+    //   界面上「金额 | —」这一行**永远存在**，成了「有值才成行」的唯一例外。
+    //   现在 pick 统一过一道 `text()` ⇒ `'—'` 被归一成 `''` ⇒ 不成行。
+    //   （同步点：`check-order-track-parity.cjs` 的 T3 白名单也已删除。）
     const empty = orderFields({ product_name: 'X' })
-    expect(empty.map((f) => f.key)).toEqual(['product_name', 'total_text'])
-    expect(empty.find((f) => f.key === 'total_text')?.value).toBe('—')
+    expect(empty.map((f) => f.key)).toEqual(['product_name'])
+
+    // ★ 反向自证：不是「整条清单都空」而碰巧通过 —— 给了金额就必须成行。
+    const amount = orderFields({ product_name: 'X', total_text: '$9.99' })
+      .find((f) => f.key === 'total_text')
+    expect(amount?.value).toBe('$9.99')
+    // 后端只给原始 `total`（无 `total_text`）时也成行（走 `orderAmountText()` 兜底分支）
+    const fallback = orderFields({ product_name: 'X', total: 12.5 })
+      .find((f) => f.key === 'total_text')
+    expect(fallback?.value).toBe('12.50')
   })
 
   it('数量与天数带单位渲染', () => {

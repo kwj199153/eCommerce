@@ -250,15 +250,17 @@ check('T2 规格表自洽：满值订单能产出的键 == 非 header 的规格�
 })
 
 // ---------------------------------------------------------------- T3
-check('T3 有值才成行：空订单不得凭空冒出字段', () => {
+check('T3 有值才成行（无例外）：空订单不得凭空冒出字段', () => {
   const fields = MOD.orderFields({})
   const logistics = fields.filter((f) => f.group === 'logistics')
   assert(
     logistics.length === 0,
     `空订单不该有物流行（不许编造轨迹）：${logistics.map((f) => f.label).join(' / ')}`,
   )
-  const allowedBase = ['total_text']
-  const extra = fields.filter((f) => f.group === 'base' && !allowedBase.includes(f.key))
+  // ★ 第 357 轮：原先这里豁免 `total_text`（它的 pick 绕过 `text()` 直接吐 `'—'`
+  //   ⇒ 空订单也会有一行「金额 | —」）。口径统一后不再有白名单：
+  //   空订单的 base 组必须**一项都没有**。
+  const extra = fields.filter((f) => f.group === 'base')
   assert(
     !extra.length,
     `空订单冒出了基础字段：${extra.map((f) => f.key).join(' / ')}（拿不到就该留空）`,
