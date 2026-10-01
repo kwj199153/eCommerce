@@ -57,6 +57,8 @@ import importlib
 import inspect
 import pathlib
 
+from pkg_source import class_mro_body, parse_module  # noqa: E402
+
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
 
 # ---- 工具注册表清单（变量名 → 模块路径）----
@@ -391,33 +393,73 @@ def test_registry_lists_agree_with_tool_registry_guard():
 ROUTER_COVERAGE_BASELINE = 3
 
 
-def _agent_classes() -> "dict[str, ast.ClassDef]":
-    """全仓 `modules/**` 下直接继承 `BaseAgent` 的类 → {相对路径: ClassDef}。
+def _source_units() -> "list[tuple[str, ast.Module]]":
+    """`modules/**` 的源码**逻辑单元** → [(相对路径, 该单元的 AST)]。
+
+    **单元** = 一个独立 `.py`，**或**一个包目录（包内全部 `.py` 合并成一棵 AST）。
+
+    ★ 为什么必须按「包」合并（第 356 轮实测的真回归）：
+      `agent_cs.py` 拆成 `agent_cs/` 包后，`CustomerServiceAgent` 住在
+      `__init__.py`、它的基类 mixin 住在同包 `core.py`。**逐文件解析**时
+      基类名在同文件里解析不到 ⇒ `_assembly_facts` 只能退回「只看类体」⇒
+      装配点全丢（`N_gated` 从 1 掉到 0，用例转红）。
+      合并成一棵树后，`pkg_source.class_mro_body` 才能按名解析到 mixin。
+
+    ★ 逻辑路径用**拆包前**的形态（`…/agent_cs.py`）而不是 `…/agent_cs/__init__.py`：
+      报错文案在拆包前后**同形**，对照历史记录时不会误判成「换了个 Agent」。
+      这也正是 `pkg_source.source_files` 的双态契约（传 `.py` 名也能解析到同名包）。
+    """
+    mods = BACKEND / "modules"
+    units: list[tuple[str, ast.Module]] = []
+    for p in sorted(mods.rglob("*.py")):
+        if "__pycache__" in p.parts:
+            continue
+        is_pkg_init = p.name == "__init__.py" and p.parent != mods
+        # 包内文件由「包单元」统一处理（否则同一份代码被两个单元各解析一次）
+        if p.name != "__init__.py" and (p.parent / "__init__.py").is_file():
+            continue
+        rel = (p.parent if is_pkg_init else p).relative_to(BACKEND)
+        units.append((rel.as_posix() + ".py", parse_module(rel)))
+    return units
+
+
+def _agent_classes() -> "dict[str, tuple[ast.Module, ast.ClassDef]]":
+    """全仓 `modules/**` 下直接继承 `BaseAgent` 的类 → {相对路径: (AST, ClassDef)}。
 
     ★ 动态发现而不是写死名单：新增一个业务 Agent 时它**自动**进入扫描面。
       写死名单的门禁在新增模块上会静默放行 —— 本仓有过先例（批 B1 补登两张
       secretary 注册表之前，那两张表在 `test_tool_registry_guard` 里是真空区）。
+
+    ★ 返回值带 `tree`（第 356 轮）：`_assembly_facts` 需要用它调
+      `pkg_source.class_mro_body` 拿「类 + 递归基类」的作用域节点 —— 拆包后
+      装配点住在 mixin 里，只看 `ClassDef.body` 必然空。
     """
-    out: dict[str, ast.ClassDef] = {}
-    for p in (BACKEND / "modules").rglob("*.py"):
-        if "__pycache__" in p.parts:
-            continue
-        try:
-            tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"), str(p))
-        except SyntaxError:  # pragma: no cover
-            continue
-        for n in tree.body:
+    out: dict[str, tuple[ast.Module, ast.ClassDef]] = {}
+    for rel, tree in _source_units():
+        matched = [
+            n for n in tree.body
             if isinstance(n, ast.ClassDef) and any(
                 (isinstance(b, ast.Name) and b.id == "BaseAgent")
                 or (isinstance(b, ast.Attribute) and b.attr == "BaseAgent")
                 for b in n.bases
-            ):
-                out[str(p.relative_to(BACKEND))] = n
+            )
+        ]
+        # ★ 不静默丢弃：同一单元出现多个业务 Agent 类时，按 rel 建键会只剩最后一个
+        assert len(matched) <= 1, (
+            f"{rel} 里有 {len(matched)} 个直接继承 BaseAgent 的类 "
+            f"{[n.name for n in matched]} —— 本判据按「一个单元一个 Agent 类」建键，"
+            "多个会**静默只分析最后一个**。请先确认这个形态再放宽本断言。"
+        )
+        for n in matched:
+            out[rel] = (tree, n)
     return out
 
 
-def _alias_map(cls: ast.ClassDef) -> "dict[str, ast.AST]":
-    """类体内 `x = <expr>` → {x: expr}（含方法体内的赋值）。
+def _alias_map(nodes: "list[ast.AST]") -> "dict[str, ast.AST]":
+    """类作用域内 `x = <expr>` → {x: expr}（含方法体内的赋值）。
+
+    ★ 参数是**类作用域节点列表**（`class_mro_body` 的产物），不是单个 `ClassDef`
+      —— 拆包后赋值语句住在 mixin 里（第 356 轮）。
 
     ★ 为什么需要它：`secretary.__init__` 写的是
       `product_tools = build_product_tools(shop_id)`，随后
@@ -427,18 +469,26 @@ def _alias_map(cls: ast.ClassDef) -> "dict[str, ast.AST]":
       的后果**天差地别**：前者是解析器盲区，后者才是真缺陷。
     """
     alias: dict[str, ast.AST] = {}
-    for sub in ast.walk(cls):
-        if (
-            isinstance(sub, ast.Assign)
-            and len(sub.targets) == 1
-            and isinstance(sub.targets[0], ast.Name)
-        ):
-            alias.setdefault(sub.targets[0].id, sub.value)
+    for node in nodes:
+        for sub in ast.walk(node):
+            if (
+                isinstance(sub, ast.Assign)
+                and len(sub.targets) == 1
+                and isinstance(sub.targets[0], ast.Name)
+            ):
+                alias.setdefault(sub.targets[0].id, sub.value)
     return alias
 
 
-def _assembly_points(cls: ast.ClassDef) -> "list[tuple[ast.Call, str, set[str]]]":
-    """类体内的「装配点」→ [(Call 节点, 类别, 装配的注册表变量集合)]。
+def _assembly_points(nodes: "list[ast.AST]") -> "list[tuple[ast.Call, str, set[str]]]":
+    """类作用域内的「装配点」→ [(Call 节点, 类别, 装配的注册表变量集合)]。
+
+    ★ 参数是**类作用域节点列表**（`class_mro_body` 的产物），不是单个 `ClassDef`：
+      拆包后 `CustomerServiceAgent` 的类体是空的，装配点
+      （`super().__init__(tools=...)` / `BaseAgent(tools=...)`）住在
+      `MixinCore.__init__`（同包 `core.py`）里 ⇒ 只 walk 类体会返回**空列表**，
+      于是 `test_assembly_surface_three_counts_agree` 的 `N_gated` 归零
+      （用例记的基线 2/1/1 ⇒ 那唯一的 1 正是 customer_service）⇒ 转红。
 
     装配点 = `BaseAgent(...)` 或 `super().__init__(...)` 且带 `tools=` 实参。
     ★ 必须把 `super().__init__` 一起吃进来：旧门禁
@@ -447,7 +497,7 @@ def _assembly_points(cls: ast.ClassDef) -> "list[tuple[ast.Call, str, set[str]]]
       「`super().__init__(tools=..., checkpointer=...)`」写法在它眼里**不存在**
       —— 那正是本仓最警惕的「门禁真空区」。
     """
-    alias = _alias_map(cls)
+    alias = _alias_map(nodes)
 
     def expand(node: ast.AST) -> set[str]:
         if isinstance(node, ast.Name):
@@ -468,16 +518,17 @@ def _assembly_points(cls: ast.ClassDef) -> "list[tuple[ast.Call, str, set[str]]]
 
     reg_vars = {attr for _modpath, attr in REGISTRIES}
     pts = []
-    for sub in ast.walk(cls):
-        if not isinstance(sub, ast.Call):
-            continue
-        fname = ast.unparse(sub.func)
-        if not (fname.endswith("BaseAgent") or fname.endswith("super().__init__")):
-            continue
-        kw = {k.arg: k for k in sub.keywords if k.arg}
-        if "tools" not in kw:
-            continue
-        pts.append((sub, fname, expand(kw["tools"].value) & reg_vars))
+    for node in nodes:
+        for sub in ast.walk(node):
+            if not isinstance(sub, ast.Call):
+                continue
+            fname = ast.unparse(sub.func)
+            if not (fname.endswith("BaseAgent") or fname.endswith("super().__init__")):
+                continue
+            kw = {k.arg: k for k in sub.keywords if k.arg}
+            if "tools" not in kw:
+                continue
+            pts.append((sub, fname, expand(kw["tools"].value) & reg_vars))
     return pts
 
 
@@ -503,19 +554,24 @@ def _assembly_facts() -> dict:
     from ai_infra.tools.side_effects import has_side_effects
 
     facts: dict[str, dict] = {}
-    for rel, cls in sorted(_agent_classes().items()):
+    for rel, (tree, cls) in sorted(_agent_classes().items()):
+        # ★ 类**作用域**（自身 + 递归基类/mixin），不是 `cls.body`：拆包后
+        #   `CustomerServiceAgent` 的类体几乎是空的，方法住在各 mixin 里。
+        nodes = class_mro_body(tree, cls.name)
+        assert nodes is not None, f"{rel}: 合并 AST 里找不到类 {cls.name}（读取点失配）"
         methods = {
-            m.name for m in cls.body
+            m.name for m in nodes
             if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         defines_router = "_build_router" in methods
         calls_router = any(
             isinstance(sub, ast.Call)
             and ast.unparse(sub.func) in ("self._build_router", "_build_router")
-            for sub in ast.walk(cls)
+            for node in nodes
+            for sub in ast.walk(node)
         )
 
-        pts = _assembly_points(cls)
+        pts = _assembly_points(nodes)
         gated_pts = []          # 装配了含副作用注册表的装配点
         naked_gated_pts = []    # 其中没绑真 checkpointer 的
         for call, where, vars_ in pts:

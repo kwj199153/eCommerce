@@ -37,6 +37,10 @@ import pytest
 from modules.trade import service as svc
 
 BACKEND = Path(__file__).resolve().parents[1]
+
+# ★ 第 355 轮拆包：本文件要读 trade **服务层整包**的源码（唯一读取点在
+#   `tests/trade_service_src.py`）。
+from trade_service_src import read_service_source  # noqa: E402
 SHOP = "store_unit_test"
 REVIEW_ID = "crev-amazon-R1DEMO0001"
 SKU = "SKU-KC-002"
@@ -99,8 +103,9 @@ def _stub(monkeypatch, *, cause=CAUSE, count=1, health=None) -> _CountSession:
             return {"found": False, "sku": sku, "error": "该 SKU 还没算过健康分"}
         return {"found": True, "sku": sku, **health}
 
-    monkeypatch.setattr(svc, "get_review_context", _ctx)
-    monkeypatch.setattr(svc, "get_sku_health_score", _health)
+    # ★ 拆包后打桩必须打在**调用点所在子模块** `systemic` 上（不是包门面）。
+    monkeypatch.setattr(svc.systemic, "get_review_context", _ctx)
+    monkeypatch.setattr(svc.systemic, "get_sku_health_score", _health)
     return _CountSession(count)
 
 
@@ -331,7 +336,7 @@ def test_threshold_has_single_definition():
       `>= 3`，把常量改成 5 时**判定用例不红** —— 真判据走的是那个硬编码。
       所以判据要钉的不只是「有常量」，而是「**没有第二个数**」。
     """
-    src = (BACKEND / "modules" / "trade" / "service.py").read_text(encoding="utf-8")
+    src = read_service_source()
     assert src.count("REPEAT_ISSUE_THRESHOLD = ") == 1, "阈值出现了多处定义"
     tree = ast.parse(src)
     # `count_repeat_issues` 函数体里不得再有裸的数字比较

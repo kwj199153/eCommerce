@@ -43,10 +43,12 @@ from modules.trade import service as svc
 from modules.trade.db_model import CustomerReviewRecord
 
 BACKEND = Path(__file__).resolve().parents[1]
-SERVICE_SRC = (
-    (BACKEND / "modules" / "trade" / "service.py")
-    .read_bytes().decode("utf-8").replace("\r\n", "\n")
-)
+# ★ 第 355 轮：`trade/service.py`（2535 行）已拆成 `trade/service/` 包
+#   ⇒ 源码判据改读**整个包**。拼包口径收口在 `tests/trade_service_src.py`，
+#   免得四个门禁各写一份「怎么拼」（同一判定多份实现 = 必然漂移）。
+from trade_service_src import read_service_source  # noqa: E402
+
+SERVICE_SRC = read_service_source()
 ROUTER_SRC = (
     (BACKEND / "modules" / "trade" / "router.py")
     .read_bytes().decode("utf-8").replace("\r\n", "\n")

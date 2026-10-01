@@ -266,6 +266,30 @@
 >   定义，而不是按「今天谁受害」定义（basetemp 里写什么由**门禁自己的元测试**决定，
 >   下一轮换个断言就换一份内容）。
 > 结论落 `docs/reviews/2026-10-01-第354轮-P1-3与P3落地.md` §11。
+>
+> **更新 · 第 356 轮**：**拆包收尾 + 两项细化**（「代码卫生与体量」/「前端自动化测试」）。本节同步：
+> ① **修掉拆包引入的真回归**（`test_thinking_trace.py` 3 条红，实测抓到）：
+>    扫描面写死 `modules/**/agent*.py` ⇒ 拆包后类住在 `agent_cs/__init__.py`，**文件名不再匹配**；
+>    更本质的是判据假设「一个类 = 一个文件」⇒ 类体（几乎空的 mixin 组装）里找不到 `stream_chat`。
+>    修法：**单元 = `agent*.py` 文件 或 `agent*/` 包（包内 `.py` 合并成一棵 AST）** +
+>    **类的方法 = 自身 ∪ 递归基类**（复刻 MRO，语义与拆包前**等价**，既没放宽也没扩窗）。
+>    顺带消掉一处「同一判定两份实现」（该用例原本自己又 glob 了一遍）。
+>    ★ **普查结论（比修复本身更重要）**：全仓 60+ 处 `rglob/glob` 里**只有这一处**按
+>    `agent*.py` 扫，其余全是 `rglob("*.py")`（全量 ⇒ 拆包安全）⇒ 该风险面**已收口**。
+> ② **新增「文件体量棘轮」** `tests/test_source_size_ratchet.py`：冻结 **48 项**
+>    （由 `probes/r356/gen_size_ratchet_table.py` 从**实测产物逐字生成**，禁手写）；
+>    判据「五红一提示」（R1 新增越限 / R2 恶化 / R3 自检·扫描面哨兵 / R4 自检·冻结表形态 /
+>    R5 冻结项存在；H1 陈旧项只提示）；反向注入 **5 组全红**，每条判据都有只靠它才红的注入。
+>    ★ 交叉验证：353 轮记的 50 − 本轮两个拆包各消一格 = **48** ⇒ 口径吻合。
+> ③ **前端单测第二批 3 文件 / 102 条**（合计 **174 条 / 7 文件**）：
+>    `orderTracking` 37 / `toolResultAdapters` 37 / `clarification` 28。
+>    反向注入 **11 红 + 1 登记 NO-HOOK** —— 那条 NO-HOOK 是**写测试时自己造出来的假绿断言**
+>    （`TONE_OF` 的 `cancelled` 与兜底同为 `unknown`，删掉该行结果不变 ⇒ 无区分力），
+>    已把用例降级为「说明性断言，非守卫」并在台架 `KNOWN_NO_HOOK` 登记
+>    ⇒ **不让「全红」这个结论掩盖一条没牙齿的断言**。
+> ④ 实测：后端相关 **149 条绿**（13 文件）· 体量棘轮 **6 条绿** · 前端 **174 条绿** ·
+>    `eslint . --max-warnings=0` **0 problem** · `vue-tsc --noEmit` **rc=0** ·
+>    前端门禁 **43/43**（磁盘 43 == 执行 43，覆盖率自证通过）。
 
 > 目的：下次审查直接从 L2 开始，不必重走 L1 盘点。**有变化时更新本节。**
 
@@ -273,8 +297,8 @@
 
 | Job | 步骤 |
 |---|---|
-| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 353 轮实测 `Success, 89 source files`）** → pytest（**2544 用例**）+ 覆盖率棘轮（`fail_under=65`） |
-| 前端 | 门禁 glob `check-*.*` + **覆盖率自证**（漏跑即红）→ `vue-tsc` → `vite build`（`VITE_DEMO_MODE=false`） |
+| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 353 轮实测 `Success, 89 source files`）** → pytest（**2567 用例**）+ 覆盖率棘轮（`fail_under=65`） |
+| 前端 | 门禁 glob `check-*.*` + **覆盖率自证**（漏跑即红）→ `eslint . --max-warnings=0`（棘轮）→ `vue-tsc` → **`npm run test`（Vitest；第 355 轮接入 → 第 356 轮第二批 ⇒ **174 用例 / 7 文件**）** → `vite build`（`VITE_DEMO_MODE=false`） |
 | 资产 | 必需文件存在 → `docker compose config` → `nginx -t` → 敏感文件未被 git 跟踪 → **CD 资产门禁** |
 | 安全 | bandit（Medium+ = 0）/ pip-audit / npm audit（阈值 `critical` —— 按原则四锁在「当前已绿」） |
 
@@ -293,10 +317,50 @@
 > → 2523@r351(153 文件)（同轮四道新门禁：`test_amazon_sp_oauth` / `test_prompt_versions` /
 > `test_legal_docs` / `test_pitr`）→ **2527@r352(153 文件)**（`test_legal_docs` 由 5 条涨到 9 条）→
 > **2544@r354(156 文件)**（`test_openapi_contract_gate` **10**（第 3 批由 8 涨到 10）
-> + `test_tenant_isolation_gate` 3 + `test_no_syntax_warnings` **3**（收尾再 +1：basetemp 回归用例））。
+> + `test_tenant_isolation_gate` 3 + `test_no_syntax_warnings` **3**（收尾再 +1：basetemp 回归用例））→
+> **2567@r356(158 文件)**（`test_review_analyst_tool_paths` 17 条 + `test_source_size_ratchet` 6 条；后者是本轮新增的**文件体量棘轮**）
 > ⇒ 本节是**快照**：更新时必须重跑上面这条命令，**不要沿用旧数**。
 > ★ 为什么之前会写错：`11276` 既不是用例数、也不是 coverage statements 数
 > （实测 statements ≈ 27150），属纯错记；根因是「写现状快照时没有当场取数」。
+
+> **前端用例数口径（第 355 轮新增）**：取数命令（同样**不要手写数字**）——
+>
+> ```bash
+> cd frontend && npm run test 2>&1 | grep -E "Test Files|Tests"
+> ```
+>
+> 第 355 轮实测 = **72 用例 / 4 文件**，全在 `frontend/tests/unit/`：
+> `colorSemantics` 9 / `competitorSimilarity` 25 / `platform` 16 / `wav` 22。
+>
+> **第 356 轮第二批 ⇒ 174 用例 / 7 文件**（新增 `orderTracking` 37 / `toolResultAdapters` 37 /
+> `clarification` 28）。靶点不是按文件大小挑的，是**按「能不能在 `environment:'node'` 真跑」**挑的——
+> 先落 `probes/r356/scan_fe_targets.py` 扫 `utils/`+`stores/`+`composables/`（43 个 TS）：
+> **node-safe 23 个**（首批已测 4 ⇒ 候选 19）。选中的三个各自都有「**违反时静默**」的判据：
+> `orderTracking` 的 docstring 自写跨语言契约（后端 `_map_order_from_trade` 的业务键必须在本文件的表里），
+> 而后端**刚拆包**；`clarification` 里记着两条**真实界面事故**（`add` 被当产品名 ⇒
+> 「好的，**add** 这事儿我接住了」；LLM 编字段名 ⇒ 裸文案「请补充「review_count」的信息」），
+> 两条修复都只体现为「一段文案 / 一个正则」；`toolResultAdapters` 的三条硬规则违反后
+> 只会**多一个假数字或少一块真信息**。
+>
+> ★ 前端此前是**零单测** —— 只有 `scripts/check-*.cjs` 那类**静态真伪检查**
+> （扫源码字符串 / 扫 AST 形态，证明「代码长成什么样」），**执行不到任何一行运行期逻辑**。
+> 这 4 个文件是第一批，靶点全是零依赖纯函数（选它们正是为了不引入 jsdom）。
+>
+> ★ 为什么用例放在 `frontend/tests/` 而不是 `src/**/__tests__/`：
+> `check-mock-retirement.cjs` 的读集是 **`src/` 全树**（`EXTS = ['.ts','.vue','.tsx','.js']`，
+> `walk(SRC_ROOT)`），而 ESLint 的读集是**除 node_modules/dist/coverage 外全仓**。
+> 把用例放进 `src/` 会让它进多个门禁的读面，将来某个门禁收紧判据时就可能被用例误报。
+> 放在 `tests/` 只有 ESLint 看得到（已实测 0 problem），门禁读面不动。
+> 类型检查不受影响：`tsconfig.json` 的 `include` 已显式加 `tests/**/*.ts`
+> （实测 `tsc --showConfig` 的程序文件数由 110 → **112**，vitest 不做类型检查，不加就没人查）。
+>
+> ★ 反向注入自证：`.workbuddy/probes/r355/reverse_inject_frontend_units.py`
+> —— **24 条注入 + 1 条「期望保持全绿」的反例**，全部符合预期、源文件字节级还原。
+> 其中 F2b 是有价值的**反例结论**：`competitorSimilarity.ts` 的
+> `if (!universe.length) return []` 在当前实现下**不可观测**（本模块已不持有内置数据，
+> 循环天然返回空）⇒ 它此刻是**防御性**而非可判据代码；
+> 探针把「不可观测」与「没测到」分开报，避免把「删掉它也不会红」误读成「用例没牙齿」。
+> （同族的可观测注入 F2 —— 把内置兜底数据重新塞回去 —— 会被用例抓住。）
 
 ### 门禁总数
 
@@ -349,6 +413,7 @@
   使「内部备注不应随发行物交付」从一句注释升级为**门禁**（L6 直接断言根副本不含该标记） |
 | 告警规则 / compose 密钥 | `check_alert_rules.py` / `check_compose_secrets.py`（各有 pytest 包装） |
 | 审计留存 | `core/audit/retention.py` |
+| **文件体量棘轮**（生产源码超阈值清单只许降） | `tests/test_source_size_ratchet.py`（冻结 48 项 / 五红一提示 / 5 组反向注入全红） |
 
 ---
 

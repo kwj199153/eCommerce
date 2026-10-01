@@ -22,14 +22,14 @@ PY = sys.executable
 VARIANTS = [
     (
         "去掉 SPU 内 distinct 去重",
-        "modules/trade/service.py",
+        "modules/trade/service/queries.py",
         "        .distinct()\n",
         "",
         "test_reviews_for_spu_dedupes",
     ),
     (
         "去掉差评 join 那一处 spus 店铺作用域",
-        "modules/trade/service.py",
+        "modules/trade/service/queries.py",
         "            scope_condition(CustomerReviewRecord, shop_id),\n"
         "            scope_condition(SpuRecord, shop_id),\n",
         "            scope_condition(CustomerReviewRecord, shop_id),\n",
@@ -37,14 +37,14 @@ VARIANTS = [
     ),
     (
         "把数据缺口空态合并成 no_reviews",
-        "modules/trade/service.py",
+        "modules/trade/service/queries.py",
         'return {**head, "empty_state": "no_asin_binding"}',
         'return {**head, "empty_state": "no_reviews"}',
         "test_empty_states_are_distinct_literals",
     ),
     (
         "去掉 exists 子查询的 correlate",
-        "modules/trade/service.py",
+        "modules/trade/service/queries.py",
         "        .correlate(CustomerReviewRecord)\n",
         "",
         "test_orphan_query_scopes_skus_through_spus_and_correlates",

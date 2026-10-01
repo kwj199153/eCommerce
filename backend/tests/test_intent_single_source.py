@@ -23,6 +23,7 @@ import ast
 import pathlib
 
 from ai_infra.intent import Route, first_match
+from pkg_source import read_source  # noqa: E402
 
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
 
@@ -210,7 +211,9 @@ def test_business_modules_call_the_single_source():
     """
     bad = []
     for rel, (meth, body) in BUSINESS_AGENTS.items():
-        src = (BACKEND / rel).read_text(encoding="utf-8", errors="replace")
+        # ★ 读源码走 `tests/pkg_source.py`（**文件或包**双态）：名单里的
+        #   `agent_cs.py` 随时可能被拆成包，写死单文件会崩在运行期。
+        src = read_source(rel)
         shell = _find_fn(src, meth)
         if shell is None:
             bad.append(f"{rel}: 找不到分类器 {meth}")
@@ -223,7 +226,7 @@ def test_business_modules_call_the_single_source():
 
         # ①② 判定体侧：必须 import 唯一真源且真的调用它
         body_rel, body_name = body if body else (rel, meth)
-        body_src = (BACKEND / body_rel).read_text(encoding="utf-8", errors="replace")
+        body_src = read_source(body_rel)
         if "from ai_infra.intent import" not in body_src:
             bad.append(f"{body_rel}: 未 import 唯一真源")
         body_fn = _find_fn(body_src, body_name)

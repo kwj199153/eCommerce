@@ -117,7 +117,42 @@ def _module_index() -> frozenset[str]:
 
 
 def own_package(rel_posix: str) -> str:
-    """`modules/products/router.py` -> `modules.products`；`modules/products/__init__.py` 同。"""
+    """文件**真实所在包** —— 相对 import 的**解析基准**。
+
+    `modules/products/router.py` -> `modules.products`；
+    `modules/products/__init__.py` -> `modules.products`（同）。
+
+    ★ 第 355 轮修（**嵌套包**算术）：原实现写死 `return ".".join(parts[:2])`，
+      等于假定目录形态恒为 `modules/<pkg>/<file>.py`（深度 3）。拆出
+      `modules/trade/service/` 这类嵌套包之后，`.../service/attribution.py`
+      会被算成 `modules.trade`，于是它里面的 `from ..sync import x` 被解析到
+      `modules.sync`（**差一级**）—— 判据指向一个根本不存在的包 ⇒ 假红。
+      正确口径与深度无关：**去掉最后一段就是所在包**。
+
+    ★ 本函数**只**负责解析基准。判「算不算跨模块」是 `module_scope()` 的事。
+      两者合并的代价在同轮实测到了：豁免域被一起改深后，
+      `modules/stores/connect/platforms/amazon.py` 对 `modules.stores.connect.base`
+      这种**本轮没动过**的自家内部引用会集体变红。
+    """
+    parts = list(Path(rel_posix).with_suffix("").parts)
+    if not parts:
+        return ""
+    if parts[-1] == "__init__":
+        return ".".join(parts[:-1])
+    return ".".join(parts[:-1])
+
+
+def module_scope(rel_posix: str) -> str:
+    """跨模块引用的**豁免域** = 顶级 **模块**（`modules.X`，两段）。
+
+    本门禁问的是「`modules.B` ↔ `modules.C` 之间有没有越界」，所以 `modules.B`
+    内部无论嵌套几层，互相引用都属合法内部组织 —— 报错文案里的
+    `from modules.B import <name>` 也印证 B 是**顶级模块**。
+
+    ★ 实现**逐字沿用**修复前的 `own_package` 本体（去 `__init__` + 取前两段），
+      目的是让这次拆包**不改变任何既有判定**：拆分只应搬动代码，
+      不应放宽或收紧门禁。
+    """
     parts = list(Path(rel_posix).with_suffix("").parts)
     if parts and parts[-1] == "__init__":
         parts = parts[:-1]
@@ -164,8 +199,16 @@ def scan_cross_package(
     source: str,
     cur_pkg: str,
     is_module=None,
+    scope: str | None = None,
 ) -> list[Ref]:
-    """产出**跨包**引用（同包内引用一律排除 —— 那是合法的内部组织）。
+    """产出**跨模块**引用（同域内引用一律排除 —— 那是合法的内部组织）。
+
+    ★ 两个包参数各有各的职责，**不可混用**（第 355 轮拆包时踩到的坑）：
+      · `cur_pkg` —— 相对 import 的**解析基准**，必须是文件**真实所在包**；
+        写成粗化的两段名会让嵌套包里的 `from ..x` 解析**差一级**。
+      · `scope`   —— **豁免域**，缺省退化为 `cur_pkg`（保持既有调用点行为）；
+        门禁扫真实目录时显式传 `module_scope(rel)`（顶级模块），
+        否则会把模块内部子模块的合法互引判成「跨模块」。
 
     kind 的含义：
       · `shallow` —— `from modules.B import <name>`：**唯一合法**形态，
@@ -181,11 +224,13 @@ def scan_cross_package(
     """
     if is_module is None:
         is_module = lambda _n: False  # noqa: E731 - 默认关闭子模块识别
+    if scope is None:
+        scope = cur_pkg
     tree = ast.parse(source)
     out: list[Ref] = []
 
     def is_own(t: str) -> bool:
-        return t == cur_pkg or t.startswith(cur_pkg + ".")
+        return t == scope or t.startswith(scope + ".")
 
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
@@ -289,7 +334,7 @@ def _scan_tree() -> tuple[list[tuple[str, Ref]], dict[str, tuple[bool, list[str]
             tree = ast.parse(src)
         except SyntaxError:
             continue
-        for r in scan_cross_package(src, own_package(rel), is_module):
+        for r in scan_cross_package(src, own_package(rel), is_module, module_scope(rel)):
             refs.append((rel, r))
     return refs, alls, subs
 
@@ -463,6 +508,47 @@ def test_reference_scanner_is_not_vacuous():
         ("deep", "modules.products.db_model", ("SpuRecord",))
     ]
 
+    # ⑧ ★ 第 355 轮：`own_package` 必须按**真实路径**取所在包（支持嵌套包）。
+    #    原实现写死 `parts[:2]`，等于假定深度恒为 3。拆出
+    #    `modules/trade/service/` 之后，`.../service/attribution.py` 会被算成
+    #    `modules.trade` ⇒ 它里面的 `from ..sync import x` 解析成 `modules.sync`
+    #    （**差一级**），判据指向一个不存在的包（假红）。这类路径算术不会自己报错，
+    #    只会静默给出错的包名 —— 所以在这里把它钉死。
+    assert own_package("modules/products/router.py") == "modules.products"
+    assert own_package("modules/products/__init__.py") == "modules.products"
+    assert own_package("modules/trade/service/attribution.py") == "modules.trade.service"
+    assert own_package("modules/trade/service/__init__.py") == "modules.trade.service"
+    # 且解析要与之配套：嵌套包里 `level=2` 指的是 `modules.trade.*`
+    assert resolve("modules.trade.service", 2, "sync") == "modules.trade.sync"
+    assert resolve("modules.trade.service", 1, "_base") == "modules.trade.service._base"
+
+    # ⑨ ★ 第 355 轮第二轮：**豁免域**必须与解析基准分开，且口径是「顶级模块」。
+    #    只把 ⑧ 那样的解析基准兼作豁免域，会把 `modules.B` 内部的合法互引判成跨模块
+    #    （实测：`modules/stores/connect/platforms/*.py` 与 `modules/trade/service/*.py`
+    #    里对本模块子模块的引用集体变红 —— 而这些文件本轮**一行未改**）。
+    assert module_scope("modules/products/router.py") == "modules.products"
+    assert module_scope("modules/trade/service/attribution.py") == "modules.trade"
+    assert module_scope("modules/trade/service/__init__.py") == "modules.trade"
+    assert module_scope("modules/stores/connect/platforms/amazon.py") == "modules.stores"
+    assert module_scope("modules/__init__.py") == "modules"
+
+    # 行为验证（不做字符串比对 —— 复核必须验行为，否则新写的注释会自绊）：
+    # 同一个嵌套包里的 `from ..sync import x`，scope 取顶级模块时被豁免……
+    nested = "from ..sync import MANUAL_METHOD\n"
+    assert scan_cross_package(nested, "modules.trade.service", None, "modules.trade") == [], (
+        "`modules.trade.service` 内部引用 `modules.trade.sync` 不该算跨模块"
+    )
+    # ……而 scope 收紧到真实包时就必须被抓到 ⇒ 证明上面那条不是恒真
+    assert [
+        (r.kind, r.target)
+        for r in scan_cross_package(nested, "modules.trade.service", None, "modules.trade.service")
+    ] == [("deep", "modules.trade.sync")], "scope 收紧后该引用必须被判为跨模块"
+    # scope 缺省 = cur_pkg：不传 scope 时行为与修复前一致
+    assert [
+        (r.kind, r.target)
+        for r in scan_cross_package("from modules.other import X\n", "modules.secretary")
+    ] == [("shallow", "modules.other")], "scope 缺省必须退化为 cur_pkg"
+
 
 def test_tree_scan_is_not_empty():
     """防「目录写错 ⇒ 空集 ⇒ 恒绿」：确认扫描真的看到了包与引用。"""
@@ -477,6 +563,6 @@ def test_tree_scan_is_not_empty():
     )
 
     shallow = [r for _, r in refs if r.kind == "shallow"]
-    pairs = {(own_package(rel), r.target) for rel, r in refs if r.kind == "shallow"}
+    pairs = {(module_scope(rel), r.target) for rel, r in refs if r.kind == "shallow"}
     assert len(shallow) >= 8, f"只扫到 {len(shallow)} 条跨模块引用，scan 逻辑可疑"
     assert len(pairs) >= 5, f"只扫到 {len(pairs)} 条跨包边，scan 逻辑可疑"

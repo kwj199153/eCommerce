@@ -56,6 +56,9 @@ const pick = (env, fallback) =>
   process.env[env] ? path.resolve(process.env[env]) : fallback
 const vm = require('vm')
 const ts = require(path.join(__dirname, '..', 'node_modules', 'typescript'))
+// ★ 第 355 轮：后端模块可能是**包**（拆包双态）⇒ 跨仓读 Python 源码统一走这个共享读取点
+//   （本仓有 15 个前端门禁读 backend/ 源码，各写一份双态分支必然漂移）
+const pySource = require(path.join(__dirname, '_py-source.cjs'))
 
 const ROOT = path.resolve(__dirname, '..')
 const SRC = pick('ORDER_SRC_ROOT', path.join(ROOT, 'src'))
@@ -167,12 +170,36 @@ function selfAccessHits(code, keys) {
   return hits
 }
 
-/** 从后端 `_map_order_from_trade` 抽出它 return 的那个 dict 的顶层键 */
+/** 从后端 `_map_order_from_trade` 抽出它 return 的那个 dict 的顶层键
+ *
+ * ★ 第 355 轮：后端模块可能是**包**（拆包双态）⇒ 走共享读取点 `_py-source.cjs`。
+ * ★ 并且**必须要求两个锚点落在同一个文件里** —— 下面用 `slice(a, b)` 取
+ *   「两个函数定义之间的文本」；若它们分处不同文件，拼接后的窗口会把整段
+ *   别的文件吞进来 ⇒ 抽出的键清单**静默变错**（不报错、与前端对账的结果假绿）。
+ *   拆包时请把这两个映射函数放进**同一个**模块。
+ */
 function backendKeys() {
-  const src = read(BACKEND_CS)
-  const a = src.indexOf('def _map_order_from_trade')
-  const b = src.indexOf('def _map_order_info')
-  if (a < 0 || b < 0 || b <= a) throw new Error('在 agent_cs.py 里定位不到 _map_order_from_trade')
+  const A = 'def _map_order_from_trade'
+  const B = 'def _map_order_info'
+  const resolved = pySource.resolvePyModule(BACKEND_CS)
+  if (!resolved) {
+    throw new Error(
+      `读不到后端模块（agent_cs）：${BACKEND_CS} —— 本门禁靠它抽字段清单，拿不到不许放行`,
+    )
+  }
+  const src = resolved.files
+    .map((f) => fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n'))
+    .find((t) => t.includes(A) && t.includes(B))
+  if (!src) {
+    throw new Error(
+      `agent_cs 模块里找不到同在**一个文件**内的 \`${A.slice(4)}\` 与 \`${B.slice(4)}\` ` +
+        `（已读 ${resolved.files.length} 个文件）—— 本门禁靠「两函数之间的文本」抽字段键，` +
+        '分处两个文件时窗口无意义（拆包请把这两个映射函数放进同一个模块）',
+    )
+  }
+  const a = src.indexOf(A)
+  const b = src.indexOf(B)
+  if (a < 0 || b < 0 || b <= a) throw new Error('在 agent_cs 里定位不到 _map_order_from_trade')
   const body = src.slice(a, b)
   const keys = []
   const re = /"([a-z_]+)":/g

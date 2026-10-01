@@ -349,6 +349,23 @@ jobs:
       - name: 类型检查
         run: npx vue-tsc --noEmit
 
+      - name: 单元测试（Vitest）
+        # ★ 第 355 轮 #1282 新增：前端从「零单测」起步（vitest@2 + tests/unit/）。
+        #   此前前端只有 `scripts/check-*.cjs` 那类**静态真伪检查**（扫源码字符串 /
+        #   扫 AST 形态），它们证明「代码长成什么样」，但**执行不到任何一行运行期逻辑**。
+        #   纯函数（颜色语义映射、相似度排序）的行为此前完全没人守 —— 改了算法参数，
+        #   所有门禁照旧全绿（项目记忆：「没被反向注入验证过的门禁 = 没有门禁」）。
+        #
+        # ★ 为什么跑 `npm run test` 而不是 `npx vitest run`：
+        #   与本地完全同一条命令（脚本里 = `vitest run`）。
+        #   直接用 npx 会在「改了脚本、CI 没跟着改」时静默跑另一套参数。
+        #
+        # ★ 为什么不并进 `npm run build`：
+        #   build 会被 `frontend/Dockerfile` 的构建阶段执行，而那是 `node:22-alpine`
+        #   且只装生产依赖 ⇒ 里面没有 vitest（devDependency），并进去会让镜像构建直接失败。
+        #   这正是 `.py` 门禁当初不进 build 的同一条理由。
+        run: npm run test
+
       - name: 构建
         # ★ 显式关闭演示模式：CI 出的包不应带 demo-token 直通
         env:

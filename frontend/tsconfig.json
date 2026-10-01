@@ -26,6 +26,9 @@
       "@/*": ["src/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"],
+  // ★ `tests/**/*.ts` 是第 355 轮 #1282 新增：把 Vitest 用例纳入 `vue-tsc` 的类型检查。
+  //   不纳入的话，用例只在运行期被 esbuild 转译（vitest 不做类型检查）⇒
+  //   里面的类型错误永远不会在任何门禁里出现。纳入后 CI 的 `npx vue-tsc --noEmit` 连带查它。
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "tests/**/*.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

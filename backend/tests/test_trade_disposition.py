@@ -243,7 +243,10 @@ def test_propose_is_the_only_construction_site():
         "全仓找不到 `ReviewDispositionRecord(...)` 的构造点 ⇒ 回到「0 行」的原状。"
         f"扫描目录 {root}"
     )
-    assert all(h.startswith("trade/service.py") for h in hits), (
+    # ★ 第 355 轮：service.py 已拆成包 ⇒ 构造点的相对路径是
+    #   `trade/service/disposition.py`。判据放宽到**包前缀**——
+    #   仍然只允许落在 trade 服务层内，不许外泄到别处。
+    assert all(h.startswith("trade/service") for h in hits), (
         f"写入路径泄漏到 service 之外（同一写入两份实现）：{hits}"
     )
     assert len(hits) == 1, (
@@ -487,8 +490,9 @@ def test_judge_is_not_vacuous(monkeypatch):
         status="proposed",
     )
     sess = _session(monkeypatch, entities=_full_entities(disposition=row))
+    # ★ 拆包后 `_assert_transition` 读的是 `disposition` 子模块的全局。
     monkeypatch.setattr(
-        svc, "DISPOSITION_TRANSITIONS",
+        svc.disposition, "DISPOSITION_TRANSITIONS",
         {s: tuple(svc.DISPOSITION_STATUSES) for s in svc.DISPOSITION_STATUSES},
     )
     out = _run(svc.issue_disposition(sess, SHOP, REVIEW_ID, actor="x@y.com"))
@@ -781,8 +785,9 @@ def test_receipt_judges_are_not_vacuous(monkeypatch):
     # ① 状态机放宽成全通 ⇒ approved 也能登记
     row = _disp("approved")
     sess = _session(monkeypatch, entities=_full_entities(disposition=row))
+    # ★ 拆包后 `_assert_transition` 读的是 `disposition` 子模块的全局。
     monkeypatch.setattr(
-        svc, "DISPOSITION_TRANSITIONS",
+        svc.disposition, "DISPOSITION_TRANSITIONS",
         {s: tuple(svc.DISPOSITION_STATUSES) for s in svc.DISPOSITION_STATUSES},
     )
     out = _run(svc.record_execution_receipt(sess, SHOP, REVIEW_ID, executed_by="ops@x.com"))
@@ -791,7 +796,7 @@ def test_receipt_judges_are_not_vacuous(monkeypatch):
     # ② 值域放宽出 api ⇒ mode="api" 不再被拒
     row2 = _disp("issued")
     sess2 = _session(monkeypatch, entities=_full_entities(disposition=row2))
-    monkeypatch.setattr(svc, "DISPOSITION_EXECUTION_MODES", ("manual", "api"))
+    monkeypatch.setattr(svc.disposition, "DISPOSITION_EXECUTION_MODES", ("manual", "api"))
     out2 = _run(svc.record_execution_receipt(
         sess2, SHOP, REVIEW_ID, execution_mode="api", executed_by="ops@x.com"))
     assert out2["execution_mode"] == "api", "放宽后应该能填 api —— 否则原断言咬的不是值域"

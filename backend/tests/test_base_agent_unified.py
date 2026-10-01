@@ -35,6 +35,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from ai_infra.base_agent import BaseAgent
+from pkg_source import read_source  # noqa: E402
 
 # conftest 的 autouse 夹具 `_no_real_llm` 会**类级**替换
 # `BaseAgent._llm_with_tools` 为离线桩。这里在收集期（早于夹具执行）保存原始实现，
@@ -83,7 +84,7 @@ def test_business_agent_inherits_base_agent(mod, fname, clsname):
 @pytest.mark.parametrize("mod,fname,clsname", BUSINESS_AGENTS)
 def test_no_llm_available_or_fake_fallback(mod, fname, clsname):
     """不得再有 `LLM_AVAILABLE` / `LLMEnabledAgent` / 旧 integration 导入。"""
-    text = (BACKEND / "modules" / mod / fname).read_text(encoding="utf-8")
+    text = read_source(f"modules/{mod}/{fname}")
 
     assert "LLM_AVAILABLE" not in text, f"{fname}: 仍有 LLM_AVAILABLE 残留"
     assert "LLMEnabledAgent" not in text, f"{fname}: 仍有 LLMEnabledAgent 残留"
@@ -267,9 +268,16 @@ def test_agent_cs_does_not_read_nonexistent_attributes():
     """消费者侧（静态）：不得再读不存在的属性。
 
     ★ 剥注释后断言 —— 否则讲解「原写法」的注释会把本用例绊倒。
+    ★ 读源码走 `tests/pkg_source.py`（单文件 ⇄ 包双态）：本判据的窗口是
+      「agent_cs **整个模块**」，不是某一个文件 —— 目标模块若从
+      `agent_cs.py` 拆成 `agent_cs/` 包，写死单文件路径会让本用例
+      **崩在运行期**（`FileNotFoundError`），或被静默读成别的文件集而使
+      下面三条 `not in` 断言**恒真通过**。
     """
-    src = (BACKEND / "modules" / "customer_service" / "agent_cs.py").read_text(
-        encoding="utf-8"
+    src = read_source(
+        "modules/customer_service/agent_cs.py",
+        # 正向锚点：只读对了 agent_cs 的文件集才可能出现（挡「读取点选错文件集」）
+        expect="class CustomerServiceAgent",
     )
     code = "\n".join(
         ln for ln in src.splitlines()

@@ -41,6 +41,8 @@ from pathlib import Path
 
 import pytest
 
+from pkg_source import source_files  # noqa: E402
+
 BACKEND = Path(__file__).resolve().parents[1]
 
 #: 修复前 mock 会编出来的东西 —— 失败回复里出现任何一个都算回归
@@ -260,15 +262,21 @@ def _random_call_count(path: Path) -> int:
 
 
 def test_order_tracking_module_keeps_random_out_of_the_data_path():
-    """`agent_cs.py` 的 `random.*` 调用点不得增长（本地棘轮）。
+    """`agent_cs` **模块**的 `random.*` 调用点不得增长（本地棘轮）。
 
     ★ 口径必须走 AST：`raw.count("random.")` 会被注释与 docstring 骗到
       （本仓就有解释这条规则的注释写着 `random.uniform`）。
-    ★ 只钉**本文件**；全仓棘轮与白名单见 `tests/test_no_random_in_production.py`。
+    ★ 判据窗口 = **整个 agent_cs 模块**（单文件 `agent_cs.py`，或拆包后的
+      `agent_cs/` 整包），读取点收口在 `tests/pkg_source.py`。
+      ★ 为什么不是「某一个文件」：拆包时方法是**逐行搬运**，合计值不变
+      —— 所以这条棘轮在拆包前后**都**有效；反之若写死单文件路径，
+      拆包后要么崩、要么静默只扫到包里一个文件而**放走其余的随机调用**。
+    ★ 全仓棘轮与白名单见 `tests/test_no_random_in_production.py`。
     """
-    path = BACKEND / "modules" / "customer_service" / "agent_cs.py"
-    count = _random_call_count(path)
+    files = source_files("modules/customer_service/agent_cs.py")
+    assert files, "没读到 agent_cs 的任何源码文件 —— 棘轮会恒真，拒绝放行"
+    count = sum(_random_call_count(p) for p in files)
     assert count <= 3, (
-        f"`agent_cs.py` 的 random 调用点涨到 {count}（基线 3）—— "
+        f"agent_cs 的 random 调用点涨到 {count}（基线 3）—— "
         "订单数据路径必须零随机；新增的随机只允许出现在「同义文案挑选」这类位置。"
     )

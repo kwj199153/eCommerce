@@ -97,6 +97,8 @@ import inspect
 import pathlib
 from functools import lru_cache
 
+from pkg_source import parse_module  # noqa: E402
+
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
 
 #: 工具装配点 —— **运行时真值的取法**。
@@ -1011,9 +1013,15 @@ def test_every_build_call_site_injects_a_shop_source():
 
 
 def _tools_expr_nodes(rel: str) -> list:
-    """该 Agent 文件里每个 `tools=` 实参的 (表达式 AST, 行号)。"""
+    """该 Agent 文件里每个 `tools=` 实参的 (表达式 AST, 行号)。
+
+    ★ 第 355 轮：读源码走 `tests/pkg_source.py::parse_module`（**文件或包**双态）
+      —— `ASSEMBLY_HOSTS` 里就有 `modules/customer_service/agent_cs.py`，
+      它随时可能被拆成包；写死单文件会让本扫描器**崩在收集期**，
+      或静默读成错文件集而使判据恒真空跑。
+    """
     out = []
-    for n in ast.walk(ast.parse((BACKEND / rel).read_bytes().decode("utf-8", "replace"))):
+    for n in ast.walk(parse_module(rel)):
         if isinstance(n, ast.Call):
             for kw in n.keywords:
                 if kw.arg == "tools":
@@ -1024,7 +1032,7 @@ def _tools_expr_nodes(rel: str) -> list:
 def _local_assign_bindings(rel: str) -> dict:
     """本文件里 `名字 = 表达式` 的绑定 → `{名字: (右值 AST, 行号)}`（含函数内赋值）。"""
     out = {}
-    for n in ast.walk(ast.parse((BACKEND / rel).read_bytes().decode("utf-8", "replace"))):
+    for n in ast.walk(parse_module(rel)):
         if isinstance(n, ast.Assign):
             for tgt in n.targets:
                 if isinstance(tgt, ast.Name):
@@ -1334,7 +1342,7 @@ def test_tool_layer_reads_registered_libraries_only_through_the_kernel():
 #   ★ 实测（第 326 轮落地时）direct 栏里三个**多行读取者**均已收窄租户：
 #       candidates/service.py::_load_scoped          → scoped(...) 无条件挂（第 283 轮）
 #       customer_service/faq_source.py::load_faq_items → scope_condition + 空店铺 raise
-#       trade/service.py::list_reviews_for_spu       → scope_condition(SpuRecord) 两处收窄
+#       trade/service/queries.py::list_reviews_for_spu → scope_condition(SpuRecord) 两处收窄
 #     其余 direct 项为 单条详情 / 存在性判定 / 写前读 / seed，均按主键或归属容器取。
 #
 # ★ 反向注入（已实测 3/3）：
@@ -1430,8 +1438,8 @@ _LIBRARY_READERS: dict = {
             "modules/products/router.py::update_sku",
             "modules/products/router.py::update_sku_listing",
             "modules/trade/seed.py::pick_anchor_sku",
-            "modules/trade/service.py::_not_bound_to_sku",
-            "modules/trade/service.py::list_reviews_for_spu",
+            "modules/trade/service/queries.py::_not_bound_to_sku",
+            "modules/trade/service/queries.py::list_reviews_for_spu",
         },
     },
     "REVIEW_SPEC": {

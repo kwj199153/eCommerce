@@ -37,6 +37,7 @@ import re
 import pytest
 
 from ai_infra.skills import bind_requested_skill, is_skill_requested
+from pkg_source import read_source  # noqa: E402
 
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
 REPO = BACKEND.parent
@@ -216,9 +217,10 @@ def test_every_skill_entry_consults_the_judgment():
     """★ 名单式：每个能点名的对话入口都必须真的引用 `is_skill_requested()`。"""
     bad = []
     for rel, fns in sorted(SKILL_GATED_ENTRIES.items()):
-        path = BACKEND / rel
-        assert path.exists(), "登记了不存在的文件: %s" % rel
-        src = path.read_text(encoding="utf-8", errors="replace")
+        # ★ 读源码走 `tests/pkg_source.py`（**文件或包**双态）：原来的
+        #   `path = BACKEND / rel; assert path.exists()` 对**包路径**恒假
+        #   ⇒ 名单里的 `agent_cs.py` 一旦拆成包，本用例拆包当天就红。
+        src = read_source(rel)
         for fn_name in fns:
             used, imported, why = entry_gate_report(src, fn_name)
             if not imported:
@@ -232,7 +234,7 @@ def test_channel_precedes_keyword_classification():
     """★ 顺序性质：技能通道必须排在关键词分类之前（否则短路会抢在注入前）。"""
     bad = []
     for rel, classify_attr in CHANNEL_FIRST.items():
-        src = (BACKEND / rel).read_text(encoding="utf-8", errors="replace")
+        src = read_source(rel)
         if not channel_precedes_keyword(src, "stream_chat", classify_attr):
             bad.append(rel)
     assert not bad, (
@@ -543,7 +545,7 @@ def test_gate_is_not_vacuous():
 
     # 真实文件必须过（否则门禁会掩盖实现）
     for rel, classify_attr in CHANNEL_FIRST.items():
-        src = (BACKEND / rel).read_text(encoding="utf-8", errors="replace")
+        src = read_source(rel)
         assert channel_precedes_keyword(src, "stream_chat", classify_attr), rel
         expect_green += 1
 

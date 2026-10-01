@@ -27,8 +27,10 @@ from modules.trade import risk_scan as rs
 from modules.trade import service as svc
 
 BACKEND = Path(__file__).resolve().parents[1]
-#: `service.py` 源码 —— AST 形态判据要用（只读，不参与 import）。
-SVC_SRC = (BACKEND / "modules" / "trade" / "service.py").read_text(encoding="utf-8")
+#: trade 服务层源码（第 355 轮拆包 ⇒ 读整个包）—— AST 形态判据要用（只读，不参与 import）。
+from trade_service_src import read_service_source  # noqa: E402
+
+SVC_SRC = read_service_source()
 
 
 # ============================================================ 桩工具
@@ -62,8 +64,9 @@ def _patch_list(monkeypatch, items, seen: dict | None = None):
     async def _count(session, shop_id, **kw):
         return len(items)
 
-    monkeypatch.setattr(svc, "list_recent_negative_reviews", _list)
-    monkeypatch.setattr(svc, "count_recent_negative_reviews", _count)
+    # ★ 第 355 轮拆包：**打桩必须打在调用点所在的子模块上**。
+    monkeypatch.setattr(svc.review_risk, "list_recent_negative_reviews", _list)
+    monkeypatch.setattr(svc.review_risk, "count_recent_negative_reviews", _count)
 
 
 def _patch_scan_text(monkeypatch, table: dict[str, rs.ScanResult], calls: list | None = None):
@@ -131,7 +134,7 @@ async def test_deep_without_credentials_is_degraded_not_clean(monkeypatch):
     """
     _patch_list(monkeypatch, [_item(i, f"2026-01-0{i}") for i in range(1, 4)])
     _patch_scan_text(monkeypatch, {})                       # 规则通道零命中
-    monkeypatch.setattr(svc, "_llm_configured", lambda: False)
+    monkeypatch.setattr(svc.review_risk, "_llm_configured", lambda: False)
 
     out = await svc.scan_reviews_risk(None, "shop-1", deep=True)  # type: ignore[arg-type]
     assert out["degraded"] is True, "缺凭据时没有报 degraded ⇒ 静默降级"
@@ -154,7 +157,7 @@ async def test_degraded_still_reports_real_rule_hits(monkeypatch):
     _patch_scan_text(monkeypatch, {
         "threat": _res(rs.DECISION_RISK, level=rs.LEVEL_HIGH, cats=("r1",)),
     })
-    monkeypatch.setattr(svc, "_llm_configured", lambda: False)
+    monkeypatch.setattr(svc.review_risk, "_llm_configured", lambda: False)
 
     out = await svc.scan_reviews_risk(None, "shop-1", deep=True)  # type: ignore[arg-type]
     by_id = {x["id"]: x["risk"] for x in out["items"]}
@@ -188,7 +191,7 @@ async def test_deep_uses_one_batch_call_and_reads_it_back(monkeypatch):
     """
     items = [_item(1, "2026-01-01", body="semantic"), _item(2, "2026-01-02", body="other")]
     _patch_list(monkeypatch, items)
-    monkeypatch.setattr(svc, "_llm_configured", lambda: True)
+    monkeypatch.setattr(svc.review_risk, "_llm_configured", lambda: True)
     monkeypatch.setattr("ai_infra.llm.get_llm", lambda **kw: "LLM-INSTANCE")
 
     seen: list[dict] = []
@@ -250,7 +253,7 @@ async def test_limit_is_always_clamped_to_the_hard_cap(monkeypatch, deep, expect
     seen: dict = {}
     _patch_list(monkeypatch, [], seen)
     _patch_scan_text(monkeypatch, {})
-    monkeypatch.setattr(svc, "_llm_configured", lambda: False)
+    monkeypatch.setattr(svc.review_risk, "_llm_configured", lambda: False)
     out = await svc.scan_reviews_risk(None, "shop-1", limit=999, deep=deep)  # type: ignore[arg-type]
     assert seen["limit"] == expect_cap, f"传给取数的 limit 没被限到 {expect_cap}"
     assert out["limit"] == expect_cap
@@ -285,10 +288,11 @@ async def test_capped_is_true_when_the_cap_actually_hides_rows(monkeypatch, deep
     async def _count(session, shop_id, **kw):
         return len(rows)
 
-    monkeypatch.setattr(svc, "list_recent_negative_reviews", _list)
-    monkeypatch.setattr(svc, "count_recent_negative_reviews", _count)
+    # ★ 第 355 轮拆包：**打桩必须打在调用点所在的子模块上**。
+    monkeypatch.setattr(svc.review_risk, "list_recent_negative_reviews", _list)
+    monkeypatch.setattr(svc.review_risk, "count_recent_negative_reviews", _count)
     _patch_scan_text(monkeypatch, {})
-    monkeypatch.setattr(svc, "_llm_configured", lambda: False)
+    monkeypatch.setattr(svc.review_risk, "_llm_configured", lambda: False)
     out = await svc.scan_reviews_risk(None, "shop-1", limit=999, deep=deep)  # type: ignore[arg-type]
     assert out["scanned"] == cap and out["total"] == cap + 5
     assert out["capped"] is True
@@ -301,8 +305,9 @@ async def test_total_is_not_truncated_by_limit(monkeypatch):
         return items[:1]
     async def _count(session, shop_id, **kw):
         return 3
-    monkeypatch.setattr(svc, "list_recent_negative_reviews", _list)
-    monkeypatch.setattr(svc, "count_recent_negative_reviews", _count)
+    # ★ 第 355 轮拆包：**打桩必须打在调用点所在的子模块上**。
+    monkeypatch.setattr(svc.review_risk, "list_recent_negative_reviews", _list)
+    monkeypatch.setattr(svc.review_risk, "count_recent_negative_reviews", _count)
     _patch_scan_text(monkeypatch, {})
     out = await svc.scan_reviews_risk(None, "shop-1")  # type: ignore[arg-type]
     assert out["total"] == 3 and out["scanned"] == 1
@@ -341,7 +346,7 @@ async def test_deep_path_counts_only_real_risk_categories(monkeypatch):
         _item(2, "2026-01-02", body=_BODY_THREAT),
         _item(3, "2026-01-01", body="The box arrived with a small dent on the corner."),
     ])
-    monkeypatch.setattr(svc, "_llm_configured", lambda: True)
+    monkeypatch.setattr(svc.review_risk, "_llm_configured", lambda: True)
     monkeypatch.setattr(svc.risk_scan, "scan_llm_batch", _batch_says_clean)
     monkeypatch.setattr("ai_infra.llm.get_llm", lambda **kw: object())
 
@@ -434,7 +439,7 @@ def test_fused_scan_result_keeps_wire_semantics():
 # ============================================================ 5. 形态门禁（AST）
 
 def _func_tree(name: str) -> ast.AsyncFunctionDef | ast.FunctionDef:
-    src = (BACKEND / "modules" / "trade" / "service.py").read_text(encoding="utf-8")
+    src = SVC_SRC
     tree = ast.parse(src)
     for n in ast.walk(tree):
         if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef)) and n.name == name:
@@ -541,7 +546,7 @@ def test_labels_are_read_from_the_constants_not_hardcoded():
 
 def test_decision_rank_has_single_definition():
     """排序权重只有一处定义，且端点侧（router）不得再做一次排序。"""
-    src = (BACKEND / "modules" / "trade" / "service.py").read_text(encoding="utf-8")
+    src = SVC_SRC
     assert src.count("_RISK_DECISION_RANK = ") == 1, "排序权重出现了多处定义"
     router_src = (BACKEND / "modules" / "trade" / "router.py").read_text(encoding="utf-8")
     assert ".sort(" not in router_src and "sorted(" not in router_src, (
@@ -635,7 +640,7 @@ async def test_deep_skips_semantics_for_items_the_rules_already_flagged(monkeypa
         _item(3, "2026-01-01", body=neutral),             # 规则零命中
     ]
     _patch_list(monkeypatch, items)
-    monkeypatch.setattr(svc, "_llm_configured", lambda: True)
+    monkeypatch.setattr(svc.review_risk, "_llm_configured", lambda: True)
     monkeypatch.setattr("ai_infra.llm.get_llm", lambda **kw: object())
 
     sent: list[list[str]] = []
@@ -674,7 +679,7 @@ async def test_skipping_every_item_leaves_llm_used_true_and_zero_calls(monkeypat
     """
     items = [_item(i, f"2026-01-0{i}", body=_BODY_THREAT) for i in range(1, 4)]
     _patch_list(monkeypatch, items)
-    monkeypatch.setattr(svc, "_llm_configured", lambda: True)
+    monkeypatch.setattr(svc.review_risk, "_llm_configured", lambda: True)
     monkeypatch.setattr("ai_infra.llm.get_llm", lambda **kw: object())
 
     async def _boom(*a, **kw):  # pragma: no cover - 被调用即失败

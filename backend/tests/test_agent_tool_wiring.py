@@ -27,6 +27,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from pkg_source import parse_module, read_source  # noqa: E402
+
 BACKEND = Path(__file__).resolve().parents[1]
 MODULES = BACKEND / "modules"
 
@@ -68,7 +70,17 @@ WIRED_SECRETARY = {
 
 
 def _parse(rel: str) -> ast.Module:
-    return ast.parse((BACKEND / rel).read_bytes().decode("utf-8", "replace"))
+    """解析 `rel` 指向的源码 → 单个 `ast.Module`（**文件或包**双态）。
+
+    实现收口在 `tests/pkg_source.py` —— 本仓明令禁止同一判定多份实现，
+    而「把文件或包解析成一个 Module」这件事在本仓不止一处需要
+    （`test_tool_catalog::_tools_expr_nodes` 同样需要）。
+    ★ 若让各调用点自己写 `ast.parse((BACKEND / rel)...)`：目标模块一旦从
+      `x.py` 拆成 `x/` 包，就会崩在**收集期**（`FileNotFoundError`），
+      或被读成别的文件集而使判据**恒真/恒假**（本仓踩过两次，见
+      `.workbuddy/memory/_pending/第355轮.md` §6）。
+    """
+    return parse_module(rel)
 
 
 def _module_level_tool_lists(tree: ast.Module) -> list[tuple[str, list[str], int]]:
@@ -305,14 +317,14 @@ def test_shop_context_provider_exists():
     """
     for rel in ("modules/ad_analysis/agent_ad.py",
                 "modules/customer_service/agent_cs.py"):
-        src = (BACKEND / rel).read_bytes().decode("utf-8", "replace")
+        src = read_source(rel)
         assert "_current_shop_id" in src, (
             f"{rel} 缺 `_current_shop_id` —— 该模块的工具需要租户归属"
         )
 
     for rel in ("modules/ad_analysis/tools.py",
                 "modules/customer_service/tools.py"):
-        src = (BACKEND / rel).read_bytes().decode("utf-8", "replace")
+        src = read_source(rel)
         assert "def _shop_id()" in src, (
             f"{rel} 缺 `_shop_id()` —— 工具层取不到归属，会永远返回 no_data"
         )

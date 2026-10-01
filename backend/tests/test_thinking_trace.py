@@ -49,6 +49,8 @@ import ast
 import json
 from pathlib import Path
 
+from pkg_source import class_mro_body, merge_files  # noqa: E402
+
 
 # ============================================================ 可控的假 router
 
@@ -279,18 +281,82 @@ def _uses_step_primitive(tree: ast.Module) -> bool:
     return False
 
 
+def _agent_units(backend: Path) -> list:
+    """→ [(单元名, 该单元的 .py 文件清单)]。
+
+    **单元** = 一个 `agent*.py` 文件，**或** 一个 `agent*/` 包（含嵌套）。
+
+    ★ 为什么必须是「文件 **或** 包」而不是只认文件（第 356 轮实测教训）：
+      拆包前 `CustomerServiceAgent` 住在 `customer_service/agent_cs.py`；
+      拆包后住在 `customer_service/agent_cs/__init__.py` —— 文件名不再匹配
+      `agent*.py`。旧扫描面因此**静默漏掉**这个类，三条用例转红：
+      「找不到实现类」。这是「拆包打断路径 glob」的又一实例
+      （同族：`test_tool_catalog.ASSEMBLY_HOSTS`、`test_agent_tool_wiring.WIRED_AGENTS`）。
+
+    ★ 已被包覆盖的文件不再单列（防同一份代码被两个单元各算一次 ⇒
+      `test_wired_names_are_unambiguous_and_real` 会误报「重名」）。
+    """
+    mods = backend / "modules"
+    units: list = []
+    for py in sorted(mods.rglob("agent*.py")):
+        units.append((py.relative_to(backend).as_posix(), [py]))
+    for d in sorted(mods.rglob("agent*")):
+        if not d.is_dir():
+            continue
+        files = sorted(p for p in d.rglob("*.py") if p.is_file())
+        if files:
+            units.append((d.relative_to(backend).as_posix() + "/", files))
+    covered = {p for name, fs in units if name.endswith("/") for p in fs}
+    return [(n, f) for n, f in units if not (n.endswith(".py") and f[0] in covered)]
+
+
+def _merged_tree(files: list) -> ast.Module:
+    """把若干文件的 AST **合并**成一棵 —— 供 `ast.walk` 跨文件查找类与方法。
+
+    ★ 合并后 lineno 不再指向真实文件，但本文件所有判据**只做结构遍历**
+      （找 ClassDef / FunctionDef / Call / Yield），不读 lineno ⇒ 安全。
+
+    ★ 合并逻辑**收口到 `tests/pkg_source.py::merge_files`**（第 356 轮）：
+      本函数原先自己抄了一份逐字相同的实现 —— 同一判定两份实现，
+      改口径时必然漏一处（本仓明令禁止）。
+    """
+    return merge_files(files)
+
+
+def _class_methods(tree: ast.Module, cls_name: str):
+    """→ 该类**及其全部（递归）基类**的方法节点；类不存在则 `None`。
+
+    ★ 为什么不能只看 `cls.body`（第 356 轮实测教训）：
+      mixin 拆包后 `class CustomerServiceAgent(MixinCore, MixinFaq, ..., BaseAgent)`
+      的**自身类体几乎是空的**，`stream_chat` / `_stream_via_tools` 住在
+      `agent_cs/core.py::MixinCore` 里 ⇒ 只看类体必然判「没调用」= **假红**。
+      按基类名递归收集 = 复刻 Python 的方法查找 ⇒ 判据语义与拆包前**等价**
+      （既没有放宽，也没有把窗口扩大到「整个包随便哪个方法」）。
+
+    ★ 实现**收口到 `tests/pkg_source.py::class_mro_body`**（第 356 轮）：
+      `test_hitl_policy::_assembly_facts` 需要**完全相同**的能力（沿基类收集装配点），
+      而它是在同一轮被同一次拆包打红的 —— 说明这类判据会**成组出现**，
+      各留一份实现必然漂移（本仓明令禁止）。
+    """
+    return class_mro_body(tree, cls_name)
+
+
 def _scan_agent_modules() -> dict:
-    """→ {类名: {"files": [...], "used": bool}}，覆盖 `modules/**/agent*.py`。"""
+    """→ {类名: {"files": [...], "used": bool, "tree": <单元合并 AST>}}。
+
+    覆盖 `modules/**/agent*.py` **以及**同名包目录（见 `_agent_units`）。
+    """
     backend = Path(__file__).resolve().parents[1]
     out: dict = {}
-    for py in sorted((backend / "modules").rglob("agent*.py")):
-        tree = ast.parse(py.read_bytes().decode("utf-8", errors="replace"))
-        used = _uses_step_primitive(tree)
-        for n in ast.walk(tree):
+    for rel, files in _agent_units(backend):
+        merged = _merged_tree(files)
+        used = _uses_step_primitive(merged)
+        for n in ast.walk(merged):
             if isinstance(n, ast.ClassDef):
-                e = out.setdefault(n.name, {"files": [], "used": False})
-                e["files"].append(py.relative_to(backend).as_posix())
+                e = out.setdefault(n.name, {"files": [], "used": False, "tree": None})
+                e["files"].append(rel)
                 e["used"] = e["used"] or used
+                e["tree"] = merged
     return out
 
 
@@ -307,15 +373,12 @@ def _stream_tool_loop_forwards_steps(tree: ast.Module, cls_name: str) -> tuple:
     ⇒ 「接了环路但忘了把步骤转出去」会在这里红 —— 那是最容易漏的一步，
       漏了之后零报错：界面只是又退化成那个转圈。
     """
-    cls = None
-    for n in ast.walk(tree):
-        if isinstance(n, ast.ClassDef) and n.name == cls_name:
-            cls = n
-    if cls is None:
+    methods = _class_methods(tree, cls_name)
+    if methods is None:
         return False, False, "类不存在"
 
     found_call = False
-    for fn in cls.body:
+    for fn in methods:
         if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         calls_loop = any(
@@ -383,19 +446,17 @@ def test_wired_agents_forward_steps_out_of_the_stream_loop():
     「接了 `_stream_via_tools` 但 `stream_chat` 忘了转发」是本轮最容易漏的一步，
     而且漏了之后**零报错**：界面只是又退化成那个转圈。
     """
-    backend = Path(__file__).resolve().parents[1]
+    # ★ 复用 `_scan_agent_modules()` 这**唯一一份**扫描实现：
+    #   此前本用例自己又 glob 了一遍（同一判定两份实现 ⇒ 拆包后两处会各自漂移，
+    #   而只有一处被修到）。改为单一真源后，扫描面的演进只需改一个地方。
+    scanned = _scan_agent_modules()
     missing: list = []
-    target = {c: None for c in WIRED_STREAM_AGENTS}
-    for py in sorted((backend / "modules").rglob("agent*.py")):
-        tree = ast.parse(py.read_bytes().decode("utf-8", errors="replace"))
-        for n in ast.walk(tree):
-            if isinstance(n, ast.ClassDef) and n.name in target:
-                target[n.name] = tree
-    for cls in sorted(target):
-        tree = target[cls]
-        if tree is None:
+    for cls in sorted(WIRED_STREAM_AGENTS):
+        unit = scanned.get(cls)
+        if unit is None:
             missing.append(f"{cls}（找不到实现类）")
             continue
+        tree = unit["tree"]
         found, fwd, why = _stream_tool_loop_forwards_steps(tree, cls)
         if not (found and fwd):
             missing.append(f"{cls}（{why}）")
