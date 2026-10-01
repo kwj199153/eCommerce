@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * 门禁：ESLint 棘轮「不得回退」（第 346 轮 · F-1；第 348 轮 · F-2 收紧：欠账 21→10、生效 181→192）
+ * 门禁：ESLint 棘轮「不得回退」（第 346 轮 · F-1；第 348 轮 · F-2 收紧：欠账 21→10、生效 181→192；
+ *       第 349 轮：欠账 10→9、生效 192→193）
  * ============================================================================
  * 为什么需要这个文件：`frontend/eslint.config.mjs` 只是**当前**的档位；
  * 没有门禁的话「棘轮只增不减」只是注释里的一句口头约定 ——
@@ -38,7 +39,8 @@ const { createRequire } = require('module')
 const FE_ROOT = path.resolve(__dirname, '..')
 const requireFE = createRequire(path.join(FE_ROOT, 'package.json'))
 
-/** 冻结：F-1 的 181 条 + 第 348 轮 F-2 新增 11 条 = 192 条「在任一代表文件类上档位 > 0」的规则 */
+/** 冻结：F-1 的 181 条 + 第 348 轮新增 11 条 + 第 349 轮新增 1 条
+ *  = 193 条「在任一代表文件类上档位 > 0」的规则 */
 const FLOOR_ENFORCED = [
   "@typescript-eslint/ban-ts-comment",
   "@typescript-eslint/no-array-constructor",
@@ -233,10 +235,15 @@ const FLOOR_ENFORCED = [
   "vue/multiline-html-element-content-newline",
   "vue/singleline-html-element-content-newline",
   "vue/v-on-event-hyphenation",
+  // ---- 第 349 轮：`vue/multi-word-component-names` 移出欠账表后**入列**（棘轮收紧方向）----
+  //   此前它是 'off'（一个名字都不查）；现在回到 preset 的 'error'，
+  //   仅由 `ratchet/component-name-policy` 豁免 6 个既定名字。
+  "vue/multi-word-component-names",
 ]
 
-/** 冻结：显式关掉并登记的 10 条欠账（不得新增，只许清零后移出）
- *  ★ 第 348 轮 F-2 已把 11 条「全可自动修」的 vue 规则清零并移出本表（6285 处）。 */
+/** 冻结：显式关掉并登记的 9 条欠账（不得新增，只许清零后移出）
+ *  ★ 第 348 轮 F-2 已把 11 条「全可自动修」的 vue 规则清零并移出本表（6285 处）。
+ *  ★ 第 349 轮 `vue/multi-word-component-names` 移出（改用 config 的策略档豁免 6 个既定名字）。 */
 const CEILING_DEBT = [
   "@typescript-eslint/no-explicit-any",
   "@typescript-eslint/no-require-imports",
@@ -246,16 +253,15 @@ const CEILING_DEBT = [
   "no-empty",
   "no-undef",
   "no-useless-escape",
-  "vue/multi-word-component-names",
   "vue/no-v-html",
 ]
 
 /** 冻结：每个代表文件类上的生效规则条数 */
 const FLOOR_PER_CLASS = {
-  "src/main.ts": 173,
-  "src/App.vue": 188,
-  "scripts/check-session-registry.cjs": 186,
-  "scripts/cdp-dark-contrast.mjs": 186,
+  "src/main.ts": 174,
+  "src/App.vue": 189,
+  "scripts/check-session-registry.cjs": 187,
+  "scripts/cdp-dark-contrast.mjs": 187,
 }
 
 const errors = []
@@ -270,8 +276,8 @@ async function main() {
   // ★★ 这里必须 `fail(...); return report()` —— **不能写 `return fail(...)`**：
   //    那样只会往 errors 里塞一条就返回，永远走不到「打印 + 置退出码」那段
   //    ⇒ 自检静默空转、门禁恒绿。本轮反向注入 R4 就是靠这个把它抓出来的。
-  if (FLOOR_ENFORCED.length !== 192) { fail(`冻结生效集合条数异常：${FLOOR_ENFORCED.length} != 192（本门禁自身被改坏了）`); return report() }
-  if (CEILING_DEBT.length !== 10) { fail(`冻结欠账条数异常：${CEILING_DEBT.length} != 10（本门禁自身被改坏了）`); return report() }
+  if (FLOOR_ENFORCED.length !== 193) { fail(`冻结生效集合条数异常：${FLOOR_ENFORCED.length} != 193（本门禁自身被改坏了）`); return report() }
+  if (CEILING_DEBT.length !== 9) { fail(`冻结欠账条数异常：${CEILING_DEBT.length} != 9（本门禁自身被改坏了）`); return report() }
   if (Object.keys(FLOOR_PER_CLASS).length !== 4) { fail(`逐类冻结表条数异常：${Object.keys(FLOOR_PER_CLASS).length} != 4（本门禁自身被改坏了）`); return report() }
   if (FLOOR_PER_CLASS[Object.keys(FLOOR_PER_CLASS)[0]] === undefined) { fail('逐类冻结表内容异常（本门禁自身被改坏了）'); return report() }
 

@@ -17,6 +17,8 @@
  *       │     （档位 error 141 + 档位 warn 21；**warn 也按失败处理**，否则那 21 条没牙齿）
  *       └─ 基线即为关闭                           21  → 保持关闭，本文件**不动它们**
  *     ⇒ 落地后 `eslint .` 的结果应当是 **0 problem**（可验收的硬判据）。
+ *   ★ 演进：第 348 轮 F-2 欠账 21 → 10（11 条 vue 格式规则清零后移出）；
+ *           第 349 轮欠账 10 → 9（`vue/multi-word-component-names` 移出，改用策略档豁免）。
  *
  * ★★ 为什么**不**把 162 条显式钉成 'error'（第一版就是这么做的，错了）：
  *     档位是**按文件类解析**的 —— 同一条规则在 `.ts` / `.vue` / `.mjs` 上可以不同。
@@ -84,13 +86,15 @@ export const LEGACY_DEBT_OFF = {
   "@typescript-eslint/no-unused-expressions": 'off',  // 存量 1 条
   "@typescript-eslint/no-unused-vars": 'off',  // 存量 103 条
 
-  // ---- eslint-plugin-vue（2 条）----
+  // ---- eslint-plugin-vue（1 条）----
   // ★ 第 348 轮 F-2：11 条「全可自动修」的 vue 规则已清空并移出本表（合计 6285 处）——
   //   html-indent / max-attributes-per-line / singleline&multiline-html-element-content-newline /
   //   attributes-order / html-self-closing / attribute-hyphenation / v-on-event-hyphenation /
   //   html-closing-bracket-spacing & -newline / first-attribute-linebreak。
   //   实测：清理后「清空欠账」口径下这 11 条均为 0，无残留。
-  "vue/multi-word-component-names": 'off',  // 存量 7 条（要人工改组件名，不可自动修）
+  // ★ 第 349 轮：`vue/multi-word-component-names` 已**移出**本表 —— 7 条违规全是合理豁免的
+  //   单名组件（index ×2 + 5 个视图页），改用下方 `ratchet/component-name-policy` 策略档
+  //   显式豁免那 6 个名字，规则本身回到 preset 的 'error'。
   "vue/no-v-html": 'off',  // 存量 8 条（安全审计项，不可自动修）
 }
 
@@ -143,4 +147,23 @@ export default tseslint.config(
 
   // ---- 棘轮档：放在最后 ⇒ 覆盖上面预设给的档位 ----
   { name: 'ratchet/legacy-debt-off', rules: LEGACY_DEBT_OFF },
+
+  // ★ 第 349 轮：`vue/multi-word-component-names` 的**策略档**（不再属于欠账表）。
+  //   为什么豁免而不是改名 —— 这 6 个名字都是既定的合理形态：
+  //     · `index` —— 目录入口组件的约定名（ChatPanel / TaskConfigPanel 各一个）
+  //     · `Login` / `Settings` / `Subscription` / `Team` / `Workspace`
+  //       —— 视图级页面组件，名字在 src/views 下唯一
+  //   该规则的本意是防止组件名与 HTML/SVG 原生标签（header / main / transition …）撞名，
+  //   这 6 个都不撞。改名会断掉全部 import 路径、路由表与既有门禁锚点，代价远大于收益。
+  //   ★ 这是**收紧**不是放宽：此前该规则在欠账表里是 'off'（一个名字都不查），
+  //     现在除这 6 个名字外，**任何**单名组件都会被 error 拦住。
+  //     反向注入自证：`.workbuddy/probes/r349/revinject_mw.py`。
+  {
+    name: 'ratchet/component-name-policy',
+    rules: {
+      'vue/multi-word-component-names': ['error', {
+        ignores: ['index', 'Login', 'Settings', 'Subscription', 'Team', 'Workspace'],
+      }],
+    },
+  },
 )

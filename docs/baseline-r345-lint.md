@@ -317,7 +317,7 @@ error 最密集的文件（Top 12）：
 |---|---|---|---|
 | **F-1** | 183 条**当前零违规**规则开为 error | 0 行代码改动 | 零风险立门禁。**唯一"纯赚"的一档** |
 | **F-2** | 3 条 vue 格式规则（6658 条）+ 其余 8 条可自动修 vue 规则 = **11 条** | ✔ **第 348 轮已落**：103 个 `.vue`，**6285 处**（+12646/−4011） | 跑一次 formatter 落一次大提交，之后开为 error。**收益是消除噪声、让真问题显形**（详见 §6） |
-| **F-3** | `no-unused-vars` 103 / `no-empty` 12 / `no-case-declarations` 9 / `no-useless-escape` 4 / `multi-word-component-names` 7 / `no-unused-expressions` 1 | **136** | 这些**能真抓 bug**（未使用变量=可能写错、空块=漏实现、case 无块=作用域泄漏），需逐条看 |
+| **F-3** | `no-unused-vars` 103 / `no-empty` 12 / `no-case-declarations` 9 / `no-useless-escape` 4 / ~~`multi-word-component-names` 7~~ / `no-unused-expressions` 1 | **129** | 这些**能真抓 bug**（未使用变量=可能写错、空块=漏实现、case 无块=作用域泄漏），需逐条看。★ 原 136 条中 `multi-word-component-names` 那 7 条已由**第 349 轮以配置方式收口**（详见 §7），故 F-3 实际剩 **129** 条纯人工项 |
 | **F-4** | `no-explicit-any` 689 | **689** | 存量风格债，逐条要判真实类型 ⇒ **本轮不建议**（成本高、收益是"风格"不是"正确性"） |
 
 另需**单独处置**（不属于任何档，是口径修正）：
@@ -343,6 +343,7 @@ error 最密集的文件（Top 12）：
 **产生大面积冲突**，而它带来的只是"格式统一"。
 建议顺序改成：**F-1（零成本）→ 后端 B-1（圈小面）→ 手头重构告一段落 → F-2 → F-3 → B-2/B-3 → F-4**。
 ★ **第 348 轮**：B-1 与「手头重构告一段落」两格均已落，F-2 即按此顺序执行完毕。
+★ **第 349 轮**：F-3 里唯一可配置收口的一条（`multi-word-component-names`）已落，F-3 剩 129 条纯人工项。
 
 ---
 
@@ -483,6 +484,78 @@ s.replace(/<[^>]*>/g, (t) => t.replace(/\s+/g, ' ').replace(/\s+>$/, '>'))
 | `class="pending-skill-chip"` → `…chipX` | L10 | ✔ 红 |
 
 全部「基线绿 → 注入红 → 报在预期判据 → 还原绿」⇒ **判据没有被归一化成恒真**。
+
+---
+
+## 7. 第 349 轮：`vue/multi-word-component-names` 配置收口（棘轮 192→193、欠账 10→9）
+
+### 7.1 为什么是「配置收口」而不是「改代码」
+
+§4.1 把 F-3 六条（136 条）归为「需逐条人工判断」。逐条复核后发现：其中**只有一条能靠配置收口**，
+其余五条必须动代码。这条例外是 `vue/multi-word-component-names`（7 条）。
+
+**为什么不能改名** —— 7 条其实是 6 个名字，全是既定形态：
+
+| 名字 | 位置 | 为什么合理 |
+|---|---|---|
+| `index` | `ChatPanel/index.vue`、`TaskConfigPanel/index.vue` | 目录入口组件的 Vue 生态约定名 |
+| `Login` / `Settings` / `Subscription` / `Team` / `Workspace` | `src/views/*.vue` | 视图级页面组件，名字在该目录下唯一 |
+
+该规则的本意是防止组件名与 HTML/SVG 原生标签（`header` / `main` / `transition` …）撞名 ——
+这 6 个都不撞。改名会断掉全部 import 路径、路由表与既有门禁锚点，代价远大于收益。
+
+### 7.2 落法：从欠账表移出 + 策略档显式豁免
+
+```js
+// frontend/eslint.config.mjs（末尾，棘轮档之后）
+{
+  name: 'ratchet/component-name-policy',
+  rules: {
+    'vue/multi-word-component-names': ['error', {
+      ignores: ['index', 'Login', 'Settings', 'Subscription', 'Team', 'Workspace'],
+    }],
+  },
+}
+```
+
+★ **这是收紧不是放宽**：此前该规则在 `LEGACY_DEBT_OFF` 里是 `'off'`（**一个名字都不查**）；
+现在回到 preset 的 `'error'`，仅显式豁免这 6 个名字。
+
+### 7.3 棘轮门禁同步（属收紧方向）
+
+| 冻结表 | 前 | 后 |
+|---|---:|---:|
+| `FLOOR_ENFORCED` | 192 | **193**（该规则入列） |
+| `CEILING_DEBT` | 10 | **9**（该规则移出） |
+| `FLOOR_PER_CLASS` | 173 / 188 / 186 / 186 | **174 / 189 / 187 / 187**（实测，非手写） |
+| R4 自检常量 | `192` / `10` | **`193`** / **`9`** |
+
+实测档位：`calculateConfigForFile` 在四个代表文件类上均返回 **2（error）** ⇒ 满足 R1 前提。
+
+### 7.4 反向注入自证（`.workbuddy/probes/r349/revinject_mw.py`）
+
+| 注入 | 期望 | 实测 |
+|---|---|---|
+| ① 把该规则**塞回** `LEGACY_DEBT_OFF` | R1+R3 红 | ✔ 红：「欠账表新增了 1 条」+「生效集合与欠账表出现交集」 |
+| ② 把策略档的 `ignores` 清空为 `[]` | 7 条全报 | ✔ 7 条（index×2 / Login / Settings / Subscription / Team / Workspace） |
+| ③ 新建**未豁免**的单名组件 `src/views/Probe.vue` | 报它 | ✔「Component name "Probe" should always be multi-word.」 |
+
+★ ③ 是关键一条：证明豁免是**显式白名单**，而不是「换个名字把规则静默关掉」。三条均「基线绿 → 注入红 → 还原绿」。
+
+### 7.5 ★★ 一条被否掉的原方案（如实记录）
+
+第 349 轮普查时曾把 `no-unused-vars` 的 **15 条「解构 rest 省略」**（`const { id, ...rest } = obj`）
+也归入「改配置即可零风险收口」—— **这个判断是错的**，被实测否决：
+
+- `@typescript-eslint/no-unused-vars` 是欠账表里的 `'off'`。开 `ignoreRestSiblings` 只能消掉那 15 条，
+  **还剩 88 条** ⇒ 规则**仍然不能移出欠账表** ⇒ **改选项没有任何行为效果**。
+- 按本仓纪律「**无可观测判据的改动 = 负资产**」（断言须先答「哪一处改动能把它打红」），这一步不做。
+
+⇒ **F-3 的真实规模是 129 条**（136 − 7），全部需要人工判断。普查已实测出的高危形态：
+`no-unused-vars` 103 条里，8 条是「副作用调用赋值」（`const x = await run(...)`，删整行会让
+**探针静默少点一步**）、7 条是 `defineEmits/defineProps` 返回未用（**只能删 `const emit =`，
+宏调用必须保留**，否则丢类型约束 / 丢 `withDefaults` 默认值）、24 条死函数中已抓到**真功能漏接**
+（`fillFromProduct` 在 `ABTestConfig` / `SEOConfig` **零调用**，而 `BulletConfig` / `DescConfig` 各有 2 处调用）。
 
 ---
 
