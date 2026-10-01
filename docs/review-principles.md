@@ -199,8 +199,8 @@
 > （**2 条**；判据用 `compile()` 走 CPython 词法分析器，而非 grep 转义表）。
 > ④ **P3 复算**：生产源码 >800 行 **51 个** / `def _get_router` **×7** / `def _dump` **×8**
 > —— 后两条与 r335/r350/r353 **完全一致**（**未改善**）。
-> pytest 由 **2527 → 2543**（153 → **156** 文件，delta = +3 文件 / +16 用例）；
-> `mypy core ai_infra` 仍 89 文件。反向注入 **9 组全红**（L3-17/L3-14 共 3 组 + L3-5 共 3 组 + 第 3 批 3 组）
+> pytest 由 **2527 → 2544**（153 → **156** 文件，delta = +3 文件 / +17 用例）；
+> `mypy core ai_infra` 仍 89 文件。反向注入 **12 组全红**（L3-17/L3-14 共 3 组 + L3-5 共 3 组 + 第 3 批 3 组 + 第 4 件 3 组）
 > + 逐字节还原 sha 一致 + 回绿复核。
 > ★ **P3 口径敏感（新增，防下次误判）**：「>800 行」在同一份代码上随口径变化 ——
 > 计入 `modules/*/seed.py` ⇒ **51**，剔除 seed ⇒ **50**（= r353 记的数），
@@ -247,13 +247,33 @@
 > ★ 口径提醒：**2542 是批次 3 提交（`20d0b1c`）时的读数，2543 是本批收尾终态** ——
 >   两个都对，差别只在**取证时刻**；引用时必须连时刻一起说。
 
+> **更新 · 第 354 轮（第 4 件 · 根治）**：上段登记的「另 16 个扫描器仍缺排除 + 门禁未扩轴」已闭环（A 方案）。
+> ① **16 个扫描器一次扫平**：统一改为**前缀式** `X.startswith(".pytest-tmp")`
+>    （16 个文件 / 20 个操作点；门禁本体另 4 处）。★ 为什么**不能**塞进现成的
+>    `{".venv", ...} & set(parts)`：那是**精确匹配**，而 basetemp 叫
+>    `.pytest-tmp-r354c` ⇒ **匹配不到**（看着修好了，实则无效）。
+> ② **门禁扩成双轴**：在 `_venv_excluded` 之外新增 `_basetemp_excluded(tree)`
+>    （AST 判 `X.startswith(...)` 且实参含 `.pytest-tmp`，支持模块级常量名）；
+>    抽出 `_iter_backend_root_scanners()` 供两条用例共用（本仓铁律：禁两份实现）；
+>    新增用例 `test_backend_scanning_gates_exclude_pytest_basetemp`。
+> ③ **反向注入 3 组**：删前缀排除 ⇒ 红并点名该文件；**改写成精确匹配 ⇒ 仍红**
+>    （核心证据：伪装形态过不了判据）；改判据常量 ⇒ 红并点名**全部 17 个**扫描器
+>    （该清单即权威名册 —— 判据现算，非人工登记）。三组各自 sha 逐字节还原 + 回绿。
+> ⇒ 门禁集合 **29 passed + 1 skipped / rc=0**（上批 28+1）；本次 basetemp 里
+>    `injected_bad_escape.py` **确实在场** ⇒ 是「**有污染也绿**」。
+>    权威用例数再 +1：**2543 → 2544**（156 文件不变）。
+> ★ 教训：**「修受害者」≠「修缺陷类」** —— 判据的**读集**要按「哪些目录**永远不该读**」
+>   定义，而不是按「今天谁受害」定义（basetemp 里写什么由**门禁自己的元测试**决定，
+>   下一轮换个断言就换一份内容）。
+> 结论落 `docs/reviews/2026-10-01-第354轮-P1-3与P3落地.md` §11。
+
 > 目的：下次审查直接从 L2 开始，不必重走 L1 盘点。**有变化时更新本节。**
 
 ### CI（`.github/workflows/ci.yml` 430 行 / `cd.yml` 261 行）
 
 | Job | 步骤 |
 |---|---|
-| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 353 轮实测 `Success, 89 source files`）** → pytest（**2543 用例**）+ 覆盖率棘轮（`fail_under=65`） |
+| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 353 轮实测 `Success, 89 source files`）** → pytest（**2544 用例**）+ 覆盖率棘轮（`fail_under=65`） |
 | 前端 | 门禁 glob `check-*.*` + **覆盖率自证**（漏跑即红）→ `vue-tsc` → `vite build`（`VITE_DEMO_MODE=false`） |
 | 资产 | 必需文件存在 → `docker compose config` → `nginx -t` → 敏感文件未被 git 跟踪 → **CD 资产门禁** |
 | 安全 | bandit（Medium+ = 0）/ pip-audit / npm audit（阈值 `critical` —— 按原则四锁在「当前已绿」） |
@@ -272,7 +292,7 @@
 > 2295@09-30(137 文件) → 2347@r332 → 2435@r347(148 文件) → 2450@r351(149 文件)
 > → 2523@r351(153 文件)（同轮四道新门禁：`test_amazon_sp_oauth` / `test_prompt_versions` /
 > `test_legal_docs` / `test_pitr`）→ **2527@r352(153 文件)**（`test_legal_docs` 由 5 条涨到 9 条）→
-> **2543@r354(156 文件)**（`test_openapi_contract_gate` **10**（第 3 批由 8 涨到 10）
+> **2544@r354(156 文件)**（`test_openapi_contract_gate` **10**（第 3 批由 8 涨到 10）
 > + `test_tenant_isolation_gate` 3 + `test_no_syntax_warnings` **3**（收尾再 +1：basetemp 回归用例））。
 > ⇒ 本节是**快照**：更新时必须重跑上面这条命令，**不要沿用旧数**。
 > ★ 为什么之前会写错：`11276` 既不是用例数、也不是 coverage statements 数
