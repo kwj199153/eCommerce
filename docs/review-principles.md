@@ -134,6 +134,12 @@
 
 > **更新 · 第 346 轮**：批次 1 已落地（L3-1 前端 ESLint 棘轮 `4835dea`；L3-2 后端 mypy 棘轮 `5b2df09`）。下表与附录 A 已同步。
 >
+> **更新 · 第 350 轮**：**按 `review-principles.md` 本身跑了一次全量复审**，结论落
+> `docs/reviews/2026-10-01-项目复审与进度归档.md`（§6.2「补三」约定的目录与格式，本轮首次落地）。
+> 本节据此同步：门禁数 37 → **38** `.cjs`；附录 A 的 10 条逐条实测重盘 + 新增 6 条（L3-11 ~ L3-16）。
+> ★ 本轮另得两条**度量口径**（防下次误判，已写进该报告 §9）：F-2 格式化后 `.vue` 行数**不可跨版本比**；
+> 度量脚本**必须排除 `.workbuddy/`**（否则探针留痕把「>800 行文件」从 51 撑到 336）。
+>
 > **更新 · 第 347 轮**：**核正 pytest 用例数口径** —— 下表原写「11276 用例」是
 > **无来源的错记**（全仓 grep 只此一处，且与同类快照 2295/r332 2347 差 4.6 倍）。
 > 真实口径见表格下方脚注（**2435 用例 / 148 文件**）。
@@ -144,7 +150,7 @@
 
 | Job | 步骤 |
 |---|---|
-| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入）** → pytest（**2435 用例**）+ 覆盖率棘轮（`fail_under=65`） |
+| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 350 轮实测 `Success, 87 source files`）** → pytest（**2435 用例**）+ 覆盖率棘轮（`fail_under=65`） |
 | 前端 | 门禁 glob `check-*.*` + **覆盖率自证**（漏跑即红）→ `vue-tsc` → `vite build`（`VITE_DEMO_MODE=false`） |
 | 资产 | 必需文件存在 → `docker compose config` → `nginx -t` → 敏感文件未被 git 跟踪 → **CD 资产门禁** |
 | 安全 | bandit（Medium+ = 0）/ pip-audit / npm audit（阈值 `critical` —— 按原则四锁在「当前已绿」） |
@@ -167,7 +173,8 @@
 
 ### 门禁总数
 
-- 前端 `frontend/scripts/check-*.{cjs,py}`：**37 部 `.cjs` + 4 部 `.py`**
+- 前端 `frontend/scripts/check-*.{cjs,py}`：**38 部 `.cjs` + 4 部 `.py`**（第 350 轮实测；
+  ★ 其中 **26 部自带 `*_SRC_ROOT`/`*_FILE` env 注入开口**，**12 部没有** ⇒ 见附录 A 新增的 L3-11）
 - 后端 `backend/scripts/check_*.py`：**4 部**（由 pytest 包着跑：`test_alert_rules_gate.py` /
   `test_compose_secrets_gate.py` / `test_agent_session_memory.py` / `test_import_boundaries.py`）
 - 另有一批 CDP 行为探针（`frontend/scripts/cdp-*.mjs`），其中
@@ -274,14 +281,42 @@
 |---|---|---|---|---|
 | ~~L3-1~~ | ~~前端 ESLint **从未能跑**~~ | ✔ **已闭合（第 346 轮 · F-1）**：新建 `frontend/eslint.config.mjs`（flat config；**只显式 `off` 掉 21 条欠账**并导出 `LEGACY_DEBT_OFF` 供门禁 import，其余一条不动）+ 新增 `frontend/scripts/check-eslint-ratchet.cjs`（判据**问库本身**：`calculateConfigForFile`，冻结三张表 + 四条断言）+ `lint` 去掉破坏性 `--fix` 与 ESLint 9 已移除的 `--ext` + CI frontend job 接 `npm run lint:ci`（`--max-warnings=0`）+ devDeps **+6**（含 `@eslint/js` / `globals` / `vue-eslint-parser` —— 最后一个是 peerDependency，不显式装则 `npm ci` 失败）。稳态 **0 problem**；反向注入 **13/13 PASS**。★ 方案原写「逐条列零违规规则为 error」方向**是错的**：档位**按文件类解析**，全局提级会新开闸。详见 `docs/plan-l3-batches.md` §1.6 | 批次 1 | ✔ |
 | ~~L3-2~~ | ~~后端 mypy **已装已配未接 CI**~~ | ✔ **已闭合（第 346 轮）**：CI backend job 已加 `run: mypy core ai_infra`（棘轮：只查已收敛到零的目录，基线 **74 条 → 0**）。★ 接入时还修掉两条 blocking：`python_version` 写 3.11 而 venv 是 3.12（mypy **一条业务结果都出不来**）、无参数 `mypy` 撞同名 `conftest`（退出码 2 但**一条都没检查**） | 批次 1 | ✔ |
-| L3-3 | **请求级 trace 已有，缺三段** | `request_id` 已贯通后端全链路（见附录 A 上方「复核修正」）：缺 ① 前端零参与 ② Celery 跨进程断链 ③ 无分段耗时 | 批次 2 | 2–3 天 |
-| L3-4 | **prompt 指纹算出来了但没人读** | `PromptSpec`（`version` + `fingerprint` + 变量契约）齐备、**11 个业务模块真在注册**；缺的是：`.fingerprint` 在 `modules/` + `ai_infra/` **0 命中**、`get_prompt_template() -> str` **类型擦除**、B 档 DB 覆写层无表 | 批次 2 | 半天 |
+| L3-3 | **请求级 trace 已有，缺三段** | `request_id` 已贯通后端全链路（见附录 A 上方「复核修正」）：缺 ① 前端零参与 ② Celery 跨进程断链 ③ 无分段耗时。★ **第 350 轮实测：三段全未动** —— `frontend/src` 内 `X-Request-ID`/`requestId` 命中 **0**；`X-Process-Time-Ms` 仍是**总耗时**（`core/middleware/request_log.py:113`），无 DB/LLM 分段；`main.py:167` 的 `CORSMiddleware` **无 `expose_headers`** | 批次 2 | 2–3 天 |
+| L3-4 | **prompt 指纹算出来了但没人读**（第 350 轮实测：**仍未动**，`base_agent.py:824` 依旧是 `-> str`；行号由 790 漂到 824，因 B-1 注解补齐） | `PromptSpec`（`version` + `fingerprint` + 变量契约）齐备、**11 个业务模块真在注册**；缺的是：`.fingerprint` 在 `modules/` + `ai_infra/` **0 命中**、`get_prompt_template() -> str` **类型擦除**、B 档 DB 覆写层无表 | 批次 2 | 半天 |
 | L3-5 | OpenAPI 契约无快照 | `route_inventory.py` 只**盘点路由**、不做 schema diff | 批次 3 | 1 天 |
 | L3-6 | 前端无字段 / 按钮级权限渲染 | 全仓无 `v-permission` / `hasPermission`；只有业务态 `editable` | 批次 3 | 2–3 天 |
 | L3-7 | 无 SBOM | 无 `syft` / `cyclonedx`（漏洞扫描已由 pip-audit / npm audit 覆盖，SBOM 是**交付物**而非检测手段） | 批次 3 | 半天 |
 | L3-8 | 无 ADR（架构决策记录） | `docs/` 有大量审计报告与交付文档，但无决策记录 | 批次 3 | 持续 |
 | L3-9 | 数据出境未落地 | `docs/legal/PLACEHOLDERS.md` 已登记 `CROSS_BORDER_DESTINATION` / `CROSS_BORDER_MECHANISM` / `CROSS_BORDER_LIST_URL` 待填 | 批次 4 | 等客户 |
 | L3-10 | 无 K8s / 水平扩容 | 仅 `docker-compose.yml` | 批次 4 | 等需要 |
+
+### ★ 第 350 轮全量重盘（逐条实测，取代上面「第 1/2 次盘点」的状态列）
+
+| # | 状态 | 第 350 轮实测证据 |
+|---|---|---|
+| L3-1 | ✅ 闭合（r346），且已三轮收紧 | 棘轮 `FLOOR_ENFORCED` **181 → 193**、欠账 **21 → 9** |
+| L3-2 | ✅ 闭合（r346） | `mypy core ai_infra` → **Success, 87 source files**（74 → 0） |
+| L3-3 | ❌ 未做 | 三段全未动，见上 |
+| L3-4 | ❌ 未做 | `base_agent.py:824` 仍 `-> str` |
+| L3-5 | ❌ 未做 | `docs/openapi*` glob **0 命中** |
+| L3-6 | ❌ 未做 | `v-permission` / `hasPermission` 命中 **0** |
+| L3-7 | ❌ 未做 | `*.cdx.json` / `**/sbom*` 均 **0** |
+| L3-8 | ❌ 未做 | `docs/adr/**`、`docs/ADR-*.md` 均 **0** |
+| L3-9 | 🟡 清单已建，字段待填 | `PLACEHOLDERS.md` 自证命令实测 = **36 个占位符** |
+| L3-10 | ❌ 按设计不做 | `**/k8s/**` = 0 |
+
+**新增（第 350 轮重盘发现）**
+
+| # | 缺口 | 级别 | 实测证据 |
+|---|---|---|---|
+| L3-11 | **11 道门禁无 env 注入开口**（38 道里 26 道有） ⇒ 无法零副作用自证 | P1 | `.workbuddy/probes/r350/nohook_classify.py` |
+| L3-12 | **本地 venv 缺 `ruff`/`bandit`/`pip-audit`** ⇒ 这 3 道 CI 步骤本地不可复现 | P2 | 三者均 `No module named …` |
+| L3-13 | **欠账表注释数字漂移** | P3 | `eslint.config.mjs:80` 写 `no-undef 13 条`，实测 **19**；`:85` 写 `112`，实测 **115** |
+| L3-14 | `backend/scripts/patch_nav_view_ids_comment.py:6` 的 `invalid escape sequence '\s'` 污染每次 pytest 输出 | P3 | pytest stdout 尾部实测 |
+| L3-15 | **仓库根无 `LICENSE`**（文本在 `docs/legal/LICENSE`） | P1 | `LICENSE` 不存在 |
+| L3-16 | **无「表必须有写入者」门禁**（r332 §8 建议 4 未做） | P2 | `test_schema_parity.py` 只判外键 |
+
+> 完整重锚（含 P0 九项逐条）见 `docs/reviews/2026-10-01-项目复审与进度归档.md`。
 
 ### 分批建议与理由
 
