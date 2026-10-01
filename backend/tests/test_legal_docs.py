@@ -25,9 +25,25 @@
   L4 `PLACEHOLDERS.md` 自报的「当前共 N 个占位符」必须等于**实测**个数。
      自报数与实测数脱节，是本仓「工具现算清单」这句话失效的起点。
 
-★ 本门禁**不**断言「占位符为 0」：36 项里有 31 项是主体信息/法务参数
-  （工商全称、注册地址、管辖法院…），仓内零线索，编造等于往法律文本里写假事实。
-  它们由业务方给值后回填 —— 这是**有意的未完成**，不是漏做。
+  L5 仓库根 `LICENSE` 的**许可条款部分**必须与 `docs/legal/LICENSE` 逐字节一致。
+     同一份许可有两份落地（维护副本 + 对外发行物），任一侧单独改动都会漂移，
+     而漂移的方向通常是「发行物比维护副本旧」—— 客户看到的条款与仓库内的不一致。
+
+  L6 根 `LICENSE` **不得**含维护者备注块。
+     与上一轮删掉的 `<details> 工程侧事实核对表` 同族：「写给自己看的话」不能随
+     对外发行物交付 —— 根 LICENSE 会被直接复制进 release / 分发镜像。
+
+  L7 `subprocessors.md` 里引用的每个**代码取证锚点**必须在磁盘上真实存在。
+     子处理者清单的可信度取决于「能否核对」：路径悬空 = 文件改名后清单没跟着改，
+     或者锚点是凭印象编的。锚点数量下限挡住「把锚点全删、只留一句结论」的退化。
+
+  L8 隐私政策与 DPA 都必须**链接到** `subprocessors.md`，且不得再出现
+     `{{SUBPROCESSOR_LIST_URL}}`。防「清单建好了、对外文本却查不到」的悬空引用。
+
+★ 本门禁**不**断言「占位符为 0」：余下的各项全部是主体信息 / 法务参数 / 部署事实 /
+  客户侧字段（工商全称、注册地址、管辖法院、留存期的产品决策…），仓内零线索，
+  编造等于往法律文本里写假事实。它们由业务方给值后回填 —— 这是**有意的未完成**，
+  不是漏做；能由仓库客观确定的部分已按代码取证回填（见 `PLACEHOLDERS.md`「已处置」）。
 """
 
 from __future__ import annotations
@@ -37,15 +53,18 @@ from pathlib import Path
 
 from core.config import Settings
 
-#: 对外发布的四件文本；`PLACEHOLDERS.md` / `README.md` 是内部件，不在发布面内
+#: 对外发布面；`PLACEHOLDERS.md` / `README.md` 是内部件，不在发布面内。
+#: ★ `subprocessors.md` 是**客户/尽调方**要看的那一份，属于发布面。
 PUBLISHED = (
     "LICENSE",
     "privacy-policy.md",
     "terms-of-service.md",
     "data-processing-agreement.md",
+    "subprocessors.md",
 )
 
-_LEGAL = Path(__file__).resolve().parents[2] / "docs" / "legal"
+_ROOT = Path(__file__).resolve().parents[2]
+_LEGAL = _ROOT / "docs" / "legal"
 
 #: 模板全集 —— 与 `PLACEHOLDERS.md` 顶部自证命令同口径：`*.md` + `LICENSE`
 TEMPLATES = tuple(sorted(p.name for p in _LEGAL.glob("*.md"))) + ("LICENSE",)
@@ -66,10 +85,28 @@ _RETENTION_ROW = re.compile(
 #: 自报计数
 _SELF_REPORTED = re.compile(r"当前共\s*(\d+)\s*个占位符")
 
+#: 维护者备注块的起始标记：只应出现在 `docs/legal/LICENSE`（维护副本），不应进根 LICENSE
+_MAINTAINER_MARKER = "★ 维护者备注"
+
+#: 子处理者清单里的「代码取证锚点」形态：反引号包裹的 `backend/...` 路径
+_EVIDENCE_PATH = re.compile(r"`(backend/[A-Za-z0-9_./\-]+)`")
+
 
 def _read(name: str) -> str:
     """按字节读 + 行尾归一化：本仓维护窗内既有 LF 也有 CRLF，锚点不归一化会恒不命中。"""
     return (_LEGAL / name).read_bytes().decode("utf-8").replace("\r\n", "\n")
+
+
+def _license_terms(raw: str) -> str:
+    """取「许可条款」部分：剥掉维护者备注块，以及它前面那两行 `====` 分隔线与尾部空行。
+
+    ★ 两侧（根 LICENSE / docs/legal/LICENSE）必须走**同一个**剥离函数，
+      否则比较的是两个不同口径的切片，差异会被剥离逻辑本身吃掉或凭空制造。
+    """
+    lines = raw.split(_MAINTAINER_MARKER)[0].split("\n")
+    while lines and (lines[-1].strip() == "" or set(lines[-1].strip()) == {"="}):
+        lines.pop()
+    return "\n".join(lines) + "\n"
 
 
 def _used_placeholders() -> set[str]:
@@ -163,3 +200,93 @@ def test_checklist_reports_the_real_placeholder_count() -> None:
         f"PLACEHOLDERS.md 自报 {reported} 个，实测 {actual} 个 —— "
         "自报数与实测数脱节，说明这份清单已经不再是被工具维护的"
     )
+
+
+# ============================================================ L5 / L6 · LICENSE 两份落地
+
+
+def test_root_license_terms_match_the_reference_copy() -> None:
+    """L5：仓库根 `LICENSE` 的许可条款部分必须与 `docs/legal/LICENSE` 逐字节一致。
+
+    ★ 为什么要钉：同一份许可在本仓有两处落地 ——
+        `docs/legal/LICENSE`（维护副本，含维护者备注）与 `<repo>/LICENSE`（对外发行物）。
+      两处并存意味着**每改一次条款都要改两遍**，而漏改一侧不会报错、只会静默漂移。
+      漂移方向通常是「发行物比维护副本旧」：客户拿到的条款与仓库里的不一致。
+    """
+    root = _ROOT / "LICENSE"
+    assert root.exists(), (
+        "仓库根没有 LICENSE —— 权利状态默认不明"
+        "（`README.md` 与 `terms-of-service.md` 都写着「详见仓库 LICENSE」）"
+    )
+    root_terms = _license_terms(root.read_bytes().decode("utf-8").replace("\r\n", "\n"))
+    ref_terms = _license_terms(_read("LICENSE"))
+    assert root_terms.strip(), "根 LICENSE 的条款部分为空（只剩维护者备注？）"
+    assert root_terms == ref_terms, (
+        "根 LICENSE 的条款部分与 docs/legal/LICENSE 不一致：\n"
+        f"  根 LICENSE      : {len(root_terms.encode('utf-8'))} B\n"
+        f"  docs/legal/LICENSE: {len(ref_terms.encode('utf-8'))} B\n"
+        "改条款请同步两处：`docs/legal/LICENSE` 是维护副本，根文件是发行物"
+    )
+
+
+def test_root_license_carries_no_internal_maintainer_note() -> None:
+    """L6：根 `LICENSE` 不得含维护者备注块（防「写给自己看的话」随发行物出厂）。
+
+    ★ 同族形态：上一轮删掉的 `<details>` 工程侧事实核对表。那次的判据只扫
+      `docs/legal/*.md`，管不到仓库根 —— 而根 LICENSE 恰恰是会被直接复制进
+      release / 分发镜像的那一份，所以这里单独钉一条。
+    """
+    raw = (_ROOT / "LICENSE").read_bytes().decode("utf-8").replace("\r\n", "\n")
+    offenders = [m for m in (_MAINTAINER_MARKER, "不应随对外发行物一同交付") if m in raw]
+    assert not offenders, (
+        f"根 LICENSE 里残留工程侧维护者标记：{offenders} —— "
+        "该区块写的是「若本项目决定开源请如何替换」这类操作说明，不属于许可条款；"
+        "它只应留在 docs/legal/LICENSE"
+    )
+
+
+# ============================================================ L7 / L8 · 子处理者清单
+
+
+def test_subprocessors_evidence_anchors_actually_exist() -> None:
+    """L7：子处理者清单里引用的每个代码锚点，必须在磁盘上真实存在。
+
+    ★ 为什么判「路径存在」而不是「内容里含某个函数名」：清单的全部价值在于**可核对**。
+      路径级核对已经能挡住两类失真 ——
+        ① 文件改名/删除后清单没跟着改（引用悬空）；
+        ② 有人凭印象补一条服务商，锚点路径是编的。
+      再钉一个数量下限，挡住「把锚点全删掉、只留一句结论」的退化。
+    """
+    page = _LEGAL / "subprocessors.md"
+    assert page.exists(), (
+        "docs/legal/subprocessors.md 不存在 —— 隐私政策第四节与 DPA 第五条都引用了它，"
+        "会形成悬空引用"
+    )
+    text = page.read_bytes().decode("utf-8").replace("\r\n", "\n")
+    anchors = sorted(set(_EVIDENCE_PATH.findall(text)))
+    assert len(anchors) >= 5, (
+        f"子处理者清单里只找到 {len(anchors)} 个代码取证锚点（要求 ≥ 5）—— "
+        "清单已经退化成一句结论，客户无法核对"
+    )
+    missing = [a for a in anchors if not (_ROOT / a).exists()]
+    assert not missing, (
+        f"子处理者清单引用的这些路径在仓库里不存在：{missing} —— "
+        "要么文件改名后清单没跟着改，要么锚点是凭印象编的"
+    )
+
+
+def test_subprocessors_page_is_linked_from_the_published_texts() -> None:
+    """L8：两份对外文本都要指到子处理者清单，且不得再留着「在线地址」占位符。
+
+    ★ 防的是悬空引用的**反面**：清单文件建好了，对外文本却还写着
+      `{{SUBPROCESSOR_LIST_URL}}` 或压根没有链接 ⇒ 客户按政策去查子处理者会落空。
+    """
+    for name in ("privacy-policy.md", "data-processing-agreement.md"):
+        text = _read(name)
+        assert "subprocessors.md" in text, (
+            f"{name} 没有链接到 subprocessors.md —— 客户按政策去查子处理者清单会落空"
+        )
+        assert "{{SUBPROCESSOR_LIST_URL}}" not in text, (
+            f"{name} 仍留着 {{SUBPROCESSOR_LIST_URL}} 占位 —— "
+            "它已由本仓的 docs/legal/subprocessors.md 落地"
+        )

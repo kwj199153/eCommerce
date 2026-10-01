@@ -27,6 +27,7 @@
 | [`terms-of-service.md`](./terms-of-service.md) | 服务条款（对外，注册时勾选同意） | 付费 / 试用客户 | **开放注册前** |
 | [`data-processing-agreement.md`](./data-processing-agreement.md) | 数据处理协议（DPA，随主合同签署） | 企业客户 | **首个企业客户签约前** |
 | [`PLACEHOLDERS.md`](./PLACEHOLDERS.md) | 待填清单（所有 `{{...}}` 占位符汇总） | 内部 | 起草完成后即用 |
+| [`subprocessors.md`](./subprocessors.md) | 子处理者清单（逐条附代码取证锚点） | 客户 / 尽调方 | **对外发布前须发布为公开 URL** |
 
 ## 法务审阅提示（交给律师时一并转达）
 

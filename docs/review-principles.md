@@ -152,6 +152,14 @@
 > pytest 由 **2450 → 2523**（153 文件）、`mypy core ai_infra` **88 → 89 文件**；
 > 分层门禁同步登记 `prompt_versions → PLUGIN`、`wiring.py::MODEL_MODULES` 加 `prompt_versions.db_model`。
 >
+> **更新 · 第 352 轮**：**法务文本落地**（P0-9 剩余占位符 + 子处理者清单 + 仓库根 `LICENSE`）。本节同步：
+> 占位符 **36 → 22**（累计处置 14 项 = r351 5 + 本轮 9：取证回填 6 + 出境三项如实改写）；
+> 新增 `docs/legal/subprocessors.md`（7 条子处理者 + 5 项明确不列入 + 4 条复现命令，逐条附代码取证锚点）；
+> 仓库根 `LICENSE` 由 `docs/legal/LICENSE` **派生**（剥内部维护者备注）；
+> `tests/test_legal_docs.py` **5 → 9** 条（新增 L5 根副本同源 / L6 无维护者备注 / L7 清单锚点须真实存在 /
+> L8 对外文本须链接清单）。pytest 由 **2523 → 2527**（仍 153 文件）、`mypy core ai_infra` 仍 **89 文件**；
+> 8 组反向注入全红 + 逐字节还原。结论落 `docs/reviews/2026-10-01-第352轮-法务文本落地.md`。
+>
 > **更新 · 第 347 轮**：**核正 pytest 用例数口径** —— 下表原写「11276 用例」是
 > **无来源的错记**（全仓 grep 只此一处，且与同类快照 2295/r332 2347 差 4.6 倍）。
 > 真实口径见表格下方脚注（**2435 用例 / 148 文件**）。
@@ -162,7 +170,7 @@
 
 | Job | 步骤 |
 |---|---|
-| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 351 轮实测 `Success, 89 source files`）** → pytest（**2523 用例**）+ 覆盖率棘轮（`fail_under=65`） |
+| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 352 轮实测 `Success, 89 source files`）** → pytest（**2527 用例**）+ 覆盖率棘轮（`fail_under=65`） |
 | 前端 | 门禁 glob `check-*.*` + **覆盖率自证**（漏跑即红）→ `vue-tsc` → `vite build`（`VITE_DEMO_MODE=false`） |
 | 资产 | 必需文件存在 → `docker compose config` → `nginx -t` → 敏感文件未被 git 跟踪 → **CD 资产门禁** |
 | 安全 | bandit（Medium+ = 0）/ pip-audit / npm audit（阈值 `critical` —— 按原则四锁在「当前已绿」） |
@@ -179,8 +187,8 @@
 > 第 347 轮实测 = **2435 用例 / 148 个文件**（`--collect-only` 按文件求和）。
 > ★ 这个数**每轮都在涨**，历史快照：867@r126 → 1674@09-27 → 2025@r283 →
 > 2295@09-30(137 文件) → 2347@r332 → 2435@r347(148 文件) → 2450@r351(149 文件)
-> → **2523@r351(153 文件)**（同轮四道新门禁：`test_amazon_sp_oauth` / `test_prompt_versions` /
-> `test_legal_docs` / `test_pitr`）。
+> → 2523@r351(153 文件)（同轮四道新门禁：`test_amazon_sp_oauth` / `test_prompt_versions` /
+> `test_legal_docs` / `test_pitr`）→ **2527@r352(153 文件)**（`test_legal_docs` 由 5 条涨到 9 条）。
 > ⇒ 本节是**快照**：更新时必须重跑上面这条命令，**不要沿用旧数**。
 > ★ 为什么之前会写错：`11276` 既不是用例数、也不是 coverage statements 数
 > （实测 statements ≈ 27150），属纯错记；根因是「写现状快照时没有当场取数」。
@@ -215,8 +223,16 @@
 | 提示词 DB 覆写层（B 档） | `modules/prompt_versions/`（表 `prompt_versions` + 五态常量 + 6 端点）+
   `ai_infra/llm/prompt_overrides.py`（应用半，避开 `ai_infra` 不得 import `modules.*` 的红线）+
   `tests/test_prompt_versions.py`（19 条：落库前先校验、`applied` 由内存表现算） |
-| 法务文本与占位符 | `docs/legal/PLACEHOLDERS.md`（自证命令）+ `tests/test_legal_docs.py`（4 条：
-  无工程细节 / 天数 == 代码默认值 / 模板占位符 ⊆ 清单 / 自报数 == 实测数） |
+| 法务文本与占位符 | `docs/legal/PLACEHOLDERS.md`（自证命令 + 「已处置」登记表）+ `tests/test_legal_docs.py`（**9 条**：
+  无工程细节 / 天数 == 代码默认值 / 模板占位符 ⊆ 清单 / 自报数 == 实测数 / 根 `LICENSE` 与维护副本同源 /
+  根 `LICENSE` 无内部维护者备注 / 子处理者清单的**代码取证锚点须真实存在** / 对外文本须链接清单）。
+  ★ 该门禁**不**断言「占位符为 0」：余下 22 项无真值（主体信息 / 法务参数 / 部署事实 / 客户侧字段），
+  钉的是「自报数 == 实测数」这类**可机器核对的关系**，不是一个恒不可能满足的零 |
+| 子处理者清单 | `docs/legal/subprocessors.md`（7 条现行子处理者 + 5 项**明确不列入**及理由 +
+  §5 四条复现命令）。★ 收录口径写成**可在代码里 grep 的判据**：「只有真的会向该方发送数据的依赖才算」
+  ⇒ 把「清单是否完整」从凭记忆的问题变成可查证的问题。对外发布时须发布为公开 URL（未完成，已挂缺口） |
+| 仓库根 `LICENSE` | 由 `docs/legal/LICENSE` **派生**（`split("★ 维护者备注")[0]` 再剥尾部分隔行），
+  使「内部备注不应随发行物交付」从一句注释升级为**门禁**（L6 直接断言根副本不含该标记） |
 | 告警规则 / compose 密钥 | `check_alert_rules.py` / `check_compose_secrets.py`（各有 pytest 包装） |
 | 审计留存 | `core/audit/retention.py` |
 

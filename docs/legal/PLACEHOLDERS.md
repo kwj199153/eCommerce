@@ -10,7 +10,7 @@
 > 回填完成后该命令应**输出为空**；若仍有输出，说明有漏填项。
 > ★ 新增字段必须先写进对应文档、再登记到本表，否则就是"悄悄多出来的未填项"。
 
-**当前共 31 个占位符（第 351 轮 P0-9：5 项已处理，见下方 C 组状态）。** 分六组（A–F）：
+**当前共 22 个占位符**（累计已处置 14 项：第 351 轮 5 项 + 第 352 轮 9 项，逐项依据见文末「已处置」）。分六组（A–F）：
 
 ---
 
@@ -23,8 +23,6 @@
 | `COMPANY_REGISTRATION_NO` | 统一社会信用代码 | 业务方 | 91350100MA… |
 | `COMPANY_CONTACT_EMAIL` | 对外联系/客服邮箱 | 业务方 | support@example.com |
 | `COMPANY_CONTACT_PHONE` | 对外联系电话 | 业务方 | 0591-… |
-| `YEAR` | 版权年份（首个发布年份） | 业务方 | 2026 |
-| `SERVICE_NAME` | 产品对外名称 | 业务方 | 店管家 AI |
 | `SERVICE_DOMAIN` | 服务域名 | 业务方 | app.example.com |
 
 ## B. 生效与法律参数
@@ -51,18 +49,11 @@
 | `EMAIL_TOKEN_RETENTION_DAYS` | 邮件一次性令牌留存天数 | `EMAIL_TOKEN_RETENTION_DAYS`（默认 7） |
 | `CHAT_RETENTION_DAYS` | 对话/Agent 记忆留存天数 | 会话数据的实际清理策略（当前为随账号存续，需拍板） |
 | `ACCOUNT_DELETION_GRACE_DAYS` | 注销后删除的宽限期 | 产品策略（需拍板） |
-| `CROSS_BORDER_DESTINATION` | 数据出境目的地（如涉及） | 模型/存储服务商的部署地域 |
-| `CROSS_BORDER_MECHANISM` | 出境合法性基础 | 法务（标准合同 / 安全评估 / 认证） |
-| `CROSS_BORDER_LIST_URL` | 出境清单的在线地址 | 业务方维护 |
 
 ## D. 第三方与子处理者
 
 | 占位符 | 含义 | 填写方 | 示例 |
 |---|---|---|---|
-| `PAYMENT_PROVIDER` | 支付服务商 | 业务方 | 支付宝（Alipay） |
-| `EMAIL_PROVIDER` | 邮件发送服务商 | 业务方 | 阿里云邮件推送 |
-| `STORAGE_PROVIDER` | 对象存储服务商 | 业务方 | 阿里云 OSS |
-| `SUBPROCESSOR_LIST_URL` | 子处理者清单在线地址（须可公开访问并在变更前更新） | 业务方 | https://example.com/legal/subprocessors |
 | `SUBPROCESSOR_NOTICE_DAYS` | 变更子处理者的提前通知天数 | 法务 | 15 |
 | `BREACH_NOTICE_HOURS` | 数据泄露通知客户的时限（小时） | 法务 | 24 |
 
@@ -85,11 +76,33 @@
 
 ---
 
-## 进度（第 351 轮更新）
+## 已处置（第 351–352 轮）
+
+> 下列字段**不再需要业务方给值**：要么能由仓库自身客观确定（已按代码取证回填），
+> 要么经核对后与产品实际不符（已按事实改写）。
+> ★ 保留本表是为了留住「下一份合同复用同一套模板」的锚点，避免同一字段被反复重新推导；
+> 同时也是 L3 门禁的登记面 —— 处置过的字段若被重新写回模板，会因为「未登记」而报红。
+
+| 占位符 | 处置 | 依据（可复现） |
+|---|---|---|
+| `SERVICE_NAME` | 回填「店管家 AI」 | `frontend/src/views/Workspace.vue`（logo 文案）、`frontend/src/config/tourSteps.ts`、`README.md` |
+| `YEAR` | 回填「2026」 | `git log --reverse` 首条提交日期 2026-09-10（首个发布年份） |
+| `PAYMENT_PROVIDER` | 回填「支付宝（Alipay）」 | `backend/core/config.py`：`KNOWN_UNIMPLEMENTED_GATEWAYS` 只含 stripe / wechat / wechatpay / paypal，`PAYMENT_NOTIFY_PATH` 指向 alipay ⇒ 唯一已接入网关 |
+| `EMAIL_PROVIDER` | 回填「阿里云邮件推送（DirectMail）」 | `backend/core/config.py`：`EMAIL_PROVIDER` 可选值仅 console / aliyun_dm / disabled，生产要求 `aliyun_dm` + `ALIYUN_DM_*`；实现在 `backend/core/identity/mailer.py` |
+| `STORAGE_PROVIDER` | **改写为「无第三方对象存储」** | 全仓无 oss2 / boto3 / minio / qcloud_cos 引用；上传素材落本机 `uploads/`（`backend/core/storage/paths.py`），经 `/static` 提供 |
+| `SUBPROCESSOR_LIST_URL` | 指向本仓 `subprocessors.md` | 新增 `docs/legal/subprocessors.md`（对外发布时须替换为可公开访问的 URL） |
+| `CROSS_BORDER_DESTINATION` | **改写为「不涉及出境」** | 子处理者均境内部署：邮件 `aliyun_dm_region` 默认 `cn-hangzhou`、`dm.aliyuncs.com`；模型 / 图像 / 语音走 `dashscope.aliyuncs.com` |
+| `CROSS_BORDER_MECHANISM` | **改写为「当前不涉及」** | 同上；原文的「标准合同 / 安全评估 / 认证」三选一保留为**未来情形**的表述 |
+| `CROSS_BORDER_LIST_URL` | **改写为「不涉及」** | 同上 |
+
+★ 计数口径：本文件顶部自报的个数 = **实测**出现在模板里的 `{{...}}` 个数（L4 门禁钉住）。
+`subprocessors.md` 里的服务商表**不使用占位符**（服务商名已由代码取证确定）。
+
+## 进度（第 352 轮更新）
 
 | 核对项 | 状态 | 说明 |
 |---|---|---|
-| ① 占位符清零 | ⏳ **31/36** | 5 项已处理；余 31 项需业务方/法务给值 |
+| ① 占位符清零 | ⏳ **22/36** | 累计 14 项已处置（可确定项按代码取证回填、出境三项如实改写）；余 22 项需业务方/法务给值 |
 | ② C 组与后端配置对账 | ✅ **已落地为门禁** | `backend/tests/test_legal_docs.py`：
 从文档读出「由哪个配置决定」→ 去 `core/config.py` 取默认值比对，不一致即红 |
 | ③ 删除 `<details>` 工程侧核对表 | ✅ 已删除 | 同一道门禁也钉住它不得回流 |
@@ -105,5 +118,5 @@
 |---|---|---|---|
 | 对话/Agent 记忆无留存期策略 | 随账号存续，无定时清理 | 隐私政策无法给出具体天数 | 要么定策略 + 落地清理任务，要么政策改表述 |
 | 账号注销后的数据删除无宽限期实现 | 无实现 | `ACCOUNT_DELETION_GRACE_DAYS` 只能填"立即" | 实现注销流程或如实表述 |
-| 数据出境路径未评估 | 若模型/存储含境外节点则需评估 | 无合法性基础即出境 = 违规 | 先确认服务商部署地域，再决定是否需要评估 |
-| 子处理者清单无公开页 | 无 | DPA 引用了一个不存在的 URL | 建一个静态页（可放 `docs/legal/subprocessors.md` 并发布） |
+| 数据出境路径未评估 | ✅ **已初判不涉及出境** | 子处理者均境内部署（见 [`subprocessors.md`](./subprocessors.md)）；更换服务商须重评 | 签约前复核部署地域，变更时按隐私政策第五节更新 |
+| 子处理者清单无公开页 | ✅ **已建 [`subprocessors.md`](./subprocessors.md)**（逐条附代码取证锚点） | 对外发布时仍须把该文件发布为可公开访问的 URL | 上线前把该文件挂到站点 legal 路径 |
