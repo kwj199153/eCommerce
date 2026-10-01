@@ -37,6 +37,9 @@
   │                      │                          │ 钉住（条件挂载回归即红）  │
   │ DEBUG                │ 无                       │ 只影响 /docs /redoc 挂不挂 │
   │                      │                          │ ——二者不在 schema 里      │
+  │ APP_NAME             │ **有**：`info.title`     │ 固定（第 354 轮补 —— 无   │
+  │                      │                          │ `.env` 的 CI 上会变）     │
+  │ APP_VERSION          │ **有**：`info.version`   │ 固定（同上）              │
   │ METRICS_ENABLED      │ 无                       │ /metrics 是               │
   │                      │                          │ include_in_schema=False   │
   │                      │                          │ （main.py）⇒ 天然不入册   │
@@ -95,6 +98,15 @@ DEFAULT_FORCED_ENV = {
     "AUTH_REQUIRED": "true",
     "VOICE_CLONE_ENABLED": "true",  # 取最大面
     "LOG_LEVEL": "ERROR",
+    # ★ 第 354 轮补 —— 在**无 .env 的 git worktree** 里实跑才发现漏了这两个：
+    #   `main.py` 的 `FastAPI(title=config.app_name, version=config.app_version, ...)`
+    #   ⇒ 它们直接进 `info.title` / `info.version`。
+    #   不固定的话，本地（`.env` 写 `APP_NAME=CrossBorder-AI-SaaS`）与 CI
+    #   （无 `.env` ⇒ 代码默认值 `跨境电商AI SaaS`）导出**不同**契约，
+    #   门禁退化成「本地恒绿、CI 恒红」—— 正是本文件开头警告的那件事。
+    #   取值 = `.env.example` = 代码默认值（`docker-compose.yml` 未设 APP_NAME）。
+    "APP_NAME": "跨境电商AI SaaS",
+    "APP_VERSION": "0.1.0",
 }
 
 #: voice-clone 路由的挂载前缀（main.py: `app.include_router(voice_clone_router,
@@ -321,6 +333,26 @@ def run_env_axes(tmp_dir: Path) -> int:
             )
         else:
             print(f"  ✔ VOICE_CLONE_ENABLED=true → false：恰好少 {len(dropped)} 条（全部在 {VOICE_PREFIX}*）")
+
+    # 轴 3：APP_NAME 必须**只**改 info.title（第 354 轮新增）。
+    # 它的存在本身就是上一轮漏做的证据：当时的矩阵只比「有 .env」的那一档，
+    # 而 `.env` 恰好把 APP_NAME 改成了非默认值 ⇒ 整条轴隐身。
+    probe_title = "契约轴探针-用后即弃"
+    got3, why = _child_spec({"APP_NAME": probe_title}, tmp_dir / "axis-appname.json")
+    if got3 is None:
+        failures.append(f"APP_NAME 覆写子进程失败：{why}")
+    else:
+        items = [x for x in diff(json.loads(base), json.loads(got3)) if x.startswith("  - ")]
+        if len(items) != 1 or not items[0].startswith("  - info:"):
+            failures.append(
+                "覆写 APP_NAME 后的差异**不止** info.title 一项"
+                "（说明还有别的东西在跟着 app_name 走）：\n"
+                + "\n".join("    " + x for x in items)
+            )
+        elif probe_title not in items[0]:
+            failures.append(f"info.title 没跟着 APP_NAME 走：{items[0]}")
+        else:
+            print("  ✔ APP_NAME 覆写：差异恰好 1 项（info），且 title 跟着走")
 
     if failures:
         print("\n".join(f"✘ {f}" for f in failures))

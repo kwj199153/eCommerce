@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import sys
@@ -168,3 +169,93 @@ def test_env_axes_are_pinned():
     )
     assert "环境敏感轴全部符合预期" in r.stdout
     assert "AUTH_REQUIRED=true → false：契约逐字节不变" in r.stdout
+
+
+#: ★ 已登记的「条件挂载轴」：`main.py` 里**按 config 字段决定挂不挂路由**的那些字段。
+#:   登记在这里，是为了让**新增一根轴**无法静默发生（见下面两条用例的说明）。
+#:   第 354 轮实测登记表 = `{voice_clone_enabled}`：
+#:     · `voice_clone_enabled` —— `if config.voice_clone_enabled: app.include_router(voice_clone_router)`
+#:     · `metrics_enabled` 不算：它那个块里只有 `@app.get("/metrics", include_in_schema=False)`，
+#:       **没有** `include_router`，且 `include_in_schema=False` 天然不进 schema
+#:     · `auth_required` 不算：`BUSINESS_AUTH` 自 2026-09-17 起是**无条件**常量
+#:       （`[Depends(require_auth_if_enabled)]`，运行期判身份），AST 扫不到条件挂载
+_CONDITIONAL_MOUNT_AXES = {"voice_clone_enabled"}
+
+
+def _conditional_mount_axes() -> set[str]:
+    """AST 实测：`main.py` 里「按 config 字段条件挂载路由」的字段集合。
+
+    ★ 用 AST 而不是正则：正则会被注释 / docstring / 字符串里的同形文本骗过
+      （本仓铁律：判据禁「源码字符串包含」，形态判据一律走 AST）。
+    """
+    tree = ast.parse((BACKEND / "main.py").read_text(encoding="utf-8"))
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        fields = {
+            sub.attr
+            for sub in ast.walk(node.test)
+            if isinstance(sub, ast.Attribute)
+            and isinstance(sub.value, ast.Name)
+            and sub.value.id == "config"
+        }
+        if not fields:
+            continue
+        mounts = [
+            call
+            for stmt in node.body
+            for call in ast.walk(stmt)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and call.func.attr == "include_router"
+        ]
+        if mounts:
+            found |= fields
+    return found
+
+
+def test_conditional_mount_axes_are_registered():
+    """反向：`main.py` 的条件挂载轴必须**恰好**等于已登记的那一组。
+
+    ★ 这条补的是 `--env-axes` 的结构性缺口：
+      `--env-axes` 只翻**已登记**的轴 ⇒ 「新加一根轴」它天然看不见
+      （它翻的那两根照样符合预期，退出码 0）。而新轴恰恰是
+      「生产契约 ≠ 快照」的**唯一**来源 —— 本仓 2026-09-17 的 `BUSINESS_AUTH`
+      就是这个形态，且当时没有任何流程会红。
+
+    ★ 双向断言（不是只查 `added`）：登记表里留着已消失的轴 = 死登记，
+      下一轮会照着它去翻一个不存在的开关，白跑。
+    """
+    found = _conditional_mount_axes()
+    assert found, (
+        "一条条件挂载都没扫到 ⇒ 扫描器自身失效（判据会退化成恒真），先查 `main.py` 结构"
+    )
+    added = sorted(found - _CONDITIONAL_MOUNT_AXES)
+    removed = sorted(_CONDITIONAL_MOUNT_AXES - found)
+    assert not added, (
+        f"`main.py` 新增了未登记的条件挂载轴：{added}\n"
+        "  ⇒ 快照只在「该字段取固定值」时成立，生产可能导出另一份契约。\n"
+        "  修法（二选一）：\n"
+        "    ① 该字段只该有一种取值 ⇒ 固定进 check_openapi_contract.py 的 FORCED_ENV；\n"
+        "    ② 两种取值都合法       ⇒ 在 run_env_axes() 里补一条翻转断言；\n"
+        "  两者都要把字段加进本文件的 _CONDITIONAL_MOUNT_AXES。"
+    )
+    assert not removed, (
+        f"登记表里的轴已不在 `main.py`：{removed} ⇒ 死登记，请同步 _CONDITIONAL_MOUNT_AXES"
+    )
+
+
+def test_registered_axes_are_actually_flipped():
+    """反向：登记表里的每个轴，`--env-axes` 必须**真的翻过它**（防「登记了不翻」）。
+
+    与上一条配对：上一条守「代码里的轴都登记了」，这一条守「登记的轴都被守了」。
+    少任何一半，登记表都能变成纯文档。
+    """
+    r = _run("--env-axes")
+    assert r.returncode == 0, f"--env-axes 失败：\n{r.stdout}\n{r.stderr}"
+    for field in sorted(_CONDITIONAL_MOUNT_AXES):
+        assert field.upper() in r.stdout, (
+            f"`{field}` 登记为条件挂载轴，但 `--env-axes` 的输出里没有它 ⇒ "
+            f"登记表与实际守备不一致：\n{r.stdout}"
+        )
