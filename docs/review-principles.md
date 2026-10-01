@@ -290,6 +290,73 @@
 > ④ 实测：后端相关 **149 条绿**（13 文件）· 体量棘轮 **6 条绿** · 前端 **174 条绿** ·
 >    `eslint . --max-warnings=0` **0 problem** · `vue-tsc --noEmit` **rc=0** ·
 >    前端门禁 **43/43**（磁盘 43 == 执行 43，覆盖率自证通过）。
+>
+> **更新 · 第 356 轮（第三批 · 「模板复制」两条欠账的实质处置）**：本节同步 ——
+> ⑤ **`_dump` 8 份 → 4 份**（对应上方 §P3 复算里那句「`def _dump` **×8** … **未改善**」，
+>    那条是 **r354 时刻**的读数，现已改写）：5 个**逐字相同**的三态版收口到唯一真源
+>    `ai_infra/tools/serialization.py::dump_result`，5 个消费方一律写
+>    `from ai_infra.tools.serialization import dump_result as _dump`（**保留本地名**，
+>    免动 `test_review_analyst_tool_paths.py` 的三条 `_dump` 分支用例）。
+>    剩 `aigc_media`（两态、无 `default=str`）与 `library` / `trade`（单行）**有意不收** ——
+>    `_dump` 的产物是**工具直接回给 LLM 的字符串**，统一语义 = **改变模型读到的内容**；
+>    行为对照表写在真源的模块 docstring 里。
+>    ★ 顺带修掉一条**假承诺**：`aigc_media._dump` 的 docstring 写「优先 data，其次
+>    message/error」，实现里从来**没有**这个逻辑 —— 而 r335/r350/r353/r354 **四轮**都只
+>    **数份数**（×8）、**没读 docstring 对没对实现**。现在它由
+>    `tests/test_tool_result_serialization.py`（**18 条**）把**实测行为**与**摘要行**一起钉住。
+>    ★ 反向注入 **5 组全红 + 3 反例全绿**（`probes/r356/inject_dump_consolidation.py`）。
+>    其中 G5「把某个消费方退回一份**行为完全等价**的本地拷贝」**只有**「5 个消费方必须是
+>    **同一函数对象**（`id()`）」那条判据抓得到 ⇒ 这是「收口必须用对象身份判、不能用行为判」
+>    的实证（顺带打红「实现份数 = 4」那条：拷贝把它变成 5）。
+> ⑥ **`_get_router` 仍 7 份（有意）+ 新增防漂移门禁**：本仓**已论证过反方** ——
+>    `modules/product_research/agent_routing.py` 的模块 docstring 写着「藏进基类只会让耦合
+>    从『可以数的参数』变成『看不见的继承链』」，且该函数**持有** `self._router` 懒加载
+>    缓存（实例状态）⇒ 保留 7 份的可数性，用
+>    `tests/test_agent_router_getter_uniform.py`（**7 条**）钉「7 份函数体**逐字相同**
+>    （docstring 除外）」。
+>    ★ 反向注入 **6 组全红 + 3 反例全绿**（`probes/r356/inject_router_uniform.py`）。
+>    其中 B6「让 7 份**一起**去掉 `return self._router`」让 W3「逐字相同」**照旧判绿**，
+>    只被 W4①「三个要素必存在」抓住 ⇒ **W4 不是多余的自证，它是 W3 的盲区补丁**
+>    （W3 只比「是否一致」，七份一起漂移它一无所知）。
+> ⑦ **CI 的 Lint 步当前是红的（本轮实测，与本节原记载不符）**：
+>    `ruff check . --select T20`（backend job 有 `defaults.run.working-directory: backend`）
+>    实测 **10 条 T201 / 3 文件** —— `run_dev.py` ×6 /
+>    `tests/test_agent_state_fields_have_readers.py` ×3 /
+>    `tests/test_no_random_in_production.py` ×1；`.github/workflows/ci.yml` **无任何
+>    `continue-on-error`** ⇒ 该步骤失败即 job 失败。三个文件对 `HEAD` **全部干净** ⇒
+>    这 10 条是**存量**（本轮只消掉自己上一轮引入的 2 条：12 → 10）。
+>    ★ 仍是**声明承诺型假门禁**：`pyproject.toml` 的 `tests/**` 只豁免
+>    `S101/S105/S106/SLF001`（**没有 T201**），而 CI 注释写着 T20「已收敛到零」。
+>    ★ 同族教训：**pytest 会捕获 stdout** ⇒ 一条**通过**的用例里 `print` 出来的「提示」
+>    在正常运行时**根本不可见**。H1 已因此改走 `warnings.warn`（进 warnings summary，
+>    真的看得见，且不改变用例结果）。
+>    ⇒ 建议处置：`run_dev.py` 的 6 处按 `scripts/**` 同理由加 per-file 豁免
+>    （它是**启动器**，stdout 就是它的接口）；另两处测试内 `print` 改 `warnings.warn`
+>    （`test_agent_state_fields_have_readers` 是提示、`test_no_random_in_production` 是
+>    **跳过语法错误文件**这种必须被看见的事）。
+> ⑧ 实测：上述 7 个受影响门禁同跑 = **65 passed + 1 skipped / rc=0**；
+>    `mypy core ai_infra` = **`Success, 90 source files`**（+1 = 新增真源；已用「临时放一个
+>    带类型错的探针文件」反向注入证明 `ai_infra/tools/*.py` **确在**该检查面内）；
+>    全量后端 pytest = 见下方行尾追加的最新读数。
+>
+> **更新 · 第 356 轮（第四批 · CI Lint 真红的处置）**：⑨ 上面 ⑦ 记的那 10 条已**归零** ——
+>    `ruff check . --select T20` 实测 **`All checks passed!`**（rc=0）。口径收紧成一条**可审计的规则**：
+>    **`print` 只在「stdout 就是程序接口」时才正确；测试体内的 `print` ——
+>    「通过了也该被看见」的走 `warnings.warn`，其余（只在失败时有人看的诊断）才允许
+>    按理由做单文件豁免。**
+>    · `run_dev.py`（×6）→ 单文件豁免：启动器的接口就是 stdout（docstring 明写
+>      「中文提示一律由本文件打印」，`start-backend.bat` 必须保持纯 ASCII），
+>      与既有 `scripts/**` 同理。
+>    · `tests/test_agent_state_fields_have_readers.py`（×3）→ 单文件豁免
+>      （★ 对 ⑦ 建议的**修正**）：那三处是**逐字段诊断转储**，只在**该用例失败**时
+>      才有人看，而 pytest 恰好在失败时回放 `Captured stdout` —— 改成 `warnings`
+>      会让**每次跑**都产生噪声，是拿噪声换可见性。
+>    · `tests/test_no_random_in_production.py`（×1）→ 改 `warnings.warn(..., ScanSkipNotice)`：
+>      它报的是**事件**（跳过语法错误文件 = 门禁覆盖面出现缺口），**通过了也该被
+>      看见**。与 `test_source_size_ratchet.py` 的 H1 同一条推理。
+>    ★ 验收：`ruff check . --select T20` = **`All checks passed!`**；
+>    `--select I,F` 对**改前/改后同一文件**差分 = 两版都干净（无新增 T201/I/F）；
+>    受影响门禁 + 全量后端复跑读数见 `.workbuddy/memory/_pending/第356轮.md` §15。
 
 > 目的：下次审查直接从 L2 开始，不必重走 L1 盘点。**有变化时更新本节。**
 
@@ -297,7 +364,8 @@
 
 | Job | 步骤 |
 |---|---|
-| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 353 轮实测 `Success, 89 source files`）** → pytest（**2567 用例**）+ 覆盖率棘轮（`fail_under=65`） |
+| 后端 | `compileall` → `import main`（抓循环导入）→ `alembic upgrade head` → **迁移链三重自检**（单一 head / downgrade→upgrade 往返 / `alembic check`）→ `bootstrap_db`（与 lifespan 同源）→ `ruff` 棘轮（当前 `--select T20`）→ **`mypy` 棘轮（`core ai_infra`，第 346 轮接入；第 356 轮实测 `Success, 90 source files`）** → pytest（**2592 用例**）+ 覆盖率棘轮（`fail_under=65`） |
+| 后端 ★ | **★ 第 356 轮实测：上面那个 `ruff` 步骤当时是红的 —— 已修** —— `ruff check . --select T20` 在 `backend/` 下曾报 **10 条 T201 / 3 文件**（`run_dev.py` ×6 / `tests/test_agent_state_fields_have_readers.py` ×3 / `tests/test_no_random_in_production.py` ×1），而 ci.yml **无 `continue-on-error`** ⇒ 该步骤失败即 job 失败；本表上方写的「已收敛到零」当时**不成立**。根因：`pyproject.toml` 的 per-file-ignores 从来没覆盖这三个文件。**修法**：`run_dev.py` 与 `test_agent_state_fields_have_readers.py` 按理由**单文件豁免** T201，`test_no_random_in_production.py` 那条**事件** `print` 改走 `ScanSkipNotice` 警告 ⇒ 现为 **0 条**。详见下方「更新 · 第 356 轮（第四批）」⑨ |
 | 前端 | 门禁 glob `check-*.*` + **覆盖率自证**（漏跑即红）→ `eslint . --max-warnings=0`（棘轮）→ `vue-tsc` → **`npm run test`（Vitest；第 355 轮接入 → 第 356 轮第二批 ⇒ **174 用例 / 7 文件**）** → `vite build`（`VITE_DEMO_MODE=false`） |
 | 资产 | 必需文件存在 → `docker compose config` → `nginx -t` → 敏感文件未被 git 跟踪 → **CD 资产门禁** |
 | 安全 | bandit（Medium+ = 0）/ pip-audit / npm audit（阈值 `critical` —— 按原则四锁在「当前已绿」） |
@@ -318,7 +386,9 @@
 > `test_legal_docs` / `test_pitr`）→ **2527@r352(153 文件)**（`test_legal_docs` 由 5 条涨到 9 条）→
 > **2544@r354(156 文件)**（`test_openapi_contract_gate` **10**（第 3 批由 8 涨到 10）
 > + `test_tenant_isolation_gate` 3 + `test_no_syntax_warnings` **3**（收尾再 +1：basetemp 回归用例））→
-> **2567@r356(158 文件)**（`test_review_analyst_tool_paths` 17 条 + `test_source_size_ratchet` 6 条；后者是本轮新增的**文件体量棘轮**）
+> **2567@r356(158 文件)**（`test_review_analyst_tool_paths` 17 条 + `test_source_size_ratchet` 6 条；后者是本轮新增的**文件体量棘轮**）→
+> **2592@r356(160 文件)**（第 356 轮第三批：`test_tool_result_serialization` **18** 条 —— `_dump` 收口的唯一判据；
+> `test_agent_router_getter_uniform` **7** 条 —— `_get_router` ×7 的防漂移门禁）
 > ⇒ 本节是**快照**：更新时必须重跑上面这条命令，**不要沿用旧数**。
 > ★ 为什么之前会写错：`11276` 既不是用例数、也不是 coverage statements 数
 > （实测 statements ≈ 27150），属纯错记；根因是「写现状快照时没有当场取数」。

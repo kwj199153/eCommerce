@@ -59,6 +59,7 @@
 
 from __future__ import annotations
 
+import warnings
 from functools import lru_cache
 from pathlib import Path
 
@@ -67,6 +68,19 @@ REPO = BACKEND.parent
 
 #: 既有口径（353 轮复审 §P3 用的就是 >800 行）
 THRESHOLD = 800
+
+
+class StaleRatchetEntry(UserWarning):
+    """棘轮表里有「已降到阈值以下」的项 —— **提示，不是失败**（见 H1）。
+
+    ★ 为什么用 `warnings` 而不是 `print`：本仓 CI 的 ruff 棘轮只跑
+      `--select T20`（禁 `print`），而 `tests/**` 的整体豁免里**没有** T201
+      （只有按理由**单文件**豁免的个别文件，见 `pyproject.toml` 的 `per-file-ignores`）。
+      更实际的原因是 **pytest 会捕获 stdout**：一条**通过**的用例里
+      `print` 出来的东西在正常跑时**根本不可见** —— 那份「提示」等于没写。
+      `warnings` 会进 pytest 的 warnings summary，是**真的看得见**的通道，
+      且不改变用例结果（仍是 pass，不是 skip）。
+    """
 
 #: 冻结基线 —— 语义是**上限**（只许降不许升）。
 #:
@@ -251,8 +265,12 @@ def test_report_stale_entries() -> None:
         if r in live and live[r] <= THRESHOLD
     )
     if stale:
-        print(f"\n[体量棘轮] {len(stale)} 项已降到阈值 {THRESHOLD} 以下，可移出冻结表：")
-        for r, cap, now in stale:
-            print(f"    {r}  {cap} → {now}")
+        warnings.warn(
+            "%d 项已降到阈值 %d 以下，可移出冻结表：\n    %s"
+            % (len(stale), THRESHOLD,
+               "\n    ".join(f"{r}  {cap} → {now}" for r, cap, now in stale)),
+            StaleRatchetEntry,
+            stacklevel=2,
+        )
     # 恒真：本用例的产出是**提示**，不是判据
     assert True

@@ -101,6 +101,21 @@ ignore = [
 #   46 处 print 集中在 print_separator()/main() 里，是为人工跑一遍看链路是否通
 #   而写的可读输出，不是遗留的调试语句。
 "tests/test_llm_rag_integration.py" = ["T201"]
+# ★ 第 356 轮补：CI 的 Lint 步（`ruff check . --select T20`）**此前一直是红的** ——
+#   下面这两个文件从来没被上面的 per-file-ignores 覆盖过，而 CI 的注释却写着
+#   T20「已收敛到零」。口径（可审计的一条规则）：`print` 只在「stdout 就是程序
+#   接口」时才正确；测试体内的 `print` ——「通过了也该被看见」的走 `warnings.warn`，
+#   其余（只在失败时有人看的诊断）才允许按理由做**单文件豁免**。
+#   1) `run_dev.py` —— 本地开发启动器的**接口就是 stdout**：其 docstring 明写
+#      「中文提示一律由本文件打印」（因为 `start-backend.bat` 必须保持纯 ASCII）。
+#      与上方 `scripts/**` 同理，这里的 print 是正确工具，不是遗留调试语句。
+#   2) `tests/test_agent_state_fields_have_readers.py` —— 三处 print 是**门禁的诊断
+#      转储**（逐字段读点数），只在**该用例失败**时才有人看，而 pytest 恰好会在失败
+#      时回放 `Captured stdout`；改成 `warnings` 等于每次跑都产生噪声换可见性。
+#      （对照组：`test_no_random_in_production.py` 里那条同类 print 报的是**事件**
+#      —— 通过了也该被看见 —— 所以它改走 `ScanSkipNotice` 警告，**不**豁免。）
+"run_dev.py" = ["T201"]
+"tests/test_agent_state_fields_have_readers.py" = ["T201"]
 # 迁移脚本自动生成，不参与风格检查
 "alembic/**" = ["E", "W", "F", "I", "B", "UP", "S", "T20"]
 

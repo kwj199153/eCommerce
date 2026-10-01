@@ -74,9 +74,23 @@
 from __future__ import annotations
 
 import ast
+import warnings
 from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
+
+
+class ScanSkipNotice(UserWarning):
+    """扫描时**跳过了**一个语法错误文件 —— 一条**事件**提示（不是失败）。
+
+    ★ 为什么用 `warnings` 而不是 `print`（第 356 轮）：本仓 CI 的 ruff 棘轮跑
+      `--select T20`（禁 `print`），而 `tests/**` 的整体豁免里**没有** T201
+      （只有按理由单独豁免的个别文件，见 `pyproject.toml` 的 `per-file-ignores`）。
+      更实际的原因是 **pytest 会捕获 stdout**：一条**通过**的用例里 `print` 出来的
+      东西在正常跑时根本不可见 —— 而「有个源文件没被扫到」恰恰是**通过了也该被
+      看见**的事：它意味着门禁的覆盖面出现了缺口。`warnings` 会进 pytest 的
+      warnings summary，是**真的看得见**的通道。
+    """
 
 # ---------------------------------------------------------------------------
 # 排除口径
@@ -294,7 +308,12 @@ def _scan_backend() -> tuple[_ScanResult, set[str]]:
             src = path.read_bytes().decode("utf-8", errors="replace")
             hits, star_lines = _scan_source(src, rel)
         except SyntaxError as exc:  # 语法都过不了的 .py 不进统计（另有编译门禁管它）
-            print(f"[gate-730] 跳过语法错误文件 {rel}: {exc}")
+            # 事件提示走 warnings（通过了也该被看见），见 ScanSkipNotice 的 docstring
+            warnings.warn(
+                f"[gate-730] 跳过语法错误文件 {rel}: {exc}",
+                ScanSkipNotice,
+                stacklevel=2,
+            )
             continue
         res.scanned_files += 1
         res.hits.extend(hits)
