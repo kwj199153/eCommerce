@@ -256,7 +256,7 @@ def _fk_build_index(root: Path) -> dict[str, Path]:
     idx: dict[str, Path] = {}
     for f in sorted(root.rglob("*.py")):
         rel = f.relative_to(root)
-        if any(part in _FK_SKIP_DIRS for part in rel.parts[:-1]):
+        if any(part in _FK_SKIP_DIRS or part.startswith(".pytest-tmp") for part in rel.parts[:-1]):
             continue
         parts = list(rel.with_suffix("").parts)
         if parts[-1] == "__init__":

@@ -70,7 +70,7 @@ def _is_main_guard(node: ast.stmt) -> bool:
 
 def _python_files():
     for p in sorted(BACKEND.rglob("*.py")):
-        if any(part in SKIP_DIRS for part in p.parts):
+        if any(part in SKIP_DIRS or part.startswith(".pytest-tmp") for part in p.parts):
             continue
         yield p
 

@@ -108,7 +108,7 @@ def test_only_one_judgment_helper():
     offenders = []
     for path in sorted(BACKEND.rglob("*.py")):
         rel = path.relative_to(BACKEND).as_posix()
-        if any(part in SCAN_SKIP_DIRS for part in path.relative_to(BACKEND).parts):
+        if any(part in SCAN_SKIP_DIRS or part.startswith(".pytest-tmp") for part in path.relative_to(BACKEND).parts):
             continue
         if rel in RAW_JUDGMENT_ALLOWED:
             continue

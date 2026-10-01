@@ -80,7 +80,9 @@ def _iter_backend_py():
         rel = p.relative_to(BACKEND).as_posix()
         if rel.startswith(("tests/", "scripts/", "alembic/", "logs/")):
             continue
-        if ".venv" in rel or "site-packages" in rel:
+        if ".venv" in rel or "site-packages" in rel or any(
+            part.startswith(".pytest-tmp") for part in p.parts
+        ):
             continue
         if "__pycache__" in rel:
             continue
@@ -98,7 +100,9 @@ def _iter_source_py():
         rel = p.relative_to(BACKEND).as_posix()
         if rel.startswith(("alembic/", "logs/")):
             continue
-        if ".venv" in rel or "site-packages" in rel or "__pycache__" in rel:
+        if ".venv" in rel or "site-packages" in rel or "__pycache__" in rel or any(
+            part.startswith(".pytest-tmp") for part in p.parts
+        ):
             continue
         yield rel, p
 

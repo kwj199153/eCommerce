@@ -127,7 +127,7 @@ def test_context_writer_set_is_closed():
         rel = p.relative_to(_BACKEND).as_posix()
         if rel.startswith(("tests/", "scripts/", "alembic/")) or any(
             s in rel for s in ("__pycache__", ".venv", "venv", "site-packages")
-        ):
+        ) or any(part.startswith(".pytest-tmp") for part in p.parts):
             continue
         if "set_request_context(" in p.read_text(encoding="utf-8"):
             found.add(rel)
@@ -153,7 +153,7 @@ def test_client_ip_has_exactly_one_implementation():
         rel = p.relative_to(_BACKEND).as_posix()
         if rel.startswith(("tests/", "scripts/", "alembic/")) or any(
             s in rel for s in ("__pycache__", ".venv", "venv", "site-packages")
-        ):
+        ) or any(part.startswith(".pytest-tmp") for part in p.parts):
             continue
         if 'headers.get("X-Forwarded-For"' in p.read_text(encoding="utf-8"):
             hits.add(rel)

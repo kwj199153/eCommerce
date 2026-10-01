@@ -262,7 +262,7 @@ def _iter_source_files():
     for path in sorted(BACKEND_ROOT.rglob("*.py")):
         rel = path.relative_to(BACKEND_ROOT).as_posix()
         parts = rel.split("/")
-        if any(p in _SKIP_DIR_NAMES for p in parts[:-1]):
+        if any(p in _SKIP_DIR_NAMES or p.startswith(".pytest-tmp") for p in parts[:-1]):
             continue
         name = parts[-1]
         if name in _SKIP_FILE_NAMES or _is_test_file(name):

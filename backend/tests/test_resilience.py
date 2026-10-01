@@ -378,7 +378,7 @@ def test_no_retry_loop_outside_resilience():
     """
     offenders = {}
     for path in _BACKEND.rglob("*.py"):
-        if any(part in _SCAN_SKIP_PARTS for part in path.parts):
+        if any(part in _SCAN_SKIP_PARTS or part.startswith(".pytest-tmp") for part in path.parts):
             continue
         rel = path.relative_to(_BACKEND).as_posix()
         if rel in _RETRY_LOOP_ALLOWED:

@@ -136,7 +136,7 @@ def call_counts_inside(src: str, fn_name: str):
 def _iter_py():
     for path in sorted(BACKEND.rglob("*.py")):
         rel_parts = path.relative_to(BACKEND).parts
-        if any(p in SCAN_SKIP_DIRS for p in rel_parts):
+        if any(p in SCAN_SKIP_DIRS or p.startswith(".pytest-tmp") for p in rel_parts):
             continue
         yield path.relative_to(BACKEND).as_posix(), path
 

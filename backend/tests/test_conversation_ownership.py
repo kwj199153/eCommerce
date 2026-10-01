@@ -445,7 +445,9 @@ def test_legacy_unauthenticated_reader_is_gone():
     """
     hits = []
     for p in BACKEND.rglob("*.py"):
-        if "__pycache__" in p.parts or "versions_legacy" in p.parts or {".venv", "venv", "site-packages"} & set(p.parts):
+        if "__pycache__" in p.parts or "versions_legacy" in p.parts or {".venv", "venv", "site-packages"} & set(p.parts) or any(
+            part.startswith(".pytest-tmp") for part in p.parts
+        ):
             continue
         try:
             t = ast.parse(p.read_text(encoding="utf-8"))
@@ -465,7 +467,9 @@ def test_create_conversation_call_sites_pass_owner_id():
     """★ `create_conversation` 的每个调用点都必须显式传 `owner_id=`（防新增通道漏传）。"""
     bad = []
     for p in BACKEND.rglob("*.py"):
-        if "__pycache__" in p.parts or {".venv", "venv", "site-packages"} & set(p.parts) or p == CONV_SERVICE:
+        if "__pycache__" in p.parts or {".venv", "venv", "site-packages"} & set(p.parts) or p == CONV_SERVICE or any(
+            part.startswith(".pytest-tmp") for part in p.parts
+        ):
             continue
         try:
             t = ast.parse(p.read_text(encoding="utf-8"))

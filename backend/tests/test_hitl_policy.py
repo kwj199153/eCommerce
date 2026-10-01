@@ -315,7 +315,7 @@ def test_agents_compiling_gated_registries_carry_checkpointer():
         parts = set(p.parts)
         if "tests" in parts or "__pycache__" in parts or "alembic" in parts or {
             ".venv", "venv", "site-packages"
-        } & parts:
+        } & parts or any(part.startswith(".pytest-tmp") for part in parts):
             continue
         try:
             tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"), str(p))

@@ -196,7 +196,7 @@ def external_consumers(
     hit: dict[str, set[str]] = {pkg: set() for pkg in exports}
     for p in sorted(backend.rglob("*.py")):
         rel = p.relative_to(backend)
-        if any(part in _CP_SKIP for part in rel.parts):
+        if any(part in _CP_SKIP or part.startswith(".pytest-tmp") for part in rel.parts):
             continue
         parts = rel.parts
         owner = f"modules.{parts[1]}" if len(parts) >= 2 and parts[0] == "modules" else None
@@ -243,7 +243,7 @@ def _all_violations() -> list[str]:
     exports = contract_names(_BACKEND)
     out: list[str] = []
     for p in sorted(_TESTS.rglob("test_*.py")):
-        if any(part in _CP_SKIP for part in p.parts):
+        if any(part in _CP_SKIP or part.startswith(".pytest-tmp") for part in p.parts):
             continue
         src = p.read_bytes().decode("utf-8", errors="replace").replace("\r\n", "\n")
         out += scan_source(src, p.relative_to(_BACKEND).as_posix(), exports)
@@ -368,7 +368,7 @@ def test_scanner_actually_covers_the_test_tree():
     """
     files = [
         p for p in sorted(_TESTS.rglob("test_*.py"))
-        if not any(part in _CP_SKIP for part in p.parts)
+        if not any(part in _CP_SKIP or part.startswith(".pytest-tmp") for part in p.parts)
     ]
     assert len(files) >= 20, f"只扫到 {len(files)} 个测试文件，路径解析可疑"
 

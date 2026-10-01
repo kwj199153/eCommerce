@@ -236,8 +236,28 @@ def test_py_gates_actually_pass():
 #      且**无**尾部 `/ "sub"`）；
 #   2. 找出所有 `.rglob("*.py")` / `.glob("*.py")`；
 #   3. 接收者是 backend 根名、或「形参且调用点传了 backend 根」⇒ 命中；
+# 【第 354 轮 · pytest basetemp】同一缺陷类的第二半（第 326 轮只堵了一半）：
+#   本仓自第 238 轮起约定 pytest 的 `--basetemp` **必须落在 `backend/` 内**
+#   （否则 atexit 清 `%TEMP%/pytest-of-*/garbage-*` 会撞沙箱批量删除守卫，
+#   而且是**跑完之后**才抛 ⇒ 退出码会骗人）。代价：basetemp 里的 .py
+#   **就在被测树里**。门禁自己的元测试 `test_gate_detects_injected_warning`
+#   用 `tmp_path` 造了个**故意含 `\d`** 的文件（为验证 SyntaxWarning 判据有牙），
+#   它就落在 basetemp 内 ⇒ 被 `test_no_syntax_warnings` 的扫描面扫到
+#   ⇒ **自伤假红**（判据被自己的夹具打红，归因时看不出与改动有关）。
+#   第 354 轮实测：`backend/` 下累积 17 个 `.pytest-tmp-*` / 68 文件 / 10 个 .py；
+#   以 backend 根扫 `*.py` 的测试**共 17 个，当时全部缺该排除**（`.venv` 则 0 个漏）。
+#
+# 判据（AST，不看字符串）：
+#   1. 模块级名字 → 是否指向 backend 根（`Path(__file__).resolve().parents[N]`
+#      且**无**尾部 `/ "sub"`）；
+#   2. 找出所有 `.rglob("*.py")` / `.glob("*.py")`；
+#   3. 接收者是 backend 根名、或「形参且调用点传了 backend 根」⇒ 命中；
 #   4. 该文件必须**在 AST 里**把 `.venv` / `site-packages` 用作集合元素
-#      或比较操作数（禁「源码字符串包含」——docstring/注释会骗过它）。
+#      或比较操作数（禁「源码字符串包含」——docstring/注释会骗过它）；
+#   5. 该文件必须以**前缀语义**排除 `.pytest-tmp*`：`X.startswith(".pytest-tmp")`。
+#      ★ 刻意**不认**把它塞进 `{".venv", ...} & set(parts)` 的写法 ——
+#        那是**精确匹配**，而 basetemp 实际叫 `.pytest-tmp-r354c` 这种
+#        ⇒ 匹配不到（判据绿而缺陷仍在）。反向注入 I2 专门验证这一条。
 #
 # ★ 有意边界：只判「文件级」排除（不判排除是否恰好覆盖该行）——
 #   后者需要数据流分析，收益低而误报面大。文件级已足够拦住本次这类缺陷。
@@ -347,14 +367,13 @@ def _backend_root_scan_sites(tree):
     return sites
 
 
-def test_backend_scanning_gates_exclude_vendored_dirs():
-    """扫 backend 根的测试必须排除 `.venv` / `site-packages`。
+def _iter_backend_root_scanners():
+    """产出 `(文件, AST, 扫描站点行号)` —— 所有「以 backend 根扫 *.py」的测试文件。
 
-    反向注入：删掉 `test_context_propagation.py` 里刚加的 `.venv` ⇒ 必红。
+    ★ 供两条用例（vendored 轴 / basetemp 轴）共用：同一份遍历逻辑禁写两遍
+      （本仓铁律：同一判定禁两份实现）。
     """
     tests_dir = Path(__file__).resolve().parent
-    offenders = []
-    scanned = 0
     for f in sorted(tests_dir.glob("test_*.py")):
         try:
             src = f.read_bytes().decode("utf-8")
@@ -362,8 +381,71 @@ def test_backend_scanning_gates_exclude_vendored_dirs():
             continue
         tree = ast.parse(src)
         sites = _backend_root_scan_sites(tree)
-        if not sites:
+        if sites:
+            yield f, tree, sites
+
+
+def _str_literals(node) -> set:
+    """从表达式里收集字符串字面量（含内嵌的元组/集合/列表）。"""
+    out = set()
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        out.add(node.value)
+    elif isinstance(node, (ast.Tuple, ast.Set, ast.List)):
+        for e in node.elts:
+            out |= _str_literals(e)
+    return out
+
+
+def _module_level_str_constants(tree) -> dict:
+    """模块级 `NAME = "s"` / `NAME = ("s1", "s2")` 的常量表（供 startswith 实参解析）。"""
+    table: dict = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
             continue
+        vals = _str_literals(node.value)
+        if not vals:
+            continue
+        for t in node.targets:
+            if isinstance(t, ast.Name):
+                table[t.id] = vals
+    return table
+
+
+#: pytest basetemp 的**前缀**（本仓约定 `--basetemp=.pytest-tmp-<tag>`）。
+_BASETEMP_PREFIX = ".pytest-tmp"
+
+
+def _basetemp_excluded(tree) -> bool:
+    """`.pytest-tmp*` 是否以**前缀语义**被排除。
+
+    ★ 为什么不能只看「源码里出现 `.pytest-tmp`」：把它塞进
+      `{".venv", "venv"} & set(parts)` 是**精确匹配**，而 basetemp 实际叫
+      `.pytest-tmp-r354c` 这种 —— 匹配不到，缺陷仍在而判据变绿。
+      所以只认 `X.startswith(...)` / `X.endswith(...)`，且实参
+      （字面量 / 元组内嵌 / 模块级常量名）里含该前缀。
+    """
+    consts = _module_level_str_constants(tree)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        f = node.func
+        if not (isinstance(f, ast.Attribute) and f.attr in ("startswith", "endswith")):
+            continue
+        for a in node.args:
+            vals = consts.get(a.id, set()) if isinstance(a, ast.Name) else _str_literals(a)
+            if _BASETEMP_PREFIX in vals:
+                return True
+    return False
+
+
+def test_backend_scanning_gates_exclude_vendored_dirs():
+    """扫 backend 根的测试必须排除 `.venv` / `site-packages`。
+
+    反向注入：删掉 `test_context_propagation.py` 里刚加的 `.venv` ⇒ 必红。
+    """
+    offenders = []
+    scanned = 0
+    for f, tree, sites in _iter_backend_root_scanners():
         scanned += 1
         if not _venv_excluded(tree):
             offenders.append(f"{f.name}:{sites}")
@@ -378,4 +460,36 @@ def test_backend_scanning_gates_exclude_vendored_dirs():
         + "\n  ".join(offenders)
         + "\n⇒ 会读到 `.venv` 下的 5593 个 .py（含 GBK 夹具），"
         "轻则 UnicodeDecodeError、重则把第三方实现判成本项目代码。"
+    )
+
+
+def test_backend_scanning_gates_exclude_pytest_basetemp():
+    """扫 backend 根的测试必须排除 pytest basetemp（`.pytest-tmp*`）。
+
+    反向注入（`probes/r354/revinject_basetemp_axis.py` 三组）：
+      I1 删掉某个文件里的 `part.startswith(".pytest-tmp")` ⇒ 必红并点名该文件；
+      I2 把它改写成 `{".venv", ".pytest-tmp"} & set(parts)`（**精确匹配**）⇒ 仍红
+         （证明判据不认精确匹配形态，而精确匹配对 `.pytest-tmp-r354c` 是失效的）；
+      I3 改掉判据常量 `_BASETEMP_PREFIX` 的值 ⇒ 必红，并点名**全部 17 个**扫描器
+         （证明判据真的在跑，不是恒真/恒假；该清单同时是「以 backend 根扫 *.py
+          的测试」的权威名册 —— 由判据现算，不是人工登记）。
+    """
+    offenders = []
+    scanned = 0
+    for f, tree, sites in _iter_backend_root_scanners():
+        scanned += 1
+        if not _basetemp_excluded(tree):
+            offenders.append(f"{f.name}:{sites}")
+
+    # 防空转（本仓铁律：没有反例的断言 = 没有断言）
+    assert scanned >= 10, (
+        f"只扫到 {scanned} 个「以 backend 根扫 *.py」的测试文件 —— "
+        "AST 判据本身可能失效（函数解析/根识别退化），先修判据再看结果。"
+    )
+    assert not offenders, (
+        "这些测试以 backend 根扫 *.py 却没排除 pytest basetemp：\n  "
+        + "\n  ".join(offenders)
+        + "\n⇒ 本仓约定 `--basetemp` 必须落在 backend/ 内，"
+        "basetemp 里的 .py 就在被测树里；门禁自己的元测试会往里写"
+        "**故意含坏转义**的文件 ⇒ 判据被自己的夹具打红（自伤假红）。"
     )
