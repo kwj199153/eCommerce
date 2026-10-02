@@ -583,6 +583,37 @@
 
 ### ★ 第 350 轮全量重盘（逐条实测，取代上面「第 1/2 次盘点」的状态列）
 
+> ★★ **时效提示（第 357 轮补 · 2026-10-02）**：本节两张表是**第 350 轮（2026-10-01）的实测快照**，
+> 其中 **6 项已被后续轮次闭合、下面的状态列已失效** —— 照旧值去干活会白干：
+> · **L3-5** ❌未做 → ✅ **r354 闭合**（`scripts/check_openapi_contract.py` + 快照 `backend/docs/api/openapi.json` + `tests/test_openapi_contract_gate.py`）
+> · **L3-14** → ✅ **r354 闭合**（3 处 `r""` 前缀 + 门禁 `tests/test_no_syntax_warnings.py`）
+> · **L3-15** → ✅ **r352 闭合**（根 `LICENSE` 已落地，`76178de`）
+> · **L3-17** → ✅ **r354 闭合**（期望改贴 r177 口径 + 补哨兵路径 + `tests/test_tenant_isolation_gate.py`）
+> · **L3-12** → ✅ **r357 闭合**（`uv pip install -r requirements-dev.txt` 补齐 5 包 + 4 道 CI 步骤本地复现 4/4 PASS）
+> · **L3-16** → ✅ **r357 闭合**（唯一真源 `scripts/table_writers.py` + 门禁 `tests/test_table_writers_gate.py`）
+>
+> **仍然开放**（第 357 轮逐条实测复核）：L3-6 前端权限渲染 · L3-7 SBOM · L3-8 ADR ·
+> L3-9 出境字段（等客户）· L3-10 K8s（按设计不做）· L3-13 欠账表注释数字漂移。
+> （L3-12 / L3-16 已于本轮闭合，见上一段。）
+>
+> ★ **L3-13 这条待办自己也已过期**：它记的「实测 115」现为 **120**；第 357 轮实测漂移是 **3 处**
+> 而非 2 处（`no-undef` 13 → 19 · `no-require-imports` 112 → **120** · `no-explicit-any` 689 → **692**
+> —— 第三处被漏报）。处置按既定方向落定：**不改数字**（数字注定会漂，追平没有意义），
+> 改为在表头写明「快照 ≠ 判据」+ 现算命令，见 `frontend/eslint.config.mjs`。
+>
+> ★★ **第 357 轮的附带发现（做 L3-12 顺手跑通 `bandit -ll` 撞出来的真红）**：真代码里有 **2 处 B324
+> 弱哈希漏加 `usedforsecurity=False`** —— `modules/aigc_media/agent_aigc.py`（md5 缓存键）·
+> `ai_infra/memory/entry.py`（sha1 摘要键）。全仓同类调用共 8 处，**6 处已加、这 2 处漏了** ⇒
+> 与 `ci.yml` 注释「当前 Medium+ = 0」矛盾，即 **security job 在本轮之前应当是红的**（CI 无
+> `continue-on-error`）。已修：补 `usedforsecurity=False` + **同行尾注**（不增行，否则顶穿体量棘轮）。
+> 复现读数：`bandit -c pyproject.toml -r . -ll` → `No issues identified.`（rc=0）。
+> ⚠️ 附带教训：CI 里 venv 不在仓内，本地 `-r .` 会递归进 `.venv/`（本轮实测 298 条里 295 条在
+> `.venv/`）⇒ **同一命令本地 ≠ CI**，判红前必须先剔除非仓内路径，否则会把第三方包的告警当成自己的。
+>
+> ★ **同轮发现的第二处文档漂移**：`ci.yml:238` 注释写 `fail_under = 65`，而 `pyproject.toml:205`
+> 实际是 **62**（注释上一段自己就说「这里不重复写 fail_under」⇒ 重复写的那份漂了）。与 L3-13 同族，
+> **本轮未改**（待批）。
+
 | # | 状态 | 第 350 轮实测证据 |
 |---|---|---|
 | L3-1 | ✅ 闭合（r346），且已三轮收紧 | 棘轮 `FLOOR_ENFORCED` **181 → 193**、欠账 **21 → 9** |
@@ -601,11 +632,11 @@
 | # | 缺口 | 级别 | 实测证据 |
 |---|---|---|---|
 | L3-11 | ✅ 闭合（r351）：**8 道真缺口**全部补 `pick` 开口 + 空源自证 **8/8**；余 1 道（`check-eslint-ratchet.cjs`）是配置面例外 | P1 | `.workbuddy/probes/r351/revinject_emptysrc.py` |
-| L3-12 | **本地 venv 缺 `ruff`/`bandit`/`pip-audit`** ⇒ 这 3 道 CI 步骤本地不可复现 | P2 | 三者均 `No module named …` |
+| L3-12 | ✅ **闭合（r357）**：`uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt` ⇒ `importlib.metadata` 对账 **7/7 OK** | P2 | ★ 口径修正：**不是「3 道 / 3 个包」，是「4 道 / 5 个包」** —— 多出的 `coverage` + `pytest-cov` 让 backend job 的**覆盖率步**同样本地不可复现（`pytest --cov` 曾报 rc=4 `unrecognized arguments`）。本地复现 ① ruff T20 ② mypy ③ bandit -ll ④ pip-audit = **4/4 PASS**（`.workbuddy/probes/r357/out-ci-steps.txt`） |
 | L3-13 | **欠账表注释数字漂移** | P3 | `eslint.config.mjs:80` 写 `no-undef 13 条`，实测 **19**；`:85` 写 `112`，实测 **115** |
 | L3-14 | **`SyntaxWarning` 污染输出**（第 353 轮实测 **3 个文件**，其中 **2 条是 alembic 迁移** ⇒ 污染**每次 alembic 运行**） | P3 | 全仓 `compile()` 捕 `SyntaxWarning`：`b8d4e2f6c3a5_memory_tables.py:11` · **`e7b2c9d4a1f8_review_reports_library.py:34`** · `patch_nav_view_ids_comment.py:6` |
 | L3-15 | **仓库根无 `LICENSE`**（文本在 `docs/legal/LICENSE`） | P1 | `LICENSE` 不存在 |
-| L3-16 | **无「表必须有写入者」门禁**（r332 §8 建议 4 未做） | P2 | `test_schema_parity.py` 只判外键。★ 第 353 轮更正：原举证「`amazon_credentials`/`amazon_auth_logs` 零实例化」**已失效** —— r351 的 P0-6 给它们接上了真实写入者（`amazon_sp/router.py` ×2 / ×1）⇒ 举证案例须另找 |
+| L3-16 | ✅ **闭合（r357）** | P2 | 唯一真源 `scripts/table_writers.py`（照 `scripts/route_inventory.py` 范式：盘点逻辑住 `scripts/`，门禁只 import 它做断言）+ 门禁 `tests/test_table_writers_gate.py`（13 项：判据 + 非空转 + 新解释器自证 + 三层反向注入）。★ 举证已换新：`Base.metadata.tables` 实测 **57** 张，**5 张零写入者**，全在 `modules/amazon_sp/db_model.py`（`amazon_daily_sales` / `amazon_ad_metrics` / `amazon_listing_snapshots` / `amazon_report_tasks` / `amazon_inventory_health`）—— 用**真实类名**（`DailySales`/`AdMetric`/…，**无** `Amazon` 前缀）全仓 grep：只在定义行出现。已按「②暂不处置」登记进 `FROZEN_ALLOWLIST`（**欠债台账**，不是永久豁免 —— 表一接上写入者本门禁即红并要求删条目）。r350 原举证 `amazon_credentials`/`amazon_auth_logs` 确已失效（现分别有 **2 / 1** 处真实写入者，实测可见） |
 | **L3-17** | **`backend/scripts/check_tenant_isolation.py` 无任何自动入口 + 期望值过期** | **P1** | 第 353 轮：AST 判据实测「4 部后端脚本门禁中**唯一**没有 pytest 包装、CI 也不跑它」；实跑 **1/2 通过**（演示模式那条期望 200、实得 403）⇒ 探针证得系**期望过期**（现行口径是「演示店 200 / 真实店 403」）。★ 与 L3-11 方向相反：L3-11 是「**红不了**」，本条是「**红了没人看**」 |
 
 > 完整重锚（含 P0 九项逐条）见 `docs/reviews/2026-10-01-项目复审与进度归档.md`。
