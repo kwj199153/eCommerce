@@ -47,7 +47,7 @@ def _stable_pick(options: List[str], key: str) -> str:
     """
     if not options:
         return ""
-    digest = hashlib.md5(key.encode("utf-8")).hexdigest()
+    digest = hashlib.md5(key.encode("utf-8"), usedforsecurity=False).hexdigest()  # 非安全用途
     return options[int(digest[:8], 16) % len(options)]
 
 

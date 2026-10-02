@@ -478,6 +478,10 @@ jobs:
         # -ll 只报 Medium 及以上：Low 级在本项目全是噪声（测试 assert、mock 随机数）。
         # 当前 Medium+ = 0（6 处 B324 弱哈希已改为 usedforsecurity=False，
         # 它们都是"内容寻址/文件名生成"，不是安全哈希）。
+        # ★ 第 357 轮复验：上面那句当时**是假的** —— 另有 2 处弱哈希漏改
+        #   （modules/aigc_media/agent_aigc.py 的 md5、ai_infra/memory/entry.py
+        #   的 sha1），本 job 实际为红。已补齐；同时给 [tool.bandit].exclude_dirs
+        #   加了 .venv/.workbuddy，否则本地 `-r .` 会递归进 venv 扫出 295 条误报。
         working-directory: backend
         run: python -m bandit -c pyproject.toml -r . -ll
 

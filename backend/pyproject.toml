@@ -231,7 +231,10 @@ output = "coverage.xml"
 [tool.bandit]
 targets = ["core", "modules", "platforms", "ai_infra", "main.py", "worker.py"]
 # 测试里的 assert/假密钥、迁移脚本的 SQL 拼接、CLI 脚本的 subprocess 都不是线上风险
-exclude_dirs = ["tests", "alembic", "scripts", "uploads", "logs"]
+#   .venv / .workbuddy —— r357 补：本地 venv 就建在 backend/ 下，
+#       而 `-r .` 会递归进去 ⇒ 本地跑出 295 条第三方误报（CI 的 venv 在仓外，
+#       所以这个洞只在本地可见）。不排掉它，本地判决与 CI 判决不等价。
+exclude_dirs = ["tests", "alembic", "scripts", "uploads", "logs", ".venv", ".workbuddy"]
 # 显式豁免（每条必须写理由，否则就成了"永久黑洞"）：
 #   B104 绑定 0.0.0.0 —— 容器内必须绑 0.0.0.0，否则宿主机/Nginx 访问不到；
 #        对外暴露由安全组与 Nginx 控制。与 ruff 侧 ignore S104 是同一个判断。

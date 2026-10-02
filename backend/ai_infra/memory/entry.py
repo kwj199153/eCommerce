@@ -143,7 +143,10 @@ def dedup_key(text: str) -> str:
       碰撞概率低到不必讨论；即便真撞了，后果是**两条被并成一条**，
       而不是数据错乱 —— 代价可接受。
     """
-    return hashlib.sha1(_fold_for_key(normalize_text(text)).encode("utf-8")).hexdigest()[:16]
+    # 去重键生成（非安全用途）；usedforsecurity=False 让 FIPS 环境也放行
+    return hashlib.sha1(
+        _fold_for_key(normalize_text(text)).encode("utf-8"), usedforsecurity=False
+    ).hexdigest()[:16]
 
 
 def truncate_text(text: str, limit: int) -> str:
