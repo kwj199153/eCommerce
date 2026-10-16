@@ -893,7 +893,7 @@ onMounted(() => {
   background: var(--primary);
   border-color: var(--primary);
   color: #fff;
-  box-shadow: 0 2px 6px rgba(24, 144, 255, 0.3);
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);
 }
 
 .tab-icon { font-size: var(--font-size-14); }
@@ -1116,7 +1116,7 @@ onMounted(() => {
 .icon-btn.active {
   border-color: var(--primary);
   background: var(--info-bg);
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
 }
 
 :deep(.ant-table) {

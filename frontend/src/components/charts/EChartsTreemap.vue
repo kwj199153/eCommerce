@@ -14,6 +14,7 @@ import { TreemapChart } from 'echarts/charts'
 import { TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useThemeStore } from '@/stores/theme'
+import { truncateByWidth } from '@/config/categoryTaxonomy'
 
 /**
  * ECharts Treemap 封装（第 306 轮 · 选品大盘云图换 ECharts）。
@@ -51,8 +52,11 @@ interface TreemapCell {
   color: 'blue' | 'red'
   /** tooltip 附加行（可选，如 `月搜索 1.8M · 价格 $19.99~$299.99`） */
   extra?: string
-  /** 分组名（可选，如 `Home & Kitchen`）：传了就按组聚合成两级树（组标题条 + 组内色块） */
+  /** 分组名（可选，如 `家居与厨房`）：传了就按组聚合成两级树（组标题条 + 组内色块） */
   group?: string
+  /** tooltip 标题（可选，宽档中英对照）；缺省用 name。窄容器 label 与 tooltip 标题
+   *  ★ 分开传是刻意的：label 要短（纯中文），tooltip 要认得出原文（中文（English）） */
+  tipName?: string
 }
 
 const props = withDefaults(defineProps<{
@@ -82,8 +86,9 @@ const palette = computed(() => {
       text: '#e6e6e6',
       sub: '#9aa0a6',
       border: '#2a2a2e',
-      // 暗色 --primary / --danger（与 theme/presets.ts 暗色表一致）
-      blue: '#177ddc',
+      // 暗色 --primary / --danger（★ 必须与 theme/presets.ts 暗色表**逐字一致**，
+      //   由 frontend/scripts/check-theme-colors.cjs 跨文件对账钉住）
+      blue: '#756eea',
       red: '#ff7875',
       // 组标题条底色（中性，让红蓝叶子更突出）
       groupBg: '#43454d',
@@ -93,8 +98,8 @@ const palette = computed(() => {
     text: '#1f1f1f',
     sub: '#8c8c8c',
     border: '#ffffff',
-    // 亮色 --primary / --danger（与 theme/presets.ts 亮色表一致）
-    blue: '#1890ff',
+    // 亮色 --primary / --danger（★ 同上：与 presets.ts 亮色表逐字一致）
+    blue: '#4f46e5',
     red: '#ff4d4f',
     groupBg: '#e2e6ec',
   }
@@ -111,6 +116,7 @@ function buildOption() {
     key: c.key,
     score: c.score,
     extra: c.extra ?? '',
+    tipName: c.tipName ?? c.name,
   })
 
   // 按 group 聚合成两级树（组标题条 + 组内色块，参考股票云图）；无 group 的保持扁平叶子
@@ -143,7 +149,7 @@ function buildOption() {
         // 上层节点的 info.data 字段不可靠（r309 tooltip 显示 undefined 的根因）
         if (!d.key) return `<b>${String(info.name ?? '')}</b>`
         const extra = d.extra ? `<br/>${d.extra}` : ''
-        return `<b>${d.name}</b><br/>蓝海评分 ${d.score}${extra}`
+        return `<b>${d.tipName || d.name}</b><br/>蓝海评分 ${d.score}${extra}`
       },
     },
     series: [
@@ -190,9 +196,10 @@ function buildOption() {
               formatter: (p: any) => {
                 const d = p.data ?? {}
                 const name = String(d.name ?? '')
-                // 二级子类目名可能较长（Storage & Organization · US），超长截断防溢出色块；
-                // 全名在 tooltip 始终可见
-                const shown = name.length > 22 ? `${name.slice(0, 21)}…` : name
+                // 超长截断防溢出色块（全名在 tooltip 始终可见）。
+                // ★ 必须按**显示宽度**而非字符数：中文化后「22 字符」≈44 个半角宽
+                //   ⇒ 按字符数截断在中文口径下完全失效（r365b）。
+                const shown = truncateByWidth(name, 22)
                 return shown ? `{name|${shown}}\n{score|${d.score ?? ''}}` : `{score|${d.score ?? ''}}`
               },
               rich: {

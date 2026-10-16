@@ -406,7 +406,7 @@ function onImgError(e: Event) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(24, 144, 255, 0.25);
+  background: rgba(79, 70, 229, 0.25);
   color: #fff;
   font-size: var(--font-size-22);
   opacity: 0;

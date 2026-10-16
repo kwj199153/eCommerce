@@ -93,7 +93,7 @@
           <a-select
             v-model:value="store.filterToolAgent"
             style="width: 160px"
-            placeholder="全部 Agent"
+            placeholder="全部数字员工"
             allow-clear
           >
             <a-select-option

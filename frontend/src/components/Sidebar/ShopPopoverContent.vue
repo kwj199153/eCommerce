@@ -437,7 +437,7 @@ onMounted(async () => { await refreshShopList() })
   transition: all 0.15s; border: 1px solid transparent; margin-bottom: var(--space-2);
 }
 .popover-shop-item:hover { background: var(--bg-hover-light); }
-.popover-shop-item.active { background: rgba(24, 144, 255, 0.12); border-color: var(--primary); }
+.popover-shop-item.active { background: rgba(79, 70, 229, 0.12); border-color: var(--primary); }
 
 .item-left { display: flex; align-items: center; gap: var(--space-6); min-width: 0; flex: 1; overflow: hidden; }
 .shop-name { font-size: var(--font-size-13); font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

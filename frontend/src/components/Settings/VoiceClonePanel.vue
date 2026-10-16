@@ -822,7 +822,7 @@ onMounted(async () => {
   height: 20px;
   margin-right: 8px;
   border-radius: 50%;
-  background: var(--primary, #1677ff);
+  background: var(--primary, #4f46e5);
   color: #fff;
   font-size: 12px;
 }
@@ -943,7 +943,7 @@ onMounted(async () => {
 .vc-rec-meter-fill {
   height: 100%;
   border-radius: 99px;
-  background: var(--primary, #1677ff);
+  background: var(--primary, #4f46e5);
   transition: width 0.1s linear;
 }
 .vc-rec-time {

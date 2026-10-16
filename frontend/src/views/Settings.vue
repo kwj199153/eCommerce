@@ -325,7 +325,7 @@
                 <a-switch v-model:checked="notifForm.taskComplete" />
               </div>
               <div class="notify-item">
-                <span>Agent 对话异常告警</span>
+                <span>数字员工对话异常告警</span>
                 <a-switch v-model:checked="notifForm.agentError" />
               </div>
             </div>
@@ -348,24 +348,9 @@
         key="preferences"
         tab="交互偏好"
       >
-        <a-card
-          :bordered="false"
-          class="notification-card"
-        >
-          <div class="notify-section">
-            <h4>翻译</h4>
-            <div class="pref-item">
-              <div class="pref-text">
-                <span class="pref-title">选中文字后自动弹出翻译</span>
-                <p class="pref-desc">
-                  在平台任意页面选中英文内容即自动翻译并弹出译文。关闭后不再自动弹窗，
-                  仍可点击商品标题旁的「译」按钮手动翻译。
-                </p>
-              </div>
-              <a-switch v-model:checked="autoTranslate" />
-            </div>
-          </div>
-        </a-card>
+        <!-- 翻译分区（自动弹开关 + 店铺术语表）整块外迁（第 370 轮），
+             抽组件的直接动因是销掉本文件的体量棘轮红；P1/P2 的翻译偏好也加在那里 -->
+        <TranslatePrefs />
       </a-tab-pane>
 
       <!-- ====== Tab 5: 店铺管理 ====== -->
@@ -646,9 +631,10 @@ import {
   disconnectPlatform,
   shopConnectState,
 } from '@/api/stores'
-import { useSelectionTranslate } from '@/composables/useSelectionTranslate'
 // 附加模块：客服语音（可插拔，宿主只加这一行 import + 一个 tab-pane）
 import VoiceClonePanel from '@/components/Settings/VoiceClonePanel.vue'
+// 翻译偏好（自动弹开关 + 店铺术语表）：第 370 轮整块抽出，见该组件
+import TranslatePrefs from '@/components/Settings/TranslatePrefs.vue'
 import ShopConnectModal from '@/components/Settings/ShopConnectModal.vue'
 
 /**
@@ -697,19 +683,7 @@ const shopStore = useShopStore()
 // ====== Tab 控制 ======
 const activeTab = ref('profile')
 
-// ====== 交互偏好 ======
-// 开关状态是模块级单例（在 useSelectionTranslate 里），浮层组件读的是同一份，
-// 所以这里改完立即生效，不需要「保存」按钮。
-const { autoEnabled, setAutoEnabled } = useSelectionTranslate()
-
-/**
- * 不直接把 autoEnabled 绑到 a-switch：必须走 setAutoEnabled，
- * 否则「关掉时收起已开浮层」和「写入 localStorage」两步都会丢。
- */
-const autoTranslate = computed({
-  get: () => autoEnabled.value,
-  set: (v: boolean) => setAutoEnabled(v),
-})
+// 翻译偏好（自动弹开关 + 店铺术语表）已外迁到 @/components/Settings/TranslatePrefs.vue
 
 // ====== 个人资料 ======
 const savingProfile = ref(false)
@@ -1281,34 +1255,4 @@ async function handleLogoutAll() {
   border-bottom: none;
 }
 
-/* 交互偏好 —— 用主题变量，深色模式下也要能读 */
-.pref-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--space-24);
-  padding: var(--space-10) 0;
-}
-
-.pref-text {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.pref-title {
-  font-size: var(--font-size-14);
-}
-
-.pref-desc {
-  margin: 0;
-  font-size: var(--font-size-12);
-  line-height: 1.6;
-  color: var(--text-tertiary);
-}
-
-.pref-item :deep(.ant-switch) {
-  flex: 0 0 auto;
-  margin-top: var(--space-2);
-}
 </style>

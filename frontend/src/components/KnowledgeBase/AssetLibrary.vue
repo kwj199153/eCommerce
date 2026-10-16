@@ -1269,7 +1269,7 @@ onMounted(() => {
   width: 22px;
   height: 22px;
   border-radius: var(--radius-circle);
-  background: rgba(24, 144, 255, 0.9);
+  background: rgba(79, 70, 229, 0.9);
   color: #fff;
   display: flex;
   align-items: center;
@@ -1396,7 +1396,7 @@ onMounted(() => {
 
 .picker-product:hover {
   border-color: var(--primary);
-  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.15);
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.15);
 }
 
 .picker-product img {

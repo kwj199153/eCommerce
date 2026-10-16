@@ -34,7 +34,8 @@
  *   ⇒ 现统一为「店铺：」。`scripts/check-chat-domain-split.cjs` 的 A9 钉住这条不变量：
  *     这个字段在**全前端只允许一个消费点**，且它的前缀必须是「店铺：」。
  */
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { message } from 'ant-design-vue'
 
 import { useAgentStore } from '@/stores/agent'
 import type { ContextTargetPayload } from './types'
@@ -504,6 +505,65 @@ export function useAgentShortcuts(ctx: ChatCtx) {
       activeSkillCard.value = null
     }
   }
+
+  /**
+   * 能力广场（第 371 轮）：`AbilityPlazaDrawer` 点了一张能力卡 ⇒ 在这里落地。
+   *
+   * ★ 为什么消费点必须是**本文件**：能凑齐「切员工 + 点名技能 + 发送」三件套的
+   *   只有这里（`agentStore` / `currentBackendAgent` / `runSkillCard` 都在本闭包里）。
+   *   放到别处 = 把 `runSkillCard` 那条链路再实现一遍。
+   * ★ 生产者**只有** `components/AbilityPlaza/AbilityPlazaDrawer.vue` 一处，
+   *   且它已先切到对话视图并等两帧 —— 理由见那边的文件头：
+   *   `<ChatPanel v-if="currentView === 'chat'" />` 是条件渲染，
+   *   不在对话视图时本监听器根本不存在，直接投递会**静默丢失**。
+   */
+  function onAbilityPlazaRun(e: Event): void {
+    const detail = (e as CustomEvent).detail as
+      | { agentId?: string; skillName?: string }
+      | null
+      | undefined
+    if (!detail?.skillName) return
+    void runAbilityFromPlaza(detail.agentId || '', detail.skillName)
+  }
+
+  /**
+   * 从能力广场执行一条能力。
+   *
+   * ★★ 切员工之后**必须等一帧**再点名：
+   *   `watch(currentBackendAgent, () => ctx.clearPendingSkill())`（第 249 轮加的，
+   *   防「点名跟着上一个员工漂过去」）是 flush:'pre' 的**异步**回调。
+   *   同步设完 `setCurrentAgent` 就立刻 `runSkillCard`（内部 `setPendingSkill`），
+   *   那个 watch 会在**之后**跑并把刚设进去的点名清掉 —— 症状是
+   *   「请求照发、回复照出，只是技能没注入」：**零报错**，最难归因的一类。
+   *   ⇒ 等这一帧，就是在等那个 watch 先跑完。
+   */
+  async function runAbilityFromPlaza(agentId: string, skillName: string): Promise<void> {
+    if (agentId && agentStore.currentAgent?.id !== agentId) {
+      const target = agentStore.agentList.find((a) => a.id === agentId)
+      if (target) {
+        agentStore.setCurrentAgent(target)
+        await nextTick()
+      }
+    }
+    // 过滤口径 = store 的 `skillsOfAgent`（与 `skillCards` 同源，不另写一遍）
+    const card = skillStore
+      .skillsOfAgent(currentBackendAgent.value)
+      .find((c) => c.name === skillName)
+    if (!card) {
+      // ★ 不许静默：拿不到卡片说明这条能力对该员工已失效（技能被停用 /
+      //   换了账号 / 目录还没回来）。静默 return 会变成「点了没反应」。
+      message.warning('这条能力当前不可用，可能在技能仓库里被停用了')
+      return
+    }
+    await runSkillCard(card)
+  }
+
+  onMounted(() => {
+    window.addEventListener('ability-plaza:run', onAbilityPlazaRun as EventListener)
+  })
+  onUnmounted(() => {
+    window.removeEventListener('ability-plaza:run', onAbilityPlazaRun as EventListener)
+  })
 
   /** 确保候选库已加载 */
   async function ensureCandidateLoaded() {

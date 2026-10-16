@@ -122,7 +122,7 @@
         >
           <div class="usage-metric">
             <div class="metric-label">
-              Agent 对话
+              数字员工对话
             </div>
             <a-progress
               type="dashboard"
@@ -236,7 +236,7 @@
 
             <ul class="plan-limits">
               <li>API 调用: <strong>{{ formatNumber(plan.limits.api_calls_per_month) }}/月</strong></li>
-              <li>Agent 对话: <strong>{{ formatNumber(plan.limits.agent_chats_per_month) }}/月</strong></li>
+              <li>数字员工对话: <strong>{{ formatNumber(plan.limits.agent_chats_per_month) }}/月</strong></li>
               <li>AI 生成: <strong>{{ formatNumber(plan.limits.ai_generations) }}/月</strong></li>
               <li>店铺数: <strong>{{ plan.limits.shops_limit }} 个</strong></li>
               <li>团队成员: <strong>{{ plan.limits.team_members }} 人</strong></li>
@@ -1503,7 +1503,7 @@ onUnmounted(stopPayPolling)
 
 .plan-card:hover {
   border-color: var(--primary);
-  box-shadow: 0 4px 16px rgba(24, 144, 255, 0.12);
+  box-shadow: 0 4px 16px rgba(79, 70, 229, 0.12);
 }
 
 .plan-card.is-current {

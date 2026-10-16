@@ -60,7 +60,7 @@
           class="empty-state"
         >
           <RobotOutlined style="font-size: var(--font-size-48); color: var(--text-tertiary); margin-bottom: var(--space-16)" />
-          <p>选择一个 Agent 开始对话</p>
+          <p>选择一个数字员工开始对话</p>
           <p class="hint">
             或从顶部工具栏选择功能
           </p>
@@ -1034,7 +1034,7 @@ watch(currentAgentId, () => {
   background: var(--primary);
   color: #fff;
   font-weight: 500;
-  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.25);
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.25);
 }
 .iab-chip:disabled { opacity: 0.5; cursor: not-allowed; }
 .iab-chip-icon { font-size: var(--font-size-14); line-height: 1; }
@@ -1042,13 +1042,13 @@ watch(currentAgentId, () => {
 /* 运营复盘师·快捷 chip 正在执行时的脉冲提示（复用 iab-chip 布局） */
 .iab-chip.rqa-loading {
   border-color: var(--primary);
-  background: rgba(24, 144, 255, 0.08);
+  background: rgba(79, 70, 229, 0.08);
   color: var(--primary);
   animation: rqa-pulse 1.2s ease-in-out infinite;
 }
 @keyframes rqa-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.25); }
-  50% { box-shadow: 0 0 0 6px rgba(24, 144, 255, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.25); }
+  50% { box-shadow: 0 0 0 6px rgba(79, 70, 229, 0); }
 }
 
 /* 输入区域（卡片式，冻结在底部） */
@@ -1107,7 +1107,7 @@ watch(currentAgentId, () => {
 
 .input-card:focus-within {
   border-color: var(--primary);
-  box-shadow: 0 1px 8px rgba(24, 144, 255, 0.15);
+  box-shadow: 0 1px 8px rgba(79, 70, 229, 0.15);
 }
 
 .chat-textarea {

@@ -97,21 +97,42 @@ export interface SelectionTranslation {
   target_lang: string
   /** LLM 不可用时为 true，此时 translation 为空字符串（后端不编造译文） */
   degraded: boolean
+  /**
+   * ★ 原文已经是目标语言 ⇒ **没有做翻译**（translation 为空串、degraded 为 false）。
+   *
+   * 与 `degraded` 严格区分：这不是故障，是「本来就不需要翻」。
+   * 浮层据此显示「已是中文」并给一个「译为英文」入口 —— 缺了它就只能显示一个
+   * 空译文框，看起来像坏了（另一种「三态压两态」）。
+   */
+  same_lang?: boolean
 }
 
 /**
  * 划词翻译（轻量，面向阅读辅助）
  *
  * 与 translateContent 的分工：那个面向内容生产（长文本、关键词、多版本），
- * 这个面向「选中一段英文想立刻看懂」。
+ * 这个面向「选中一段文字想立刻看懂」。
+ *
+ * ★ 方向口径（第 364 轮改）：**默认一律译成中文**（后端 `target_lang` 默认 `"zh"`，
+ *   也是老板自用扩展 v1.1.0 的选择）。原文已是中文时后端**不调模型**、
+ *   回 `same_lang=true`。
+ *   `target_lang` 只在**用户显式要求**时传（「已是中文 → 一键译为英文」那条通道）；
+ *   默认调用连传都不传 —— 前端自己算方向就是第二份实现。
  *
  * 提示归属：本接口**不弹任何提示**（划词是高频操作，结果直接显示在浮层里）。
  * 响应拦截器自第 267 轮起不再自动弹成功提示，所以这里**不需要**任何开关。
+ *
+ * ★ `glossary`（第 369 轮 P0）＝ 本店术语表**原文**，由调用方从
+ *   `utils/glossary.ts` 的 `glossaryPayload()` 取 —— **空表时那个函数连键都不带**，
+ *   所以这里保持可选。解析（含跳错规则）在服务端做，前端传的就是用户在设置页写的原文：
+ *   前端再解析一遍再回传，就出现了「原表」与「解析结果」两份可能漂移的表示。
  */
 export async function translateSelection(data: {
   text: string
   target_lang?: string
   context?: string
+  /** 本店固定译法表（每行一条 `原文=译文`）。空/缺省 ⇒ 后端不注入任何术语段 */
+  glossary?: string
 }): Promise<{ success: boolean; response: SelectionTranslation; message?: string }> {
   return request.post('/aigc/content/translate-selection', data)
 }

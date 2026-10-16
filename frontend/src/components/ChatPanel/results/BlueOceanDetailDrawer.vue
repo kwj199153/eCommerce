@@ -116,7 +116,7 @@
             <span>站点</span><b>{{ record.marketplace || 'Amazon US' }}</b>
           </div>
           <div class="drow">
-            <span>完整类目</span><b>{{ (record.category_path || []).join(' › ') || record.category_l2 || '-' }}</b>
+            <span>完整类目</span><b>{{ catPathText(record) }}</b>
           </div>
           <div class="drow">
             <span>上架时间</span><b>{{ record.listed_date || '-' }}</b>
@@ -286,6 +286,20 @@ import { computed } from 'vue'
 import { FundOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useMonitorPoolStore } from '@/stores/monitorPool'
+import { displayCategory } from '@/config/categoryTaxonomy'
+
+/**
+ * 完整类目路径显示：逐段中文化（宽容器 → 中英对照）。
+ * ★ 未收录段原样返回英文（displayCategory 的 fail-visible 口径），不造中文不留空
+ *   ⇒ 漏收录一眼可见，而不是静默变成空白。
+ */
+function catPathText(record: any): string {
+  const raw = record?.category_path
+  const path: string[] = Array.isArray(raw) ? raw : String(raw || '').split(' > ').filter(Boolean)
+  if (path.length) return path.map((s) => displayCategory(s, 'wide')).join(' › ')
+  const l2 = record?.category_l2
+  return l2 ? displayCategory(l2, 'wide') : '-'
+}
 
 const props = defineProps<{
   record: any

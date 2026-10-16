@@ -679,7 +679,7 @@ const getBulletEmoji = (idx: number) => {
 }
 .title-editor:focus-within {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.15);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
 }
 
 .title-meta {

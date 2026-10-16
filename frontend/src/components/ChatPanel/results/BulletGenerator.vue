@@ -58,7 +58,7 @@
       </div>
       <div
         v-for="(bullet, idx) in editableBullets"
-        :key="idx"
+        :key="bullet.uid"
         class="bullet-card"
       >
         <div class="bullet-header">
@@ -358,10 +358,18 @@ const getBaselineBullets = () => (resultData.bullets || []).map(normalizeBullet)
 // ====== 可编辑五点数组 ======
 // 每条 title/content/category 可改，可新增/删除；保存时用此编辑后的内容写回
 const editableBullets = ref<any[]>([])
+
+// ★ 每条卖点需要一个**跨渲染稳定的 uid**。`v-for` 原先用 `idx` 当 key：
+//   删掉中间一条时，后面的卡片会复用前一条的组件实例 ——
+//   编辑中的标题/正文会「跟着串位」（第 N 条显示第 N-1 条的文字），
+//   而中文文本肉眼极难发现。
+let bulletUidSeed = 0
+const nextBulletUid = () => `bullet-${++bulletUidSeed}`
 const categoryOptions = ['核心功能', '便捷性', '智能安全', '氛围营造', '品质承诺'].map(v => ({ label: v, value: v }))
 
 function seedEditableBullets() {
   editableBullets.value = getBaselineBullets().map((b: any) => ({
+    uid: nextBulletUid(),
     category: b.category,
     emotion_trigger: !!b.emotion_trigger,
     title: b.title,
@@ -389,6 +397,7 @@ const resetBullets = () => seedEditableBullets()
 
 const addBullet = () => {
   editableBullets.value.push({
+    uid: nextBulletUid(),
     category: '核心功能',
     emotion_trigger: false,
     title: '',

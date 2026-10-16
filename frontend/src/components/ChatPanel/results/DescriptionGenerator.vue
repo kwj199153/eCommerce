@@ -615,7 +615,7 @@ const handleSaveToProduct = async () => {
 .field-input:focus-within,
 .field-input:focus {
   border: 1px solid var(--primary) !important;
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
 }
 .para-row {
   display: flex;

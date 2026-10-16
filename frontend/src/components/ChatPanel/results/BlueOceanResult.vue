@@ -419,6 +419,8 @@ import { message } from 'ant-design-vue'
 import MarkdownIt from 'markdown-it'
 import { useCandidateLibraryStore, type CandidateItem } from '@/stores/candidateLibrary'
 import { GROUP_COLORS } from '@/stores/productLibrary'
+import { displayCategory } from '@/config/categoryTaxonomy'
+import { secondaryMetrics } from './blueOceanSecondary'
 import BlueOceanDetailDrawer from './BlueOceanDetailDrawer.vue'
 
 const props = defineProps<{
@@ -511,13 +513,6 @@ function listingUrl(asin: string, marketplace?: string): string {
   const host = hostMap[mk] || 'www.amazon.com'
   return `https://${host}/dp/${asin}`
 }
-/** 综合评分跳色：星级、蓝海分通用 */
-function ratingClass(r: number): string {
-  if (r >= 4.2) return 'good'
-  if (r >= 3.8) return ''
-  return 'warn'
-}
-
 // ====== 核心逻辑：蓝海结果 → 选品库候选（草稿池） ======
 
 /**
@@ -756,29 +751,11 @@ const renderMarkdown = (content: string) => md.render(content)
 
 // ====== 悬浮次要指标卡 ======
 function secondaryItems(record: any): Array<{ label: string; value: string; cls?: string }> {
-  const path = record.category_path || []
-  const l1 = record.category_l1 || path[0] || record.category || '-'
-  const l2 = record.category_l2 || path[1] || ''
-  const items: Array<{ label: string; value: string; cls?: string }> = [
-    { label: '类目', value: l2 ? `${l1} › ${l2}` : l1 },
-  ]
-  const rating = record.rating ? Number(record.rating).toFixed(1) : '-'
-  items.push({
-    label: '星级',
-    value: `★ ${rating}`,
-    cls: ratingClass(record.rating || 0),
-  })
-  const variation = record.variation_count ?? 1
-  items.push({
-    label: '变体',
-    value: `${variation} 个`,
-    cls: variation <= 3 ? 'variation-few' : 'variation-many',
-  })
-  const bsr = record.bsr_rank ? Number(record.bsr_rank).toLocaleString() : '-'
-  const review = record.review_count ? Number(record.review_count).toLocaleString() : '-'
-  items.push({ label: 'BSR', value: `#${bsr}` })
-  items.push({ label: '评论', value: review })
-  return items
+  const path: string[] = Array.isArray(record.category_path) ? record.category_path : []
+  const l1Zh = displayCategory(record.category_l1 || path[0] || record.category || '', 'wide')
+  const l2En = record.category_l2 || path[1] || ''
+  const cat = l2En ? `${l1Zh} › ${displayCategory(l2En, 'wide')}` : l1Zh || '-'
+  return [{ label: '类目', value: cat }, ...secondaryMetrics(record)]
 }
 </script>
 
@@ -1045,8 +1022,8 @@ function secondaryItems(record: any): Array<{ label: string; value: string; cls?
 .listed-badge {
   font-size: var(--font-size-10);
   color: var(--primary-strong);
-  background: rgba(24, 144, 255, 0.1);
-  border: 1px solid #91caff;
+  background: rgba(79, 70, 229, 0.1);
+  border: 1px solid #c2bff8;
   padding: 0 var(--space-4);
   border-radius: var(--radius-3);
 }
