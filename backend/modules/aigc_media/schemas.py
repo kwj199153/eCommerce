@@ -266,12 +266,31 @@ class SelectionTranslateRequest(BaseModel):
     """划词翻译请求（面向阅读辅助：用户选中一段文字，只要一个能直接读的译文）"""
     text: str = Field(..., min_length=1, max_length=2000, description="选中的文本")
     target_lang: str = Field(
-        default="auto",
-        description="目标语言代码；auto = 按原文自动判断（含中文则译英，否则译中）"
+        default="zh",
+        description=(
+            "目标语言代码。**默认 zh = 一律译成中文** —— 也是老板自用扩展 v1.1.0 的选择。"
+            "刻意不用 auto：auto 的语义是「含中文则译英」，**选到中文就把整段译成英文**"
+            "（2026-10-02 老板实测报过：选中「这个 listing」被译成「This listing」）。"
+            "原文已是中文**且不含外文词**时不调模型，如实回 `same_lang=true`，由前端给「译为英文」入口；"
+            "中文里夹英文词的混合文本（如「这个 Noise Cancelling 耳机」）仍然会翻"
+            "—— 正是要把外文那部分落成中文；"
+
+            "auto 仍可**显式**传入（保留旧语义，老调用方不受影响）。"
+        ),
     )
     context: str = Field(
         default="ecommerce",
         description="翻译上下文，决定术语口味（如 ecommerce / listing / customer_service）"
+    )
+
+    glossary: str = Field(
+        default="",
+        max_length=4000,
+        description=(
+            "本店固定译法表（每行一条 `原文=译文`，`#` 开头为注释行）。"
+            "**默认空串 = 不注入任何术语段**，此时提示词与「未配置术语表」逐字相同。"
+            "解析与渲染（含跳错规则）见 `modules/aigc_media/glossary.py`。"
+        ),
     )
 
 
@@ -289,6 +308,15 @@ class SelectionTranslateResponse(BaseModel):
     degraded: bool = Field(
         default=False,
         description="LLM 不可用时为 True，此时 translation 为空字符串（绝不编造译文）"
+    )
+    same_lang: bool = Field(
+        default=False,
+        description=(
+            "原文已经是目标语言（或模型的译文与原文实质相同）⇒ **没有做翻译**"
+            "（translation 为空串、degraded 为 False）。"
+
+            "与 degraded 严格区分：这不是故障，是「本来就不需要翻」。"
+        )
     )
 
 

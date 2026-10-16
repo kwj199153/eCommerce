@@ -33,6 +33,11 @@ import pathlib
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+# ★ 单文件 ⇄ 包 双态的唯一真源（第 355 轮建）：本文件的端点清单里
+#   `aigc_media` 那一项第 363 轮已拆成包，`(BACKEND / rel).read_text()` 会
+#   `FileNotFoundError`（收集期崩 ⇒ 非红非绿）。
+from pkg_source import read_source
+
 from ai_infra.context_target import (
     ContextTarget,
     bind_context_target,
@@ -369,7 +374,7 @@ def test_every_chat_endpoint_binds_context_target():
       （第 250 轮那个洞的现场形态）。
     """
     for rel, expected in CHAT_ENDPOINTS.items():
-        src = (BACKEND / rel).read_text(encoding="utf-8")
+        src = read_source(rel)
 
         # ① 现算端点集合与清单逐字相等（新增端点必须来登记）
         got = _chat_endpoints_in(src)

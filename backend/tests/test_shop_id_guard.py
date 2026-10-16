@@ -45,6 +45,7 @@ import pytest
 from sqlalchemy import text
 
 from core.database import async_session_factory
+from pkg_source import router_sources
 
 BACKEND = Path(__file__).resolve().parents[1]
 MODULES = BACKEND / "modules"
@@ -218,8 +219,14 @@ def _depends_usage() -> tuple[set[tuple[str, str]], set[str]]:
     optional_hits: set[tuple[str, str]] = set()
     strict_modules: set[str] = set()
 
-    for py in sorted(MODULES.rglob("router.py")):
-        rel = py.relative_to(BACKEND).as_posix()
+    # ★ 走 `router_sources`：**两种形态**（`router.py` 与拆包后的 `router/*.py`）
+    #   都要扫，且包内文件归**逻辑**路径 `router.py`。
+    #   第 363 轮 aigc_media 拆包实测：`rglob("router.py")` 对包内文件一个都匹配
+    #   不到 ⇒ 扫不到它 ⇒ strict 集合少一个 ⇒ 本门禁红（**这是对的那一侧**：
+    #   真正危险的是「扫不到却照样绿」）。
+    #   归逻辑名之后 `EXPECTED_STRICT_MODULES` / `ALLOWED_OPTIONAL` **逐字不变**
+    #   —— 拆包没有放松任何判据，这一点由集合相等断言自己证明。
+    for rel, py in router_sources(MODULES):
         tree = ast.parse(py.read_text(encoding="utf-8"))
         for fn in [n for n in ast.walk(tree)
                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:

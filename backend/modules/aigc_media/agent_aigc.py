@@ -25,6 +25,8 @@ from enum import Enum
 
 from core.logger import get_logger
 
+from .glossary import build_selection_prompt
+
 logger = get_logger(__name__)
 
 
@@ -545,7 +547,7 @@ class AIGCMediaAgent(BaseAgent):
     # ★ 第 283 轮：提示词带版本与指纹后才可对账。
 
     @classmethod
-    def _detect_lang(cls, text: str) -> str:
+    def detect_lang(cls, text: str) -> str:
         """粗判语言：含中日韩字符即视为 zh（划词场景两种方向足够，不做完整语种识别）。"""
         for ch in text:
             if "\u3400" <= ch <= "\u9fff":
@@ -568,6 +570,7 @@ class AIGCMediaAgent(BaseAgent):
         text: str,
         target_lang: str = "auto",
         context: str = "ecommerce",
+        glossary: str = "",
     ) -> Dict[str, Any]:
         """
         划词翻译：用户选中一段文字，只要一个能直接读的译文。
@@ -588,18 +591,14 @@ class AIGCMediaAgent(BaseAgent):
                 "original_text": "", "translation": "", "source_lang": "", "target_lang": "", "degraded": True,
             }}
 
-        source_lang = self._detect_lang(text)
+        source_lang = self.detect_lang(text)
         if target_lang in (None, "", "auto"):
             target_lang = "en" if source_lang == "zh" else "zh"
 
         target_name = self._LANG_NAMES.get(target_lang, target_lang)
 
         translated = await self._llm_generate_text(
-            prompt=(
-                f"目标语言：{target_name}\n"
-                f"上下文：{context}\n\n"
-                f"原文：\n{text}"
-            ),
+            prompt=build_selection_prompt(target_name, context, text, glossary),
             system_prompt=self.get_prompt_template("aigc_selection_translate"),
             max_tokens=800,
             temperature=0.2,

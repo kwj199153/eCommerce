@@ -12,6 +12,7 @@ from ai_infra.skills import is_skill_requested
 
 from .agent_aigc import AIGCMediaAgent
 from . import asset_gen
+from . import lang_guard
 from .schemas import (
     ImageGenerationRequest,
     MainImageAnalysisRequest,
@@ -227,12 +228,26 @@ async def translate_selection_service(request: SelectionTranslateRequest) -> Dic
     与 `translate_content_service` 的区别只在产出结构：这边只要一个译文，
     不返回 SEO/文化/多版本字段 —— 划词要的是快，不是全。
     """
+    # 原文已是目标语言 ⇒ **不调模型**，诚实回 same_lang（前端给「译为英文」入口）。
+    # ★ 方向判据只住一处（`agent.detect_lang`），这里只做「相等就短路」。
+    # ★ 第 365 轮：**夹了外文词的混合文本不在此列**（「这个 listing」要真的翻）——
+    #   那条细规则住在 `lang_guard`，这里不重复表达。
+
+    same = lang_guard.guard_same_lang(agent, request.text, request.target_lang)
+    if same is not None:
+        return same
+
     try:
-        return await agent.translate_selection(
+        res = await agent.translate_selection(
             text=request.text,
             target_lang=request.target_lang,
             context=request.context,
+            glossary=request.glossary,
         )
+        # ★ 混合文本（中文夹外文词）现在会走到模型；模型**原样退回**时按「没翻」呈现，
+        #   否则界面会给出「中文 → 中文」这种自相矛盾的方向徽标。不额外花钱。
+        return lang_guard.reconcile_noop(res)
+
     except Exception as e:
         logger.error(f"划词翻译失败: {e}")
         return {

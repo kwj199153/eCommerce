@@ -105,6 +105,39 @@ def read_source(
                 "      ⇒ 读取点选错了，或判据窗口与实际模块形态不一致"
             )
     return text
+def router_sources(root: Path) -> list[tuple[str, Path]]:
+    """枚举 `root` 下各模块的**HTTP 面**源文件 → `[(逻辑 rel, 物理路径), ...]`。
+
+    两种物理形态都算，且归到**同一个逻辑路径**：
+
+      · 单文件  `modules/a/router.py`
+      · 拆成包  `modules/a/router/*.py`  ⇒ 逻辑路径仍记作 `modules/a/router.py`
+
+    ★ 为什么必须收口在这里、而不是各门禁各写一个 glob：
+      这是「拆成包之后哪些文件仍属于同一个逻辑单元」这**同一个判定**。
+      三处各写一遍 ⇒ 下次有人拆别的模块（或换个目录名）时，只会改到自己
+      顺手看到的那一处，剩下的**静默失明**（本模块 docstring 说的就是这件事）。
+
+    ★ 为什么归**逻辑**路径（第 363 轮实测的动机）：
+      消费方 `test_shop_id_guard` 拿它做**集合相等**断言。归逻辑名后那张
+      期望表**逐字不变** ⇒ 「拆包没有放松任何判据」是可验证的事实，
+      而不是一句说明。若直接把物理路径写进期望表，等于把模块的内部文件结构
+      升格成门禁契约 —— 下次挪一个函数就得改门禁，而「往期望表里加一条」
+      正是棘轮类门禁最忌讳的放松形态。
+
+    ★ 排序稳定（按逻辑路径、再按物理路径）：消费方不得依赖顺序。
+    """
+    out: list[tuple[str, Path]] = []
+    for p in root.rglob("router.py"):
+        if "__pycache__" in p.parts:
+            continue
+        out.append((p.relative_to(_BACKEND).as_posix(), p))
+    for p in root.rglob("router/*.py"):
+        if "__pycache__" in p.parts:
+            continue
+        logical = (p.parent.parent / "router.py").relative_to(_BACKEND).as_posix()
+        out.append((logical, p))
+    return sorted(out)
 
 
 def parse_module(rel: str | Path) -> ast.Module:
