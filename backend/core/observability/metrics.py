@@ -398,6 +398,23 @@ PITR_WAL_ARCHIVE_BYTES = _Gauge(
     (),
 )
 
+# --- 每日经营简报（第 371 轮）---
+# ★ 与上面 audit / identity 的清理指标**同款两件套**：
+#   `runs{status}` 答「跑没跑成」，`items` 答「产出了多少」。
+#   后者是判断**阈值真的在生效**的唯一量化口径 ——
+#   长期恒为 0 只有两种可能：阈值设得太宽（等于没告警），
+#   或监控池压根没数据（等于简报在空跑）。两者都必须看得见。
+BRIEFING_RUNS = _Counter(
+    "briefing_runs_total",
+    "每日经营简报生成次数（按结局：ok / failed）",
+    ("status",),
+)
+BRIEFING_ITEMS = _Counter(
+    "briefing_items_total",
+    "每日经营简报累计产出的条目数",
+    (),
+)
+
 # 对外暴露的顺序（/metrics 输出顺序稳定，便于 diff）
 _REGISTRY = (
     HTTP_REQUESTS,
@@ -421,6 +438,8 @@ _REGISTRY = (
     BACKUP_LAST_BYTES,
     PITR_RUNS,
     PITR_WAL_ARCHIVE_BYTES,
+    BRIEFING_RUNS,
+    BRIEFING_ITEMS,
     DEPENDENCY_UP,
 )
 

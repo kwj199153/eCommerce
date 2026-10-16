@@ -98,6 +98,14 @@ celery_app.autodiscover_tasks([
     #   ⇒ `celery inspect registered` 里查不到，而 beat 照常按调度表投递
     #   ⇒ 任务永远停在 pending，日志里一条都没有。
     "modules.trade",
+    # ★ 第 371 轮：竞品监控域的**每日经营简报**（`modules/monitors/tasks.py`）。
+    #   它把「监控池里的变化」变成每天早上一条看得见的通知 —— 在此之前
+    #   `monitors` 的五个变化信号列（降价 / 断货 / 评论 / BSR / Listing）
+    #   只有把看板打开才看得见，用户不翻就等于不存在。
+    #   ★ 漏了这一行的后果与上面几条**逐字相同**：装饰器从未被执行过
+    #     ⇒ `celery inspect registered` 里查不到它，而 beat 照常按调度表投递
+    #     ⇒ 任务永远停在 pending，日志里一条都没有。
+    "modules.monitors",
     # ★ 第 328 轮：通用审计的**保留期清理**（`core/audit/tasks.py`）。
     #   ★★ 这一条与上面几条**不同**：它指向的是 `core` 下的包，不是 modules。
     #      审计的内核（模型 / 写路径 / 读口 / 清理核）整体住在 `core/audit/`，
@@ -173,6 +181,26 @@ IDENTITY_PURGE_MINUTE = 17
 #:     与"日终快照"的语义不符。
 BACKUP_HOUR = 2
 BACKUP_MINUTE = 41
+
+#: 每日经营简报的触发时刻（★ 第 371 轮）。
+#:
+#: ★★ 它与上面**所有**条目的选取理由都不同 —— 那些要么跑在维护窗口
+#:   （凌晨 2~5 点：备份 / 记忆 / 审计清理 / 身份清理），要么是每 N 分钟的
+#:   体检（回收 / 对账）。本条目是**唯一一条给人看的**：它产出的东西
+#:   第二天早上会被老板扫一眼，所以时刻由「用户什么时候看」决定，
+#:   而不是由「什么时候对数据库压力小」决定。
+#:
+#:   · 小时 **8** —— 上班前一小时。再早（比如 6 点）会拿到美区当天
+#:     尚未落定的 BSR 抖动，生成出来的「排名跃升」第二天就自我推翻；
+#:     再晚（比如 10 点）用户已经在看别的了，简报变成档案而不是提醒。
+#:   · 分钟 **37** —— 沿用本文件既有的错峰纪律（23 / 7 / 17 / 41 都不是
+#:     5 的倍数）：`billing-expire-pending` 是 `*/5`，落在它两条之间。
+#:
+#: ★ 为什么**不**进 `core/config`（与本文件其它时刻常量同判据）：进 config
+#:   会让它看起来像一个可以随时翻的业务开关，而改它的实际代价是
+#:   「用户明天早上还看不看得到提醒」—— 那是产品事件，不是配置开关。
+BRIEFING_HOUR = 8
+BRIEFING_MINUTE = 37
 
 #: PITR 的两个触发时刻（★ 第 351 轮 / P0-2）。
 #:
@@ -348,6 +376,26 @@ celery_app.conf.beat_schedule = {
             hour=PITR_BASEBACKUP_HOUR,
             minute=PITR_BASEBACKUP_MINUTE,
         ),
+        "options": {"queue": "default"},
+    },
+    # ====== 每日经营简报（第 371 轮）======
+    #
+    # ★★ 任务名是**字面量**，理由同上（core 不得 import modules）：它与
+    #    `modules/monitors/tasks.py::TASK_GENERATE_BRIEFINGS` 构成
+    #    「同一事实两份写法」。写错时的现象是「简报表再不长新行，
+    #    且日志里一条都没有」——（beat 往一个没人注册的名字投递，队列里
+    #    只是多了一条没人认识的消息，「没人消费」本身不是错误 ⇒ 什么都不发生。）
+    #    ⇒ 由 `tests/test_briefing_schedule.py` 把两边**钉成相等**。
+    #
+    # ★ 为什么用 crontab 而不是 timedelta：同 memory 那条理由 ——
+    #   crontab 每次按**当前时间**重算下次触发点，不依赖调度文件的
+    #   last_run_at ⇒ 调度文件丢失 / 重建时不会漏掉一整天。
+    #
+    # ★ 为什么这条**是唯一一条给人看的**：时刻选取理由见上面
+    #   `BRIEFING_HOUR` 那一段（与维护窗口那几条**不同源**）。
+    "monitors-daily-briefing": {
+        "task": "monitors.generate_daily_briefings",
+        "schedule": crontab(hour=BRIEFING_HOUR, minute=BRIEFING_MINUTE),
         "options": {"queue": "default"},
     },
 }

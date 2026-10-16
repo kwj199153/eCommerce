@@ -17,6 +17,8 @@ GET    /api/v1/monitor-groups               - 分组列表
 POST   /api/v1/monitor-groups               - 新建分组
 PUT    /api/v1/monitor-groups/{group_id}    - 更新分组
 DELETE /api/v1/monitor-groups/{group_id}    - 删除分组
+GET    /api/v1/briefings                    - 每日经营简报列表（含未读数）
+POST   /api/v1/briefings/{briefing_id}/read - 标记一条简报已读
 
 租户隔离：全部走 `get_current_shop_id`（X-Shop-ID 头）。
 列表在无租户上下文时返回空 —— 与 candidates / products / assets 一致。
@@ -32,6 +34,11 @@ from sqlalchemy import select, delete
 from core.database import async_session_factory
 from core.tenant.middleware import get_current_shop_id
 from core.tenant.scoping import scoped
+from modules.monitors.briefing import (
+    count_unread as count_unread_svc,
+    list_briefings as list_briefings_svc,
+    mark_read as mark_read_svc,
+)
 from modules.monitors.db_model import MonitorRecord, MonitorGroupRecord
 from modules.monitors.service import (
     upsert_monitor,
@@ -43,6 +50,53 @@ from modules.monitors.service import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["竞品监控池"])
+
+
+# ====== 每日经营简报（第 371 轮）======
+#
+# ★ 这两个端点**只读**（列表 + 标记已读）。"生成"没有 REST 入口 ——
+#   它由 beat 每天早上触发（`modules/monitors/tasks.py`）。
+#   手动补跑走 `celery call monitors.generate_daily_briefings`，
+#   这是刻意不给按钮的：生成是**全店**动作（一次扫所有监控池），
+#   放进 REST 就意味着任何人都能让整个平台重新算一遍。
+
+@router.get("/briefings")
+async def list_daily_briefings(
+    shop_id: Optional[str] = Depends(get_current_shop_id),
+    limit: int = 30,
+):
+    """简报列表（日期倒序）+ **未读数**。
+
+    ★ 未读数与列表放**同一个响应**而不是两个端点：铃铛每次轮询两个数都要，
+      拆成两条会让「徽标说 3 条、点开只有 2 条」成为可能
+      （两次请求之间恰好又生成了一份）。同款判据见 `trade` 的列表接口。
+    """
+    items = await list_briefings_svc(shop_id, limit)
+    return {
+        "items": items,
+        "total": len(items),
+        "unread": await count_unread_svc(shop_id),
+    }
+
+
+@router.post("/briefings/{briefing_id}/read")
+async def mark_daily_briefing_read(
+    briefing_id: str,
+    shop_id: Optional[str] = Depends(get_current_shop_id),
+):
+    """把一条简报标为已读（**幂等**：重复调用不改首次的 `read_at`）。
+
+    ★ 拿不到时回 **404**，不静默成功：静默成功会让前端把徽标清掉，
+      而服务端仍是未读 ⇒ 刷新一下又冒出来，用户看到的是
+      「点了没反应、还越来越多」。
+    ★ 归属条件进**查询**（`mark_read_svc` 内部），不在 Python 里比：
+      否则「不存在」与「不属于你」会走出不同路径，那个差异就是一个
+      可枚举他人 briefing_id 的存在性探测器。
+    """
+    row = await mark_read_svc(briefing_id, shop_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="简报不存在")
+    return row
 
 
 # ====== 监控池 CRUD ======

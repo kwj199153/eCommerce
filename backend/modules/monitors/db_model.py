@@ -118,6 +118,61 @@ class MonitorGroupRecord(Base):
     createdAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
     updatedAt: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
 
+
+class DailyBriefingRecord(Base):
+    """每日经营简报表（/api/v1/briefings 数据源）★ 第 371 轮
+
+    ★ 为什么它和 monitors 同住一个 db_model：本模块的领域就是「竞品监控」，
+      简报是**从监控池快照派生**的当日变化摘要（`briefing.py`）。为它单开一个
+      `modules/briefings/` 包，会造出一个只含一张表、且必须反向 import
+      monitors 的包 —— 那是分层噪音，不是分层。同款先例：本文件里
+      `MonitorRecord` 与 `MonitorGroupRecord` 本来就同住一张表文件。
+
+    ★ 租户维度只有 `shop_id`（`X-Shop-ID → store_id`），与 monitors 一致；
+      账户层管的是「你能看见哪些店」，不是分区维度。
+      外键同样挂到 `stores_store`：`monitors` 已有这条约束，实测（第 371 轮）
+      它里面的 `shop_id` **全是真实店铺 id**、没有空串 —— 本表沿用同款约束，
+      这样「简报指向一个不存在的店」在写入时就被挡住。
+
+    ★ `read_at` 按 (店铺 × 日期) 存，而不是按人存：当前数据作用域只有一层，
+      "谁读的"没有落点。将来要支持多人各自的未读时，拆成
+      `briefing_reads(briefing_id, user_id)`，本列退役。
+    """
+    __tablename__ = "daily_briefings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["shop_id"],
+            ["stores_store.id"],
+            ondelete="RESTRICT",  # ★ 同 monitors：删店铺是低频高风险，不连带删业务数据
+            name="fk_daily_briefings_shop_id_stores_store",
+        ),
+        # 同一店铺同一天只有一份简报（重跑走覆盖，不新增行）
+        UniqueConstraint("shop_id", "brief_date", name="uq_briefing_shop_date"),
+    )
+
+    # id = brief-{date}-{shop}；shop 为空时用 demo 占位（见 briefing.briefing_id）
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    # 本地日历日 YYYY-MM-DD（「哪一天的简报」是用户语义，见 briefing.py 文件头）
+    brief_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    # 租户隔离维度
+    shop_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+
+    # 条目数组：[{type, severity, asin, title, metric, text}]
+    # ★ 整体存 JSON 而不是拆子表：用法是「取整份 → 渲染一列」，
+    #   不存在「按条目类型查某一列」的需求（与 monitors 的 7 维时序同判据）。
+    items: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # 一句话摘要（铃铛抽屉的标题行）
+    summary: Mapped[str] = mapped_column(Text, default="")
+    # ★ 冗余存条目数而不是每次 `len(items)`：铃铛徽标与列表排序都要它，
+    #   而列表接口本可以把 JSON 全解出来 —— 冗余一次，省掉那条路。
+    item_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # 已读时刻（null = 未读）。★ 存时刻而不是 bool：布尔丢掉了「什么时候读的」，
+    #   而将来要做「每天只提醒一次」时，判据正是这个时刻。
+    read_at: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    generated_at: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
+    created_at: Mapped[str] = mapped_column(String(64), default=lambda: datetime.utcnow().isoformat())
+
 # ====== 外键目标表的 metadata 注册（★ 必须留在文件末尾）======
 #
 # 本模块的 `shop_id` 是**字符串**外键，指向 `stores_store.id`。SQLAlchemy 解析时

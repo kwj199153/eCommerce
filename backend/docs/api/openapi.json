@@ -4776,9 +4776,16 @@
             "title": "Context",
             "type": "string"
           },
+          "glossary": {
+            "default": "",
+            "description": "本店固定译法表（每行一条 `原文=译文`，`#` 开头为注释行）。**默认空串 = 不注入任何术语段**，此时提示词与「未配置术语表」逐字相同。解析与渲染（含跳错规则）见 `modules/aigc_media/glossary.py`。",
+            "maxLength": 4000,
+            "title": "Glossary",
+            "type": "string"
+          },
           "target_lang": {
-            "default": "auto",
-            "description": "目标语言代码；auto = 按原文自动判断（含中文则译英，否则译中）",
+            "default": "zh",
+            "description": "目标语言代码。**默认 zh = 一律译成中文** —— 也是老板自用扩展 v1.1.0 的选择。刻意不用 auto：auto 的语义是「含中文则译英」，**选到中文就把整段译成英文**（2026-10-02 老板实测报过：选中「这个 listing」被译成「This listing」）。原文已是中文**且不含外文词**时不调模型，如实回 `same_lang=true`，由前端给「译为英文」入口；中文里夹英文词的混合文本（如「这个 Noise Cancelling 耳机」）仍然会翻—— 正是要把外文那部分落成中文；auto 仍可**显式**传入（保留旧语义，老调用方不受影响）。",
             "title": "Target Lang",
             "type": "string"
           },
