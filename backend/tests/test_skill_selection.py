@@ -61,6 +61,8 @@ import sys
 import pytest
 import pytest_asyncio
 
+from pkg_source import read_source, router_sources
+
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
 SKILLS_INFRA = BACKEND / "ai_infra" / "skills.py"
 PROVIDER_PY = BACKEND / "modules" / "skills" / "provider.py"
@@ -433,10 +435,12 @@ def scan_conversation_endpoints() -> list:
       避免把"某个 helper 恰好调了 service.chat"算成一个端点。
     """
     rows = []
-    for p in sorted((BACKEND / "modules").rglob("router.py")):
-        if "__pycache__" in p.parts:
-            continue
-        rel = p.relative_to(BACKEND).as_posix()
+    # ★ 两种形态都要扫（`router.py` / 拆包后的 `router/*.py`），见 `router_sources`。
+    #   漏了包内文件 ⇒ 计数从 13 掉到 11 ⇒ `..._is_not_vacuous` 红。
+    #   那条红是**设计如此**（"数量变化请核对：是新增/重命名了对话端点，
+    #   还是 detector 的形态判据失效了？"）—— 本轮核对结论：拆分只搬动代码，
+    #   端点总数不变，所以只改扫描面，13 这个期望值**不动**。
+    for rel, p in router_sources(BACKEND / "modules"):
         src = _src(p)
         tree = ast.parse(src)
         parents = _parent_map(tree)
@@ -528,7 +532,9 @@ def test_streaming_write_point_must_be_inside_the_generator():
         ("modules/product_research/router.py", "chat_stream"),
     ]
     for rel, fname in streaming:
-        src = _src(BACKEND / rel)
+        # ★ 双态读（`modules/aigc_media/router.py` 现在解析到同名包）—— 说明见
+        #   `pkg_source`。清单里的 rel 仍写**逻辑**路径，不写包内物理文件名。
+        src = read_source(rel)
         tree = ast.parse(src)
         parents = _parent_map(tree)
         ep = _find(tree, fname)

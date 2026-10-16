@@ -153,7 +153,7 @@ def _scan_tree():
     """返回 {相对路径: {函数名: 分支数}}。"""
     found = {}
     for path in sorted(BACKEND.rglob("*.py")):
-        if any(part in SCAN_SKIP_DIRS or part.startswith(".pytest-tmp") for part in path.relative_to(BACKEND).parts):
+        if any(part in SCAN_SKIP_DIRS or part.startswith((".pytest-tmp", ".pytest_tmp")) for part in path.relative_to(BACKEND).parts):
             continue
         rel = path.relative_to(BACKEND).as_posix()
         try:

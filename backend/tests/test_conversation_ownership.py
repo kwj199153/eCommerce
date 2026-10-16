@@ -28,6 +28,8 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import text
 
+from pkg_source import router_sources
+
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
 CONV_ROUTER = BACKEND / "modules" / "conversation" / "router.py"
 CONV_SERVICE = BACKEND / "modules" / "conversation" / "service.py"
@@ -414,9 +416,10 @@ def test_platform_wide_readers_are_not_reachable_from_http():
     """
     offenders = []
     for name in PLATFORM_WIDE:
-        for p in (BACKEND / "modules").rglob("router.py"):
-            if "__pycache__" in p.parts:
-                continue
+        # ★ 两种形态都要扫（`router.py` / 拆包后的 `router/*.py`）。
+        #   这一条**不会红**（它断言「没有违规」），所以漏扫是**静默**的 ——
+        #   包内文件必须显式纳入扫描面，否则整个模块的 HTTP 面脱网。
+        for _logical, p in router_sources(BACKEND / "modules"):
             tree = ast.parse(p.read_text(encoding="utf-8"))
             for n in ast.walk(tree):
                 # ★ 三态齐查：`Name`（直接引用）、`Attribute`（模块属性）、
@@ -446,7 +449,7 @@ def test_legacy_unauthenticated_reader_is_gone():
     hits = []
     for p in BACKEND.rglob("*.py"):
         if "__pycache__" in p.parts or "versions_legacy" in p.parts or {".venv", "venv", "site-packages"} & set(p.parts) or any(
-            part.startswith(".pytest-tmp") for part in p.parts
+            part.startswith((".pytest-tmp", ".pytest_tmp")) for part in p.parts
         ):
             continue
         try:
@@ -468,7 +471,7 @@ def test_create_conversation_call_sites_pass_owner_id():
     bad = []
     for p in BACKEND.rglob("*.py"):
         if "__pycache__" in p.parts or {".venv", "venv", "site-packages"} & set(p.parts) or p == CONV_SERVICE or any(
-            part.startswith(".pytest-tmp") for part in p.parts
+            part.startswith((".pytest-tmp", ".pytest_tmp")) for part in p.parts
         ):
             continue
         try:

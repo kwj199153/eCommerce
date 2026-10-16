@@ -242,7 +242,7 @@ def test_get_bsr_rank_is_gone_from_everywhere():
     # 全仓不得有调用点（否则删的是活的）
     for f in BACKEND.rglob("*.py"):
         if {".venv", "venv", "site-packages"} & set(f.parts) or any(
-            part.startswith(".pytest-tmp") for part in f.parts
+            part.startswith((".pytest-tmp", ".pytest_tmp")) for part in f.parts
         ):
             continue
         try:

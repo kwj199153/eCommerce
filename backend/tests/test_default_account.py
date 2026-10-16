@@ -243,7 +243,7 @@ def _backend_py_files():
     for p in sorted(BACKEND_ROOT.rglob("*.py")):
         parts = p.relative_to(BACKEND_ROOT).parts
         if parts and parts[0] in {"alembic", "__pycache__", ".venv"} or any(
-            part.startswith(".pytest-tmp") for part in parts
+            part.startswith((".pytest-tmp", ".pytest_tmp")) for part in parts
         ):
             continue
         if "__pycache__" in parts:

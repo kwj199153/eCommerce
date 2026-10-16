@@ -101,11 +101,27 @@ FROZEN_OVER_THRESHOLD: dict[str, int] = {
     "backend/modules/product_research/agent_product_research.py": 1641,
     "backend/modules/competitor_intel/agent_competitor.py": 1577,
     "frontend/src/components/SkillStore/SkillManager.vue": 1533,
-    "frontend/src/views/Workspace.vue": 1466,
+    # ★ 1466 → 1462（第 371 轮 r371d）：头部那颗写死的「死铃铛」被抽成
+    #   `frontend/src/components/Header/NotificationBell.vue`，`Workspace.vue`
+    #   **净减 4 行**（7 行铃铛块 + 1 行图标 import → 2 行组件用法 / import）。
+    #   ⚠️ 手改单个数字是刻意破例，理由必须留痕（下同）：生成器是「整表覆盖」，
+    #   而工作区里有**与本次无关的未提交改动**，重跑它会把那些偏离一起
+    #   **吸收成新基线** —— 正是本文件顶部反复警告的形态。本值取自改后**实测**
+    #   （`len(p.read_bytes().split(b"\n"))` = 1462），不是凭记忆写的。
+    "frontend/src/views/Workspace.vue": 1462,
     "frontend/src/components/KnowledgeBase/AssetLibrary.vue": 1440,
     "backend/modules/ad_analysis/agent_ad.py": 1366,
-    "frontend/src/components/ChatPanel/results/BlueOceanResult.vue": 1324,
-    "frontend/src/views/Settings.vue": 1315,
+    # ★ 1324 → 1301（r371h）：`BlueOceanResult.vue` 因「类目中文化」补漏
+    #   （接 `displayCategory`）涨到 1330，撞 R2「只许降不许升」。按其指引
+    #   **拆出独立模块** `results/blueOceanSecondary.ts`（星级 / 变体 / BSR /
+    #   评论 四项外移）⇒ 1330 → 1301。★ 类目那一项**刻意留在宿主**：
+    #   `tests/unit/categoryZh.test.ts` 有一条**枚举型**判据要求宿主含
+    #   `displayCategory` 字样，整体搬走会静默打红（改判据 = 迁就代码）。
+    # ★ 为什么**不**整表替换：实测里 `agent_aigc.py` 1849 → 1848 是**别人
+    #   未提交**的在途改动（方向是下降）。吸收它等于把一个未提交状态锁成
+    #   上限 —— 哪天那处改动被还原，1849 > 1848 就凭空报红。
+    "frontend/src/components/ChatPanel/results/BlueOceanResult.vue": 1301,
+    "frontend/src/views/Settings.vue": 1259,
     "frontend/src/components/KnowledgeBase/CandidateLibrary.vue": 1230,
     "backend/modules/stores/router.py": 1221,
     "frontend/src/components/ChatPanel/index.vue": 1220,
@@ -134,7 +150,6 @@ FROZEN_OVER_THRESHOLD: dict[str, int] = {
     "backend/alembic/versions/0d44a915bbb8_baseline_full_schema_squashed.py": 875,
     "frontend/src/components/ChatPanel/results/DescriptionGenerator.vue": 869,
     "backend/modules/library/tools.py": 852,
-    "backend/modules/aigc_media/router.py": 843,
     "backend/ai_infra/rag/hybrid_engine.py": 842,
     "frontend/src/stores/skills.ts": 824,
     "backend/ai_infra/llm/dashscope_client.py": 818,
@@ -170,8 +185,11 @@ def _sources() -> dict[str, int]:
         #      `.pytest-tmp-r356` 这种 ⇒ 精确匹配**匹配不到**，看着修好了实则无效（r354 教训）。
         #   ② 不排除的后果**不是报错而是假红**：门禁自己的元测试（`test_ci_gate_coverage.py`）
         #      会往 basetemp 写 .py 夹具，那些文件一旦 >800 行就会撞 R1「新增越限」。
+        #   ③ 前缀**两种历史命名都要认**：本仓现行约定是连字符，但第 242/251 轮的
+        #      探针曾用下划线命名（`--basetemp=.pytest_tmp_251`），在 backend/ 下留下
+        #      9 个残留目录 ⊆ 只写连字符就**排除不掉它们**（r371i 修）。
         #   判据由 `tests/test_ci_gate_coverage.py::test_backend_scanning_gates_exclude_pytest_basetemp` 守着。
-        if any(part.startswith(".pytest-tmp") for part in p.parts):
+        if any(part.startswith((".pytest-tmp", ".pytest_tmp")) for part in p.parts):
             continue
         rel = p.relative_to(REPO).as_posix()
         if rel.startswith(("backend/tests/", "backend/scripts/")):

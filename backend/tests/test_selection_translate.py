@@ -5,7 +5,13 @@
 
 设计约定（本文件据此断言，改实现时先想清楚要不要改约定）：
 - 只要一个译文：不返回 SEO/文化/多版本结构
-- 目标是 auto 时：含中文 → 译英；不含中文 → 译中（看海外商品页的主场景是英译中）
+- **默认一律译成中文**（`target_lang` 默认 `"zh"`）
+- 原文已是中文 ⇒ **不调模型**，回 `same_lang=True`（前端据此给「译为英文」入口）
+- **显式**传 `auto` 时保留旧语义：含中文 → 译英；不含中文 → 译中
+- **夹了外文词的混合文本要真的翻**（第 365 轮）：`detect_lang` 是二值判据
+  （含任一 CJK ⇒ zh），分不出「纯中文」与「中文夹英文词」，所以短路只对**纯目标语言**生效
+- 模型把混合文本**原样退回**时按「没翻」呈现（`same_lang`），不显示「中文 → 中文」这种方向
+
 - **LLM 不可用时返回 degraded 且译文为空，绝不编造译文**（空状态优于虚构默认）
 - 翻译必须压低 temperature，否则同一个词每次译法都不一样
 
@@ -67,14 +73,44 @@ async def test_english_text_translates_to_chinese(stub_llm):
 
 
 @pytest.mark.asyncio
-async def test_chinese_text_translates_to_english(stub_llm):
-    """反向：中文原文 → 英文（auto 也要支持）"""
+async def test_chinese_text_with_default_target_is_not_translated(stub_llm):
+    """★ 默认目标 = 中文，选到中文 ⇒ **不调模型**，如实回 `same_lang`。
+
+    老板 2026-10-02 实测报的原话：「翻译完居然是英文的」—— 选中「这个 listing」
+    得到「This listing」。根因是这里的默认值还是 `auto`（含中文则译英）；
+    拍板后改成 `zh`（一律译成中文）。本用例把这个默认口径钉死。
+
+    ★ 为什么不能「照译一遍」：目标与原文同语言时，模型要么原样回显（白花一次调用），
+      要么把中文**改写**一遍 —— 后者是静默的语义漂移（用户看到的中文不再是他选中的那段，
+      且全程没有任何报错）。
+    """
     res = await AIGCMediaService.translate_selection(
         SelectionTranslateRequest(text="无线蓝牙耳机 主动降噪")
+    )
+    assert res["success"] is True
+    d = res["data"]
+    assert d["source_lang"] == "zh"
+    assert d["target_lang"] == "zh"
+    assert d["same_lang"] is True
+    assert d["translation"] == ""      # 不编造译文
+    assert d["degraded"] is False      # ★ 这不是故障（与「降级」严格区分）
+    assert stub_llm["calls"] == [], "已经是中文就不该白跑一次 LLM"
+
+
+@pytest.mark.asyncio
+async def test_auto_is_still_honored_when_explicitly_passed(stub_llm):
+    """显式传 `auto` ⇒ 保留旧语义（中文 → 英文）。
+
+    默认值变了，但**语义面没有收窄** —— 老调用方显式带 auto 时行为不变。
+    """
+    res = await AIGCMediaService.translate_selection(
+        SelectionTranslateRequest(text="无线蓝牙耳机 主动降噪", target_lang="auto")
     )
     d = res["data"]
     assert d["source_lang"] == "zh"
     assert d["target_lang"] == "en"
+    assert d.get("same_lang", False) is False
+    assert len(stub_llm["calls"]) == 1, "auto 且方向相反 ⇒ 必须真的翻"
 
 
 @pytest.mark.asyncio
@@ -177,8 +213,157 @@ def test_system_prompt_forbids_extra_output():
 
 
 # ============================================================
+# 同语言短路（第 364 轮）
+# ============================================================
+
+def test_detect_lang_is_public_and_old_private_name_is_gone():
+    """★ 改名的反向保护：`lang_guard` 要消费它，所以它必须是**公开名**。
+
+    谁把名字改回 `_detect_lang`（或删掉），这条立刻红；否则消费方只会在
+    **运行期**以 `AttributeError` 现形 —— 静态检查看不见这种动态面。
+    """
+    assert hasattr(AIGCMediaAgent, "detect_lang")
+    assert not hasattr(AIGCMediaAgent, "_detect_lang"), "旧私有名不该再存在（会变成两个真源）"
+
+
+def test_language_rule_has_exactly_one_source():
+    """方向判定只有一个真源：`AIGCMediaAgent.detect_lang`。
+
+    `lang_guard` 里**不许**再写一份「含 CJK ⇒ zh」—— 这里按源码形态钉住
+    （不是 grep 字面量：先 AST 取函数体，再找有没有独立语言判定痕迹）。
+    """
+    import ast
+
+    from pkg_source import read_source
+
+    src = read_source("modules/aigc_media/lang_guard.py")
+    tree = ast.parse(src)
+    # 该模块只应有 2 个顶层函数；判定逻辑只经由 agent 传入的 detect_lang
+    funcs = {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    assert funcs == {
+        "same_lang_result",
+        "has_foreign_word",
+        "guard_same_lang",
+        "reconcile_noop",
+        "_substantive_equal",
+    }, funcs
+
+    assert "detect_lang(" in src, "判据必须来自 agent.detect_lang"
+    for ch in ("\u3400", "\u9fff"):
+        assert ch not in src, "本模块不许自带语言判定表（那会是第二份实现）"
+
+
+def test_guard_short_circuits_only_on_explicit_same_language():
+    """`guard_same_lang` 的三态：命中 ⇒ 短路结果；auto/空/不同语言 ⇒ None（让路）。
+
+    ★ 直接传**类**当 agent：`detect_lang` 是 classmethod，不吃实例 —— 这同时证明
+      这条短路**不依赖任何实例状态**（无 LLM 客户端、无 session，纯函数判据）。
+    """
+    from modules.aigc_media import lang_guard
+
+    hit = lang_guard.guard_same_lang(AIGCMediaAgent, "无线耳机", "zh")
+    assert hit is not None
+    assert hit["success"] is True
+    assert hit["data"]["same_lang"] is True
+    assert hit["data"]["translation"] == ""
+    assert hit["data"]["degraded"] is False
+
+    assert lang_guard.guard_same_lang(AIGCMediaAgent, "Wireless Earbuds", "zh") is None
+    assert lang_guard.guard_same_lang(AIGCMediaAgent, "无线耳机", "ja") is None
+    # auto / 空 ⇒ 交给 agent 自己解析（在别处再解析一次就是第二份方向实现）
+    assert lang_guard.guard_same_lang(AIGCMediaAgent, "无线耳机", "auto") is None
+    assert lang_guard.guard_same_lang(AIGCMediaAgent, "无线耳机", "") is None
+    assert lang_guard.guard_same_lang(AIGCMediaAgent, "   ", "zh") is None
+
+
+# ============================================================
+# 混合语言：中文夹外文词（第 365 轮）
+# ============================================================
+
+def test_guard_lets_mixed_text_through():
+    """★ 夹了拉丁字母 ⇒ **不短路**，交给模型。
+
+    老板实测（2026-10-02 20:00）：「我选择的是『这个 listing』，翻译结果应该是
+    『该商品链接』，目前是否识别为了全中文。」—— 是的：二值判据把它整段判成 zh，
+    于是一次都不译。而跨境电商场景里「中文夹英文词」是常态。
+    """
+    from modules.aigc_media import lang_guard
+
+    for mixed in ("这个 listing", "这个 Noise Cancelling 耳机", "帮我改下这个 listing，谢谢"):
+        assert lang_guard.guard_same_lang(AIGCMediaAgent, mixed, "zh") is None, mixed
+    assert lang_guard.has_foreign_word("这个 listing") is True
+    assert lang_guard.has_foreign_word("这个商品") is False
+    # 纯中文仍然短路（这条是防止「放行」放过头）
+    assert lang_guard.guard_same_lang(AIGCMediaAgent, "这个商品", "zh") is not None
+
+
+@pytest.mark.asyncio
+async def test_mixed_text_is_translated_with_term_render(stub_llm):
+    """★ 主场景：中文夹英文术语 → 外文那部分被落成中文（这是本能力对跨境卖家的价值）"""
+    stub_llm["box"]["reply"] = "这款主动降噪耳机"
+    res = await AIGCMediaService.translate_selection(
+        SelectionTranslateRequest(text="这个 Noise Cancelling 耳机")
+    )
+    d = res["data"]
+    assert len(stub_llm["calls"]) == 1, "夹了外文词就必须真的翻，别再短路"
+    assert d["translation"] == "这款主动降噪耳机"
+    assert d.get("same_lang", False) is False
+    assert d["degraded"] is False
+
+
+@pytest.mark.asyncio
+async def test_model_echoing_mixed_text_falls_back_to_same_lang(stub_llm):
+    """★ 模型把混合文本**原样退回** ⇒ 归回 `same_lang`（不是「翻了个一模一样的」）。
+
+    实测：「店管家 AI」这种「纯中文 + 英文缩写」，模型原样返回。此时若照常显示译文，
+    界面会出现「中文 → 中文」这种自相矛盾的方向徽标。
+    """
+    stub_llm["box"]["reply"] = "店管家 AI"
+    res = await AIGCMediaService.translate_selection(
+        SelectionTranslateRequest(text="店管家 AI")
+    )
+    d = res["data"]
+    assert d["same_lang"] is True
+    assert d["translation"] == ""
+    assert d["degraded"] is False          # ★ 不是故障
+    assert len(stub_llm["calls"]) == 1, "这一步不额外花钱：只比对已有输出，不加调用"
+
+
+@pytest.mark.parametrize(
+    "a,b,same",
+    [
+        ("店管家 AI", "店管家 ai", True),           # 忽略大小写
+        ("店管家 AI", " 店管家 AI。 ", True),       # 忽略空白与标点
+        ("这个 listing", "该商品链接", False),
+        ("", "", False),                            # 空串不算「实质相同」（防判据恒真）
+        ("", "店管家 AI", False),
+    ],
+)
+def test_substantive_equal(a, b, same):
+    """「实质相同」的判据本身：抹空白/标点、忽略大小写；**空串一律 False**"""
+    from modules.aigc_media import lang_guard
+
+    assert lang_guard._substantive_equal(a, b) is same
+
+
+@pytest.mark.asyncio
+async def test_endpoint_translates_mixed_text(client, auth_off, stub_llm):
+    """端点级：混合文本不再返回空译文"""
+    stub_llm["box"]["reply"] = "该商品链接"
+    r = await client.post(
+        "/api/v1/aigc/content/translate-selection",
+        json={"text": "这个 listing"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()["response"]
+    assert body["translation"] == "该商品链接"
+    assert body.get("same_lang", False) is False
+
+
+# ============================================================
 # 端点
 # ============================================================
+
 
 @pytest.mark.asyncio
 async def test_endpoint_returns_translation(client, auth_off, stub_llm):
@@ -212,6 +397,25 @@ async def test_endpoint_response_has_no_seo_fields(client, auth_off, stub_llm):
     data = r.json()["response"]
     for field in ("seo_optimized", "keyword_inclusion", "cultural_notes", "alternative_versions"):
         assert field not in data, f"划词响应不应包含 {field}"
+
+
+@pytest.mark.asyncio
+async def test_endpoint_exposes_same_lang_for_chinese_text(client, auth_off, stub_llm):
+    """端点必须把 `same_lang` 透出去 —— 前端靠它显示「已是中文」。
+
+    ★ 不能只看外层 `success`（这里是 True）也不能只看 `translation`（这里是空串，
+      与「降级」长得一样），必须有一个**显式字段**说明「没翻是因为不需要翻」。
+    """
+    r = await client.post(
+        "/api/v1/aigc/content/translate-selection",
+        json={"text": "这款保温杯的容量是多少"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["response"]["same_lang"] is True
+    assert body["response"]["translation"] == ""
+    assert body["response"]["degraded"] is False
+    assert stub_llm["calls"] == []
 
 
 @pytest.mark.asyncio

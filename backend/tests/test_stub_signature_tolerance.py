@@ -48,7 +48,7 @@ def _iter_py(root: Path, skip_tests: bool):
     for p in sorted(root.rglob('*.py')):
         parts = p.parts
         if '__pycache__' in parts or {'.venv', 'venv', 'site-packages'} & set(parts) or any(
-            part.startswith(".pytest-tmp") for part in parts
+            part.startswith((".pytest-tmp", ".pytest_tmp")) for part in parts
         ):
             continue
         if skip_tests and 'tests' in parts:

@@ -254,7 +254,8 @@ def test_py_gates_actually_pass():
 #   3. 接收者是 backend 根名、或「形参且调用点传了 backend 根」⇒ 命中；
 #   4. 该文件必须**在 AST 里**把 `.venv` / `site-packages` 用作集合元素
 #      或比较操作数（禁「源码字符串包含」——docstring/注释会骗过它）；
-#   5. 该文件必须以**前缀语义**排除 `.pytest-tmp*`：`X.startswith(".pytest-tmp")`。
+#   5. 该文件必须以**前缀语义**排除 basetemp：实参里含**两种历史命名**前缀
+#      （连字符 `.pytest-tmp` / 下划线 `.pytest_tmp`）。见 `_basetemp_excluded`。
 #      ★ 刻意**不认**把它塞进 `{".venv", ...} & set(parts)` 的写法 ——
 #        那是**精确匹配**，而 basetemp 实际叫 `.pytest-tmp-r354c` 这种
 #        ⇒ 匹配不到（判据绿而缺陷仍在）。反向注入 I2 专门验证这一条。
@@ -411,19 +412,31 @@ def _module_level_str_constants(tree) -> dict:
     return table
 
 
-#: pytest basetemp 的**前缀**（本仓约定 `--basetemp=.pytest-tmp-<tag>`）。
-_BASETEMP_PREFIX = ".pytest-tmp"
+#: pytest basetemp 的**前缀**（本仓历史上有两种命名，**两种都要排除**）。
+#: ★ 连字符是现行约定（`--basetemp=.pytest-tmp-<tag>`）；下划线是第 242/251 轮
+#:   旧探针的命名（`--basetemp=.pytest_tmp_251`），曾在 backend/ 下留下 9 个
+#:   残留目录。只收一种 ⇒ 另一族**静默进入扫描面** —— 第 371 轮实测：
+#:   规则匹配不到那些目录，而当时判据**是绿的**（它只问「有没有按前缀排除」，
+#:   不问「排全了没」）。故本清单是**全集**，判定要求全部命中。
+_BASETEMP_PREFIXES = (".pytest-tmp", ".pytest_tmp")
 
 
 def _basetemp_excluded(tree) -> bool:
-    """`.pytest-tmp*` 是否以**前缀语义**被排除。
+    """basetemp 目录是否被**完整**排除（两种历史命名前缀**都要认**）。
+
+    ★ 为什么要求「同一实参里含**全部**前缀」而不是「含其一」（第 371 轮加强）：
+      本缺陷的形态正是「规则漏了另一半」—— 17 个扫描器原本只写连字符，
+      而残留目录叫 `.pytest_tmp_251`（下划线）⇒ 排除失配、目录静默进入扫描面，
+      **而当时判据是绿的**（假绿：它只问「有没有按前缀排除」，不问「排全了没」）。
+      只判「含其一」的话，任何人退回单形态都不会打红 ⇒ 判据守不住这个缺陷。
 
     ★ 为什么不能只看「源码里出现 `.pytest-tmp`」：把它塞进
       `{".venv", "venv"} & set(parts)` 是**精确匹配**，而 basetemp 实际叫
       `.pytest-tmp-r354c` 这种 —— 匹配不到，缺陷仍在而判据变绿。
-      所以只认 `X.startswith(...)` / `X.endswith(...)`，且实参
-      （字面量 / 元组内嵌 / 模块级常量名）里含该前缀。
+      所以只认 `X.startswith(...)` / `X.endswith(...)`，且**同一实参**
+      （字面量元组 / 模块级常量名）里含全部前缀。
     """
+    required = set(_BASETEMP_PREFIXES)
     consts = _module_level_str_constants(tree)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -433,7 +446,7 @@ def _basetemp_excluded(tree) -> bool:
             continue
         for a in node.args:
             vals = consts.get(a.id, set()) if isinstance(a, ast.Name) else _str_literals(a)
-            if _BASETEMP_PREFIX in vals:
+            if required <= vals:
                 return True
     return False
 
@@ -467,10 +480,12 @@ def test_backend_scanning_gates_exclude_pytest_basetemp():
     """扫 backend 根的测试必须排除 pytest basetemp（`.pytest-tmp*`）。
 
     反向注入（`probes/r354/revinject_basetemp_axis.py` 三组）：
-      I1 删掉某个文件里的 `part.startswith(".pytest-tmp")` ⇒ 必红并点名该文件；
+      I1 删掉某个文件里的 basetemp 排除调用（`X.startswith((...))`）⇒ 必红并点名该文件；
       I2 把它改写成 `{".venv", ".pytest-tmp"} & set(parts)`（**精确匹配**）⇒ 仍红
          （证明判据不认精确匹配形态，而精确匹配对 `.pytest-tmp-r354c` 是失效的）；
-      I3 改掉判据常量 `_BASETEMP_PREFIX` 的值 ⇒ 必红，并点名**全部 17 个**扫描器
+      I4 ★ 把双形态**缩回**单形态（只写连字符）⇒ 必红 —— 这是第 371 轮加强的
+         牙齿，专防「规则漏了另一半」的回归（该形态正是本轮修的缺陷本身）。
+      I3 改掉判据常量 `_BASETEMP_PREFIXES` 的值 ⇒ 必红，并点名**全部 17 个**扫描器
          （证明判据真的在跑，不是恒真/恒假；该清单同时是「以 backend 根扫 *.py
           的测试」的权威名册 —— 由判据现算，不是人工登记）。
     """

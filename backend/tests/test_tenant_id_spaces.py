@@ -81,7 +81,7 @@ def _iter_backend_py():
         if rel.startswith(("tests/", "scripts/", "alembic/", "logs/")):
             continue
         if ".venv" in rel or "site-packages" in rel or any(
-            part.startswith(".pytest-tmp") for part in p.parts
+            part.startswith((".pytest-tmp", ".pytest_tmp")) for part in p.parts
         ):
             continue
         if "__pycache__" in rel:
@@ -101,7 +101,7 @@ def _iter_source_py():
         if rel.startswith(("alembic/", "logs/")):
             continue
         if ".venv" in rel or "site-packages" in rel or "__pycache__" in rel or any(
-            part.startswith(".pytest-tmp") for part in p.parts
+            part.startswith((".pytest-tmp", ".pytest_tmp")) for part in p.parts
         ):
             continue
         yield rel, p

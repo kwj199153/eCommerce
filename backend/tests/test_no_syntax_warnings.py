@@ -38,7 +38,10 @@ _SKIP_PARTS = {
     ".mypy_cache", ".ruff_cache", ".pytest_cache",
 }
 
-#: 按**前缀**排除的目录。
+#: 按**前缀**排除的目录。★ 两种历史命名都收：连字符（现行约定
+#: `--basetemp=.pytest-tmp-<tag>`）与下划线（第 242/251 轮探针的旧命名，
+#: 曾在 backend/ 下残留 9 个目录）—— 只写一种会让另一族**静默进入扫描面**
+#: （排除失配的症状不是报错，而是扫描面悄悄变大，r371i 修）。
 #: ★ 为什么必须有这一条：本仓第 238 轮起约定跑 pytest 用
 #:   `--basetemp=.pytest-tmp-<tag>`，且该目录**必须落在 backend/ 内**
 #:   （否则 atexit 清 `%TEMP%/pytest-of-*/garbage-*` 会撞沙箱批量删除守卫，
@@ -49,7 +52,7 @@ _SKIP_PARTS = {
 #:   `_iter_sources()` 扫到 ⇒ 正向用例无端变红（**自伤假红**）。
 #:   第 354 轮实测：`backend/` 下累积了 17 个 `.pytest-tmp-*` / 68 文件，
 #:   其中 10 个 `.py` 已进入扫描面。
-_SKIP_PREFIXES = (".pytest-tmp",)
+_SKIP_PREFIXES = (".pytest-tmp", ".pytest_tmp")
 
 
 def _iter_sources() -> list[pathlib.Path]:
