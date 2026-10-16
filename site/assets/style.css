@@ -1,0 +1,622 @@
+/* ==========================================================================
+   官网样式表 · 店管家 AI（跨境电商全链路 AI SaaS）
+   --------------------------------------------------------------------------
+   ★ 这一页存在的目的：**主体对外可核实** + **产品能力可被看见**
+     （备案载体 / 隐私政策 / 服务条款 / 联系方式 / 真实界面佐证）。
+
+   ★ 为什么不用 tailwind / 构建工具 / CDN 字体：
+     官网与产品**同仓不同栈**是刻意的 —— 它要能在**任何**静态托管上直接
+     丢上去（Nginx / 对象存储 / 任意 CDN）。多一个构建步骤就多一处
+     "上线时才发现本地没装 node_modules"。
+
+   ★ 设计语法借自 eEducation 官网（本工作区的姊妹项目，同一套范式）：
+       · 「全出血视差带(`.band`) ↔ 白底内容区(`.sec`)」交替，给长页呼吸；
+       · 「大字号标题 + 小字灰色说明」的编辑式排版；
+       · 滚动进视口淡入（CSS `animation-timeline: view()`，**零 JS**）。
+     ⇒ 借的是**节奏**，素材一个没抄：配图全是我们自己产品的真实界面。
+
+   ★★★ 三条「借语法不借实现」的关键差异（都是刻意的）：
+     ① **零 JS**：滚动动画用 CSS `animation-timeline: view()`。
+        不支持的浏览器（旧 Firefox / Safari）**不报错、直接静态显示** ——
+        这是**降级安全**的方向（内容永远可见），比"用 JS 兜底"更符合
+        本页"信任载体"的定位：动画是装饰，装饰不能挡内容。
+     ② **配图必须是真实产品界面**：约束「不写未完成的能力」⇒
+        **AI 生成的"产品截图"就是伪造证据**。所以 `assets/shots/*.png`
+        只有一条来源：`.workbuddy/probes/shot-site-sweep.mjs` 抓的**真界面**。
+     ③ **视差只用 CSS**：`background-attachment: fixed`。
+        ⚠️ iOS Safari 不支持它 ⇒ 窄屏**必须**退回 `scroll`（见 `.band` 的媒体查询），
+        否则那一带在手机上会变成"背景跟着卡片跑"的鬼畜效果。
+
+   设计约束（改这一页时请遵守 · 与 `site/README.md` 同源）
+   --------------------------------------------------------------------------
+   1. **不承诺出单 / 销量 / 排名 / 收益。** 电商工具类对外文案的合规红线；
+      任何经营结果取决于商品、定价、供应链与平台规则。
+   2. **不写未完成的能力。** 每条能力都必须在产品里可用（以
+      `backend/modules/skills/agents.py::AGENT_CATALOG` 为准）。
+   3. **不暗示与平台的官方关系。** 亚马逊 / Shopee / TikTok Shop / TEMU
+      均为其各自权利人商标，我们只是接入方的工具。
+   4. **零外部依赖。** 不加 CDN 字体、不加统计脚本、不加第三方 UI 库。
+   5. **法务文本的风险提示只写在源码注释与 README 里**，不出现在访客可见的页面。
+   ========================================================================== */
+
+:root {
+  --ink: #12172b;          /* 主文字 / 深蓝黑 */
+  --ink-2: #3d4761;        /* 次级文字 */
+  --ink-3: #6b7691;        /* 弱化文字 */
+  --line: #e3e8f0;
+  --bg: #ffffff;
+  --bg-soft: #f5f8fd;
+
+  /* ---------------------------------------------------------------- 品牌色
+     ★★★ 品牌色 = **深海靛 `#4f46e5`**，取值**取自产品本身**，不是审美选出来的：
+       产品的主题唯一真源是 `frontend/src/theme/presets.ts`，它的 `--primary`
+       就是产品里所有主按钮的底色。官网与产品是**同一个产品的两个面** ——
+       用另一套色会造成"官网写着 A、产品里看着像 B"的漂移。
+
+     ★★ 为什么是靛蓝（三条都是**产品事实**，不是审美偏好）：
+       ① 产品的核心概念就是「**蓝海**评分」（`BlueOceanResult.vue`），
+          而跨境这件事本身叫「出海」—— 冷色系是产品自己的语言；
+       ② 受众是**卖家**（单一冷受众，要"专业可信"），且是**长时间盯屏**
+          的工具 ⇒ 不能走高饱和暖色；
+       ③ 品类惯例（ERP 类工具）几乎一片蓝，而本产品官网明说「**不做 ERP**」
+          ⇒ 要能一眼看出不是那一挂：靛蓝离"框架默认蓝"(#1890ff) 有 **35°**。
+
+     ★★★ L1 与 L2 的分工（eEducation 456 立的同一套口径，别混）：
+       L1 品牌色（本文件）= 对外识别，★ **不随主题变**（官网也没有深色档）；
+       L2 主题主色（presets.ts）= 产品 UI 的 `--primary`，**必须随主题变**
+         （深底不提亮就不可读）⇒ 产品 light 档 = 本品牌色，dark 档 = 同色相抬明度。
+       ⇒ 「产品里的主色」在深色档下**本来就不等于**官网这个色，那不是漂移。
+
+     ⚠️ 四档都有**对比度依据**，不是随手调的（**旧值 `#1890ff` 是不达 AA 的**：
+        白字只有 3.24:1 —— 官网 logo 方块与主按钮一直偏糊，只是没人算过）：
+       · 白底**正文链接 / 按钮**要放白字 ⇒ 必须 AA(4.5:1) ⇒ 用
+         `--brand-ink`(#2b20df = 产品 `--primary-strong`)，**白字 8.84:1**。
+       · **深色视差带上**的强调 ⇒ 用 `--brand-lift`(#c2bff8 = 产品
+         `--primary-border-subtle`)。★ 它对本页带底 #0b1a2e 是 **10.07:1**，
+         与旧值 #91caff 的 10.07 **逐位相同**（两者亮度 0.5551 / 0.5548 几乎相等）
+         ⇒ 换色相不损失深带上的可读性。
+       · 主色 `--brand`(#4f46e5) 对白 6.29:1（也过 AA，作大字号/装饰线用）。
+     ★ 用法纪律：**品牌色只用于 UI 强调（按钮 / 线 / 图标 / 小字），
+       不用于数据表达** —— 数据色（涨跌红绿、状态色）仍走产品既有的
+       语义色（`--success/--danger/--warning`）。 */
+  --brand: #4f46e5;        /* 主色 · 深底强调 / 装饰线 / 大字号点缀（白字 6.29:1） */
+  --brand-ink: #2b20df;    /* 深靛 · 白底链接与按钮底（白字 8.84:1） */
+  --brand-lift: #c2bff8;   /* 亮靛 · 深色带上的强调（对带底 10.07:1） */
+  --brand-wash: #edecfe;   /* 极浅靛 · 浅色底（eyebrow / tag）= 产品 --info-bg */
+
+  /* ★★ 「待填」占位色**必须与品牌色拉开距离**：品牌色是靛（色相 243.4°），
+     占位色取**琥珀**（~26°），色相差 **142°** ⇒ 绝不会把"这里要填信息"
+     误读成"这是产品强调"。上线前**全靠这个占位色**提醒人还没填。
+     （eEducation 447 有过同一条判断：那边品牌色是朱砂 17.7°，与琥珀只差 8°，
+       于是他们把占位色换成了紫罗兰 —— 我们这里天然够远。） */
+  --fill-ink: #b45309;
+  --fill-bg: #fff8ed;
+  --fill-line: #fcd9a4;
+
+  --ok: #047857;
+  --radius: 14px;
+  --radius-lg: 18px;
+  --maxw: 1120px;
+  --shadow-sm: 0 1px 2px rgba(12, 26, 51, 0.04), 0 8px 24px rgba(12, 26, 51, 0.06);
+  --shadow-md: 0 2px 6px rgba(12, 26, 51, 0.06), 0 24px 60px rgba(12, 26, 51, 0.12);
+  --band-bg: #0b1a2e;      /* 视差带底色 · 深墨蓝（靛蓝 --brand-lift 在其上 10.07:1） */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* ★ 链接色用**深靛**而不是主色：白底正文链接要过 AA(4.5:1)。
+   主色 `--brand`(#4f46e5) 是 6.29:1（其实也过），但正文链接取更深一档
+   留出余量，且与按钮底色同一枚 token（少一处取值来源）。 */
+a { color: var(--brand-ink); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+img { max-width: 100%; height: auto; }
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+/* ---------------------------------------------------------------- header */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+
+.site-header .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 66px;
+  gap: 16px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+.brand:hover { text-decoration: none; }
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.nav { display: flex; gap: 26px; font-size: 15px; }
+.nav a { color: var(--ink-2); }
+.nav a:hover { color: var(--brand-ink); text-decoration: none; }
+
+/* ------------------------------------------------------------------ hero */
+.hero {
+  padding: 76px 0 44px;
+  background:
+    radial-gradient(1100px 420px at 50% -140px, var(--brand-wash), transparent 70%),
+    var(--bg);
+}
+
+.hero-copy { text-align: center; max-width: 860px; }
+
+.eyebrow {
+  display: inline-block;
+  margin: 0 0 18px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: var(--brand-wash);
+  color: var(--brand-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.hero h1 {
+  margin: 0 0 20px;
+  font-size: clamp(36px, 4.6vw, 60px);
+  line-height: 1.18;
+  letter-spacing: -0.01em;
+  font-weight: 800;
+}
+.hero h1 em { font-style: normal; color: var(--brand-ink); }
+
+.lead {
+  margin: 0 auto 30px;
+  max-width: 700px;
+  font-size: 17px;
+  line-height: 1.85;
+  color: var(--ink-2);
+}
+
+.cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+.btn {
+  display: inline-block;
+  padding: 11px 26px;
+  border-radius: 10px;
+  font-size: 15.5px;
+  font-weight: 600;
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+.btn:hover { text-decoration: none; transform: translateY(-1px); }
+
+.btn-primary { background: var(--brand-ink); color: #fff; box-shadow: 0 6px 18px rgba(43, 32, 223, 0.24); }
+.btn-primary:hover { box-shadow: 0 10px 26px rgba(43, 32, 223, 0.3); }
+
+.btn-ghost { border: 1px solid var(--line); color: var(--ink-2); background: #fff; }
+.btn-ghost:hover { border-color: var(--brand-lift); color: var(--brand-ink); }
+
+.note { margin: 18px 0 0; font-size: 13.5px; color: var(--ink-3); }
+
+/* ------------------------------------------------------- 截图容器 .frame */
+.frame {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: #fff;
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+.hero-frame { margin-top: 44px; }
+
+.frame-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+.frame-bar i {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #dbe2ec;
+}
+.frame-bar em {
+  margin-left: 10px;
+  font-style: normal;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  letter-spacing: 0.02em;
+}
+
+.frame img { display: block; width: 100%; }
+.frame figcaption {
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-soft);
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+/* ---------------------------------------------------------------- 视差带 */
+.band {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 300px;
+  padding: 66px 24px;
+  text-align: center;
+  color: #fff;
+  background-color: var(--band-bg);
+  background-attachment: fixed;
+  background-size: cover;
+  overflow: hidden;
+}
+.band::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(11, 26, 46, 0.55), rgba(11, 26, 46, 0.8));
+}
+.band > div { position: relative; z-index: 1; }
+.band-1 { background-image: radial-gradient(700px 300px at 20% 30%, #1b3a63, transparent 70%),
+                        radial-gradient(600px 300px at 85% 70%, #123253, transparent 70%); }
+.band-2 { background-image: radial-gradient(700px 300px at 80% 25%, #17406b, transparent 70%),
+                        radial-gradient(600px 320px at 15% 75%, #102c4c, transparent 70%); }
+.band-3 { background-image: radial-gradient(760px 320px at 30% 70%, #1a3d68, transparent 70%),
+                        radial-gradient(560px 280px at 75% 20%, #0f2a49, transparent 70%); }
+.band-4 { background-image: radial-gradient(700px 300px at 60% 40%, #1c4674, transparent 72%),
+                        radial-gradient(560px 280px at 20% 80%, #112d4e, transparent 70%); }
+
+.band .kicker {
+  margin: 0 0 12px;
+  font-size: 13.5px;
+  letter-spacing: 0.14em;
+  color: var(--brand-lift);
+  text-transform: uppercase;
+}
+.band .line {
+  margin: 0;
+  font-size: clamp(24px, 3vw, 36px);
+  font-weight: 700;
+  line-height: 1.42;
+  letter-spacing: 0.01em;
+}
+
+/* ------------------------------------------------------------- 内容区 .sec */
+.sec { padding: 84px 0; }
+.sec.soft { background: var(--bg-soft); }
+
+.sec-head { max-width: 780px; margin-bottom: 40px; }
+.sec-head h2 {
+  margin: 0 0 14px;
+  font-size: clamp(26px, 2.9vw, 36px);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+.sec-head p { margin: 0; font-size: 16.5px; color: var(--ink-2); }
+.sec-head b { color: var(--ink); }
+
+/* ------------------------------------------------------------------ grid */
+.grid { display: grid; gap: 20px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+.card {
+  padding: 26px 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+.card h3 { margin: 0 0 10px; font-size: 18.5px; line-height: 1.45; }
+.card p { margin: 0; font-size: 15.5px; color: var(--ink-2); }
+
+.tag {
+  display: inline-block;
+  margin-bottom: 12px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: var(--brand-wash);
+  color: var(--brand-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.stance p { margin: 0 0 16px; font-size: 15.5px; color: var(--ink-2); }
+.stance p:last-child { margin-bottom: 0; }
+.stance b { color: var(--ink); }
+
+.card.emphasis {
+  border-color: var(--brand-lift);
+  background: linear-gradient(180deg, var(--brand-wash), #fff 62%);
+}
+
+/* -------------------------------------------------------------- CTA 条 */
+.cta-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 40px;
+  padding: 22px 26px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--brand);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+}
+.cta-strip p { margin: 0; font-size: 16px; font-weight: 600; }
+.sec.soft .cta-strip { background: #fff; }
+
+/* ------------------------------------------------------------ split 版式 */
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1.05fr;
+  gap: 44px;
+  align-items: center;
+}
+.split.reverse .split-body { order: 2; }
+.split-body h3 { margin: 0 0 14px; font-size: 22px; line-height: 1.45; }
+.split-body > p { margin: 0 0 16px; font-size: 15.5px; color: var(--ink-2); }
+
+.points { margin: 0; padding: 0; list-style: none; }
+.points li {
+  position: relative;
+  padding-left: 20px;
+  margin-bottom: 11px;
+  font-size: 15.5px;
+  color: var(--ink-2);
+}
+.points li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--brand);
+}
+.points b { color: var(--ink); }
+
+/* .role —— 「给谁用」里的身份卡 */
+.role { display: flex; gap: 14px; align-items: flex-start; }
+.role-ico {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--brand-wash);
+  color: var(--brand-ink);
+  font-weight: 700;
+  font-size: 16px;
+}
+.role-ico.b { background: #eaf7ee; color: #15803d; }
+.role-ico.c { background: #fdf1e7; color: #b45309; }
+.role h3 { margin: 0 0 6px; font-size: 17px; }
+.role p { margin: 0; font-size: 15px; color: var(--ink-2); }
+
+/* --------------------------------------------------------------- contact */
+.contact-box { padding: 26px 24px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+.contact-list { margin: 0; padding: 0; list-style: none; }
+.contact-list li {
+  display: flex;
+  gap: 14px;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--line);
+  font-size: 15.5px;
+}
+.contact-list li:last-child { border-bottom: 0; }
+.contact-list b { flex: 0 0 132px; color: var(--ink); font-weight: 600; }
+.contact-list span { color: var(--ink-2); }
+
+/* 「待填」占位 —— 上线前必须全部替换成真实信息 */
+.fill {
+  color: var(--fill-ink);
+  background: var(--fill-bg);
+  border-bottom: 1px dashed var(--fill-line);
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 0.94em;
+}
+
+/* ---------------------------------------------------------------- footer */
+.site-footer {
+  padding: 46px 0 40px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+.footer-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.footer-row .sep { color: #c8d2e0; }
+.footer-note {
+  margin: 16px 0 0;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------ 滚动淡入 */
+/* ★★ 降级方向是"没有动画"，不是"内容不见了"：
+   不支持的浏览器整段被跳过，元素保持默认（完全可见）。
+   ⚠️ `animation-range` 必须**在元素完全进入之前**结束（用 `entry 70%`）：
+      写成 `entry 100%` 时，比视口还高的元素会长期停在动画中段，
+      表现为「它看起来是半透明的」。 */
+@supports (animation-timeline: view()) {
+  .reveal {
+    animation: reveal-in linear both;
+    animation-timeline: view();
+    animation-range: entry 8% entry 70%;
+  }
+  @keyframes reveal-in {
+    from { opacity: 0; transform: translateY(22px); }
+    to { opacity: 1; transform: none; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .btn { transition: none; }
+}
+
+/* ★★ 打印 / 整页导出时必须关掉滚动动画：
+   `.reveal` 的初始态是 opacity:0，而打印与整页截图**不会滚动** ⇒
+   不关的话导出的 PDF 里除首屏外全是空白（一个"不报错但内容消失"的典型）。
+   同一条也让 prefers-reduced-motion 之外的一条兜底路径存在。 */
+@media print {
+  .site-header { position: static; }
+  .reveal { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .band { background-attachment: scroll; }
+  .sec { break-inside: avoid; }
+  .frame { break-inside: avoid; }
+}
+
+/* ------------------------------------------------------------ 响应式 */
+@media (max-width: 1024px) {
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(2, 1fr); }
+  .split, .split.reverse { grid-template-columns: 1fr; gap: 26px; }
+  .split.reverse .split-body { order: 0; }
+}
+
+@media (max-width: 768px) {
+  .nav { display: none; }
+  .hero { padding: 54px 0 32px; }
+  .sec { padding: 62px 0; }
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  /* ★ iOS Safari 不支持 background-attachment: fixed ⇒ 窄屏必须回退 scroll，
+     否则视差带会变成"背景跟着内容跑"。 */
+  .band { background-attachment: scroll; min-height: 240px; padding: 52px 20px; }
+  .cta-strip { padding: 20px; }
+  .contact-list b { flex-basis: 108px; }
+}
+
+@media (max-width: 420px) {
+  .wrap { padding: 0 18px; }
+  .hero h1 { font-size: 32px; }
+  .btn { width: 100%; text-align: center; }
+  .cta-row { gap: 10px; }
+  .btn, .btn-ghost { padding: 12px 20px; }
+  .contact-list li { flex-direction: column; gap: 2px; }
+  .contact-list b { flex-basis: auto; }
+}
+
+/* ============================================================== 法务页
+   privacy.html / terms.html 共用（这两页由 .workbuddy/probes/build-site-legal.mjs
+   从 docs/legal/*.md 生成，不是手写的 —— 见该脚本头部的论证）。 */
+.legal { padding: 52px 0 76px; }
+.legal .wrap { max-width: 880px; }
+
+.legal .legal-h1 {
+  margin: 0 0 26px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+  font-size: clamp(27px, 3.1vw, 36px);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.legal h2 {
+  margin: 46px 0 14px;
+  font-size: 21px;
+  line-height: 1.45;
+}
+.legal h2:first-of-type { margin-top: 30px; }
+.legal h3 { margin: 28px 0 10px; font-size: 17px; }
+
+.legal p { margin: 0 0 14px; font-size: 15.5px; line-height: 1.95; color: var(--ink-2); }
+.legal strong { color: var(--ink); }
+.legal a { word-break: break-all; }
+
+.legal ul, .legal ol { margin: 0 0 16px; padding-left: 22px; }
+.legal li { margin-bottom: 8px; font-size: 15.5px; line-height: 1.9; color: var(--ink-2); }
+
+.legal blockquote {
+  margin: 0 0 18px;
+  padding: 14px 18px;
+  border-left: 3px solid var(--brand);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--bg-soft);
+  font-size: 15px;
+  line-height: 1.9;
+  color: var(--ink-2);
+}
+
+.legal code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  color: var(--ink);
+}
+
+.legal-table-wrap {
+  margin: 0 0 20px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.legal table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.legal th, .legal td {
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.8;
+  color: var(--ink-2);
+}
+.legal th { background: var(--bg-soft); font-weight: 600; color: var(--ink); white-space: nowrap; }
+.legal tr:last-child td { border-bottom: 0; }
+
+@media (max-width: 768px) {
+  .legal { padding: 36px 0 56px; }
+  .legal h2 { margin-top: 34px; }
+}

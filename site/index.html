@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>店管家 AI · 跨境电商全链路 AI 运营平台</title>
+    <meta
+      name="description"
+      content="面向跨境电商卖家与运营团队的 AI 运营平台：选品、竞品监控、AIGC 素材、Listing 优化、广告分析、智能客服、经营复盘，七个数字员工各管一段，决策依据留在同一个空间里。"
+    />
+    <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
+    <link rel="stylesheet" href="./assets/style.css" />
+    <link rel="preload" as="image" href="./assets/shots/sourcing.png" />
+  </head>
+  <body>
+    <!-- ====================================================================
+         店管家 AI · 官网（最小信任页 + 能力佐证）
+         --------------------------------------------------------------------
+         ★ 这一页要解决四件事：**信任**、**获客**、**合规载体**
+           （备案 / 隐私政策 / 服务条款 / 联系方式）、**收款的对外主体**。
+
+         ★★ 四条设计约束一条不许放宽（与 site/README.md 同源）：
+           1) 不承诺出单 / 销量 / 排名 / 收益（电商工具类对外文案的合规红线）
+           2) 不写未完成的能力（写了就是"宣传与实物不符"）——
+              本页列出的每个 Agent 都取自后端唯一真源
+              `backend/modules/skills/agents.py::AGENT_CATALOG`
+           3) 不暗示与平台的官方关系（亚马逊 / Shopee / TikTok Shop / TEMU
+              均为其各自权利人商标，我们只是接入方的工具）
+           4) 零外部依赖（图片自托管、零 JS、零构建）
+           5) 法务风险提示只写在源码注释与 README，不出现在访客可见的页面
+
+         ★★★ 配图为什么必须是**真图**、不能是 AI 生成或手绘示意：
+           约束 2 说"不写未完成的能力"。**AI 生成的"产品截图"就是伪造证据**，
+           而真实截图本身就是证据 —— 这也是这一页能从"声明"变成"佐证"的地方。
+           ⇒ 图里出现的每一个数字都是产品**当时真的算出来**的（演示空间数据），
+             页面上没有任何一处把数字改好看。
+           ⇒ 抓图脚本：`.workbuddy/probes/shot-site-sweep.mjs`（真 Chrome + CDP）。
+           ⇒ 选图标准是**看**出来的：产品里能点开的候选界面有 20+ 个，
+             全部实拍过一遍，只留下"满且好看"的 6 张 —— 加载态、空态、
+             列宽塌陷的一律不用（抓进官网等于把 bug 印上去）。
+
+         ★★ 品牌色 = `--brand: #4f46e5`（深海靛），**取自产品本身**
+           （`frontend/src/theme/presets.ts` 的 `--primary`，即产品里所有主按钮
+           的底色）。官网与产品是同一个产品的两个面，用另一套色会造成
+           "官网写着 A、产品里看着像 B" 的漂移。
+           ★ 旧值是 `#1890ff`（antd 默认蓝）—— 那是**框架默认值，不是产品色**，
+             而且它白字只有 3.24:1（不到 AA）。对比度依据见 style.css 的注释。
+
+         ★★ 页面上所有 `【待填】`（琥珀色虚线）都是**必须由主体填**的信息，
+           不许编造 —— 主体名称、备案号、联系方式都是**可被核实的事实**，
+           写错比留空更糟。
+           ==================================================================== -->
+    <header class="site-header">
+      <div class="wrap">
+        <a class="brand" href="./index.html">
+          <span class="brand-mark">店</span>
+          <span>店管家 AI</span>
+        </a>
+        <nav class="nav">
+          <a href="#what">我们做什么</a>
+          <a href="#team">数字员工</a>
+          <a href="#data">数据与依据</a>
+          <a href="#who">给谁用</a>
+          <a href="#contact">联系我们</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <!-- ================================ 首屏 ================================ -->
+      <section class="hero">
+        <div class="wrap hero-copy">
+          <p class="eyebrow">跨境电商 · 亚马逊 / Shopee / TikTok Shop / TEMU</p>
+          <h1>把跨境运营的每一步，<br /><em>交给一支 AI 团队</em></h1>
+          <p class="lead">
+            从选品、竞品监控、素材生产、Listing 优化、广告分析、智能客服，
+            到经营复盘 —— 七个数字员工各管一段，判断依据都沉淀在同一个空间里，
+            而不是散在几个表格与聊天记录里。
+          </p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="#contact">申请开通试用</a>
+            <a class="btn btn-ghost" href="#team">先看数字员工</a>
+          </div>
+          <p class="note">纯 Web，不需要安装任何客户端；店铺数据存放在你自己的空间里。</p>
+        </div>
+
+        <div class="wrap">
+          <figure class="frame hero-frame reveal">
+            <div class="frame-bar"><i></i><i></i><i></i><em>选品库 · 候选品与蓝海评分</em></div>
+            <img
+              src="./assets/shots/sourcing.png"
+              width="1600" height="950"
+              alt="选品库界面：顶部是候选品总数与评审状态统计；下方是候选品表格，每行含商品缩略图、标题、ASIN、售价、预估月销、评分、ROI、蓝海评分（带条形图）与评审状态。"
+            />
+            <figcaption>真实产品界面 · 演示环境数据</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ============================== 视差带 ① ============================== -->
+      <section class="band band-1">
+        <div>
+          <p class="kicker">从选品开始</p>
+          <p class="line">每一步判断，<br />都该留下依据</p>
+        </div>
+      </section>
+
+      <!-- ============================ 我们做什么 ============================ -->
+      <section id="what" class="sec">
+        <div class="wrap">
+          <div class="sec-head reveal">
+            <h2>我们做什么，以及刻意不做什么</h2>
+            <p>
+              跨境运营的工具已经很多了。我们把边界划在
+              <b>「判断与执行之间的那一段」</b>，其余交给已经做得很好的系统。
+            </p>
+          </div>
+          <div class="grid grid-2">
+            <div class="stance reveal">
+              <p>
+                <b>不做 ERP、不做进销存。</b>采购、库存台账、财务对账、物流轨迹 ——
+                你继续用现有的系统，我们不与之竞争。
+              </p>
+              <p>
+                <b>不做"捷径"。</b>凡是把风险留给你的店铺、收益却归工具的那一类做法，
+                我们不参与 —— 工具的价值在于把日常经营做得更透，
+                不在于替你承担平台规则上的风险。
+              </p>
+              <p>
+                <b>不承诺出单与排名。</b>任何经营结果取决于你的商品、定价、
+                供应链与平台规则，不是任何工具能保证的。我们只在页面上写
+                我们真的能交付的东西。
+              </p>
+            </div>
+            <div class="card emphasis reveal">
+              <span class="tag">我们做的那一段</span>
+              <h3>把「一次运营动作」变成「一条可复用的依据」</h3>
+              <p>
+                缺的往往不是某个单点工具，而是<b>判断依据散落在各处</b>：
+                选品时看的数据、竞品调价的时间点、上架时踩过的规则、
+                客服反复回答的问题 —— 算完就丢，下次重来。
+                我们做的就是把这条链跑通，并让每一步的数据留在同一个空间里。
+              </p>
+            </div>
+          </div>
+
+          <div class="cta-strip reveal">
+            <p>想先拿一个店铺跑一遍这条链？</p>
+            <a class="btn btn-primary" href="#contact">申请开通试用</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================== 视差带 ② ============================== -->
+      <section class="band band-2">
+        <div>
+          <p class="kicker">一支 AI 团队</p>
+          <p class="line">七个岗位，<br />各管一段</p>
+        </div>
+      </section>
+
+      <!-- ============================ 数字员工 ============================ -->
+      <section id="team" class="sec soft">
+        <div class="wrap">
+          <div class="sec-head reveal">
+            <h2>现在打开就能用的，是哪些？</h2>
+            <p>
+              下面是<b>当前版本已经可用的数字员工</b>，不是路线图。
+              没有做完的能力我们不会写在官网上 —— 配图也全部来自产品的真实界面。
+            </p>
+          </div>
+
+          <div class="grid grid-4">
+            <div class="card reveal">
+              <span class="tag">调度</span>
+              <h3>店秘书</h3>
+              <p>
+                全局入口。一句话直达对应的数字员工，或直接打开资料库里的某一本 ——
+                不必先想"这个需求该找谁"。
+              </p>
+            </div>
+            <div class="card reveal">
+              <span class="tag">选品</span>
+              <h3>选品分析师</h3>
+              <p>
+                蓝海挖掘、利润计算、竞品分析。品类大盘与候选品一起看，
+                把"这个品能不能做"拆成可以逐条核对的依据。
+              </p>
+            </div>
+            <div class="card reveal">
+              <span class="tag">监控</span>
+              <h3>竞品监控员</h3>
+              <p>
+                价格追踪、上新监控、舆情分析。盯住对手的调价、库存与差评动向，
+                把"今天该关注什么"直接推到眼前。
+              </p>
+            </div>
+            <div class="card reveal">
+              <span class="tag">素材</span>
+              <h3>AIGC 媒体生成器</h3>
+              <p>
+                AI 商品绘图、主图诊断、短视频分镜、AI 视频生成。
+                产出的素材按商品归档，下次不必从头再做一遍。
+              </p>
+            </div>
+            <div class="card reveal">
+              <span class="tag">上架</span>
+              <h3>Listing 优化师</h3>
+              <p>
+                标题、五点、描述、关键词的生成与优化，
+                并把平台规则与字符数限制一并考虑进去。
+              </p>
+            </div>
+            <div class="card reveal">
+              <span class="tag">广告</span>
+              <h3>广告分析师</h3>
+              <p>
+                广告诊断、词报告、出价优化。哪些词在烧钱、哪些该加价，
+                用数据说话而不是凭感觉。
+              </p>
+            </div>
+            <div class="card reveal">
+              <span class="tag">客服</span>
+              <h3>智能客服</h3>
+              <p>
+                FAQ 问答、订单追踪、工单管理。常见问题沉淀成话术库，
+                反复被问到的问题不必每次重新写。
+              </p>
+            </div>
+            <div class="card reveal">
+              <span class="tag">复盘</span>
+              <h3>运营复盘师</h3>
+              <p>
+                周报与月度复盘、广告归因、商品表现、利润审计。
+                把一段时间的经营结果收成一份可以往下走的结论。
+              </p>
+            </div>
+          </div>
+
+          <div class="cta-strip reveal">
+            <p>先开一个账号，把七个数字员工各点一遍，比看演示准。</p>
+            <a class="btn btn-primary" href="#contact">申请开通试用</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================== 视差带 ③ ============================== -->
+      <section class="band band-3">
+        <div>
+          <p class="kicker">同一份数据</p>
+          <p class="line">判断、动作、结果，<br />落在同一个空间</p>
+        </div>
+      </section>
+
+      <!-- ============================ 数据与依据 ============================ -->
+      <section id="data" class="sec">
+        <div class="wrap">
+          <div class="sec-head reveal">
+            <h2>决定留下什么，才算真的帮上忙</h2>
+            <p>
+              工具的差别不在"能不能生成一段文案"，而在<b>用过的判断能不能被复用</b>。
+              下面每一屏都对应产品里真实存在的一本"账"。
+            </p>
+          </div>
+
+          <div class="split reveal">
+            <div class="split-body">
+              <h3>候选品不是一张表，是一组可以对照的依据</h3>
+              <p>
+                每个候选品带着售价、预估月销、评分、ROI 与<b>蓝海评分</b>。
+                评审状态（草稿 / 已通过 / 已淘汰）一路跟着走 ——
+                下次再看这个品，不必重新论证一遍。
+              </p>
+              <ul class="points">
+                <li><b>量化对比</b>：同一批候选品横向排开，谁更值得做一眼看得出。</li>
+                <li><b>状态可追溯</b>：通过还是淘汰，是有人做过判断的，不是默认值。</li>
+                <li><b>与竞品池同一份数据</b>：这里的竞品不是另录一遍，就是从监控池来的。</li>
+              </ul>
+            </div>
+            <figure class="frame split-media">
+              <div class="frame-bar"><i></i><i></i><i></i><em>选品库</em></div>
+              <img
+                src="./assets/shots/sourcing.png"
+                loading="lazy" decoding="async"
+                width="1600" height="950"
+                alt="选品库：候选品表格含商品缩略图、标题、ASIN、售价、预估月销、评分、ROI、蓝海评分条形图与评审状态。"
+              />
+              <figcaption>真实产品界面 · 演示环境数据</figcaption>
+            </figure>
+          </div>
+
+          <div class="split reverse reveal" style="margin-top: 62px">
+            <div class="split-body">
+              <h3>对手动一下，你在今天就知道</h3>
+              <p>
+                竞品池盯的是<b>变化</b>：谁降价了、谁断货了、谁的 BSR 在往上爬。
+                每一次变动都带方向和幅度，不是一份要自己对比的静态清单。
+              </p>
+              <ul class="points">
+                <li><b>价格与波动</b>：当前价加上一段窗口内的涨跌幅。</li>
+                <li><b>BSR 与评论数</b>：排名变化带趋势，评论数一起看才不会被单指标误导。</li>
+                <li><b>库存与分组</b>：在售 / 缺货直接标出，可按分组批量盯。</li>
+              </ul>
+            </div>
+            <figure class="frame split-media">
+              <div class="frame-bar"><i></i><i></i><i></i><em>竞品监控池</em></div>
+              <img
+                src="./assets/shots/monitor.png"
+                loading="lazy" decoding="async"
+                width="1600" height="950"
+                alt="竞品监控池：竞品表格含 ASIN、品牌、标题、当前价、7 日变化（带涨跌色）、BSR（排名与趋势箭头）、评分与评论数、库存状态、分组与归属。"
+              />
+              <figcaption>真实产品界面 · 演示环境数据</figcaption>
+            </figure>
+          </div>
+
+          <div class="grid grid-2" style="margin-top: 62px">
+            <figure class="frame reveal">
+              <div class="frame-bar"><i></i><i></i><i></i><em>营销素材库</em></div>
+              <img
+                src="./assets/shots/studio.png"
+                loading="lazy" decoding="async"
+                width="1600" height="950"
+                alt="营销素材库：按分组归类的素材墙，含 AI 生成的商品图与短视频，每个素材带所属商品、平台标签与类型标签。"
+              />
+              <figcaption>真实产品界面 · 生成的素材按商品归档 · 演示环境数据</figcaption>
+            </figure>
+            <figure class="frame reveal">
+              <div class="frame-bar"><i></i><i></i><i></i><em>自有产品库</em></div>
+              <img
+                src="./assets/shots/catalog.png"
+                loading="lazy" decoding="async"
+                width="1600" height="950"
+                alt="自有产品库：产品表格含缩略图、售价与成本、利润率、BSR、评分、库存、日销、Listing 类型，顶部是库存总值与平均利润率。"
+              />
+              <figcaption>真实产品界面 · 含库存与利润口径 · 演示环境数据</figcaption>
+            </figure>
+            <figure class="frame reveal">
+              <div class="frame-bar"><i></i><i></i><i></i><em>平台规则库</em></div>
+              <img
+                src="./assets/shots/compliance.png"
+                loading="lazy" decoding="async"
+                width="1600" height="950"
+                alt="平台规则库：规则列表含所属平台、规则类型、内容摘要、生效日期与状态，覆盖亚马逊、Shopee、TikTok Shop、TEMU 等平台。"
+              />
+              <figcaption>真实产品界面 · 规则条目来自各平台公开政策 · 演示环境数据</figcaption>
+            </figure>
+            <figure class="frame reveal">
+              <div class="frame-bar"><i></i><i></i><i></i><em>业务话术库</em></div>
+              <img
+                src="./assets/shots/service.png"
+                loading="lazy" decoding="async"
+                width="1600" height="950"
+                alt="业务话术库：话术表格含问题、分类、优先级、状态、被引用次数与更新时间，覆盖账户、支付、退换货、商品质量、物流等分类。"
+              />
+              <figcaption>真实产品界面 · 引用次数来自实际客服会话 · 演示环境数据</figcaption>
+            </figure>
+          </div>
+
+          <div class="cta-strip reveal">
+            <p>想看一份完整的演示空间数据？</p>
+            <a class="btn btn-primary" href="#contact">联系我们索取</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================== 视差带 ④ ============================== -->
+      <section class="band band-4">
+        <div>
+          <p class="kicker">我们的边界</p>
+          <p class="line">不承诺出单，<br />只把依据说清楚</p>
+        </div>
+      </section>
+
+      <!-- ============================== 给谁用 ============================== -->
+      <section id="who" class="sec soft">
+        <div class="wrap">
+          <div class="sec-head reveal">
+            <h2>谁来用，各看什么？</h2>
+            <p>
+              一个空间里可以同时有多个成员 —— 各自看到的店铺与数据范围不同，
+              空间之间彼此隔离。
+            </p>
+          </div>
+          <div class="grid grid-3">
+            <div class="card reveal">
+              <div class="role">
+                <span class="role-ico">卖</span>
+                <div>
+                  <h3>跨境卖家</h3>
+                  <p>
+                    自己看店：选品、上架、广告、客服一把抓，
+                    需要一个地方把判断依据攒下来，而不是每次从零开始。
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="card reveal">
+              <div class="role">
+                <span class="role-ico b">运</span>
+                <div>
+                  <h3>运营团队</h3>
+                  <p>
+                    多人分工：选品、广告、客服各管一段，
+                    同一套店铺数据与话术库，不必来回传文件对齐口径。
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="card reveal">
+              <div class="role">
+                <span class="role-ico c">代</span>
+                <div>
+                  <h3>代运营服务商</h3>
+                  <p>
+                    多店铺并行：按店铺切换上下文，
+                    每个客户的监控池、素材与规则库各自独立，互不串味。
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="cta-strip reveal">
+            <p>先开一个空间，把自己的店铺接进来试一遍。</p>
+            <a class="btn btn-primary" href="#contact">申请开通试用</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================= 联系我们 ============================= -->
+      <section id="contact" class="sec">
+        <div class="wrap">
+          <div class="sec-head reveal">
+            <h2>联系我们</h2>
+            <p>试用开通、合作与咨询都走下面这些方式。我们会在工作时间内回复。</p>
+          </div>
+          <div class="grid grid-2">
+            <div class="contact-box reveal">
+              <ul class="contact-list">
+                <li><b>主体名称</b><span class="fill">【待填：营业执照上的名称】</span></li>
+                <li><b>联系电话</b><span class="fill">【待填】</span></li>
+                <li><b>电子邮箱</b><span class="fill">【待填】</span></li>
+                <li><b>微信 / 企业微信</b><span class="fill">【待填】</span></li>
+                <li><b>办公地址</b><span class="fill">【待填】</span></li>
+              </ul>
+            </div>
+            <div class="card reveal">
+              <h3>关于试用</h3>
+              <p>
+                目前开通账号由我们人工确认，目的是把试用环境与你自己的店铺空间
+                对应起来，避免试用数据与正式数据混在一起。请通过左列的方式联系我们，
+                并简单说明店铺所在的平台与规模，以及想先试用的部分。
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="footer-row">
+          <span>© 2026 <span class="fill">【待填：主体名称】</span></span>
+          <span class="sep">|</span>
+          <a href="./privacy.html">隐私政策</a>
+          <span class="sep">|</span>
+          <a href="./terms.html">服务条款</a>
+          <span class="sep">|</span>
+          <span class="fill">【待填：ICP 备案号】</span>
+        </div>
+        <p class="footer-note">
+          本站为产品信息页。站内不承诺出单、销量、排名或收益，
+          任何经营结果取决于商品、定价、供应链与平台规则。
+          <br />
+          页面截图为真实产品界面，其中的数据来自演示环境，仅用于说明产品形态。
+          <br />
+          亚马逊、Shopee、TikTok Shop、TEMU 等名称均为其各自权利人的商标，
+          本站与上述平台不存在官方合作或授权关系。
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>
