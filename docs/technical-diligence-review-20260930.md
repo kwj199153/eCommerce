@@ -4,6 +4,11 @@
 > 复评触发条件（基线 §5 规定）：① 有 P0 清零 ✅（P0-1 / P0-8 已修）② 分组得分变动 ≥1 ✅（D 组 +1.0）
 > 证据口径：**全部结论来自源码/配置/工作树实读**，每条附 `文件:行`。git 工作树 = `7d0e…`（HEAD `6394119`，96 提交，工作区 618 个未提交改动）。
 > 评分基准：**对外商用 SaaS（多租户 + 真实付费客户）**。文末给「内部/单租户试点」对照分。
+>
+> ⚠️ **本文档是 2026-09-30 的时点快照 —— 其中「P0 未修」已不成立。**
+> 2026-10-15 逐条实测：9 项 P0 中 **7 项已修**、1 项部分修（P0-4 口径默认值）。
+> **最新状态一律以 [附录 A](#附录-a-p0-状态追踪2026-10-15-实测) 为准**；
+> 正文 §3 的表**保留原样**作为历史对照（不篡改已发表结论）。
 
 ---
 
@@ -69,6 +74,10 @@
 | **P0-9** | 无用户协议 / 隐私政策 | ❌ | ❌ **未修** | 全仓无 `LICENSE` / `PRIVACY` / `TERMS`（glob 0 命中） |
 
 > **另有次级项 P0-10（无 CD 流水线）**：`.github/workflows/ci.yml` 仅 `push`（触发），**无 deploy / registry / 灰度 job**。仍为 0。
+>
+> ⚠️ **本表「未修」列已过期**（本报告写于 2026-09-30）：2026-10-15 实测 9 项中
+> **7 项已修**，仅 P0-4 为部分修（端口已改回环，口令默认值仍明文）。
+> 逐条证据与复现口径见 [附录 A](#附录-a-p0-状态追踪2026-10-15-实测)。
 
 ---
 
@@ -246,3 +255,51 @@
 - 本报告所有结论**来自源码/配置/git 工作树实读**；每条附 `文件:行`。凡「未找到」均列明检索关键词（如 P0-2 搜 `pg_dump|wal_level|archive_mode`、P0-7 搜 `prompt_versions|PromptVersion`）。
 - 分组得分沿用基线的**判断式**而非机械平均；本轮仅对**有实证变动**的项调分（A5、B5、C2、D4、I1、I4），其余**一律原值**，避免「复评即通胀」。
 - 下一版复评触发条件（沿用基线）：任一 P0 清零、或任一分组得分变动 ≥1 分。
+
+
+---
+
+## 附录 A：P0 状态追踪（2026-10-15 实测）
+
+> **为什么有这个附录**：本报告正文是 2026-09-30 的时点快照。**「活文档会腐化」** ——
+> 本仓有体量棘轮守住「代码不会悄悄变大」，但**没人守「文档不会悄悄说谎」**。
+> 15 天后一次外部独立审查（`D:/ai/项目审查员/eCommerce/eCommerce-审查报告-2026-10-15.md`）
+> 逐条复核时发现：正文 §3 记的「7 项未修」中 **6 项已清**。
+>
+> **处理方式**：正文**一字不改**（历史结论不篡改，否则比保留错误更糟）；
+> 差异全部收敛到本附录。每项给出**检索口径**，任何人都能重跑核对。
+> 自动化采集：`python backend/scripts/audit_p0_status.py`（只采集证据行，不替你下判断）。
+
+| # | 阻断项 | 09-30 记 | **10-15 实测** | 证据（可复现口径） |
+|---:|---|---|:---:|---|
+| P0-2 | 零数据库备份 / 无 PITR | ❌未修 | ✅ **已修** | `backend/core/backup/tasks.py`：`pg_dump` → 结构校验 → 深度校验 → 原子落盘 → 轮转；beat 任务 `core.backup`（第 340 轮接入）；compose 卷 `walarchive`（WAL 归档）；`core/observability/metrics.py:394` 监听「`archive_mode` 被改回 off 而任务仍报成功」 |
+| P0-3 | 零告警 | ❌未修 | ✅ **已修** | `observability/prometheus.yml` + `alert_rules.yml` + `alertmanager.yml`；compose 服务 `prometheus:9090` / `alertmanager:9093` |
+| P0-4 | compose 明文口令 + 5432 全网卡 | ❌未修 | ⚠️ **部分修** | **端口已修**：`docker-compose.yml:91` = `"127.0.0.1:5432:5432"`（全 compose 端口均绑回环：6379/8000/9090/9093 同）；**口令仍为** `${POSTGRES_PASSWORD:-123456}` 插值 —— 可覆盖，但**默认值明文保留**，注释声明「默认值只为本地一键起保留，生产请在本目录 .env 里设」 |
+| P0-5 | 无审计日志 | ❌未修 | ✅ **已修** | `core/audit/` 六件（models / actions / service / retention / tasks / router）；`audit_logs` 表（`core/audit/models.py:61`，append-only）；`main.py:549-550` 挂载路由；带保留期清理任务 |
+| P0-6 | SP-API 授权链路未实现 | ❌未修 | ✅ **已修** | `modules/amazon_sp/router.py`（476 行）+ `oauth.py`（512 行）；`main.py:641-642` 已 `include_router`（此前「有表、有 schema、有数据源，就是没有 router」） |
+| P0-7 | 提示词 100% 硬编码、零版本 | ❌未修 | ✅ **已修** | `modules/prompt_versions/`（db_model / router / schemas / service）；迁移 `alembic/versions/l8d5e2a9c3f6_prompt_versions_table.py`；`main.py:722-723` 已挂载；应用侧读表在 `ai_infra/llm/prompt_overrides.py` |
+| P0-9 | 无用户协议 / 隐私政策 | ❌未修 | ✅ **已修** | `docs/legal/` 七件：`LICENSE` / `privacy-policy.md` / `terms-of-service.md` / `data-processing-agreement.md` / `subprocessors.md` / `PLACEHOLDERS.md` / `README.md`；仓库根另有 `LICENSE` |
+| P0-10 | 无 CD 流水线 | ❌未修 | ✅ **已修** | `.github/workflows/cd.yml`：镜像 registry + 两段式（先拉齐、后切服务）SSH 部署 + 健康检查 + 整组回滚。**注意：流水线就位 ≠ 已生效** —— 缺 4 个部署机密时它**静默「只构建不部署」**（README「上线前必读」已写明这条陷阱） |
+
+**小结**：9 项 P0 中 **7 项已修**、**1 项部分修**（P0-4 的口令默认值）、**0 项完全未动**。
+09-30 时点即已成立的两项（P0-1 越权 / P0-8 输出校验）本轮复核**未被回退**。
+
+**⚠️ 本附录自身的保质期**：它同样是 **2026-10-15 的快照**，也会腐化。
+正确用法是「跑一次 `audit_p0_status.py`」，而不是「相信这段文字」。
+
+---
+
+## 附录 B：本轮顺带修掉的一条真缺陷（basetemp 排除失配）
+
+> 外部审查未提及，是核对 P0-2 检索口径时顺带发现的 —— 记此以免再犯。
+
+- **现象**：`backend/` 下累积 9 个 `.pytest_tmp_*` 残留目录（第 242/251 轮探针用下划线
+  命名 basetemp 所致），**已被 `.gitignore` 忽略**（第 87 行），但**扫描器的排除规则
+  只写了连字符** `startswith(".pytest-tmp")` ⇒ **匹配不到它们** ⇒ 那些目录里的 `.py`
+  静默进入体量棘轮的扫描面（当前行数小故无实际后果，属**潜伏缺陷**）。
+- **为什么长期没暴露**：`test_ci_gate_coverage.py::test_backend_scanning_gates_exclude_pytest_basetemp`
+  **当时是绿的** —— 它只问「有没有按前缀排除」，不问「排全了没」。
+  **判据守不住它本该守的东西**，这是「假绿」的又一实例。
+- **修法**：① 清残留 9 目录 / 17 文件；② 18 个扫描器统一改为双形态
+  `startswith((".pytest-tmp", ".pytest_tmp"))`；③ **加强判据**为「同一实参含**全部**前缀」
+  （`_BASETEMP_PREFIXES` + `required <= vals`）；④ 反向注入补 **I4**（缩回单形态 ⇒ 必红）。

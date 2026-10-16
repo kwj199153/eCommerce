@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>图形标识设计稿 · 待拍板（第 373 轮）</title>
+<style>
+  :root{
+    /* ★ L1 品牌层（与主题无关）—— 真源 frontend/src/theme/presets.ts BRAND_VARS / site/assets/style.css */
+    --brand:#4f46e5;
+    --brand-ink:#2b20df;
+    --brand-lift:#c2bff8;
+    --brand-wash:#edecfe;
+    /* L2 主题层（会变）—— 这里取 light 档做示例 */
+    --primary:#4f46e5;
+    --primary-hover:#665ee8;
+    --ink:#1f2328; --muted:#5b6472; --line:#e3e6ea;
+    --bg:#f7f8fa; --card:#fff; --ok:#1a7f37; --no:#b42318; --warn:#8a6100;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1000px;margin:0 auto;padding:40px 24px 72px}
+  h1{font-size:26px;margin:0 0 6px;letter-spacing:.2px}
+  h2{font-size:19px;margin:44px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:15px;margin:26px 0 10px;font-weight:600}
+  .lede{color:var(--muted);margin:0 0 14px}
+  .tag{display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;
+       background:var(--brand-wash);color:var(--brand-ink);border:1px solid var(--brand-lift);
+       margin-right:6px}
+  .tag.warn{background:#fff8e6;color:var(--warn);border-color:#ffe0a3}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px}
+  .row{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:middle}
+  th{background:#fafbfc;font-weight:600;color:var(--muted)}
+  code{background:#f2f4f6;border:1px solid var(--line);border-radius:5px;
+       padding:1px 6px;font-size:13px;word-break:break-all;white-space:nowrap}
+  td code{word-break:normal}
+  th.narrow,td.narrow{width:74px;white-space:nowrap}
+  .good{color:var(--ok);font-weight:600}
+  .bad{color:var(--no);font-weight:600}
+  .mono{font-family:Consolas,"Courier New",monospace;font-size:13px}
+  .foot{margin-top:48px;padding-top:16px;border-top:1px solid var(--line);
+        color:var(--muted);font-size:13px}
+  .swatch{display:inline-block;width:14px;height:14px;border-radius:4px;
+          vertical-align:-2px;margin-right:5px;border:1px solid rgba(0,0,0,.12)}
+
+  /* —— 候选卡 —— */
+  .cands{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:16px}
+  .cand{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;
+        text-align:center;position:relative}
+  .cand.pick{border-color:var(--brand-ink);box-shadow:0 0 0 1px var(--brand-ink),0 8px 22px rgba(43,32,223,.13)}
+  .cand .badge{position:absolute;top:-10px;left:14px;font-size:11px;padding:2px 9px;border-radius:999px;
+        background:var(--brand-ink);color:#fff}
+  .cand h4{margin:12px 0 4px;font-size:16px}
+  .cand p{margin:4px 0;font-size:13px;color:var(--muted);min-height:38px}
+  .mark48{width:96px;height:96px;border-radius:22px;background:var(--brand-ink);
+          display:inline-flex;align-items:center;justify-content:center;color:#fff}
+  .mark48 svg{width:100%;height:100%}
+
+  /* —— 尺寸阶梯 —— */
+  .ladder{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;padding:10px 0}
+  .ladder figure{margin:0;text-align:center}
+  .box{background:var(--brand-ink);display:inline-flex;align-items:center;justify-content:center;color:#fff}
+  .box svg{width:100%;height:100%}
+  .ladder figcaption{font-size:11px;color:var(--muted);margin-top:6px}
+
+  .darkband{background:#141414;color:#e6e6e6;border-radius:14px;padding:20px;margin-top:8px}
+  .darkband .sb{display:flex;align-items:center;gap:10px}
+  .darkband .sb .box{width:36px;height:36px;border-radius:10px}
+  .darkband .sb .nm{font-size:15px}
+  .darkband .muted{color:#9aa3af;font-size:12px}
+
+  .rej{display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:center;
+       padding:11px 0;border-top:1px dashed var(--line)}
+  .rej:first-of-type{border-top:0}
+  .rej .ph{background:#f2f4f6;border-radius:10px;height:56px;display:flex;align-items:center;
+           justify-content:center;color:#9aa3af;font-size:11px;text-align:center;padding:4px}
+  ol,ul{margin:8px 0 0;padding-left:22px}
+  li{margin:6px 0}
+  .flow{font-family:Consolas,monospace;font-size:12.5px;background:#0f1526;color:#d7dcf5;
+        border-radius:12px;padding:18px 20px;overflow-x:auto;line-height:1.85;
+        white-space:pre-wrap}
+  .flow b{color:#a5b4fc}
+  .flow i{color:#fca5a5;font-style:normal}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <span class="tag warn">待拍板 · 未落地</span><span class="tag">第 373 轮</span>
+  <h1>图形标识设计稿 —— 4 个候选，请你挑一个</h1>
+  <p class="lede">
+    起点是你截图里那个问题：<b>马卡龙主题下，侧栏左上角的 logo 变成了玫红</b>（<code>#c33a76</code>）。
+    <br/>根因不是颜色选错了，是 <b class="bad">logo 吃的是「主题主色」而不是「品牌色」</b> ——
+    它本来就不该跟着主题变。这份稿子同时回答两件事：
+    <b>① 标识长什么样；② 颜色怎么分层</b>（照 eEducation 第 456/457 轮那套流程）。
+  </p>
+
+  <!-- ============================ ① 候选 ============================ -->
+  <h2>① 四个候选</h2>
+  <p class="lede">
+    全部画在 <b>48×48 网格</b>、单色笔画（<code>currentColor</code>）、零字体依赖。
+    下方是它们在真实方块里的样子（96px 展示，几何自带内边距 ⇒ 不用再调边距）。
+  </p>
+  <div class="cands">
+
+    <div class="cand pick">
+      <span class="badge">我推荐</span>
+      <div class="mark48"><svg viewBox="0 0 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M8 19H40" stroke-width="5.5"/><path d="M16.5 19V41H31.5V19" stroke-width="5.5"/></g></svg></div>
+      <h4>A · 门楣店面</h4>
+      <p>一条<b>出檐</b> + 一个<b>门洞</b>。读作「店铺」最直白：檐比门宽出两侧，
+         一眼分得出不是房子、不是窗。</p>
+      <p class="mono" style="color:var(--ink)">3 笔 · 最小可辨 16px ✅</p>
+    </div>
+
+    <div class="cand">
+      <div class="mark48"><svg viewBox="0 0 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M9 19H39" stroke-width="5.5"/><path d="M15 19L11 40" stroke-width="5.5"/><path d="M33 19L37 40" stroke-width="5.5"/></g></svg></div>
+      <h4>B · 遮阳篷</h4>
+      <p>檐 + 两片<b>向外张</b>的篷布。更轻、更现代；语义是「门头」而不是「门」。</p>
+      <p class="mono" style="color:var(--ink)">3 笔 · 最小可辨 16px ✅</p>
+    </div>
+
+    <div class="cand">
+      <div class="mark48"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M13 23H35L37 41H11Z" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><path d="M18 23V17H30V23" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/></svg></div>
+      <h4>C · 货袋</h4>
+      <p>提袋形。电商感最强，但 36px 下提手容易读成<b>锁梁</b>（已尽量加粗拉开）。</p>
+      <p class="mono" style="color:var(--ink)">2 笔 · 最小可辨 16px ✅</p>
+    </div>
+
+    <div class="cand">
+      <div class="mark48"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M12 41V19H36V41" fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"/></svg></div>
+      <h4>D · 方拱门</h4>
+      <p>最干净、最稳，任何尺寸都不糊。代价是<b>语义最弱</b>：也像窗、像房子。</p>
+      <p class="mono" style="color:var(--ink)">1 笔 · 最小可辨 12px ✅✅</p>
+    </div>
+
+  </div>
+
+  <!-- ============================ ② 16px ============================ -->
+  <h2>② 16px 才是门槛（这不是审美判断）</h2>
+  <p class="lede">
+    favicon 的真实尺寸是 <b>16px</b>，浏览器标签栏就是这么小。我把 4 个候选渲染到真实像素后
+    用<b>最近邻放大</b>贴出来 —— 只有这样才能看见"糊"。<b>下面每一格都是真实尺寸的等比放大。</b>
+  </p>
+  <div class="card">
+    <h3 style="margin-top:0">真实 16px —— 这就是 favicon 在标签栏里的实际大小</h3>
+    <div class="ladder" style="justify-content:space-around">
+      <figure><div class="box" style="width:16px;height:16px;border-radius:4px"><svg viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M8 19H40" stroke-width="5.5"/><path d="M16.5 19V41H31.5V19" stroke-width="5.5"/></g></svg></div><figcaption>A · 门楣</figcaption></figure>
+      <figure><div class="box" style="width:16px;height:16px;border-radius:4px"><svg viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M9 19H39" stroke-width="5.5"/><path d="M15 19L11 40" stroke-width="5.5"/><path d="M33 19L37 40" stroke-width="5.5"/></g></svg></div><figcaption>B · 遮阳篷</figcaption></figure>
+      <figure><div class="box" style="width:16px;height:16px;border-radius:4px"><svg viewBox="0 0 48 48"><path d="M13 23H35L37 41H11Z" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><path d="M18 23V17H30V23" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/></svg></div><figcaption>C · 货袋</figcaption></figure>
+      <figure><div class="box" style="width:16px;height:16px;border-radius:4px"><svg viewBox="0 0 48 48"><path d="M12 41V19H36V41" fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"/></svg></div><figcaption>D · 拱门</figcaption></figure>
+    </div>
+
+    <h3>放大 5× —— 为了看清形状（真实渲染会比这略糊一点）</h3>
+    <div class="ladder" style="justify-content:space-around;align-items:center">
+      <figure><div style="width:80px;height:80px;display:flex;align-items:center;justify-content:center"><div class="box" style="width:16px;height:16px;border-radius:4px;transform:scale(5)"><svg viewBox="0 0 48 48" style="width:16px;height:16px"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M8 19H40" stroke-width="5.5"/><path d="M16.5 19V41H31.5V19" stroke-width="5.5"/></g></svg></div></div><figcaption>A · 门楣</figcaption></figure>
+      <figure><div style="width:80px;height:80px;display:flex;align-items:center;justify-content:center"><div class="box" style="width:16px;height:16px;border-radius:4px;transform:scale(5)"><svg viewBox="0 0 48 48" style="width:16px;height:16px"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M9 19H39" stroke-width="5.5"/><path d="M15 19L11 40" stroke-width="5.5"/><path d="M33 19L37 40" stroke-width="5.5"/></g></svg></div></div><figcaption>B · 遮阳篷</figcaption></figure>
+      <figure><div style="width:80px;height:80px;display:flex;align-items:center;justify-content:center"><div class="box" style="width:16px;height:16px;border-radius:4px;transform:scale(5)"><svg viewBox="0 0 48 48" style="width:16px;height:16px"><path d="M13 23H35L37 41H11Z" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><path d="M18 23V17H30V23" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/></svg></div></div><figcaption>C · 货袋</figcaption></figure>
+      <figure><div style="width:80px;height:80px;display:flex;align-items:center;justify-content:center"><div class="box" style="width:16px;height:16px;border-radius:4px;transform:scale(5)"><svg viewBox="0 0 48 48" style="width:16px;height:16px"><path d="M12 41V19H36V41" fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"/></svg></div></div><figcaption>D · 拱门</figcaption></figure>
+    </div>
+    <p class="lede" style="margin:10px 0 0">
+      ★ 放大看：A 是「一条横下面一个门」，B 是「棚」，C 提手已经贴到袋口，D 是「门框」。
+      四个都不糊 —— 但它们是从 <b>40 多个草稿</b>里活下来的：
+    </p>
+    <table style="margin-top:10px">
+      <tr><th>尺寸阶梯（真实尺寸）</th><th>A 门楣</th><th>B 遮阳篷</th><th>C 货袋</th><th>D 拱门</th></tr>
+      <tr>
+        <td>16 / 20 / 24</td>
+        <td><span class="good">✅</span></td><td><span class="good">✅</span></td>
+        <td><span class="good">✅</span>（提手开始贴）</td><td><span class="good">✅✅</span></td>
+      </tr>
+      <tr>
+        <td>32 / 48 / 64 / 128</td>
+        <td><span class="good">✅</span></td><td><span class="good">✅</span></td>
+        <td><span class="good">✅</span></td><td><span class="good">✅</span></td>
+      </tr>
+      <tr>
+        <td>尺寸阶梯（真实尺寸）</td>
+        <td colspan="4" style="color:var(--muted)">
+          <div class="ladder" style="padding:0;gap:14px">
+            <figure><div class="box" style="width:24px;height:24px;border-radius:6px"><svg viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M8 19H40" stroke-width="5.5"/><path d="M16.5 19V41H31.5V19" stroke-width="5.5"/></g></svg></div><figcaption>24 报告</figcaption></figure>
+            <figure><div class="box" style="width:32px;height:32px;border-radius:8px"><svg viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M8 19H40" stroke-width="5.5"/><path d="M16.5 19V41H31.5V19" stroke-width="5.5"/></g></svg></div><figcaption>32</figcaption></figure>
+            <figure><div class="box" style="width:36px;height:36px;border-radius:10px"><svg viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M8 19H40" stroke-width="5.5"/><path d="M16.5 19V41H31.5V19" stroke-width="5.5"/></g></svg></div><figcaption>36 侧栏</figcaption></figure>
+            <figure><div class="box" style="width:48px;height:48px;border-radius:12px"><svg viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M8 19H40" stroke-width="5.5"/><path d="M16.5 19V41H31.5V19" stroke-width="5.5"/></g></svg></div><figcaption>48 登录</figcaption></figure>
+            <figure><div class="box" style="width:96px;height:96px;border-radius:22px"><svg viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M8 19H40" stroke-width="5.5"/><path d="M16.5 19V41H31.5V19" stroke-width="5.5"/></g></svg></div><figcaption>96</figcaption></figure>
+          </div>
+          <span style="font-size:12px">（以 A 为例的真实尺寸阶梯）</span>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ============================ ③ 不变色 ============================ -->
+  <h2>③ 关键：它<b>在任何主题下都不变色</b></h2>
+  <p class="lede">
+    这是本轮改动的核心目的 —— 你的截图里，logo 底色是 <code>#c33a76</code>（马卡龙档的 UI 主色）。
+    修完之后，左边永远是这个深靛，右边才是会变的那一个。
+  </p>
+  <div class="card">
+    <table>
+      <tr><th class="narrow">主题</th><th>标识底色（<b>恒定</b>）</th><th>该主题的 UI 主色（<b>会变</b>）</th><th>说明</th></tr>
+      <tr>
+        <td><b>浅色</b></td>
+        <td><span class="swatch" style="background:#2b20df"></span><code>--brand-ink #2b20df</code></td>
+        <td><span class="swatch" style="background:#4f46e5"></span><code>--primary #4f46e5</code></td>
+        <td>默认档</td>
+      </tr>
+      <tr>
+        <td><b>深色</b></td>
+        <td><span class="swatch" style="background:#2b20df"></span><code>--brand-ink #2b20df</code></td>
+        <td><span class="swatch" style="background:#756eea"></span><code>--primary #756eea</code></td>
+        <td rowspan="2" style="color:var(--muted)">
+          ★ 标识<b>三档完全一致</b>；UI 主色三档各不相同（深底必须提亮，设计如此）。
+        </td>
+      </tr>
+      <tr>
+        <td><b>马卡龙</b></td>
+        <td><span class="swatch" style="background:#2b20df"></span><code>--brand-ink #2b20df</code></td>
+        <td><span class="swatch" style="background:#c33a76"></span><code>--primary #c33a76</code> ← 你截图里那个玫红</td>
+      </tr>
+    </table>
+
+    <h3>深色主题里的样子（模拟）</h3>
+    <div class="darkband">
+      <div class="sb">
+        <span class="box"><svg viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M8 19H40" stroke-width="5.5"/><path d="M16.5 19V41H31.5V19" stroke-width="5.5"/></g></svg></span>
+        <span class="nm">店管家 AI</span>
+        <span class="muted" style="margin-left:auto">深色主题 · 标识不变色</span>
+      </div>
+      <p class="muted" style="margin:12px 0 0">
+        ★ 如实登记一个数字：<code>#2b20df</code> 方块对深色侧栏底 <code>#141414</code> 的对比度只有
+        <b>2.08:1</b> —— 方块<b>边界</b>在深色下不清晰，视觉上是"白图形直接浮在深底上"。
+        但方块<b>内部</b>的白笔画是 <b>8.84:1</b>，辨识没问题。
+        eEducation 当年也是同样的取舍（未做深色特判）。若你想让边界也清楚，
+        可选给深色档加一圈 <code>box-shadow:0 0 0 1px rgba(255,255,255,.12)</code>（不改 L1 色值）。
+      </p>
+    </div>
+  </div>
+
+  <!-- ============================ ④ 配色分层 ============================ -->
+  <h2>④ 配色怎么分层（照 eEducation 456/457 的流程）</h2>
+  <p class="lede">
+    一句话原则：<b>换主题它该不该变？该变 ⇒ 主题色；不该变 ⇒ 品牌色。</b>
+    这条判据在 eEducation 是踩过坑才立起来的 —— 那边原来把「品牌色」和「主题色」
+    用同一个变量（<code>--primary</code>）表达，结果 logo 在 3 个主题下有 3 种底色。
+  </p>
+
+  <div class="flow">
+<b>L1 品牌层（产品色）</b> —— 与主题<b>无关</b>，写在独立的 <b>BRAND_VARS</b> 里，注入 <b>:root</b>（不带 [data-theme]）
+  ├── --brand       #4f46e5   品牌色本体（深底强调 / 大字号点缀）
+  ├── --brand-ink   #2b20df   标识方块底  ← 本轮 logo 改用的就是它（白字 8.84:1）
+  ├── --brand-lift  #c2bff8   深色带上的强调（对深带底 10.07:1）
+  └── --brand-wash  #edecfe   极浅靛底（eyebrow / tag）= 产品 --info-bg
+            ▲
+            │  <i>结构上的隔离：这三张表里根本没有 --brand* 这两个字</i>
+            │   ⇒ 连"改一档"这个动作都不存在（不只是"三档碰巧同值"）
+            ▼
+<b>L2 主题层（主题主色）</b> —— 写在 LIGHT_VARS / DARK_VARS / MACARON_VARS 三张表里，注入 html[data-theme="x"]
+  ├── --primary         light #4f46e5 · dark #756eea · macaron #c33a76   ← UI 交互色（按钮/链接/选中态）
+  ├── --primary-hover   三档各一（AA 已算过）
+  └── --info-bg / --info-border / --bg-active-* …                        ← 派生态，跟着 --primary 走
+
+<b>L3 情境层</b>（如营销页的视差带、报告纸）
+  └── 只在单个页面成立，不进主题表、也不进 BRAND_VARS
+  </div>
+
+  <h3>为什么 <code>--brand-ink</code> 取 <code>#2b20df</code> 而不是 <code>--brand</code> 本身</h3>
+  <table>
+    <tr><th>值</th><th>色相</th><th>白字对比度</th><th>AA(4.5)</th><th>说明</th></tr>
+    <tr><td><span class="swatch" style="background:#2b20df"></span><code>#2b20df</code></td><td>243.46°</td><td><b>8.84:1</b></td><td class="good">✅✅</td>
+        <td>与 <code>--brand</code> 同色相（<b>Δh 0.06°</b>），只深一档 ⇒ 小尺寸更锐、更跳</td></tr>
+    <tr><td><span class="swatch" style="background:#4f46e5"></span><code>#4f46e5</code></td><td>243.40°</td><td>6.29:1</td><td class="good">✅</td>
+        <td>品牌色本体。也过 AA，但它还要兼任"深底强调字"，两个角色分开更好</td></tr>
+  </table>
+  <p class="lede" style="margin-top:10px">
+    ★ <b>这两个值不是我编的</b>：官网 <code>site/assets/style.css</code> 上轮已经定了
+    <code>--brand:#4f46e5</code> / <code>--brand-ink:#2b20df</code>。
+    本轮是让<b>产品站与官网逐字对齐</b> —— 之前产品站根本没有这两个变量（这是根因）。
+    全部数字由 <code>.workbuddy/probes/tools/brand-color-facts.py</code> 现算，不手写。
+  </p>
+
+  <!-- ============================ ⑤ 露出点 ============================ -->
+  <h2>⑤ 它会出现在哪里（现状 → 换成）</h2>
+  <table>
+    <tr><th>位置</th><th>现状</th><th>问题</th><th>换成</th></tr>
+    <tr><td>产品 · 侧栏左上</td><td><code>var(--primary)</code> + antd 机器人图标</td>
+        <td class="bad">随主题变（你截图那个玫红）</td><td>图形标识，底 <code>var(--brand-ink)</code> · 36px</td></tr>
+    <tr><td>产品 · 登录页标题</td><td>只有文字，<code>color:var(--primary)</code></td>
+        <td class="bad">随主题变 · 无图形标识</td><td>标识 + 文字，48px</td></tr>
+    <tr><td>产品站 favicon</td><td>紫色闪电（模板残留）</td>
+        <td class="bad">不是本产品的东西</td><td>图形标识 · 16px</td></tr>
+    <tr><td><code>index.html</code> 图标</td><td><code>/vite.svg</code></td>
+        <td class="bad">Vite 出厂图标，从未换过</td><td>指向真标识</td></tr>
+    <tr><td>官网 favicon</td><td>3 根柱子（上轮只改了色）</td>
+        <td>与产品站无对应形状</td><td>同一几何（逐字一致）</td></tr>
+  </table>
+
+  <!-- ============================ ⑥ 落选 ============================ -->
+  <h2>⑥ 落选方案与理由（供你判断我是否看走眼）</h2>
+  <p class="lede">
+    我做了 <b>5 轮共 40+ 个草稿</b>，每一轮都用真实像素渲染后淘汰。淘汰原因基本只有两类：
+    <b>小尺寸糊</b>、<b>语义读不出来</b>。下面按死因分组。
+  </p>
+  <div class="card">
+    <div class="rej"><div class="ph">檐 台 斗（多个）</div><div>
+      店铺遮阳篷的"正经画法"（檐 + 篷身 + 台）：<b>16px 糊</b>。48 网格里三层结构的间距只剩 2px 左右，笔画本身就有 2px ⇒ 必然粘。</div></div>
+    <div class="rej"><div class="ph">三根柱子</div><div>
+      承接官网现状的"增长柱"：16px 三根柱<b>粘成一块</b>（间距 1.3px）。这条路只在 ≥32px 成立。</div></div>
+    <div class="rej"><div class="ph">箱 + 折线上升</div><div>
+      电商感最好的组合之一，但 16px 下<b>折线成一团</b>；箱 + 单一斜线稍好，但看着像"斜杠"。</div></div>
+    <div class="rej"><div class="ph">袋 + 双提带</div><div>
+      36px 下<b>确实最像购物袋</b>（我一度以为定这个了），但 16px 两根提带<b>必然粘连</b> —— 间距只有 3.3px。现实购物袋的两根绳，在 favicon 尺寸上不存在。</div></div>
+    <div class="rej"><div class="ph">袋 + 闭合提手</div><div>
+      16px 能活，但 36px 读成<b>锁</b>（提手与袋身形成锁梁）。这是 C 候选的已知缺陷，仍保留给你做对比。</div></div>
+    <div class="rej"><div class="ph">菱形 / 圆点 / 印鉴 / 伞</div><div>
+      小尺寸干净，但<b>没有可读的语义</b> —— 换成任何别的产品也成立，等于没标识。</div></div>
+    <div class="rej"><div class="ph">汉字符号化</div><div>
+      用「店」字自绘或 <code>&lt;text&gt;</code>：前者笔画太多<b>糊成一团</b>，后者要靠<b>访客的系统字体</b>渲染 ⇒ 同一个标识在 Windows / macOS / 安卓长得不一样，16px 更糊（这正是 eEducation 当年否掉「学」字的原因）。</div></div>
+    <div class="rej"><div class="ph">加"AI 火花"/ 点</div><div>
+      想表达"AI"，但在 16px 下<b>糊成一个脏点</b>。eEducation 的 R4 也是同样的死因。</div></div>
+    <div class="rej"><div class="ph">A1 / A2 / A3 / B1</div><div>
+      A（门楣）的比例变体，都已渲染：A3（窄门）最像"带檐的门"，A2（粗檐）最稳；<b>当前 A 是这三者的折中</b>。B1（大张角篷）16px 变成"人"字，已淘汰。</div></div>
+  </div>
+
+  <!-- ============================ ⑦ 拍板后 ============================ -->
+  <h2>⑦ 你拍板后，我要动什么</h2>
+  <div class="card">
+    <ol>
+      <li><code>frontend/src/components/BrandMark.vue</code> —— <b>新建</b>（几何唯一真源）</li>
+      <li><code>frontend/src/theme/presets.ts</code> —— 新增 <code>BRAND_VARS</code>，<code>installThemeStyles()</code> 注入 <code>:root</code></li>
+      <li><code>frontend/src/views/Workspace.vue</code> —— <code>.logo-avatar</code>：<code>var(--primary)</code> → <code>var(--brand-ink)</code> + 换组件</li>
+      <li><code>frontend/src/views/Login.vue</code> —— 标题色切 L1，补上标识</li>
+      <li><code>frontend/public/favicon.svg</code> · <code>frontend/index.html</code> · <code>site/assets/favicon.svg</code> —— 同一几何</li>
+      <li><code>frontend/scripts/check-brand-mark.cjs</code> —— <b>新建判据</b>（枚举 <code>data-brand-mark</code> / 几何逐字一致 / 结构上不在主题表 / 防回退）</li>
+      <li><code>docs/品牌标识与配色分层-r373.md</code> —— 定案文档</li>
+    </ol>
+    <p class="lede" style="margin:12px 0 0">
+      ★ 上线影响：产品站 + 官网都要重新构建（部署仍交给网站管理员）。
+      <b>不改任何后端 / 环境变量 / 数据库</b>。
+    </p>
+  </div>
+
+  <div class="foot">
+    设计稿 · 第 373 轮 · 几何真源 <code>viewBox 0 0 48 48</code>（以 A 为例）：
+    <code>&lt;path d="M8 19H40" stroke-width="5.5"/&gt;</code>
+    <code>&lt;path d="M16.5 19V41H31.5V19" stroke-width="5.5"/&gt;</code><br/>
+    配色真源：<code>frontend/src/theme/presets.ts</code>（BRAND_VARS）·
+    <code>site/assets/style.css</code>（--brand 系）。全部色值/对比度由脚本现算，非手写。
+  </div>
+
+</div>
+</body>
+</html>
