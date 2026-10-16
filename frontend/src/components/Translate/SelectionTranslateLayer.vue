@@ -13,6 +13,29 @@
         <span class="stl-badge">{{ badgeText }}</span>
         <span class="stl-spacer" />
         <button
+          v-if="state.sameLang"
+          class="stl-btn"
+          type="button"
+          title="改用英文重译（原文已是中文）"
+          @click="onTranslateEnglish"
+        >
+          译为英文
+        </button>
+        <!-- ★ 显示方式切换：只**有译文时**才出现。
+             它与左边那颗「译为英文」永不同屏 —— 后者只在「原文已是中文、
+             没有译文」（sameLang）时出现。所以头部最多 4 颗按钮，360px 放得下。 -->
+        <button
+          v-if="state.translation"
+          class="stl-btn"
+          type="button"
+          :title="displayMode === 'bilingual'
+            ? '切换为仅译文（隐藏原文）'
+            : '切换为双语（原文 + 译文）'"
+          @click="toggleDisplayMode"
+        >
+          {{ displayMode === 'bilingual' ? '仅译文' : '双语' }}
+        </button>
+        <button
           class="stl-btn"
           type="button"
           title="复制译文"
@@ -31,10 +54,13 @@
         </button>
       </div>
 
-      <div class="stl-src">
-        {{ state.original }}
-      </div>
-      <div class="stl-sep" />
+      <!-- 「仅译文」模式下原文与分隔线一起收起：只藏原文会留一条悬空的横线 -->
+      <template v-if="displayMode === 'bilingual'">
+        <div class="stl-src">
+          {{ state.original }}
+        </div>
+        <div class="stl-sep" />
+      </template>
       <div
         class="stl-dst"
         :class="{ 'is-error': !!state.error }"
@@ -44,6 +70,9 @@
         </template>
         <template v-else-if="state.error">
           {{ state.error }}
+        </template>
+        <template v-else-if="state.sameLang">
+          <span class="stl-note">原文已是{{ LANG_LABEL[state.sourceLang] || '该语言' }}，未做翻译。需要英文可点上方「译为英文」。</span>
         </template>
         <template v-else>
           {{ state.translation }}
@@ -66,35 +95,35 @@
  * 样式 scoped 即可生效 —— Teleport 只搬 DOM，元素上的 data-v 属性还在，
  * 所以「teleport 出去 scoped 就够不着」只对**第三方组件内部**的元素成立，
  * 自家模板的元素没问题。
+ *
+ * ★ 正文有「双语 / 仅译文」两态（第 370 轮 P1）：状态**不住这里**，住在
+ *   `useSelectionTranslate` 的模块级 ref —— 设置页也要写它，两份真实来源必然漂移。
+ *   本组件只读 + 通过 setter 改。切换后浮层高度会变，所以定位 watch 的依赖里
+ *   必须带上 displayMode（见下面的 watch）。
  */
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useSelectionTranslate } from '@/composables/useSelectionTranslate'
+import { LANG_LABEL, formatBadge } from './langBadge'
 
-const { state, hide, setSuppressHide, startSelectionWatcher } = useSelectionTranslate()
+
+const { state, hide, retranslate, setSuppressHide, startSelectionWatcher, displayMode, setDisplayMode } = useSelectionTranslate()
 
 const layerRef = ref<HTMLElement | null>(null)
 const pos = reactive({ left: 0, top: 0 })
 
-const LANG_LABEL: Record<string, string> = {
-  zh: '中文',
-  en: '英文',
-  ja: '日文',
-  ko: '韩文',
-  de: '德文',
-  es: '西文',
-  fr: '法文',
-  it: '意文',
-  pt: '葡文',
-}
+const badgeText = computed(() =>
+  formatBadge({
+    loading: state.loading,
+    loadingText: '翻译中',
+    error: state.error,
+    hasOriginal: !!state.original,
+    sameLang: state.sameLang,
+    sourceLang: state.sourceLang,
+    targetLang: state.targetLang,
+  }),
+)
 
-const badgeText = computed(() => {
-  if (state.loading) return '翻译中'
-  if (state.error) return '翻译失败'
-  const from = LANG_LABEL[state.sourceLang] || '原文'
-  const to = LANG_LABEL[state.targetLang] || state.targetLang
-  return to ? `${from} → ${to}` : from
-})
 
 /** 定位：优先浮在选区上方，上方不够落下方，左右夹进视口。 */
 function reposition() {
@@ -125,13 +154,29 @@ function reposition() {
 
 // 内容或锚点变化都要重新量尺寸（译文长度不同，浮层高度会变）
 watch(
-  () => [state.visible, state.loading, state.translation, state.error, state.anchor] as const,
+  () => [state.visible, state.loading, state.translation, state.error, state.anchor,
+         displayMode.value] as const,
   async () => {
     await nextTick()
     reposition()
   },
   { deep: true, immediate: true },
 )
+
+/**
+ * 切换「双语 / 仅译文」。
+ *
+ * ★ 走 `setDisplayMode` 而不是直接改 `displayMode.value` —— 与自动弹开关同口径：
+ *   只有通过 setter 才会落本机（localStorage），下次进来才记得住。
+ */
+function toggleDisplayMode() {
+  setDisplayMode(displayMode.value === 'bilingual' ? 'target' : 'bilingual')
+}
+
+/** 一键改译：沿用同一段原文，显式换成英文 */
+function onTranslateEnglish() {
+  void retranslate('en')
+}
 
 async function onCopy() {
   const text = state.translation
@@ -244,6 +289,11 @@ onUnmounted(() => {
 
 .stl-dst.is-error {
   color: var(--danger);
+}
+
+/* 「原文已是目标语言」这类**非失败**的说明文字：用次要色，别用错误色 */
+.stl-note {
+  color: var(--text-secondary);
 }
 
 .stl-spin {
