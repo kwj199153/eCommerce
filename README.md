@@ -2,9 +2,13 @@
 
 一站式 AI 原生跨境电商运营平台：选品 → Listing → 广告 → 客服 → 竞品监控 → 素材生产，全链路 Agent 化。
 
-> **当前状态（2026-09-15）**：功能面已可用（6 个业务 Agent + 资料库 + 监控大屏），
+> **当前状态（2026-10-15）**：功能面已可用（6 个业务 Agent + 资料库 + 监控大屏），
 > 安全面已完成 P0 修复（租户授权隔离 / 配置 fail-closed / 配额挂载）。
 > 上线前请务必读完 [上线前必读](#上线前必读)。
+>
+> 📌 技术尽调基线（`docs/technical-diligence-review-20260930.md`）里记的
+> **9 项 P0 已修 7 项、1 项部分修**（逐条证据见该文 **附录 A**）——
+> 该文正文写于 2026-09-30，**其「未修」列已过期**。
 
 ---
 
@@ -444,18 +448,23 @@ npx vue-tsc --noEmit
 
 如实记录，避免被当成"已经做完"：
 
+> **2026-10-15 复核**：本表 11 条逐条实测 —— **4 条已清 + 1 条部分清**（标 ✅）、
+> **3 条数字或描述过期**（标 ⚠️）、**3 条保持原描述**（**不代表仍成立**，本轮未复核）。
+> 复现方式：`python backend/scripts/audit_p0_status.py`；
+> P0 逐条证据见 `docs/technical-diligence-review-20260930.md` 附录 A。
+
 | 缺口 | 影响 | 状态 |
 |---|---|---|
 | 真实支付网关未接入 | 无法真实收款 | 抽象层与接入清单已就绪（`PaymentGateway` 协议 + 工厂 + 6 步 checklist + 三家网关差异表）；账单落库链路已端到端验证；配置层拦住"生产用 mock / 占位网关名"，运行时未接入网关返回 501。**仍缺**：真实商户凭证、webhook 回调路由、日对账任务 |
 | 无真实支付方式录入 | `payment_methods` 表为空 | `POST /billing/payment-methods` 已按 `PaymentMethod` 模型实现，需接 Stripe SetupIntent / 支付宝签约后才能真实录卡 |
-| 订阅无到期调度 | 周期结束后 `status` 不会自动转 `cancelled`/`expired` | 本期内判定不重复扣款依赖 `current_period_end`，逻辑正确；但缺定时任务推进状态机 |
-| AIGC 长任务仍同步阻塞 | 出图超时即丢结果 | Celery 基础设施与 Worker 已就绪，任务化改造进行中 |
-| 端点测试覆盖约 50% | 回归风险 | 194 个端点中约 97 个无测试，其中 75 个前端在用 |
-| 前端类型宽松 | `any` / `@ts-ignore` 约 490 处 | 增量收敛中 |
-| 主包体积约 1.5MB | 首屏偏慢 | 未做 `manualChunks` 拆包 |
-| 平台数据接入 | 商品池仍为自研 mock | 未接真实生产凭证；SP-API 客户端已就绪 |
-| ESLint 未真正启用 | lint 脚本是死脚本 | `package.json` 有脚本但 devDeps 里没有 eslint |
-| ruff / mypy 未进门禁 | 静态检查靠人 | 配置已在 `backend/pyproject.toml` 备好，需先生成基线再设门禁 |
+| ~~订阅无到期调度~~ | 周期结束后 `status` 不会自动转 `cancelled`/`expired` | ✅ **已清（2026-10-15）**：beat 已有 `billing-expire-pending`（每 5 分钟推进待到期订阅）+ `billing-sweep-subscriptions` |
+| ~~AIGC 长任务仍同步阻塞~~ | 出图超时即丢结果 | ✅ **已清（2026-10-15）**：已任务化 —— `modules/aigc_media/tasks.py` 里的 Celery 任务 + `router/` 已拆包 |
+| 端点测试覆盖约 50% | 回归风险 | ⚠️ **数字过期**：端点已 **301** 个（原记 194）；覆盖率比例**未复测** |
+| 前端类型宽松 | `any` / `@ts-ignore` 约 490 处 | ⚠️ **数字过期**：实测 **549** 处（原记约 490）；增量收敛中 |
+| 主包体积约 1.5MB | 首屏偏慢 | ⚠️ **已改观**：已做 `manualChunks` 拆包（`vite.config.ts`：`vendor-antd` ≈1.5MB / `vendor-xlsx` ≈0.4MB / vue 系独立；2026-10-15 实测 `vendor-antd` 1512 kB · gzip 454 kB），业务主包与 vendor 分离 ⇒ 缓存粒度改善；**antd 全量注册改为按需引入仍未做** |
+| 平台数据接入 | 商品池仍为自研 mock | ✅ **部分清（2026-10-15）**：SP-API 已挂载（`modules/amazon_sp/router.py` + `oauth.py`，见尽调 P0-6 已修）；**商品池是否仍 mock 未复核** |
+| ~~ESLint 未真正启用~~ | lint 脚本是死脚本 | ✅ **已清（2026-10-15）**：`eslint` 9.39 + `typescript-eslint` + `eslint-plugin-vue` 已在 devDependencies；有 `lint:ci`（`--max-warnings=0`）与 `check-eslint-ratchet` 门禁 |
+| ~~ruff / mypy 未进门禁~~ | 静态检查靠人 | ✅ **已清（2026-10-15）**：ruff 棘轮（`--select T20`）+ mypy 棘轮（第 346 轮接入，检查面 `core ai_infra`）均已在 CI 实跑 |
 | CD 尚未真正生效 | 发布仍是手工 | 流水线已就位（tag → GHCR → SSH 部署 + 健康检查 + 整组回滚），但**缺 4 个部署机密** ⇒ 目前只构建并推送镜像、不部署。另：灰度/分批发布、部署通知均未做 |
 
 ---

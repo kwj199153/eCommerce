@@ -71,6 +71,10 @@ dist/
 .workbuddy
 dist_verify_*/
 dist_check_*/
+# 第 371 轮补：`vite build --outDir dist-<tag>` 换全新 outDir 构建（避"清 dist"
+# 沙箱删除守卫）会产生 dist-r365b/ 这类目录。此前只有精确 `dist/` 规则，
+# 匹配不到带后缀的变体 ⇒ 累积 13 个未跟踪目录（git status 被淹）。
+dist-*/
 *.timestamp-*.mjs
 *.tmp
 
