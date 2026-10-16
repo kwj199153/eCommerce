@@ -884,7 +884,7 @@ const handleReset = () => {
   font-size: var(--font-size-11) !important;
   color: var(--primary) !important;
   padding: 0 var(--space-6) !important;
-  background: rgba(230, 247, 255, 0.6) !important;
+  background: rgba(237, 236, 254, 0.6) !important;
   border: 1px solid var(--info-border) !important;
   border-radius: var(--radius-4) !important;
 }

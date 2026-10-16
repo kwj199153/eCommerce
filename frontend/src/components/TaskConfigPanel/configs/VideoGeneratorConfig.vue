@@ -568,7 +568,7 @@
               style="display: none"
               @change="handlePickerFileChange"
             >
-            <CloudUploadOutlined style="font-size: 30px; color: #1890ff" />
+            <CloudUploadOutlined style="font-size: 30px; color: var(--primary)" />
             <p style="margin: 8px 0 0; font-size: 12px; color: #595959">
               点击选择本地图片
             </p>
@@ -1062,7 +1062,7 @@ function assetTypeLabel(type: string): string {
      写死的 #262626 深字会落在深色卡上 ⇒ 当场造出一个新的「看不见」。 */
   background: var(--bg-elevated);
 }
-.mode-card:hover { border-color: var(--info-border); box-shadow: 0 2px 8px rgba(24,144,255,0.08); }
+.mode-card:hover { border-color: var(--info-border); box-shadow: 0 2px 8px rgba(79,70,229,0.08); }
 .mode-card.active { border-color: var(--primary); background: var(--info-bg); }
 .mode-icon { font-size: 15px; grid-row: 1; }
 .mode-name { font-size: 12px; font-weight: 700; color: var(--text-primary); grid-row: 1; }
@@ -1123,14 +1123,14 @@ function assetTypeLabel(type: string): string {
   position: relative; cursor: pointer; transition: border-color 0.2s;
   min-height: 150px;
 }
-.single-image-picker:hover { border-color: #1890ff; }
+.single-image-picker:hover { border-color: var(--primary); }
 .single-img { width: 100%; max-height: 220px; object-fit: contain; display: block; }
 .single-placeholder {
   min-height: 150px; display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 8px; color: #bfbfbf; font-size: 12px;
 }
 .single-img-tag {
-  position: absolute; top: 6px; right: 6px; background: rgba(24,144,255,0.85);
+  position: absolute; top: 6px; right: 6px; background: rgba(79,70,229,0.85);
   color: #fff; font-size: 10px; padding: 2px 8px; border-radius: 4px;
 }
 
@@ -1151,7 +1151,7 @@ function assetTypeLabel(type: string): string {
   position: relative; border-radius: 6px; overflow: hidden; aspect-ratio: 1;
   cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s;
 }
-.picker-asset:hover { border-color: #1890ff; }
+.picker-asset:hover { border-color: var(--primary); }
 .picker-asset img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .picker-asset-tag {
   position: absolute; bottom: 2px; left: 2px; background: rgba(0,0,0,0.65);
@@ -1163,7 +1163,7 @@ function assetTypeLabel(type: string): string {
   border: 2px dashed #d9d9d9; border-radius: 8px; padding: 18px;
   text-align: center; cursor: pointer; transition: border-color 0.2s;
 }
-.upload-drop:hover { border-color: #1890ff; }
+.upload-drop:hover { border-color: var(--primary); }
 .upload-preview-row {
   display: flex; align-items: center; gap: 12px; margin-top: 12px;
 }

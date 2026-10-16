@@ -4,7 +4,11 @@
 为什么值得单独一个门禁
 ====================
 本仓主题色变量真源 = `src/theme/presets.ts` 的 `LIGHT_VARS` / `DARK_VARS`
-（闭集 71 键；`ThemeVars` 类型保证**表内**一个都不缺）。但闭集只管**生产者**——
+（闭集 71 键；`ThemeVars` 类型保证**表内**一个都不缺），**外加 L1 品牌层
+`BRAND_VARS`** —— 第 373 轮立：品牌色不随主题变，所以刻意**不在**主题表内，
+由 `installThemeStyles()` 注入 `:root`；它同样是合法的定义源（漏了这条，
+组件里刚接上的 `var(--brand-ink)` 会被本门禁误判成「未定义」）。
+但闭集只管**生产者**——
 消费者侧写的 `var(--名字)` 只是个**裸字符串**，没有任何类型约束。
 
 名字一旦写错（或照抄了主题改造前的旧变量表），发生的是**静默降级**：
@@ -92,6 +96,9 @@ html = read(HTML)
 known = set()
 known |= vars_of(presets, "LIGHT_VARS")
 known |= vars_of(presets, "DARK_VARS")
+# L1 品牌层（第 373 轮）：不随主题变，但同样是**真实存在**的 CSS 变量定义源。
+# 缺这一行 ⇒ 组件里刚接上的 `var(--brand-ink)` 会被判成"未定义"（假红）。
+known |= vars_of(presets, "BRAND_VARS")
 i = app.index(":root {")
 known |= css_vars(app[i: app.index("\n}", i)])
 known |= css_vars(html)
@@ -163,6 +170,7 @@ print()
 if fails:
     print("RESULT: FAIL（%d 处）—— 请把 var() 里的名字换成 presets.ts / App.vue 里"
           "**真实存在**的 token；若确实需要新语义，先往 presets.ts 的 LIGHT_VARS +"
-          " DARK_VARS（及其余主题）补定义。" % len(fails))
+          " DARK_VARS（及其余主题）补定义；若是**品牌层**（不随主题变）"
+          "则用 BRAND_VARS。" % len(fails))
     sys.exit(1)
 print("RESULT: PASS（被引用的 %d 个变量名全部有定义）" % len(ref_names))

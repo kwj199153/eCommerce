@@ -35,6 +35,22 @@
  *   3. 新增主题时 `isDark` 必须诚实填写 —— 它决定 `<html>` 挂不挂 `dark` 类，
  *      而补丁层是按 `html.dark` 匹配的。
  *
+ * ⚠️ 维护规则 4（**最重要的一条 · 别把这条读漏**）
+ *   「产品色」这一个词在本仓被用在**三个层**上，只有指定了层，「定稿」才有意义：
+ *
+ *     L1 品牌色   对外识别（官网 / 物料 / 名片刻意用）。★ 不随主题变 ——
+ *                 品牌识别的定义就是"不管在哪儿都是这个色"。
+ *                 真源：**本文件的 `BRAND_VARS`**（与官网 `site/assets/style.css`
+ *                 的 `--brand*` 四档**逐字一致** —— 两站同一个品牌）。
+ *                 ★ 它**不在**下面三张主题表里 ⇒ 切主题碰不到它（结构保证）。
+ *     L2 主题主色 产品 UI 的 `--primary` / antd `colorPrimary`。★★ **该变，而且必须变**：
+ *                 深底不提亮就不可读 —— 与下面 `--text-hot` 明/暗两值是**同一条理由**。
+ *                 真源：**本文件**。三档允许**不同色相**（macaron 暖粉底压不住靛蓝）。
+ *     L3 情境强调色 `--accent-pink`（左边条 / 序号球）等。同一条理由，各档可有不同值。
+ *
+ *   ⇒ **不要把"三档 --primary 不一致"当成漂移去"修"它。** 那是 L2 的定义。
+ *   ⇒ 反过来说：L1 也**不该**跟着主题变 —— 官网没有深色档。
+ *
  * 生成方式：本文件由 `App.vue` 的原 `:root` / `html.dark` 块**程序化抽取**而来
  * （见 docs/theme-presets.md 的验证章节），非人工抄写。
  */
@@ -121,6 +137,33 @@ export const DIMENSIONS = {
 } as const
 
 /**
+ * ★ L1 品牌层（**产品色**）—— 对外识别用的色，**不随主题变**。
+ *
+ * 它**刻意不进** `LIGHT_VARS` / `DARK_VARS` / `MACARON_VARS` 三张主题表：
+ * 「品牌色」的定义就是**不管在哪儿都是这个色**；一旦住进主题表，就有了
+ * 「某档换个色」的口子 —— 而那个口子已经出过一次事故（见下）。
+ *
+ * ☆ 为什么必须**结构上**分开（而不是"三档写成同一个值"）：
+ *   本轮之前，侧栏 logo 的底色取的是 `var(--primary)`（L2 主题主色），
+ *   切到马卡龙档就变成玫红 `#c33a76` —— 老板截图报的就是这个。
+ *   「三档碰巧同值」防不住下一次有人给某档单独调色；**不在表里**才防得住。
+ *   ⇒ 本表由 `installThemeStyles()` 注入 `:root`（**不带** `[data-theme]` 限定），
+ *     与三张主题表不在同一层，切主题在结构上碰不到它。
+ *
+ * 消费点：`components/BrandMark.vue` 外层容器（侧栏 logo / 登录页 logo）的底色，
+ *        以及 `public/favicon.svg` / `site/assets/favicon.svg` 的底。
+ *
+ * ⚠️ 四档值与官网 `site/assets/style.css` 的 `--brand*` **逐字一致**（两站同一品牌）。
+ *    改这里必须同步改那里 —— 判据 `scripts/check-brand-mark.cjs` 会跨仓对账。
+ */
+export const BRAND_VARS = {
+  '--brand': '#4f46e5', // 主色 · 深底强调 / 装饰线（白字 6.29:1）
+  '--brand-ink': '#2b20df', // 深靛 · **标识底色** / 白底链接（白字 8.84:1）
+  '--brand-lift': '#c2bff8', // 亮靛 · 深色底上的强调
+  '--brand-wash': '#edecfe', // 极浅靛 · 浅色底（= --info-bg，同色相）
+} as const
+
+/**
  * 亮色基线（= 原 App.vue `:root` 的颜色变量，逐字迁移）。
  *
  * ⚠️ 刻意**去掉** `: Record<string, string>` 注解、改用 `as const`：
@@ -134,8 +177,8 @@ const LIGHT_VARS = {
   '--bg-toolbar': '#ffffff',  // header / 顶部栏
   '--bg-hover-light': '#f5f5f5',  // light 模式 hover
   '--bg-hover-dark': 'rgba(255, 255, 255, 0.06)',
-  '--bg-active-light': '#e6f7ff',
-  '--bg-active-dark': 'rgba(22, 119, 255, 0.18)',
+  '--bg-active-light': '#edecfe',  // 主色最淡档（= --info-bg，同色相）
+  '--bg-active-dark': 'rgba(79, 70, 229, 0.18)',
   '--bg-sidebar': '#fafafa',
   '--bg-card-pill': '#f0f0f0',  // 小徽标/标签
   '--border-base': '#f0f0f0',
@@ -147,8 +190,13 @@ const LIGHT_VARS = {
   '--text-tertiary': '#6c6c6c',
   '--text-disabled': '#bfbfbf',
   '--text-inverse': '#ffffff',
-  '--primary': '#1890ff',
-  '--primary-hover': '#40a9ff',
+  /* ★ L2 主色 = 深海靛 #4f46e5（品牌色本体；light 档就是 L1 本身）。
+     ⚠️ 这一档有个**硬约束**：它是主按钮底色 ⇒ 白字必须 AA(4.5:1)。
+        旧值 #1890ff 白字只有 3.24:1（旧 --primary-hover #40a9ff 更差，2.52:1）
+        —— 不是取舍，是缺陷，且**肉眼看不出来**（字还是看得见的）。
+        新值 6.29:1。派生档全部**同色相只推明度**（h=243.4°）。 */
+  '--primary': '#4f46e5',
+  '--primary-hover': '#665ee8',  // 白字 4.85:1 ✅
   '--danger': '#ff4d4f',
   '--success': '#389e0d',
   '--warning': '#ad6800',
@@ -156,15 +204,15 @@ const LIGHT_VARS = {
   /* 浅色状态底色（载入、选中 chip 等用） */
   '--success-bg': '#f6ffed',
   '--success-border': '#b7eb8f',
-  '--info-bg': '#e6f7ff',
-  '--info-border': '#91d5ff',
+  '--info-bg': '#edecfe',        // 同色相 l=0.96
+  '--info-border': '#a8a3f5',    // 同色相 l=0.80
   '--purple-bg': '#f9f0ff',
   '--purple-border': '#efdbff',
   '--warning-bg': '#fffbe6',
   '--warning-border': '#ffe58f',
   '--danger-bg': '#fff1f0',  // red-1；此前被 var(--danger-bg) 引用却从未定义 → 该处底色一直是透明
   '--danger-border': '#ffccc7',  // red-2
-  '--primary-strong': '#0958d9',  // blue-7
+  '--primary-strong': '#2b20df',  // 同色相 l=0.50；白底主色文字/链接，对页底 8.24:1
   '--warning-strong': '#d48806',  // gold-7
   '--danger-strong': '#cf1322',  // red-7；⚠️ 深档文字**不要**用 --danger(#ff4d4f)，白底仅 3.3:1
   '--danger-border-strong': '#ffa39e',  // red-3，风险区边框
@@ -172,7 +220,7 @@ const LIGHT_VARS = {
   '--orange-bg-2': '#ffe7ba',  // orange-2
   '--orange-border': '#ffd591',  // orange-3
   '--orange-strong': '#d46b08',  // orange-7，暖色强调**文字**（白底可读；比 --warning-strong 更偏橙）
-  '--info-bg-2': '#d6e4ff',  // blue-2，渐变第二档
+  '--info-bg-2': '#dfddfd',  // 同色相 l=0.93，渐变第二档
   '--success-bg-2': '#d9f7be',  // green-2
   '--bg-raised': '#ffffff',  // 比 --bg-elevated 再浮起一档的卡片底（深色下 = #262626）
   '--shadow-overlay': '0 8px 28px rgba(0, 0, 0, 0.14)',
@@ -204,8 +252,8 @@ const LIGHT_VARS = {
      ★ 为什么不直接复用 --info-bg：--info-bg 浅色是 #e6f7ff，与 #f0f7ff/#e6f4ff
        有色差 —— 换成最接近的语义变量会带来浅色下的细微变化，属于「偷偷改浅色」。 */
   '--bg-subtle': '#f7f9fc',              // 中性最淡底（统计卡 / 摘要块）
-  '--primary-bg-subtle': '#f0f7ff',      // 主色最淡底（hover 态 / 产品横幅）
-  '--primary-border-subtle': '#91caff',  // 与 --primary-bg-subtle 配套的边框
+  '--primary-bg-subtle': '#f8f8fe',      // 主色最淡底（hover 态 / 产品横幅）
+  '--primary-border-subtle': '#c2bff8',  // 与 --primary-bg-subtle 配套的边框
 
   /* ===== 图表调色板（多序列区分色，8 档；深色档整体提亮）===== */
   '--chart-1': '#5b8ff9',       // 蓝
@@ -235,8 +283,8 @@ const DARK_VARS: ThemeVars = {
   '--bg-toolbar': '#141414',
   '--bg-hover-light': 'rgba(255, 255, 255, 0.06)',
   '--bg-hover-dark': 'rgba(255, 255, 255, 0.06)',
-  '--bg-active-light': 'rgba(22, 119, 255, 0.18)',
-  '--bg-active-dark': 'rgba(22, 119, 255, 0.18)',
+  '--bg-active-light': 'rgba(79, 70, 229, 0.18)',
+  '--bg-active-dark': 'rgba(79, 70, 229, 0.18)',
   '--bg-sidebar': '#141414',
   '--bg-card-pill': '#262626',
   '--border-base': '#303030',
@@ -249,8 +297,17 @@ const DARK_VARS: ThemeVars = {
   '--text-tertiary': 'rgba(255, 255, 255, 0.52)',
   '--text-disabled': 'rgba(255, 255, 255, 0.25)',
   '--text-inverse': '#1f1f1f',
-  '--primary': '#177ddc',
-  '--primary-hover': '#3d9be6',
+  /* ★ L2 主色（深色档）：同色相抬明度。
+     ⚠️ 这一档身兼**两个角色**，而两者对明度的要求**相反**：
+        · 主按钮底色 ⇒ 要深（白字才看得见）
+        · 链接 / 强调文字 ⇒ 要亮（深底上才看得见）
+        解「白字对比 == 深底对比」⇒ (L+0.05)² = 1.05 × 0.0637 ⇒ L = 0.2086
+        ⇒ **单个 token 的数学上限是 4.06:1**（旧值 #177ddc 是 4.20 / 3.93，已在该上限附近）。
+        ⇒ 说明它不是「选值没选好」，是**结构问题**：真要达标必须把两个角色拆成
+          两个 token。已登记待决，本轮不拆（拆了会动 228 个 var(--primary) 引用点）。
+        下面 #756eea 正是取 L≈0.2086 的那一档（白字 4.06 / 深底 4.06）。 */
+  '--primary': '#756eea',
+  '--primary-hover': '#9994f0',  // 对 #1f1f1f 6.16:1 ✅（与 --primary-strong 同值，沿原表结构）
   '--danger': '#ff7875',
   '--success': '#73d13d',
   '--warning': '#ffc53d',
@@ -258,15 +315,15 @@ const DARK_VARS: ThemeVars = {
   /* 深色状态底色（半透明品牌色，深底自然融合） */
   '--success-bg': 'rgba(82, 196, 26, 0.12)',
   '--success-border': 'rgba(82, 196, 26, 0.4)',
-  '--info-bg': 'rgba(24, 144, 255, 0.12)',
-  '--info-border': 'rgba(24, 144, 255, 0.4)',
+  '--info-bg': 'rgba(79, 70, 229, 0.12)',
+  '--info-border': 'rgba(79, 70, 229, 0.4)',
   '--purple-bg': 'rgba(114, 46, 209, 0.12)',
   '--purple-border': 'rgba(114, 46, 209, 0.4)',
   '--warning-bg': 'rgba(250, 173, 20, 0.12)',
   '--warning-border': 'rgba(250, 173, 20, 0.4)',
   '--danger-bg': 'rgba(255, 77, 79, 0.12)',
   '--danger-border': 'rgba(255, 77, 79, 0.4)',
-  '--primary-strong': '#3d9be6',
+  '--primary-strong': '#9994f0',
   '--warning-strong': '#ffc53d',
   '--danger-strong': '#ff7875',
   '--orange-strong': '#ffa940',
@@ -274,7 +331,7 @@ const DARK_VARS: ThemeVars = {
   '--orange-bg': 'rgba(250, 173, 20, 0.16)',
   '--orange-bg-2': 'rgba(250, 173, 20, 0.05)',
   '--orange-border': 'rgba(250, 173, 20, 0.4)',
-  '--info-bg-2': 'rgba(24, 144, 255, 0.05)',
+  '--info-bg-2': 'rgba(79, 70, 229, 0.05)',
   '--success-bg-2': 'rgba(82, 196, 26, 0.05)',
   '--bg-raised': '#262626',
   '--shadow-overlay': '0 8px 28px rgba(0, 0, 0, 0.5)',
@@ -299,8 +356,8 @@ const DARK_VARS: ThemeVars = {
   '--geekblue-border': 'rgba(29, 57, 196, 0.4)',
   /* 补的三个语义底（与 LIGHT_VARS 同名；深色取半透明同族） */
   '--bg-subtle': '#262626',
-  '--primary-bg-subtle': 'rgba(24, 144, 255, 0.10)',
-  '--primary-border-subtle': 'rgba(24, 144, 255, 0.35)',
+  '--primary-bg-subtle': 'rgba(79, 70, 229, 0.10)',
+  '--primary-border-subtle': 'rgba(79, 70, 229, 0.35)',
 
   /* ===== 图表调色板（深色档：整体提亮 1-2 档，解决深底对比度不足）===== */
   '--chart-1': '#7db3ff',
@@ -327,8 +384,8 @@ const DARK_VARS: ThemeVars = {
  *   `theme/util/alias.js` 的 `formatToken()` 会把用户 token 里的 seed key 全部 delete 掉：
  *     Object.keys(seedToken).forEach(k => delete overrideTokens[k])
  *   也就是说 seed 只当**算法输入**、不当覆盖项 —— 于是 darkAlgorithm 会把
- *   `#177ddc` 重新派生成更深的 `#176dbe`、`#ff7875` → `#dc4446`、`#73d13d` → `#49aa19`、
- *   `#ffc53d` → `#d89614`（v5 暗色盘）。
+ *   `--primary` 的 seed `#756eea` 重新派生成它自己的一套暗色档；
+ *   同理 `#ff7875` → `#dc4446`、`#73d13d` → `#49aa19`、`#ffc53d` → `#d89614`（v5 暗色盘）。
  *   而本表 dark 的 `--primary/--danger/--success/--warning` 是另一套（v4 暗色盘 =
  *   亮色盘的中间步，专为深底可读性选的）。两套并存就会出现「自定义的红 ≠ antd 的红」
  *   —— radio 选中、输入框聚焦边框、表单报错文字等 6 处微差。
@@ -344,10 +401,10 @@ const DARK_VARS: ThemeVars = {
  */
 
 const DARK_PIN: Record<string, string> = {
-  colorPrimary: '#177ddc', // = vars --primary
-  colorPrimaryHover: '#3d9be6', // = vars --primary-hover
-  colorPrimaryText: '#177ddc',
-  colorPrimaryTextHover: '#3d9be6',
+  colorPrimary: '#756eea', // = vars --primary
+  colorPrimaryHover: '#9994f0', // = vars --primary-hover
+  colorPrimaryText: '#756eea', // = vars --primary
+  colorPrimaryTextHover: '#9994f0', // = vars --primary-hover
   colorError: '#ff7875', // = vars --danger
   colorErrorText: '#ff7875',
   colorErrorHover: '#ff7875',
@@ -364,13 +421,13 @@ const DARK_PIN: Record<string, string> = {
  * 亮色语义色钉住层 —— 与 dark 同一机制、同一方向（把 antd 钉回本项目调色板）。
  *
  * 亮色下只有 success / warning 两家需要钉（实测 defaultAlgorithm 输出 vs `:root` 变量）：
- *   primary  : antd `colorPrimary`        = #1890ff = `--primary`        ✓ 本来就一致
- *   hover    : antd `colorPrimaryHover`   = #40a9ff = `--primary-hover`  ✓ 本来就一致
+ *   primary  : antd `colorPrimary`        = `--primary`                 ✓ 一致（seed 即它本身）
+ *   hover    : 派生值 ≠ `--primary-hover` ⇒ **已由 LIGHT_PIN 钉住**（旧值是巧合，见 LIGHT_PIN 注释）
  *   danger   : antd `colorError`          = #ff4d4f = `--danger`         ✓ 本来就一致
  *   success  : antd `colorSuccess`        = #52c41a ≠ `--success` #389e0d ✗
  *   warning  : antd `colorWarning`        = #faad14 ≠ `--warning` #ad6800 ✗
- * （antd seed 默认 primary 其实是 #1677ff，而本项目把 seed 设成 #1890ff，
- *   这才让 primary 家族恰好落在 v4 蓝色盘上 —— 属于巧合式的对齐，钉子没覆盖，改动时注意。）
+ * （本表 seed = 品牌色 #4f46e5，**不是** antd 任何色阶成员，所以派生值不再等于本表值
+ *   —— LIGHT_PIN 已把 hover / text 两槽钉住；其余槽位（Active/Bg/Border）取派生值。）
  *
  * 为什么是「钉 antd」而不是「改 CSS 变量」：`--success #389e0d`(green-7) / `--warning #ad6800`(gold-7)
  * 是**刻意为白底文字选的深一档**。对比度实测：green-7 3.5:1 vs antd green-6 仅 2.3:1；
@@ -401,7 +458,8 @@ const DARK_PIN: Record<string, string> = {
  * ★ `--primary-strong` 故意**不覆盖**：它与 `--primary` 是**两条链路** ——
  *   `--primary-strong` 是「蓝底 tag 的文字」（`styles/antd-tag-tokens.css` 里
  *   `.ant-tag-blue` 的 color），配的是 `--info-bg`。本表只把 blue 的**底/边**柔化成
- *   粉彩蓝，字仍是继承来的 `#0958d9`。若连字一起改粉 → 粉字配蓝底。
+ *   粉彩蓝，字仍是继承来的 LIGHT_VARS `--primary-strong`（现为深海靛 `#2b20df`）。
+ *   ⇒ 它**跟着 L1/L2 品牌色走**，不要在本表里单独写死一个蓝。若连字一起改粉 → 粉字配蓝底。
  */
 const MACARON_VARS: Partial<ThemeVars> = {
   /* —— 背景层：暖粉奶油白（马卡龙的暖调来自底色，不在纯白上做文章）—— */
@@ -485,6 +543,16 @@ const MACARON_VARS: Partial<ThemeVars> = {
 }
 
 const LIGHT_PIN: Record<string, string> = {
+  /* ★★ 为什么 light 档现在**必须**钉 primary 两槽（以前不用，靠的是巧合）
+     antd 的 `colorPrimaryHover` 不是手写的，是 `@ant-design/colors` 的
+     `generate(seed)` 派生的第 5 档。旧 seed 恰好取 `#1890ff`（= antd v4 色阶成员），
+     于是派生值 `#40a9ff` **正好等于**本表 `--primary-hover` —— 属于**巧合式对齐**。
+     换成品牌色 `#4f46e5`（不是任何 antd 色阶成员）后，实测派生值变成 `#7d72f2`：
+        · 与本表 `--primary-hover #665ee8` 分家 ⇒ 同一个语义两份值；
+        · 更要命的是 `#7d72f2` 白字只有 3.4:1 ⇒ 等于把刚修好的 AA 缺陷**又放回来**。
+     ⇒ 所以这里显式钉住（用 `makePinAlgorithm` 挂到算法链第二段）。 */
+  colorPrimaryHover: '#665ee8', // = vars --primary-hover（白字 4.85:1）
+  colorPrimaryText: '#2b20df', // = vars --primary-strong（白底主色文字）
   colorSuccess: '#389e0d', // = vars --success
   colorSuccessText: '#389e0d',
   colorWarning: '#ad6800', // = vars --warning
@@ -505,9 +573,10 @@ export const THEME_PRESETS: Record<ThemeName, ThemePreset> = {
         // ④ 尺寸层：圆角 / 字号 / 控件高度（明暗同值，改密度只需动这一处）
         ...DIMENSIONS,
         // ⚠️ 这是 **seed**：只作 defaultAlgorithm 的输入（派生 colorPrimaryBg/Border/Active 等色阶）。
-        // 本项目用 v4 蓝 #1890ff（antd 默认 seed 是 v5 蓝 #1677ff），因此整个 primary 色阶
-        // 都落在 v4 蓝色盘上，正好等于 `:root --primary` / `--primary-hover`，无需钉住。
-        colorPrimary: '#1890ff',
+        // 取值 = L2 品牌色 `#4f46e5`（= vars `--primary`，维护规则 2）。
+        // ★ 与旧版的关键差别：旧 seed #1890ff 恰好是 antd v4 色阶成员，派生值碰巧等于本表
+        //   `--primary-hover`；新 seed 不是任何色阶成员 ⇒ 派生值会分家 ⇒ 由 LIGHT_PIN 钉住 hover/text。
+        colorPrimary: '#4f46e5',
         // ★ 弱化文字档必须与 vars `--text-tertiary` **逐字一致** ——
         //   派生默认 = fade(colorText, 45%) ≈ #8c8c8c（白底 3.36:1，不到 AA）。
         //   只提亮 CSS 变量而不钉这里，antd 组件（Descriptions 次要值 /
@@ -532,8 +601,8 @@ export const THEME_PRESETS: Record<ThemeName, ThemePreset> = {
         ...DIMENSIONS,
         // ⚠️ 这是 **seed**：只作 darkAlgorithm 的输入（派生 colorPrimaryBg/Border/Active 等色阶），
         // 它本身**不会**成为渲染值（seed key 会被 formatToken 从覆盖项里删掉）。
-        // 最终渲染的 colorPrimary 由 DARK_PIN 钉住 = #177ddc。
-        colorPrimary: '#177ddc',
+        // 最终渲染的 colorPrimary 由 DARK_PIN 钉住 = #756eea。
+        colorPrimary: '#756eea',
         colorBgBase: '#141414',
         colorBgContainer: '#1f1f1f',
         colorBgLayout: '#1f1f1f', // 原 #000000；对齐 .ant-layout 补丁的 #1f1f1f
@@ -548,7 +617,7 @@ export const THEME_PRESETS: Record<ThemeName, ThemePreset> = {
         colorSplit: '#303030', // 派生默认 rgba(244,244,244,0.08)；对齐 Divider / Picker 分隔线补丁
         // 选中态 / hover 态底色：与 App.vue 的 --bg-active-dark / --bg-hover-dark 对齐
         // （派生默认 controlItemBgActive 是比浮层更暗的 #111b26，选中项几乎看不出来）
-        controlItemBgActive: 'rgba(22, 119, 255, 0.18)',
+        controlItemBgActive: 'rgba(79, 70, 229, 0.18)',
         controlItemBgHover: 'rgba(255, 255, 255, 0.06)',
       },
       components: {
@@ -656,7 +725,10 @@ export function makePinAlgorithm(pin: Record<string, string>): MappingAlgorithm 
 }
 
 /**
- * 生成并注入主题变量样式表：`html[data-theme="<name>"] { --x: y; ... }`
+ * 生成并注入主题变量样式表 —— 产出**两块**：
+ *
+ *   · `:root { --brand: ...; }`                    ← **L1 品牌层**，与主题无关（一份）
+ *   · `html[data-theme="<name>"] { --x: y; ... }`  ← L2 主题层，每个预设一份
  *
  * 变量取自 **`resolveVars()`**（已展开 `basedOn`）—— 差异表主题也能注入完整的 71 个变量。
  *
@@ -674,7 +746,13 @@ export const THEME_STYLE_ID = 'ai-theme-presets'
 
 export function installThemeStyles(doc: Document = document): void {
   if (doc.getElementById(THEME_STYLE_ID)) return
-  const css = Object.values(THEME_PRESETS)
+  // ★ L1 品牌层：注入 `:root`（**不带** `[data-theme]` 限定）
+  //   ⇒ `:root` 就是 html 元素本身，任何主题档都命中它；而品牌变量**只**出现在
+  //     这一块 ⇒ 切主题碰不到品牌色。写在主题表之外是**刻意的**，别"顺手"挪进去。
+  const brand = `:root {\n${Object.entries(BRAND_VARS)
+    .map(([k, v]) => `  ${k}: ${v};`)
+    .join('\n')}\n}`
+  const themes = Object.values(THEME_PRESETS)
     .map((p) => {
       const body = Object.entries(resolveVars(p.name))
         .map(([k, v]) => `  ${k}: ${v};`)
@@ -685,6 +763,6 @@ export function installThemeStyles(doc: Document = document): void {
   const el = doc.createElement('style')
   el.id = THEME_STYLE_ID
   el.dataset.source = 'src/theme/presets.ts'
-  el.textContent = css
+  el.textContent = `${brand}\n\n${themes}`
   doc.head.appendChild(el)
 }

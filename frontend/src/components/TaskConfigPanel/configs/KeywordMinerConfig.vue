@@ -530,7 +530,7 @@ const handleReset = () => {
 .kw-type-card.active {
   border-color: var(--primary);
   background: var(--bg-active-light);
-  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
 }
 .kw-icon {
   font-size: var(--font-size-16);

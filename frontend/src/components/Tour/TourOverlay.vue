@@ -137,7 +137,7 @@ const ringStyle = computed(() => ({
   pointer-events: none;
   box-shadow:
     0 0 0 2px var(--primary),
-    0 0 0 6px rgba(24, 144, 255, 0.18);
+    0 0 0 6px rgba(79, 70, 229, 0.18);
   transition:
     top 0.22s cubic-bezier(0.645, 0.045, 0.355, 1),
     left 0.22s cubic-bezier(0.645, 0.045, 0.355, 1),

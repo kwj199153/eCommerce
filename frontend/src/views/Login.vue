@@ -2,6 +2,10 @@
   <div class="login-container">
     <div class="login-card">
       <div class="logo">
+        <span
+          class="logo-avatar"
+          data-brand-mark
+        ><BrandMark /></span>
         <h1>跨境电商AI SaaS</h1>
         <p>一站式 AI 原生跨境电商全链路平台</p>
       </div>
@@ -343,6 +347,7 @@ import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { UserOutlined, LockOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
+import BrandMark from '@/components/BrandMark.vue'
 import { useUserStore } from '@/stores/user'
 import { DEMO_MODE, DEMO_TOKEN, DEMO_REFRESH_TOKEN, DEMO_USER } from '@/config/demoMode'
 import { useKnownAccounts, forgetAllAccounts, type KnownAccount } from '@/config/knownAccounts'
@@ -733,8 +738,32 @@ watch(
   margin-bottom: var(--space-24);
 }
 
+/* 登录页此前**没有图形标识**（只有一行文字）—— 第 373 轮补上。
+   与侧栏 logo 同一个组件、同一个 L1 底色，不用两套视觉。 */
+.logo-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 18.75%;
+  background: var(--brand-ink);
+  color: #fff;
+  margin-bottom: var(--space-14);
+}
+
 .logo h1 {
   font-size: var(--font-size-28);
+  /* ★ 这里**刻意**取 L2（`--primary`），与上面的标识**相反**。判据是：
+     **「直接坐在页面底上的东西」必须随主题变**。
+       · 标识是**自成一体的块**（靛蓝方块 + 白笔画）⇒ 对比度由块**内部**保证
+         （白笔画对 `--brand-ink` 8.84:1），与页面底无关 ⇒ 取 L1，不随主题。
+       · 标题是**直接坐在卡片底上的文字** ⇒ 必须跟着主题提亮。
+         实测深色档：L1 靛蓝 `#2b20df` 对深底只有 **2.08:1**（一眼就是"糊"），
+         而 L2 深档 `#756eea` 是 **4.06:1**（28px 属大字号，AA 只要 3:1）。
+     ★★ 这一条是**真机截图**抓出来的：静态判据当时的期望值是"不许取 --primary"，
+        30 条全绿，可深色档截图里标题明显发暗 ⇒ **期望值本身写错了**。
+     ⚠️ 别再"顺手统一成 L1" —— 那会让深色档标题掉回 2.08:1。 */
   color: var(--primary);
   margin-bottom: var(--space-8);
 }

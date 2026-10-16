@@ -28,7 +28,10 @@
           :title="!sidebarCollapsed ? '回到店秘书' : ''"
           @click="goHome"
         >
-          <span class="logo-avatar"><RobotOutlined /></span>
+          <span
+            class="logo-avatar"
+            data-brand-mark
+          ><BrandMark /></span>
           <span
             v-if="!sidebarCollapsed"
             class="logo-name"
@@ -154,11 +157,11 @@
             v-else-if="isCompetitorIntelAgent && currentView === 'chat'"
           />
 
-          <!-- 未选 Agent 提示（仅对话视图且确实未选 Agent） -->
+          <!-- 未选数字员工提示（仅对话视图且确实未选该员工） -->
           <span
             v-else-if="!currentAgent && currentView === 'chat'"
             class="no-agent-hint"
-          >选择左侧 Agent 开始</span>
+          >选择左侧数字员工开始</span>
         </div>
         <div class="header-right">
           <!-- 对话工具栏（查找 / 分享 / 历史提问）—— 对齐 WorkBuddy 的对话窗口右上角。
@@ -215,13 +218,8 @@
             </button>
           </div>
 
-          <!-- 通知铃铛 -->
-          <a-badge
-            :count="0"
-            dot
-          >
-            <BellOutlined style="font-size: 18px; cursor: pointer" />
-          </a-badge>
+          <!-- 通知铃铛（每日经营简报入口，见 components/Header/NotificationBell.vue） -->
+          <NotificationBell />
 
           <!-- 语音播报开关（右上角喇叭）
                是否**显示**由 store 白名单决定（首期只有店秘书）—— 这里只判「功能开关 + 处于对话视图」，
@@ -296,8 +294,8 @@
     <!-- 审计日志 Drawer（全局；只有平台超管的菜单项会派发 `open-audit-drawer`） -->
     <AuditLogPanel v-model:open="auditDrawerOpen" />
 
-    <!-- 划词翻译浮层（全局一次，选中英文商品文字即出译文） -->
-    <SelectionTranslateLayer />
+    <!-- 翻译类浮层（划词）：全局各一份，收口在一个壳里 -->
+    <GlobalTranslateLayers />
   </a-layout>
 </template>
 
@@ -309,20 +307,22 @@ import { useRouter } from 'vue-router'
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  BellOutlined,
   ShopOutlined,
   MessageOutlined,
   AreaChartOutlined,
-  RobotOutlined,
+  // RobotOutlined 已删（第 373 轮）：侧栏 logo 换成自绘的 BrandMark 品牌标识
   // 第 283 轮：右栏折叠后的展开入口（面板收进 0 宽时唯一能把它叫回来的按钮）
   RightOutlined,
 } from '@ant-design/icons-vue'
 
+import BrandMark from '@/components/BrandMark.vue'
 import SidebarAgentList from '@/components/Sidebar/AgentList.vue'
 import SidebarKnowledgeBase from '@/components/Sidebar/KnowledgeBase.vue'
 import SidebarAccountMenu from '@/components/Sidebar/AccountMenu.vue'
 import ShopPopoverContent from '@/components/Sidebar/ShopPopoverContent.vue'
 import ChatPanel from '@/components/ChatPanel/index.vue'
+// 头部右上角的通知铃铛 + 每日经营简报抽屉（第 371 轮）
+import NotificationBell from '@/components/Header/NotificationBell.vue'
 // 对话窗口右上角的「查找 / 分享 / 历史提问」（第 283 轮）
 import ConversationToolbar from '@/components/ChatPanel/ConversationToolbar.vue'
 import TaskConfigPanel from '@/components/TaskConfigPanel/index.vue'
@@ -341,7 +341,7 @@ import Settings from '@/views/Settings.vue'
 // 审计日志抽屉（第 328 轮）：住在 `components/` 而不是 `views/` ——
 // 它**刻意没有路由**（读口要求平台超管，做路由等于给所有人一条 403 死路由）。
 import AuditLogPanel from '@/components/AuditLog/AuditLogPanel.vue'
-import SelectionTranslateLayer from '@/components/Translate/SelectionTranslateLayer.vue'
+import GlobalTranslateLayers from '@/components/Translate/GlobalTranslateLayers.vue'
 import VoiceSpeakerButton from '@/components/common/VoiceSpeakerButton.vue'
 import { VOICE_CLONE_ENABLED } from '@/config/featureFlags'
 import type { ToolDefinition } from '@/components/ChatPanel/tools/toolDefinitions'
@@ -1136,10 +1136,13 @@ const handleToolAnalysis = (params: any) => {
   width: 36px;
   height: 36px;
   flex-shrink: 0;
-  border-radius: var(--radius-10);
-  background: var(--primary);
+  /* 18.75% = favicon 的 rx 9/48，**同一个比例** —— 侧栏位与浏览器 tab 上是同一个形 */
+  border-radius: 18.75%;
+  /* ★ L1 品牌层（`BRAND_VARS`，注入 :root），**不随主题变**。
+     ⚠️ 本轮之前这里是 `var(--primary)`（L2 主题主色）⇒ 切到马卡龙档 logo 变玫红
+        `#c33a76`。品牌标识跟着主题变色是**缺陷不是特性** —— 别改回去。 */
+  background: var(--brand-ink);
   color: #fff;
-  font-size: var(--font-size-20);
 }
 
 .logo-name {
@@ -1187,7 +1190,7 @@ const handleToolAnalysis = (params: any) => {
   border-color: var(--primary);
   color: var(--primary);
   background: var(--bg-active-light);
-  box-shadow: 0 2px 6px rgba(24, 144, 255, 0.15);
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.15);
 }
 
 .shop-trigger-btn.active {

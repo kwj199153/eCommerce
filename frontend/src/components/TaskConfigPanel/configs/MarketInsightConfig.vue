@@ -285,7 +285,7 @@ import { computed, inject, onMounted, ref, type Ref } from 'vue'
 import { getMarketInsightTreemap } from '@/api/productResearch'
 import EChartsTreemap from '@/components/charts/EChartsTreemap.vue'
 import { getToolDefinition, type ToolDefinition } from '@/components/ChatPanel/tools/toolDefinitions'
-import { topLabel, midLabel } from '@/config/categoryTaxonomy'
+import { topLabel, midLabel, displayCategory } from '@/config/categoryTaxonomy'
 
 /**
  * 选品市场洞察大盘云图（第 305 轮 · 蓝海挖掘大盘云图）
@@ -409,8 +409,10 @@ interface TreemapCell {
   score: number
   color: 'blue' | 'red'
   extra: string
-  /** 一级类目显示名（Home & Kitchen 等），EChartsTreemap 按它聚合成组 */
+  /** 一级类目显示名（中文档，Home & Kitchen → 家居与厨房），EChartsTreemap 按它聚合成组 */
   group: string
+  /** tooltip 标题（宽档：中文（English）· 站点）；窄容器 label 用 name（纯中文） */
+  tipName: string
 }
 
 // 站点 slug → 叶子 label 缩写：同类目跨站点同名（Coffee Machines 在 US/UK 各一块），
@@ -430,15 +432,20 @@ const treemapCells = computed<TreemapCell[]>(() =>
     const parts = n.category_path.split('/')
     const top = parts[0] ?? ''
     const mid = parts[1] ?? ''
-    const midName = midLabel(top, mid) ?? n.name
+    // 类目名统一收口到 displayCategory（真源 config/categoryTaxonomy）：midLabel
+    // 未命中时的兜底叶子名也过同一张术语表 ⇒ 漏收录会原样漏英文（一眼可见），
+    // 不会出现「色块中文、tooltip 英文」的半中半英（r365b 老板点名的口径分叉）。
+    const catEn = midLabel(top, mid) ?? n.name
+    const tag = SITE_TAGS[n.site] ?? n.site
     return {
       key: `${n.site}|${n.category_path}`,
-      name: `${midName} · ${SITE_TAGS[n.site] ?? n.site}`,
+      name: `${displayCategory(catEn, 'narrow')} · ${tag}`,
+      tipName: `${displayCategory(catEn, 'wide')} · ${tag}`,
       value: n.search_volume || 1,
       score: n.blue_ocean_score,
       color: scoreColor(n.blue_ocean_score),
-      extra: `细分品类 ${n.name} · 月搜索 ${fmtK(n.search_volume)} · 价格 $${n.price_min}~$${n.price_max} · 卖家 ${fmtK(n.seller_count)}`,
-      group: topLabel(top) ?? top,
+      extra: `细分品类 ${displayCategory(n.name, 'wide')} · 月搜索 ${fmtK(n.search_volume)} · 价格 $${n.price_min}~$${n.price_max} · 卖家 ${fmtK(n.seller_count)}`,
+      group: displayCategory(topLabel(top) ?? top, 'narrow'),
     }
   })
 )
@@ -452,7 +459,7 @@ function onCellClick(key: string) {
   prefillBlueOcean({
     categoryPath: node.category_path,
     // 预填提示名与 cascader 选中项一致（二级子类目），映射不到兜底叶子名
-    categoryName: midLabel(parts[0] ?? '', parts[1] ?? '') ?? node.name,
+    categoryName: displayCategory(midLabel(parts[0] ?? '', parts[1] ?? '') ?? node.name, 'wide'),
     site: node.site,
   })
   const tool = getToolDefinition('product-research', 'blue-ocean')

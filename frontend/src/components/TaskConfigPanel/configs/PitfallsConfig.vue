@@ -135,7 +135,7 @@
             <a-form-item label="目标类目（可选）">
               <a-input
                 v-model:value="form.category_hint"
-                placeholder="例：Home & Kitchen > Humidifiers"
+                placeholder="例：家居与厨房 > 加湿器（平台的英文类目可直接粘贴）"
                 @change="saveForm"
               />
             </a-form-item>

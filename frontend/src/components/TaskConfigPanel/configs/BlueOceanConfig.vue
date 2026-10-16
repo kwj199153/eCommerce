@@ -208,7 +208,7 @@ import { message } from 'ant-design-vue'
 import { useShopStore } from '@/stores/shop'
 import { useProductResearchResultsStore } from '@/stores/productResearchResults'
 import BlueOceanResult from '@/components/ChatPanel/results/BlueOceanResult.vue'
-import { CATEGORY_TAXONOMY, isValidCategoryPath } from '@/config/categoryTaxonomy'
+import { CATEGORY_TAXONOMY, displayCategory, isValidCategoryPath } from '@/config/categoryTaxonomy'
 
 const emit = defineEmits<{
   (e: 'startAnalysis', params: any): void
@@ -282,7 +282,11 @@ try {
 // 类目选项：唯一真源 config/categoryTaxonomy（大盘组名/色块名/预填校验同源，r310）。
 // 不再内联——内联过一份、大盘显示名另走一份，才有「大盘显示 Coffee Machines、
 // cascader 只有 Kitchen & Dining」的子类目错位。
-const categoryOptions = CATEGORY_TAXONOMY
+const categoryOptions = CATEGORY_TAXONOMY.map((t) => ({
+  value: t.value,
+  label: displayCategory(t.label, 'wide'),
+  children: (t.children ?? []).map((c) => ({ value: c.value, label: displayCategory(c.label, 'wide') })),
+}))
 
 // 站点 slug → 表单 marketplace 值（seed 用 amazon_us / amazon_uk / shopee_sg）
 const SITE_MAP: Record<string, string> = {

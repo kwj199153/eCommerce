@@ -460,7 +460,7 @@ const onProductSelect = (product: any) => {
   align-items: center;
   gap: var(--space-6);
   padding: var(--space-6) var(--space-10);
-  background: rgba(24, 144, 255, 0.06);
+  background: rgba(79, 70, 229, 0.06);
   font-size: var(--font-size-11);
   color: var(--text-secondary);
 }

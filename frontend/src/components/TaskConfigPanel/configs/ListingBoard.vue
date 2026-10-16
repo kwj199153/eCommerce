@@ -626,8 +626,8 @@ function clearAll() {
   animation: lbModFlash 1.4s ease;
 }
 @keyframes lbModFlash {
-  0% { box-shadow: 0 0 0 2px var(--primary); background: rgba(24, 144, 255, 0.08); }
-  50% { box-shadow: 0 0 0 2px var(--primary); background: rgba(24, 144, 255, 0.04); }
+  0% { box-shadow: 0 0 0 2px var(--primary); background: rgba(79, 70, 229, 0.08); }
+  50% { box-shadow: 0 0 0 2px var(--primary); background: rgba(79, 70, 229, 0.04); }
   100% { box-shadow: none; background: var(--bg-elevated); }
 }
 

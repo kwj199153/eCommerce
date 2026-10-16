@@ -481,7 +481,7 @@ function onImgError(e: Event) {
 
 .group-chip.active {
   color: var(--primary);
-  background: var(--info-bg, #e6f7ff);
+  background: var(--info-bg, #edecfe);
   border-color: var(--info-border, #91d5ff);
 }
 

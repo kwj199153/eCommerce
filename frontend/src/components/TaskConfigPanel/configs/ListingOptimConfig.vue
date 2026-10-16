@@ -103,7 +103,7 @@
       <a-form-item label="产品分类">
         <a-input
           v-model:value="form.category"
-          placeholder="例：Home & Kitchen > Humidifiers"
+          placeholder="例：家居与厨房 > 加湿器（平台的英文类目可直接粘贴）"
         />
       </a-form-item>
 
@@ -473,8 +473,8 @@ const onCompetitorSelect = (product: any) => {
   align-self: flex-start;
   font-size: var(--font-size-12);
   font-weight: 600;
-  color: var(--primary, #1890ff);
-  background: rgba(24, 144, 255, 0.1);
+  color: var(--primary, #4f46e5);
+  background: rgba(79, 70, 229, 0.1);
   border-radius: var(--radius-10);
   padding: var(--space-1) var(--space-8);
 }
