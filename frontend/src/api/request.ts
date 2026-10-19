@@ -21,6 +21,10 @@ import {
 } from '@/api/authRefreshPolicy'
 // ★ L3-3（第 351 轮）：追踪 ID 的唯一实现（两个 HTTP 出口共用）。
 import { newTraceId, rememberTraceId, withTraceId } from '@/api/traceId'
+// ★ 第 381 轮：baseURL 改从运行时取 —— 浏览器里 `API_ORIGIN === ''`，
+//   拼出来与原来的字面量 '/api/v1' **逐字符相同**；壳里则是注入的绝对 origin。
+//   ⇒ 写死相对路径的话，壳内每条请求都会命中 SPA 回落，拿到 200 + index.html。
+import { apiBaseUrl } from '@/config/runtimeApi'
 
 /**
  * 提示归属（第 267 轮定稿）：**成功提示归调用点，错误提示归拦截器**。
@@ -81,7 +85,8 @@ declare module 'axios' {
 
 // 创建 Axios 实例
 const request: AxiosInstance = axios.create({
-  baseURL: '/api/v1',  // 通过 Vite proxy 转发到后端
+  // Web：'/api/v1'（Vite proxy / nginx 反代）；壳：注入 origin + '/api/v1'
+  baseURL: apiBaseUrl(),
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -120,6 +125,27 @@ function refreshOnce(): Promise<boolean> {
     })
   refreshPromise = p
   return p
+}
+
+/**
+ * 把后端 `detail` 归一成一句可读文案。
+ *
+ * ★ 为什么需要它（第 385 轮）：后端有**结构化 detail**（对象）的端点 ——
+ *   档位闸回 `{code, message, limit, current, upgrade_url}`。直接把它喂给
+ *   `message.error(detail)` 在 antd 里会渲染成 `[object Object]`，
+ *   用户看到的东西比"没提示"更像崩溃（本项目铁律：失败路径必须回写
+ *   用户能看懂的状态）。
+ *
+ * ★ 为什么优先取 `message` 而不是 JSON.stringify：后者会把
+ *   `{"code":"PLAN_LIMIT_EXCEEDED",...}` 整块甩到 toast 里，对用户是无信息噪声。
+ */
+function detailText(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (detail && typeof detail === 'object') {
+    const msg = (detail as { message?: unknown }).message
+    if (typeof msg === 'string' && msg.trim()) return msg
+  }
+  return fallback
 }
 
 // ====== 请求拦截器 ======
@@ -310,6 +336,19 @@ request.interceptors.response.use(
         if (!silentError) message.error(withTraceId(data?.detail || '请求的资源不存在'))
         break
 
+      case 402: {
+        // ★★ 套餐档位不足（第 385 轮 · 后端 `modules/billing/plan_limits.py`）：
+        //   建店 / 加成员超限时后端回 **402 + 结构化 detail**（对象，含
+        //   `message` / `limit` / `current` / `upgrade_url`）。
+        //   ★ 不单独处理会掉进 default 分支，把对象直接喂给 message.error
+        //     ⇒ 用户看到 `[object Object]` —— 比"没提示"更糟：它看起来像崩溃。
+        //   ★ 用 warning 而不是 error：这不是系统故障，是"该升级了"。
+        if (!silentError) {
+          message.warning(withTraceId(detailText(data?.detail, '当前套餐额度不足，升级后可继续')))
+        }
+        break
+      }
+
       case 429:
         // 限流
         if (!silentError) message.warning(withTraceId(data?.detail || '操作过于频繁，请稍后再试'))
@@ -320,7 +359,9 @@ request.interceptors.response.use(
         break
 
       default:
-        if (!silentError) message.error(withTraceId(data?.detail || `请求失败 (${status})`))
+        // ★ 第 385 轮：走 `detailText` —— 后端有端点回**结构化 detail**（对象），
+        //   直传会让 toast 显示 `[object Object]`。
+        if (!silentError) message.error(withTraceId(detailText(data?.detail, `请求失败 (${status})`)))
     }
 
     return Promise.reject(error)

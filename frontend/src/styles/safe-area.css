@@ -1,0 +1,73 @@
+/**
+ * Android 壳的安全区变量（系统状态栏 / 导航栏让位）
+ * ================================================
+ *
+ * ★★★ 为什么需要它（只有上真机才暴露的一条）
+ * ---------------------------------------------------------------------------
+ * Tauri 2 的 Android 模板 `MainActivity` 自带 `enableEdgeToEdge()`，页面会**铺到
+ * 状态栏底下**，inset 交还应用自己消费。桌面端与 Web 端都不经过 MainActivity
+ * ⇒ 这条**在任何浏览器与 CDP 里都复现不出来**，构建期也没有任何警告。
+ *
+ * ★★★ 为什么不用 `env(safe-area-inset-*)`
+ * ---------------------------------------------------------------------------
+ * 那是**浏览器**特性：Safari 靠 `viewport-fit=cover` 填值、Chrome 对刘海填值；
+ * 而 **WebView 不是浏览器** —— 它把整屏交给 activity，把状态栏/导航栏作为
+ * window insets 交给 activity，**从不转成 CSS 变量** ⇒ `env()` 在 Android WebView
+ * 里恒为 `0px`。加 `viewport-fit=cover` + `env()` 是"改了也没效果"的那类修法，
+ * 而且逐像素看不出区别（eEducation 第 489 轮在华为 MatePad 上实测过）。
+ *
+ * ⇒ 形态是：**壳把 inset 推成 CSS 变量**（`desktop/src-tauri/gen/android/.../MainActivity.kt`
+ *   里 `evaluateJavascript("__ECOM_APPLY_INSETS__(t,d,b,d,l,d,r,d)")`），
+ *   页面只读 `var(--sat)` / `var(--sab)` / `var(--sal)` / `var(--sar)`。
+ *
+ * ★ 换算必须除以 density：inset 是**物理像素**，CSS 要 **CSS px**（本机平板 2.5）。
+ *   忘了除就是 2.5 倍留白，而且"看起来只是有点大"，极难归因。这条由壳负责。
+ *
+ * ★★★ 对 Web / 桌面壳必须**逐字不变**
+ * ---------------------------------------------------------------------------
+ * 四个变量默认 `0px` ⇒ 下面每条规则都不产生任何位移。
+ * 判据：`desktop/scripts/check-desktop.py` 的 D 组会比对"Web 首屏截图无位移"。
+ */
+
+:root {
+  --sat: 0px; /* safe-area top    · 状态栏 */
+  --sab: 0px; /* safe-area bottom · 导航栏 / 手势条 */
+  --sal: 0px; /* safe-area left   · 横屏刘海 */
+  --sar: 0px; /* safe-area right  */
+}
+
+/*
+ * 登录页：渐变**定义在本元素上** ⇒ padding 区自动铺满，渐变不会断。
+ * （eEducation 试过给 `android.R.id.content` 加 padding，结果顶上多一顶
+ *   "白帽子"—— padding 区显示的是原生背景，不是网页背景。）
+ */
+.login-container {
+  padding-top: var(--sat);
+  padding-bottom: var(--sab);
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+}
+
+/* 工作台：antd reset 里是 `box-sizing: border-box` ⇒ 100vh 已含 padding，不用 calc */
+.workspace-container {
+  padding-top: var(--sat);
+  padding-bottom: var(--sab);
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+}
+
+/*
+ * ★★★ fixed 元素的**包含块是 viewport**，父级的 padding 管不到它们
+ *   ⇒ 窄屏下左右浮层必须自己让位。
+ * ★ 用 `html` 前缀提权：`Workspace.vue` 的 scoped 规则编译后带属性选择器
+ *   （`.is-narrow .sidebar[data-v-x]`），与这里的 (0,3,0) 打平；靠 `html` 多加一个
+ *   元素选择器才能稳定压过它，而不必用 `!important`。
+ * ★ `height: auto` 不能省：`top` + `bottom` 定高时再留 `height: 100%` 会让
+ *   `height` 赢，把 `bottom` 顶掉（看起来像"底部被挡"）。
+ */
+html .workspace-container.is-narrow .sidebar,
+html .workspace-container.is-narrow .right-panel {
+  top: var(--sat);
+  bottom: var(--sab);
+  height: auto;
+}

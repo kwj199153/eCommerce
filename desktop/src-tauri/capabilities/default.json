@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "壳的最小权限面：只开核心能力。★ dialog 插件**不在这里** —— 它只从 Rust 侧（lib.rs 的 save_export_file）调用；capability 约束的是 webview 发起的 IPC（plugin:dialog|save 那类），而 application command 无需声明。多写一行 dialog:allow-save 只会让权限面变大。",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

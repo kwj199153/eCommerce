@@ -1,0 +1,52 @@
+[package]
+name = "ecommerce-desktop"
+version = "0.1.0"
+description = "店管管 桌面 / Android 壳（Tauri 2）"
+# ★ 壳的版本线独立于产品（frontend 的 0.1.0 与这里无关）。
+#   产品一天可能发几次，壳一年发几次；Android 的 versionCode 还要另算单调整数。
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+# ★★★ 这个名字不能随便改：`src/main.rs` 里 `ecommerce_desktop_lib::run()` 用它，
+#   Android/iOS 的入口也只认 lib（移动端跑的是库，不是可执行文件）。
+#   crate-type 三个都必须有：staticlib(ios) / cdylib(android) / rlib(desktop)。
+name = "ecommerce_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+# ★★★ 这一行是**必须的**，而且必须在 [build-dependencies] 里。别删、别挪到下面。
+#   链条：tauri-build（build-dependency） → schemars 0.8.22 → indexmap 1.9
+#   病灶：indexmap 1.9.3 的 features 里没有 default，`std = []` 是 opt-in；
+#         它的 build.rs 在 CARGO_FEATURE_STD 缺席时用 autocfg 探测 sysroot 里的 std，
+#         而 autocfg 在 rustc 1.99.1 上判定为「没有」⇒ 选中无默认泛型参数的
+#         IndexMap<K, V, S>，而 schemars 写的是 `IndexMap<K, V>` ⇒ E0107。
+#   ★ 为什么必须写在 [build-dependencies]：Cargo 的 resolver v2 把 build 图与正常图的
+#     feature 分开解析，只写 [dependencies] 时 build 图那份一点没变（实测连改两轮仍报 E0107）。
+#   （逐环证据见 eEducation/desktop/README.md §7.7，同一台机器同一个 rustc。）
+indexmap = { version = "1.9", features = ["std"] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# ★ 正常图这一份同样保留：tauri 自己的依赖链里也有 schemars → indexmap 1.9，
+#   与上面那条是**两个不同的 feature 图**，不能互相代替。
+indexmap = { version = "1.9", features = ["std"] }
+
+# ★ 只装 dialog 一个插件。**不装 fs**：路径是用户在原生保存框里自己选的、
+#   写盘在 Rust 侧完成，等价于任何一个"另存为"对话框；多挂 fs 只会多开一组权限
+#   （fs:default + 路径 scope），能力没变、权限面变大。
+# ★ 加插件必须**三处同时改**：这里 · lib.rs 的 `.plugin(...)` ·
+#   capabilities/default.json 的 permissions。只改两处 = 编译过、运行时报权限拒绝。
+tauri-plugin-dialog = "2"
+base64 = "0.22"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

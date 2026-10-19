@@ -190,6 +190,8 @@ import {
 
 import { useAgentStore } from '@/stores/agent'
 import { useChatStore, type Message } from '@/stores/chat'
+// ★ 第 381 轮：对话记录导出收编到存盘唯一出口（壳里 a[download] 静默无事发生）
+import { saveText } from '@/utils/saveFile'
 
 const agentStore = useAgentStore()
 const chatStore = useChatStore()
@@ -364,16 +366,10 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-function downloadMarkdown() {
-  const blob = new Blob([buildMarkdown()], { type: 'text/markdown;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${agentName.value}-对话记录-${dayjs().format('YYYYMMDD-HHmm')}.md`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+async function downloadMarkdown() {
+  const filename = `${agentName.value}-对话记录-${dayjs().format('YYYYMMDD-HHmm')}.md`
+  // 浏览器里 = 原来的 a[download]；壳里 = 原生「另存为」
+  return saveText(buildMarkdown(), filename, 'text/markdown;charset=utf-8')
 }
 
 async function onShare({ key }: { key: string | number }) {
@@ -385,8 +381,11 @@ async function onShare({ key }: { key: string | number }) {
     return
   }
   if (key === 'download') {
-    downloadMarkdown()
-    message.success('已开始下载对话记录')
+    // ★ 状态必须回传：壳里用户点「取消」时不能还弹一句"已开始下载"
+    const r = await downloadMarkdown()
+    if (r.status === 'cancelled') return
+    if (r.status === 'saved') message.success(`已保存${r.path ? `：${r.path}` : ''}`)
+    else message.success('已开始下载对话记录')
   }
 }
 </script>

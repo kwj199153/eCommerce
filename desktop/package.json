@@ -1,0 +1,19 @@
+{
+  "name": "ecommerce-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "店管管 桌面 / Android 壳（Tauri 2）。只依赖前端构建产物，不依赖前端源码。",
+  "scripts": {
+    "web:dev": "npm --prefix ../frontend run dev",
+    "web:build": "npm --prefix ../frontend run build",
+    "shell:dev": "tauri dev",
+    "shell:build": "tauri build",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:apk": "tauri android build --apk"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

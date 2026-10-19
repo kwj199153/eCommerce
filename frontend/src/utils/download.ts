@@ -6,6 +6,10 @@
  * 弹出系统级「另存为」对话框让用户选择目标文件夹；浏览器不支持时自动降级为普通下载。
  */
 
+// ★ 第 381 轮：壳（桌面 / 平板）里的原生存盘出口。Web 端 `hasNativeSave()` 恒 false
+//   ⇒ 下面每一条分支的行为与改造前逐字相同。
+import { hasNativeSave, saveBlob } from '@/utils/saveFile'
+
 /** 今天的日期戳，用于文件名，如 20260906 */
 export function todayStamp(): string {
   const d = new Date()
@@ -125,6 +129,13 @@ function blobFor(payload: ExportPayload): Promise<Blob> | Blob {
 
 /** 降级：普通浏览器下载到默认下载目录 */
 function fallbackDownload(blob: Blob, filename: string): void {
+  // ★ 第 381 轮：壳里没有下载管理器 ⇒ `a[download]` 静默无事发生。
+  //   有原生存盘能力时改走它（异步，结果由调用方各自处理；这两个旧 API 是
+  //   fire-and-forget 形态，故不在这里回传状态）。
+  if (hasNativeSave()) {
+    void saveBlob(blob, filename)
+    return
+  }
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -149,6 +160,19 @@ export async function saveExportFile(payload: ExportPayload): Promise<ExportResu
   const ext = EXPORT_FORMAT_META[payload.format].ext
   const filename = `${payload.baseName}.${ext}`
   const blob = await blobFor(payload)
+
+  // 0) 壳（桌面 / 平板）里优先走原生存盘。
+  //    ★ 为什么不干脆让下面的 showSaveFilePicker 兜住：这个 API 在 WebView2 里
+  //      **存在但不可用**（有函数、点了没反应）—— 属于"看起来支持、实际不生效"，
+  //      排在前面会把壳里唯一的正路挡掉。
+  if (hasNativeSave()) {
+    const r = await saveBlob(blob, filename)
+    if (r.status === 'cancelled') return { status: 'cancelled', filename }
+    if (r.status === 'saved') return { status: 'saved', filename: r.filename }
+    // 壳里失败 ⇒ saveBlob 已回落浏览器下载；宿主没有下载管理器时这一步同样静默，
+    // 所以状态如实回 'fallback'，由调用方决定怎么提示（不假装成功）。
+    return { status: 'fallback', filename }
+  }
 
   // 1) 支持 File System Access：弹系统「另存为」对话框选择位置
   const w = window as unknown as {

@@ -8,7 +8,11 @@
  *  - 失败必须显式展示「原因」：后端返回的 `detail` 直接透出，不做兜底文案。
  */
 
-import request from './request'
+import request, { post } from './request'
+// ★ 第 381 轮：`audio_url` 后端给的是站内路径 `/static/...`。Web 同源可直接播；
+//   壳里 origin 是 tauri.localhost ⇒ 相对路径会命中 SPA 回落拿到 HTML，
+//   audio 解码静默失败。在这一层补 origin，Web 端 `API_ORIGIN === ''` 时逐字不变。
+import { assetUrl } from '@/config/runtimeApi'
 
 /** 音色状态：none（未创建）/ pending（审核中）/ ready（可用）/ failed（失败） */
 export type VoiceStatus = 'none' | 'pending' | 'ready' | 'failed'
@@ -132,7 +136,15 @@ export async function previewVoice(text: string, targetModel = ''): Promise<{
   model: string
   expires_hint: string
 }> {
-  return request.post('/voice-clone/preview', { text, target_model: targetModel })
+  // ★ 用解包后的具名 `post`（返回已剥掉 AxiosResponse 外壳的业务对象），
+  //   否则 `r` 的类型是 AxiosResponse ⇒ `r.audio_url` 不存在、展开后也缺字段。
+  const r = await post<{
+    audio_url: string
+    text: string
+    model: string
+    expires_hint: string
+  }>('/voice-clone/preview', { text, target_model: targetModel })
+  return { ...r, audio_url: assetUrl(r?.audio_url) }
 }
 
 /** 对话播报结果 */
@@ -159,11 +171,13 @@ export interface SpeakResult {
  * 失败时静默错误提示（`silentError`），由调用方给出精确原因并关闭开关。
  */
 export async function speakVoice(text: string, targetModel = ''): Promise<SpeakResult> {
-  return request.post(
+  const r = await post<SpeakResult>(
     '/voice-clone/speak',
     { text, target_model: targetModel },
     { silentError: true, timeout: 60000 } as any
   )
+  // ★ 同上：`/static/**` 在壳里必须补 origin
+  return { ...r, audio_url: assetUrl(r?.audio_url) }
 }
 
 /** 分句计划里的一段（`POST /voice-clone/speak-plan` 的 `segments` 元素） */

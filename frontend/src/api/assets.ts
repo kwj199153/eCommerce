@@ -6,6 +6,7 @@
  */
 
 import { get, post, put, del } from './request'
+import { assetUrl } from '@/config/runtimeApi'
 
 // ====== 类型（与 stores/assetLibrary.ts 的 AssetItem 对齐） ======
 
@@ -41,22 +42,47 @@ export interface AssetGroup {
   updatedAt: string
 }
 
+// ====== 站内路径归一化 ======
+
+/**
+ * 把后端返回的站内路径补成壳里可用的绝对地址（浏览器里 `API_ORIGIN === ''` ⇒ 逐字不变）。
+ *
+ * ★ 为什么必须在这一层做：素材有**两种来源**
+ *   ① 演示素材 `/mock/products/*.png` —— 本身就是 `dist/mock/` 里的文件，随包发布，
+ *      壳里相对路径能命中 ⇒ 一直正常，掩盖了问题；
+ *   ② AIGC 生成素材 `/static/aigc/*.png` —— 存在服务端 `backend/static/`，**不在包里**，
+ *      壳的 origin 是 `tauri.localhost` ⇒ `/static/...` 打到自己身上 ⇒ 图裂
+ *      （Web 端同源所以看不出来）。
+ *
+ * 判据：桌面/平板壳里「营销素材库」的 AIGC 图与演示图**都必须出图**；
+ *       Web 端 `API_ORIGIN === ''` 时字节级行为不变。
+ */
+function withOrigin(a: AssetItem): AssetItem {
+  return {
+    ...a,
+    url: assetUrl(a.url),
+    thumbnail: assetUrl(a.thumbnail),
+    videoUrl: assetUrl(a.videoUrl),
+  }
+}
+
 // ====== 素材 CRUD ======
 
 export async function fetchAssets(): Promise<{ items: AssetItem[]; total: number }> {
-  return get('/assets')
+  const r = await get<{ items: AssetItem[]; total: number }>('/assets')
+  return { ...r, items: (r.items || []).map(withOrigin) }
 }
 
 export async function fetchAsset(id: string): Promise<AssetItem> {
-  return get(`/assets/${id}`)
+  return withOrigin(await get<AssetItem>(`/assets/${id}`))
 }
 
 export async function createAsset(data: Partial<AssetItem>): Promise<AssetItem> {
-  return post('/assets', data)
+  return withOrigin(await post<AssetItem>('/assets', data))
 }
 
 export async function updateAsset(id: string, data: Partial<AssetItem>): Promise<AssetItem> {
-  return put(`/assets/${id}`, data)
+  return withOrigin(await put<AssetItem>(`/assets/${id}`, data))
 }
 
 export async function deleteAsset(id: string): Promise<void> {
