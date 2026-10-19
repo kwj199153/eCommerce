@@ -53,6 +53,9 @@ from typing import Optional
 from core.library_query import LibraryQueryError
 from core.tenant.middleware import get_current_shop_id
 from ai_infra.skills import bind_requested_skill
+# ★ 按店凭据缺失是**业务状态**（客户还没授权），不是服务端故障。
+#   在 `_guard` 里单独放行，交给全局处理器映射成 409（见那里的注释）。
+from modules.amazon_sp import StoreNotConnected, UnsupportedMarketplace
 
 from . import service
 from .schemas import (
@@ -79,6 +82,19 @@ async def _guard(fn, label: str, *args, **kwargs):
     """
     try:
         return await fn(*args, **kwargs)
+    except (StoreNotConnected, UnsupportedMarketplace):
+        # ★ 原样上抛，交给 `main.py` 的全局处理器映射成 409 / 422。
+        #
+        # ★★ 为什么在这里**不自己**翻译一次（写成 `raise HTTPException(409, ...)`）：
+        #   同一个可见性判定写两处，必然漂移 —— 而漂移的表现是「复盘说未授权、
+        #   广告分析说服务端故障」。全局处理器是唯一映射点，本函数只负责
+        #   「不要把基础设施异常吞成 500」。
+        #
+        # ★ 改造前这两类异常根本不存在（旧工厂静默回退 mock），所以 `except
+        #   Exception → 500` 一直没被踩到；接上按店凭据后，第一个真实客户
+        #   在没授权的店上点「复盘」就会看到「利润审计失败: …」（500），
+        #   而不是「该店铺未授权」（409）—— 归因直接指向服务端。
+        raise
     except service.MissingShopContext as e:
         raise HTTPException(status_code=400, detail=str(e))
     except service.ReviewLibraryError as e:

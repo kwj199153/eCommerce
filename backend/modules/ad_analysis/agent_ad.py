@@ -112,22 +112,30 @@ def _daily_trend_from_rows(rows: List[Dict]) -> Dict[str, List[Any]]:
         "sales": [round(buckets[d]["sales"], 2) for d in labels],
     }
 
-def _load_ad_rows(store_id, time_range="30d") -> List[Dict]:
-    """取本店铺的广告指标（唯一入口，经工厂）。
+async def _load_ad_rows(store_id, time_range="30d") -> List[Dict]:
+    """取**本店铺**的广告指标（唯一入口，经 `open_data_source(store_id)`）。
 
-    ★ 为什么必须经 `get_data_source()`：配好 SP-API 凭据后，这里会自动切到
-      真实现；绕过工厂直连 Mock（模块级单例那种写法）会让「配了凭据也永远
-      跑假数据且不报错」—— `modules/review_analyst/service.py` 的 docstring
-      记录了同一个坑。
+    ★ 为什么必须经入口：配好该店凭据后这里会自动切到真实现；绕过它直连 Mock
+      （模块级单例那种写法）会让「配了凭据也永远跑假数据且不报错」——
+      `modules/review_analyst/service.py` 的 docstring 记录了同一个坑。
+
+    ★ 第 386 轮：入口从 `get_data_source()`（无 store_id）换成
+      `open_data_source(store_id)`。旧工厂返回的是「全进程共用一把钥匙」的数据源，
+      于是即使配了凭据，两家店的广告报表也是同一份数。
+
+    ★ 由 sync 改 async：凭据要按店读库（方案决策②A「异步前置」），
+      在同步栈里读库就得再套一层 `asyncio.run` —— 而 `_run()` 已经在
+      `ThreadPoolExecutor` 里做了一次，双层嵌套会让测试无法 patch。
+      顺带修掉「在事件循环里跑阻塞 IO」这个既有问题（3 个调用点都在 async 方法里）。
 
     ★ 拿不到 `store_id`（未选店铺）时**不猜测、不取默认店**，直接返回空列表，
       由调用方给显式空状态。
     """
     if not store_id:
         return []
-    from modules.amazon_sp import get_data_source
+    from modules.amazon_sp import open_data_source
 
-    src = get_data_source(prefer="auto", seed=42)
+    src = await open_data_source(store_id, prefer="auto", seed=42)
     d_to = date.today()
     d_from = d_to - timedelta(days=_days_of(time_range) - 1)
     try:
@@ -603,7 +611,7 @@ class AdAnalysisAgent(BaseAgent):
 
     async def _analyze_diagnosis(self, query: str, context: Optional[Dict] = None) -> AgentResponse:
         """广告账户健康诊断"""
-        rows = _load_ad_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
+        rows = await _load_ad_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
         if not rows:
             return self._no_data("广告账户诊断", (context or {}).get("store_id"))
         # 以下全部由真实广告记录聚合（改造前是 random 现编）
@@ -674,7 +682,7 @@ class AdAnalysisAgent(BaseAgent):
 
     async def _analyze_search_terms(self, query: str, context: Optional[Dict] = None) -> AgentResponse:
         """搜索词效果分析"""
-        rows = _load_ad_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
+        rows = await _load_ad_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
         if not rows:
             return self._no_data("搜索词分析", (context or {}).get("store_id"))
         all_terms = self._search_terms_from_rows(rows)
@@ -742,7 +750,7 @@ class AdAnalysisAgent(BaseAgent):
 
     async def _optimize_bids(self, query: str, context: Optional[Dict] = None) -> AgentResponse:
         """出价优化建议"""
-        rows = _load_ad_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
+        rows = await _load_ad_rows((context or {}).get("store_id"), (context or {}).get("time_range"))
         if not rows:
             return self._no_data("出价优化", (context or {}).get("store_id"))
         target_acos = float((context or {}).get("target_acos") or 25.0)

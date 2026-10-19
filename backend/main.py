@@ -234,6 +234,9 @@ app.add_middleware(
     ],
 )
 
+# 按店取数的两种「取不到」必须能被翻成 4xx（见下方 exception_handler）
+from modules.amazon_sp import StoreNotConnected, UnsupportedMarketplace
+
 # 租户上下文中间件：从 X-Shop-ID / ?shop_id= 提取当前店铺写入请求级 ContextVar
 from core.tenant.middleware import TenantMiddleware
 app.add_middleware(TenantMiddleware)
@@ -245,6 +248,38 @@ app.add_middleware(RequestLogMiddleware)
 
 
 # ====== 全局异常处理 ======
+
+# ★ 按店取数：**未授权是正常业务状态，不是 500**（第 386 轮）。
+#
+# 为什么必须是专门的 handler，而不是在每个端点 try/except：
+#   取数入口在 4 个模块（复盘 / 广告 / 客服 / 交易）都会抛 `StoreNotConnected`。
+#   逐个 catch 必然出现「某处漏了 ⇒ 落进下面的 Exception handler ⇒ 500」，
+#   而 500 的语义是「我们坏了」：客户会来报障、运维会去翻堆栈 ——
+#   事实只是「这家店还没走授权流程」。一个错误码决定了他是去看日志还是去设置页。
+#
+# ★ 为什么 code 要单独给：409 在本 API 里还有另一个用途（账单状态冲突，
+#   `INVOICE_NOT_REFUNDABLE`）。只按状态码分支的话，前端会把「退款不可退」
+#   也提示成「请去授权店铺」。带 code 才能分开。
+@app.exception_handler(StoreNotConnected)
+async def store_not_connected_handler(request, exc: StoreNotConnected):
+    """店铺未授权 ⇒ 409 + `code=STORE_NOT_CONNECTED`。"""
+    return JSONResponse(status_code=409, content={"detail": exc.to_payload()})
+
+
+@app.exception_handler(UnsupportedMarketplace)
+async def unsupported_marketplace_handler(request, exc: UnsupportedMarketplace):
+    """站点不在支持列表 ⇒ 422（这是**配置错**，不是「没授权」——改配置能修）。"""
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": {
+                "code": exc.code,
+                "store_id": exc.store_id,
+                "message": str(exc),
+            }
+        },
+    )
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):

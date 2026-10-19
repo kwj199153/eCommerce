@@ -11,9 +11,10 @@ Amazon SP-API 核心客户端
 
 import json
 import logging
+from datetime import datetime
 from typing import Optional, Dict, Any, List, TypeVar, Generic
 
-from .auth import SPAPIClientAuth, get_spapi_auth, SPAPIConfig
+from .auth import SPAPIClientAuth, SPAPIConfig
 from .models import (
     Marketplace,
     ItemByASIN,
@@ -60,17 +61,37 @@ class SPAPIClient:
 
     def __init__(
         self,
-        config: Optional[SPAPIConfig] = None,
+        config: SPAPIConfig,
         default_marketplace: Marketplace = Marketplace.US,
+        *,
+        access_token: Optional[str] = None,
+        access_token_expires_at: Optional[datetime] = None,
     ):
-        """
-        初始化 SP-API 客户端
+        """初始化 SP-API 客户端。
 
         Args:
-            config: SP-API 配置（为空则从 settings 加载）
-            default_marketplace: 默认市场（美国）
+            config: **必填**的完整配置（按店组装，见 `store_credentials`）。
+            default_marketplace: 默认站点。按店取数时必须是该店的站点 ——
+                改造前所有店都取 US，于是日本站的订单会带着 US 的
+                marketplaceIds 去查，返回 0 条且不报错。
+            access_token / access_token_expires_at: 见 `SPAPIClientAuth.__init__`。
+
+        ★★ 为什么 `config` 必须去掉默认值（这句是本节最重要的一行）：
+          改造前的判据是 `SPAPIClientAuth(config) if config else get_spapi_auth()`，
+          本意是「没传配置就用全局单例」。但它把 `config=None` 当成唯一判据，
+          而调用方**总是**传一个 `SPAPIConfig()`（空的，但非 None）——
+          空 dataclass 是真值 ⇒ 永远走左边 ⇒ 全局单例（唯一带凭据的那个）
+          **一次都没被用过**。表现是第一次取 token 就 `REFRESH_TOKEN_MISSING`，
+          而它一直被 mock 回退挡着，没人发现。
+
+          ⇒ 现在没有 `else` 分支可走：配置从哪来，只有一个答案（调用方）。
+            漏传就 `TypeError`，而不是在十分钟后报一个看不懂的错。
         """
-        self.auth = SPAPIClientAuth(config) if config else get_spapi_auth()
+        self.auth = SPAPIClientAuth(
+            config,
+            access_token=access_token,
+            access_token_expires_at=access_token_expires_at,
+        )
         self.default_marketplace = default_marketplace.value
 
     # ====== 通用请求方法 ======

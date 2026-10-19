@@ -154,10 +154,47 @@ class SPAPIClientAuth:
     3. 凭证配置管理
     """
 
-    def __init__(self, config: Optional[SPAPIConfig] = None):
+    def __init__(
+        self,
+        config: Optional[SPAPIConfig] = None,
+        *,
+        access_token: Optional[str] = None,
+        access_token_expires_at: Optional[datetime] = None,
+    ):
+        """构造认证管理器。
+
+        Args:
+            config: 完整配置。为 None 时从 Settings 加载 —— **只给脚本/测试用**；
+                业务路径一律由 `store_credentials` 组装好再传进来（按店）。
+            access_token: 库里存的、还没过期的 access_token（第 386 轮新增）。
+            access_token_expires_at: 上面那个 token 的绝对到期时刻（UTC naive，
+                与 `amazon_credentials.token_expires_at` 同口径）。
+
+        ★ 为什么要能预置 token（决策③「DB 当缓存」）：
+          不预置的话每次取数都要刷一次 LWA（一次 HTTP + 一次被限流的风险）；
+          只在**进程内**缓存又多 worker 各刷一遍、重启就丢。
+          DB 里的 `access_token` + `token_expires_at` 是天然的跨 worker 缓存，
+          但只有 `refresh_credential` 端点会写它 —— 取数路径从不读，
+          等于那份缓存白存。
+
+        ★ 预置时把 `expires_in` 设成 `剩余秒数 + 300`（而不是直接给剩余秒数）：
+          `AccessToken.is_expired` 的判据是 `elapsed >= expires_in - 300`，
+          所以要让「到点即过期」成立，`expires_in` 必须是「剩余 + 提前量」。
+          写反了会得到「token 提前 5 分钟就被判过期」（多刷几次而已，但日志会很脏）
+          或「过期了 5 分钟还在用」（真会 401）。
+        """
         self.config = config or self._load_config_from_settings()
         self._access_token: Optional[AccessToken] = None
         self._http_client: Optional[httpx.AsyncClient] = None
+
+        if access_token and access_token_expires_at:
+            remaining = (access_token_expires_at - datetime.utcnow()).total_seconds()
+            if remaining > 300:
+                self._access_token = AccessToken(
+                    token=access_token,
+                    expires_in=int(remaining) + 300,
+                    created_at=time.time(),
+                )
 
     # ====== 配置加载 ======
 

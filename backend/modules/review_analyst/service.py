@@ -1,8 +1,10 @@
 """运营复盘师 - 业务逻辑层
 
-数据源**一律经工厂** `amazon_sp.data_sources.get_data_source()` 获取：
-  - 已配置 SP-API 凭据 → SpApiDataSource（真实数据）
-  - 未配置           → MockAmazonDataSource（演示数据，工厂会打 warning）
+数据源**一律经按店入口** `amazon_sp.open_data_source(store_id)` 获取
+（第 386 轮起；旧的无参工厂已删除）：
+  - 该店有凭据     → SpApiDataSource（按店配置，真实数据）
+  - 演示店且演示档 → MockAmazonDataSource（显式打 warning）
+  - 其余（真实客户未授权）→ raise StoreNotConnected（HTTP 409 空态）
 
 ★ 禁止在本模块 import 具体数据源实现（`mock_source` / `sp_api_source`）。
   曾经这里是 `_source = MockAmazonDataSource(seed=42)` 的**模块级单例** ——
@@ -28,7 +30,7 @@ from core.database import async_session_factory
 from core.library_query import count_library, query_library
 from core.tenant.middleware import MissingShopContext, require_shop_context
 from core.tenant.scoping import scoped
-from modules.amazon_sp import get_data_source
+from modules.amazon_sp import open_data_source
 
 from .db_model import REVIEW_REPORT_TYPES, ReviewReportRecord
 from .schemas import (
@@ -39,17 +41,20 @@ from .spec import REVIEW_SPEC
 
 logger = logging.getLogger(__name__)
 
-# ★ 数据源**按请求**经工厂获取（不是模块级单例）。
+# ★ 数据源**按请求、按店铺**获取（不是模块级单例，也不是全局一份）。
 #
-#   seed=42 只在「工厂回退到 Mock」时生效，作用是让 Mock 数据可复现。
+#   seed=42 只在「落到 Mock」时生效，作用是让演示数据可复现。
 #   旧形态（模块级单例）其实**做不到可复现**：`MockAmazonDataSource.__init__`
 #   里是 `self._rng = random.Random(seed)`，单例会让 RNG 状态跨请求累积 ——
 #   同一个请求第 N 次调用拿到的数据与第 1 次不同。
 #
-#   改为一请求一实例后：Mock 档每次都从同一起点生成（真的可复现），
-#   真实档则按当前配置走 SpApiDataSource。两种档的判定都在工厂里。
-def _source():
-    return get_data_source(prefer="auto", seed=42)
+#   ★ 第 386 轮再往前走一步：**必须带 `store_id`**。
+#     改造前那个工厂没有 store_id 形参，返回的是「全进程共用一把钥匙」的数据源，
+#     于是两家店的复盘报告读的是同一个卖家的数（只是行上的 store_id 标签不同）。
+#     现在签名里带 `store_id` 就是为了让「忘了传」变成 `TypeError`，
+#     而不是悄悄返回别人的数据。
+async def _source(store_id: str):
+    return await open_data_source(store_id, prefer="auto", seed=42)
 
 
 def _date_range(days: int):
@@ -127,7 +132,7 @@ async def weekly_report(request: WeeklyReportRequest, store_id: str) -> dict:
     #   本行是「拿不到有效店铺就不出报告」的第二道闸（见 _require_store）。
     store_id = _require_store(store_id)
     d_from, d_to = _date_range(request.days)
-    source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
+    source = await _source(store_id)  # 按店数据源（见模块 docstring）
     sales = source.fetch_daily_sales(store_id, d_from, d_to)
     ads = source.fetch_ad_metrics(store_id, d_from, d_to)
     inventory = source.fetch_inventory(store_id)
@@ -166,7 +171,7 @@ async def monthly_review(request: MonthlyReviewRequest, store_id: str) -> dict:
     #   本行是「拿不到有效店铺就不出报告」的第二道闸（见 _require_store）。
     store_id = _require_store(store_id)
     d_from, d_to = _date_range(request.days)
-    source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
+    source = await _source(store_id)  # 按店数据源（见模块 docstring）
     sales = source.fetch_daily_sales(store_id, d_from, d_to)
     ads = source.fetch_ad_metrics(store_id, d_from, d_to)
 
@@ -211,7 +216,7 @@ async def ad_review(request: AdReviewRequest, store_id: str) -> dict:
     #   本行是「拿不到有效店铺就不出报告」的第二道闸（见 _require_store）。
     store_id = _require_store(store_id)
     d_from, d_to = _date_range(request.days)
-    source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
+    source = await _source(store_id)  # 按店数据源（见模块 docstring）
     ads = source.fetch_ad_metrics(store_id, d_from, d_to)
 
     a = _sum_ad(ads)
@@ -272,7 +277,7 @@ async def product_performance(request: ProductPerformanceRequest, store_id: str)
     #   本行是「拿不到有效店铺就不出报告」的第二道闸（见 _require_store）。
     store_id = _require_store(store_id)
     d_from, d_to = _date_range(request.days)
-    source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
+    source = await _source(store_id)  # 按店数据源（见模块 docstring）
     sales = source.fetch_daily_sales(store_id, d_from, d_to, asins=request.asins)
     listings = source.fetch_listings(store_id, d_from, d_to, asins=request.asins)
     inventory = source.fetch_inventory(store_id)
@@ -331,7 +336,7 @@ async def inventory_health(request: InventoryHealthRequest, store_id: str) -> di
     # ★ A4：归属只能服务端注入（router 的 strict 守卫）——
     #   本行是「拿不到有效店铺就不出报告」的第二道闸（见 _require_store）。
     store_id = _require_store(store_id)
-    source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
+    source = await _source(store_id)  # 按店数据源（见模块 docstring）
     inventory = source.fetch_inventory(store_id)
 
     status_map = {"HEALTHY": 0, "WARNING": 0, "CRITICAL": 0, "STAGNANT": 0}
@@ -371,7 +376,7 @@ async def profit_audit(request: ProfitAuditRequest, store_id: str) -> dict:
     #   本行是「拿不到有效店铺就不出报告」的第二道闸（见 _require_store）。
     store_id = _require_store(store_id)
     d_from, d_to = _date_range(request.days)
-    source = _source()  # 本次请求的数据源（经工厂；见模块 docstring）
+    source = await _source(store_id)  # 按店数据源（见模块 docstring）
     sales = source.fetch_daily_sales(store_id, d_from, d_to)
     ads = source.fetch_ad_metrics(store_id, d_from, d_to)
 

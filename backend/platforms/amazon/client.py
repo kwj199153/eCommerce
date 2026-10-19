@@ -14,10 +14,11 @@ Amazon 平台适配器（Phase 2 遗留的 **MOCK 世界**）
 ★ 为什么必须逐点打 WARNING：本适配器由 `get_platform_adapter("amazon")` 提供给
   `product_research` / `listing_generator`，而这两个模块**全程没有一处告警** ——
   用户看到的是「蓝海机会」三个字，不是「演示数据」。
-  对照新世界 `modules.amazon_sp.get_data_source()`：它在回退 mock 时会 `logger.warning`。
+  对照新世界 `modules.amazon_sp.open_data_source(store_id)`：它在落到 mock 时
+  会 `logger.warning`（且只在该店是演示店 + 演示档时才落）。
   **静默的假数据比报错的假数据危害大一个量级。**
 
-需要真实 Amazon 数据请走 `modules.amazon_sp.get_data_source(prefer="sp_api")`。
+需要真实 Amazon 数据请走 `modules.amazon_sp.open_data_source(store_id, prefer="sp_api")`。
 """
 
 import asyncio
@@ -59,7 +60,7 @@ def _warn_mock(source: str, detail: str = "") -> None:
     """
     logger.warning(
         "%s 返回的是 MOCK 编造数据（非真实 Amazon 数据）%s；"
-        "需要真实数据请走 modules.amazon_sp.get_data_source()",
+        "需要真实数据请走 modules.amazon_sp.open_data_source(store_id)",
         source,
         detail,
     )
@@ -533,7 +534,8 @@ class AmazonAdapter(PlatformAdapter):
     Amazon 平台适配器
 
     ⚠️ Phase 2 遗留：**除 `calculate_fees` 外全部为编造数据**（见模块 docstring 的真假表）。
-    每个编造点都会打 WARNING；真实数据请走 `modules.amazon_sp.get_data_source()`。
+    每个编造点都会打 WARNING；真实数据请走
+    `modules.amazon_sp.open_data_source(store_id)`（按店；第 386 轮起）。
     """
 
     #: 假延迟系数：0 = 关闭（默认），1.0 = 原始仿真值。

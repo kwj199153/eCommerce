@@ -273,19 +273,21 @@ class MixinOrders:
 
         # ---- ② 平台适配层（兜底） ----
         try:
-            # 走数据源工厂（唯一入口）——门禁 test_import_boundaries §1 强制
-            from modules.amazon_sp import get_data_source
+            # 走按店入口（唯一入口）——门禁 test_import_boundaries §1 强制
+            from modules.amazon_sp import StoreNotConnected, open_data_source
         except Exception as e:  # pragma: no cover
             return None, f"订单数据源模块不可用：{e}"
 
-        def _query() -> Dict[str, Any]:
-            # prefer="sp_api"：凭据缺失时工厂**抛 RuntimeError**，不静默回退 Mock
-            source = get_data_source(prefer="sp_api")
-            return source.fetch_order_tracking(order_id)
-
         try:
-            raw = await asyncio.to_thread(_query)
-        except RuntimeError as e:
+            # ★ 第 386 轮：先**按店**开数据源（异步、只读库解密），
+            #   再把同步的 `fetch_order_tracking` 丢进线程 ——
+            #   它在内部还要做一次「同步→异步」桥接，仍会阻塞，
+            #   所以 `to_thread` 不能省。
+            # ★ `prefer="sp_api"`：该店没授权就抛 `StoreNotConnected`，
+            #   **不静默回退 Mock** —— 编造的订单会直接告诉终端消费者。
+            source = await open_data_source(shop_id, prefer="sp_api")
+            raw = await asyncio.to_thread(source.fetch_order_tracking, order_id)
+        except (RuntimeError, StoreNotConnected) as e:
             # ★ 插值口径：本文件用的是 `core.logger.get_logger()`（loguru），
             #   它按 `str.format` 插值 —— 写 `%s` 会把参数**静默丢掉**
             #   并原样打出 "%s"。loguru 用 f-string / `{}`，

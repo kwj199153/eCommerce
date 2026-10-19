@@ -15,12 +15,19 @@ AmazonDataSource 抽象接口，使上层业务（Agent / 报表脚本）从「�
       - 在普通同步上下文（如 ingest 脚本）中：直接用事件循环 run
       - 在已运行的事件循环中（如 FastAPI 请求内）：放到独立线程跑，避免嵌套
 
-凭据来源（.env / Settings）：
-    SPAPI_LWA_CLIENT_ID / SPAPI_LWA_CLIENT_SECRET / SPAPI_REFRESH_TOKEN
-    SPAPI_AWS_ACCESS_KEY / SPAPI_AWS_SECRET_KEY / SPAPI_AWS_REGION
-    SPAPI_USE_SANDBOX
+凭据来源（第 386 轮起）：**按店**由 `modules/amazon_sp/store_credentials.py`
+    `load_store_credential(store_id)` 解析，构造时以 `StoreCredential` 注入。
 
-未配置凭据时 is_available() 返回 False，工厂自动回退到 Mock。
+    ★ 改造前是「全平台一组环境变量」：`SPAPI_REFRESH_TOKEN` 只有一个值，
+      于是所有店铺共用同一把钥匙，`fetch_daily_sales(store_id, ...)` 收了
+      `store_id` 却全程不用（只给结果行打标签）——三张报表是同一个卖家的数，
+      只是贴了不同的店名。
+
+    ★ 现在两类凭据分开：
+      - LWA（client_id / client_secret / refresh_token）：**卖家级**，按店
+      - AWS（access_key / secret_key / region）：**应用级**，全店共用
+    `is_available()` 因此只回答「应用级配置齐不齐」，不再代表「这家店能用」——
+    后者由 `StoreCredential` 的存在性回答。
 
 字段映射约定：
     - 真实 API 能直接提供的字段 → 如实填充
@@ -29,12 +36,18 @@ AmazonDataSource 抽象接口，使上层业务（Agent / 报表脚本）从「�
 """
 
 import asyncio
+import functools
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from modules.amazon_sp.data_sources.base import AmazonDataSource
+
+if TYPE_CHECKING:  # pragma: no cover
+    # ★ 只用于类型注解：运行期不需要（构造时由调用方传入实例），
+    #   顶层导入会让「只想读一下接口定义」的调用方把整条凭据链拖起来。
+    from modules.amazon_sp.store_credentials import StoreCredential
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +61,32 @@ def _money(amount_obj) -> tuple[float, str]:
     return float(getattr(amount_obj, "amount", 0) or 0), getattr(amount_obj, "currency_code", "USD")
 
 
+def _store_checked(fn):
+    """在进入取数方法前，把 `store_id` 与本实例的归属比一次（防串店）。
+
+    ★★ 为什么必须是装饰器，而不是在每个方法体开头抄一行
+    -------------------------------------------------------
+      第一版就是在 `fetch_credentials()` 里手写了一句 `self._assert_store(...)`，
+      然后 `fetch_daily_sales` 等 7 个方法一个都没写。后果不是报错，而是
+      **拿 A 店的凭据去查 B 店**并正常返回 —— 用例 `test_source_rejects_other_store_id`
+      当时真的发出了网络请求（拿到 401）才被发现。
+
+      手抄 7 行 = 7 个漏掉的机会，而且漏掉的那个不会有任何测试变红。
+      装饰器只有一处实现，新增取数方法时忘了加，也会因为「签名里有 store_id
+      却没有守卫」在同一次 review 里被看见。
+
+    ★ 顺带把空 `store_id` 归一成本店 id（而不是放过）：取数方法应当只服务
+      自己的店，传空值不该意味着「随便哪家」。
+    """
+
+    @functools.wraps(fn)
+    def wrapper(self, store_id, *args, **kwargs):
+        sid = self._assert_store(store_id)
+        return fn(self, sid, *args, **kwargs)
+
+    return wrapper
+
+
 class SpApiDataSource(AmazonDataSource):
     """基于 Amazon SP-API 的真实数据源"""
 
@@ -56,11 +95,27 @@ class SpApiDataSource(AmazonDataSource):
 
     def __init__(
         self,
-        config=None,
-        marketplace=None,
+        credential: "StoreCredential",
         max_orders: int = DEFAULT_MAX_ORDERS,
     ):
-        from platforms.amazon.sp_api.auth import SPAPIConfig, get_spapi_auth
+        """构造**这一家店**的数据源。
+
+        Args:
+            credential: 由 `store_credentials.load_store_credential(store_id)` 解析出的
+                按店凭据。**必填、无默认值** —— 这是刻意的：
+
+                ★ 改造前的签名是 `(config=None, marketplace=None)`，`config` 为空时
+                  构造一份 `SPAPIConfig()`（`lwa.refresh_token == ""`）传给
+                  `SPAPIClient`。而 `SPAPIClient` 的判据是
+                  `SPAPIClientAuth(config) if config else get_spapi_auth()`，
+                  空 dataclass 是**真值** ⇒ 永远走「自建空配置」那条路，
+                  真正带凭据的全局实例**从未被调用**。
+                  结果：即使只有一家店、`.env` 完全正确，第一次取 token 就抛
+                  `REFRESH_TOKEN_MISSING`。**这条路径从未产出过一条真实数据。**
+
+                ⇒ 去掉默认值，让「忘了传凭据」在构造处就 `TypeError`，
+                  而不是在十分钟后的第一次 API 调用处报一个看不懂的错。
+        """
         from platforms.amazon.sp_api.client import SPAPIClient
         from platforms.amazon.sp_api.models import Marketplace, OrderStatus  # noqa: F401
         from platforms.amazon.sp_api.advertising import AdvertisingAPI
@@ -68,18 +123,46 @@ class SpApiDataSource(AmazonDataSource):
         from platforms.amazon.sp_api.products import ProductsAPI
         from platforms.amazon.sp_api.reports import ReportsAPI
 
-        self._config = config or SPAPIConfig()
-        self._marketplace = marketplace or Marketplace.US
+        self._credential = credential
+        self._config = credential.config
+        self._marketplace = credential.marketplace
         self.max_orders = max_orders
 
-        self._client = SPAPIClient(self._config, default_marketplace=self._marketplace)
+        # ★ access_token 若还在有效期内就预置给 auth（DB 当缓存，决策③）：
+        #   省一次 LWA 往返，也让「多 worker 同时在跑」时不会各自刷一遍。
+        #   过期与否的判定在 `store_credentials._reusable_access_token()` 里，
+        #   这里只负责把结果递下去。
+        self._client = SPAPIClient(
+            self._config,
+            default_marketplace=self._marketplace,
+            access_token=credential.access_token,
+            access_token_expires_at=credential.access_token_expires_at,
+        )
         self._orders = OrdersAPI(self._client)
         self._products = ProductsAPI(self._client)
         self._reports = ReportsAPI(self._client)
         self._advertising = AdvertisingAPI(self._client)
 
-        self._auth = get_spapi_auth()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    # ---------- 归属自检 ----------
+
+    def _assert_store(self, store_id) -> str:
+        """拦住「拿 A 店的实例去查 B 店」——那正是本轮要消灭的形态。
+
+        ★ 改造前不做这个检查，因为**检查了也没用**：实例根本不知道自己是哪家店的。
+          现在实例持有一份 `StoreCredential`，就能在一行内回答「你是不是这家店的」。
+          这类断言的成本只有一次字符串比较，却能挡住「调用点传错变量」
+          这种最难查的错误 —— 它不会报错，只会返回别人的数据。
+        """
+        sid = str(store_id or "").strip()
+        if sid and sid != self._credential.store_id:
+            raise ValueError(
+                f"数据源归属不符：本实例属于店铺 {self._credential.store_id}，"
+                f"却被要求查询 {sid}。按店取数必须用该店自己的数据源实例"
+                f"（`open_data_source(store_id)`）。"
+            )
+        return sid or self._credential.store_id
 
     # ---------- 同步 / 异步桥接 ----------
 
@@ -130,9 +213,18 @@ class SpApiDataSource(AmazonDataSource):
     @classmethod
     def is_available(cls) -> tuple[bool, str]:
         """
-        检查是否具备调用真实 SP-API 的条件。
+        检查**应用级**配置是否齐备（LWA 应用身份 + AWS 签名密钥）。
 
-        不仅检查「是否为空」，还排除占位符（your-xxx / changeme 等）。
+        ★★ 注意这里**不再**包含 `SPAPI_REFRESH_TOKEN`（第 386 轮）：
+          它是**卖家级**凭据、按店存在 DB 里，不属于「应用能不能用」的判据。
+          改造前把它算进来，导致两个方向的错误：
+            · 一家店都没授权时，`is_available()` 判 False ⇒ 工厂回退 mock
+              ⇒ 真实客户看到编造数据（假数字比报错坏得多）；
+            · 只要 `.env` 里留着一个 refresh_token，`is_available()` 就判 True
+              ⇒ 所有店铺都拿这**同一把**钥匙取数，且**任何量具都发现不了**。
+
+        ⇒ 现在它只回答一个问题：「本进程有没有资格调用 SP-API」。
+          「这家店能不能用」由 `load_store_credential()` 回答。
 
         Returns:
             (是否可用, 原因说明)
@@ -145,7 +237,6 @@ class SpApiDataSource(AmazonDataSource):
         required = [
             ("SPAPI_LWA_CLIENT_ID", "spapi_lwa_client_id"),
             ("SPAPI_LWA_CLIENT_SECRET", "spapi_lwa_client_secret"),
-            ("SPAPI_REFRESH_TOKEN", "spapi_refresh_token"),
             ("SPAPI_AWS_ACCESS_KEY", "spapi_aws_access_key"),
             ("SPAPI_AWS_SECRET_KEY", "spapi_aws_secret_key"),
         ]
@@ -156,8 +247,8 @@ class SpApiDataSource(AmazonDataSource):
         ]
 
         if missing:
-            return False, "缺少 SP-API 凭据（或仍为占位符）: " + ", ".join(missing)
-        return True, "SP-API 凭据已配置"
+            return False, "缺少 SP-API 应用级凭据（或仍为占位符）: " + ", ".join(missing)
+        return True, "SP-API 应用级凭据已配置"
 
     def get_source_info(self) -> dict:
         ok, reason = self.is_available()
@@ -165,6 +256,10 @@ class SpApiDataSource(AmazonDataSource):
             "source_type": "sp_api",
             "name": "SpApiDataSource",
             "description": "Amazon Selling Partner API 真实数据源",
+            # ★ 第 386 轮补：把「这家店的数据是按哪条通道取的」暴露出来。
+            #   没有这个字段时，排查只能靠猜「他到底走的是 OAuth 还是表单」。
+            "store_id": self._credential.store_id,
+            "credential_source": self._credential.source,
             "marketplace": getattr(self._marketplace, "value", str(self._marketplace)),
             "sandbox": bool(getattr(self._config, "use_sandbox", False)),
             "credentials_ready": ok,
@@ -189,33 +284,28 @@ class SpApiDataSource(AmazonDataSource):
 
     # ---------- 数据拉取接口 ----------
 
-    def fetch_credentials(self, store_id: int) -> list[dict]:
+    def fetch_credentials(self, store_id: str) -> list[dict]:
+        """返回**本店**凭据的元数据（不含任何 token 明文或密文）。
+
+        ★★ 改造前这个方法叫「取凭据」，实现里**一次都没查表**：它把
+          Settings 的值拼成一条记录返回，`refresh_token` 写死 `"***"`，
+          `seller_id` 直接用了 `spapi_lwa_client_id`（应用 id 冒充卖家 id）。
+          也就是说 —— 它返回的东西与「这家店授权了什么」完全无关，
+          而函数名让人以为它读到了。
+
+        ★ 现在返回 `StoreCredential.snapshot()`：真读过的凭据的**指纹**
+          （通道、卖家 id、市场、sandbox、有没有可用的 access_token）。
+          token 一个都不返回 —— 「要么给真值（服务端内部），要么不给这个字段」，
+          给一个 `"***"` 只会制造「好像读到了」的错觉。
         """
-        返回当前配置的号店 OAuth 凭据记录。
+        sid = self._assert_store(store_id)
+        snap = self._credential.snapshot()
+        snap["store_id"] = sid
+        return [snap]
 
-        真实场景凭据由 SP-API 授权流程写入 amazon_credentials 表；
-        此处从 Settings 组装一条只读记录，**不对 access_token 落明文**。
-        """
-        from core.config import config as settings
-
-        now = datetime.now()
-        return [{
-            "store_id": store_id,
-            "seller_id": getattr(settings, "spapi_lwa_client_id", ""),
-            "region": getattr(settings, "spapi_aws_region", "us-east-1"),
-            "marketplace_id": getattr(self._marketplace, "value", "US"),
-            "access_token": None,  # 运行时由 SPAPIClientAuth 动态获取并缓存
-            "refresh_token": "***",  # 不落明文
-            "token_expires_at": None,
-            "credential_status": "ACTIVE",
-            "last_refreshed_at": now,
-            "auth_scopes": ["sellingpartnerapi::migration"],
-            "created_at": now,
-            "updated_at": now,
-        }]
-
+    @_store_checked
     def fetch_daily_sales(
-        self, store_id: int, date_from: date, date_to: date,
+        self, store_id: str, date_from: date, date_to: date,
         asins: Optional[list[str]] = None,
     ) -> list[dict]:
         """
@@ -293,8 +383,9 @@ class SpApiDataSource(AmazonDataSource):
 
         return list(agg.values())
 
+    @_store_checked
     def fetch_ad_metrics(
-        self, store_id: int, date_from: date, date_to: date,
+        self, store_id: str, date_from: date, date_to: date,
         report_types: Optional[list[str]] = None,
         campaign_names: Optional[list[str]] = None,
     ) -> list[dict]:
@@ -358,8 +449,9 @@ class SpApiDataSource(AmazonDataSource):
 
         return records
 
+    @_store_checked
     def fetch_listings(
-        self, store_id: int, date_from: date, date_to: date,
+        self, store_id: str, date_from: date, date_to: date,
         asins: Optional[list[str]] = None,
     ) -> list[dict]:
         """
@@ -416,8 +508,9 @@ class SpApiDataSource(AmazonDataSource):
 
         return records
 
+    @_store_checked
     def fetch_inventory(
-        self, store_id: int, snapshot_date: Optional[date] = None,
+        self, store_id: str, snapshot_date: Optional[date] = None,
     ) -> list[dict]:
         """
         拉取 FBA 库存健康。
@@ -458,8 +551,9 @@ class SpApiDataSource(AmazonDataSource):
 
         return records
 
+    @_store_checked
     def fetch_competitors(
-        self, store_id: int, date_from: date, date_to: date,
+        self, store_id: str, date_from: date, date_to: date,
         asins: Optional[list[str]] = None,
     ) -> list[dict]:
         """
@@ -507,8 +601,9 @@ class SpApiDataSource(AmazonDataSource):
 
         return records
 
+    @_store_checked
     def fetch_report_tasks(
-        self, store_id: int, date_from: date, date_to: date,
+        self, store_id: str, date_from: date, date_to: date,
     ) -> list[dict]:
         """
         拉取报表任务记录。

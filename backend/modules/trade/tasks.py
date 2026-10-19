@@ -31,18 +31,23 @@
   （`Task got Future attached to a different loop`），而单任务验证会全绿。
   ⇒ 用**每线程常驻 loop**。详见 `modules/memory/tasks.py` 的长论证。
 
-★★★ 演示数据源只喂演示店铺
-  当前无 SP-API 凭据 ⇒ `get_data_source()` 回退 `MockAmazonDataSource`。
-  若不加约束，定时任务会把同一份演示订单灌进**库里每一家店铺** ——
-  于是「亚马逊2 / 虾皮1 / BOLA店铺」莫名其妙多出 4 笔亚马逊订单，
-  而且它们长得跟真的一样（`source='mock_seed'` 是唯一线索，没人会去看）。
-  ⇒ 数据源是 mock 时，只同步 `is_demo=True` 的店铺，其余**根本不枚举**，
-     并在返回值里写下这个约束（否则「为什么只有 4 家」无从查起）。
+★★★ 按店判「能不能同步」，不靠一个全局开关
+  改造前靠「全局数据源是不是 mock」决定「只枚举演示店铺」—— 那是「全进程
+  一把钥匙」时代的产物。按店之后，一家店跑真实数据还是演示数据由**它自己的
+  凭据**决定，一个全局布尔表达不出来（同一批店里可能 A 有授权、B 是演示店）。
+
+  ⇒ `sync_all_shops` 逐店 `open_data_source(shop_id)`：开得起来就投递；
+    开不起来（该店未授权）就**汇总列出**并跳过。
+
+  ★ 为什么不是「静默跳过」：客户建了店却忘了授权时，订单表会一直空着，
+    而日志里一条都没有 —— 那正是本轮之前「数据不更新但谁也不知道」的同一种形态。
+    反过来也不能「把演示数据灌进真实店」：那会让客户的订单表里多出 4 笔
+    长得跟真的一样的假订单（`source='mock_seed'` 是唯一线索，没人会去看）。
 """
 
 import asyncio
 import threading
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from sqlalchemy import select
 
@@ -93,19 +98,27 @@ def _run_sync(coro) -> Any:
 # 异步实现
 # ============================================================
 
-async def _list_shop_ids(*, demo_only: bool) -> List[str]:
-    """要同步哪些店铺。
+async def _list_shop_ids(*, demo_only: bool = False) -> List[Tuple[str, bool]]:
+    """要同步哪些店铺（返回 `[(shop_id, is_demo)]`）。
 
-    ★ `demo_only` 为真时只取演示店铺 —— 理由见模块 docstring 最后一段。
+    ★ 第 386 轮：从「只返回 id」改成「带 is_demo」。
+      改造前这个函数服务的是「全局数据源是 mock ⇒ 只枚举演示店铺」这条规则；
+      按店之后，一家店跑真实数据还是演示数据由**它自己的凭据**决定，
+      调用方需要知道 is_demo 才能把「演示店没凭据」与「真实客户没授权」分开讲
+      （前者是正常，后者是要人去补的一步）。
+
+    ★ `demo_only=True` 保留给「只想给演示店铺灌数据」的运维场景。
+
+
       这不是「先取全部再过滤」，而是**根本不枚举**非演示店铺：
       少一次「差一点就写进去了」的机会，也让返回值里的 shops 数可直接对账。
     """
     async with async_session_factory() as session:
-        q = select(StoreRecord.id)
+        q = select(StoreRecord.id, StoreRecord.is_demo)
         if demo_only:
             q = q.where(StoreRecord.is_demo.is_(True))
         q = q.order_by(StoreRecord.id)
-        return list((await session.execute(q)).scalars().all())
+        return [(row[0], bool(row[1])) for row in (await session.execute(q)).all()]
 
 
 async def _sync_one_shop(shop_id: str) -> Dict[str, Any]:
@@ -114,11 +127,15 @@ async def _sync_one_shop(shop_id: str) -> Dict[str, Any]:
     ★ 为什么在这里 commit 而不是留给调用方：任务体是事务边界，
       让 `sync_trade` 保持「只写不提交」才能被测试塞进自己的事务里回滚。
     """
-    # 函数内延迟 import：`data_sources` 工厂会读配置、可能触发较重初始化，
+    # 函数内延迟 import：`data_sources` 会读配置、可能触发较重初始化，
     # 放在模块顶层会让「只是想读一下 TASK_* 常量」的调用也付出这个代价。
-    from modules.amazon_sp import get_data_source
+    from modules.amazon_sp import open_data_source
 
-    source = get_data_source(prefer="auto")
+    # ★ 第 386 轮：数据源**按店**开。`shop_id` 就是这个任务的租户键，
+    #   没有「一家店的数据用另一家店的钥匙取」这种可能了。
+    #   该店未授权 ⇒ 抛 `StoreNotConnected`，本任务 FAILURE（正确：
+    #   需要人去授权，而不是把演示数据灌进他的订单表）。
+    source = await open_data_source(shop_id)
     async with async_session_factory() as session:
         result = await trade_sync.sync_trade(session, shop_id, source)
         await session.commit()
@@ -158,27 +175,48 @@ def sync_all_shops(self) -> Dict[str, Any]:
       （理由见模块 docstring）。
     ★ 演示数据源只喂演示店铺 —— 否则会把同一份演示订单灌进每一家店。
     """
-    from modules.amazon_sp import get_data_source
+    from modules.amazon_sp import StoreNotConnected, open_data_source
 
-    source = get_data_source(prefer="auto")
-    info = source.get_source_info() or {}
-    is_mock = info.get("source_type") == "mock"
+    targets = _run_sync(_list_shop_ids())
 
-    shop_ids = _run_sync(_list_shop_ids(demo_only=is_mock))
-    for shop_id in shop_ids:
+    # ★★ 为什么逐店开源，而不是「先定一个全局数据源、再按它筛店铺」：
+    #   改造前用全局 `is_mock` 决定「只枚举演示店铺」—— 那是「全进程一把钥匙」
+    #   时代的产物。按店之后，同一批店铺里可能 A 有凭据（真实）、B 是演示店，
+    #   一个全局布尔表达不出来。
+    #
+    # ★ 为什么这里也要 `open_data_source`（明知 `_sync_one_shop` 还会再开一次）：
+    #   这样「跳过」与「真的去同步」用的是**同一个判据**，不会出现
+    #   「入口判能跑、进去却抛错」。多构造一次数据源只是几个 dataclass，
+    #   不发网络请求。
+    # ★ 未授权店**不投递**，但必须汇总报出来 —— 静默跳过会让
+    #   「客户建了店但忘了授权」永远没人知道（订单表一直空、日志一条都没有）。
+    ready: List[str] = []
+    skipped: List[str] = []
+    for shop_id, is_demo in targets:
+        try:
+            _run_sync(open_data_source(shop_id))
+            ready.append(shop_id)
+        except StoreNotConnected as exc:
+            skipped.append(f"{shop_id}({exc.reason})")
+        except Exception as exc:  # noqa: BLE001
+            # 凭据层故障（密钥换过 / 明文存量）也算「这家店暂时同步不了」，
+            # 但要单独记一条 error —— 它不是「没授权」，是要运维处理的事故。
+            logger.error("trade 同步跳过店铺 {}（凭据层故障）: {}", shop_id, exc)
+            skipped.append(f"{shop_id}(credential_error)")
+
+    for shop_id in ready:
         sync_shop.delay(shop_id)
 
     out = {
         "ok": True,
-        "source_type": info.get("source_type"),
-        "demo_only": is_mock,
-        "shops": len(shop_ids),
-        "dispatched": len(shop_ids),
+        "shops": len(targets),
+        "dispatched": len(ready),
+        "skipped_not_connected": skipped,
     }
-    if is_mock:
+    if skipped:
         logger.warning(
-            "trade 同步当前跑在**演示数据源**上，只同步演示店铺；"
-            "接上真实平台凭据后会自动覆盖全部店铺"
+            "trade 同步跳过 {} 家未授权的店铺（未被静默忽略，逐条列出）：{}",
+            len(skipped), ", ".join(skipped),
         )
     logger.info("trade 同步已投递 {}", out)
     return out
