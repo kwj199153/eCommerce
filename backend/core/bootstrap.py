@@ -38,6 +38,7 @@ lifespan 与 `scripts/bootstrap_db.py`（CI 用）共用同一个函数；**步�
 import importlib
 from typing import Awaitable, Callable, Dict, NamedTuple, Sequence
 
+from core.config import config as settings
 from core.logger import get_logger
 
 _log = get_logger("core.bootstrap")
@@ -72,6 +73,11 @@ class SeedStep(NamedTuple):
     key: str
     label: str
     target: str
+    #: True ⇒ **只**在 `DEMO_MODE` 打开时执行（见 `seed_base_data`）。
+    #: 本仓所有"编造的业务数据"（演示产品、picsum 素材、演示话术、演示规则、
+    #: 种子竞品快照、种子订单）都必须标 True —— 否则真实客户建店后重启一次，
+    #: 演示数据就被灌进他自己的店铺（第 385 轮商用审查 P1-4）。
+    requires_demo: bool = False
 
 
 def _resolve(target: str) -> Callable[[], Awaitable[int]]:
@@ -100,7 +106,9 @@ async def seed_default_plans() -> int:
     return 1
 
 
-async def seed_base_data(steps: Sequence[SeedStep]) -> Dict[str, int]:
+async def seed_base_data(
+    steps: Sequence[SeedStep], *, demo_mode: bool | None = None
+) -> Dict[str, int]:
     """按 `steps` 的顺序灌入全部基础/演示数据，返回 {步骤 key: 新增条数}。
 
     ★ 本函数只做**机制**：顺序、标签、目标全部由调用方（组合根）给出 ——
@@ -115,7 +123,18 @@ async def seed_base_data(steps: Sequence[SeedStep]) -> Dict[str, int]:
       但都依赖「店铺已存在」——它们会自己查 stores 表，无店铺时返回 0
       （不是错误，见 test_seed_shop_ids.py 锁死的契约）。
     """
+    if demo_mode is None:
+        # ★ 每次调用都读**对象属性**（而不是把 `config.demo_mode` 在 import 期
+        #   固化成模块常量）：本开关靠"改 .env 再重启"生效，固化会让它失效。
+        demo_mode = bool(getattr(settings, "demo_mode", False))
+
     result: Dict[str, int] = {}
     for step in steps:
+        if step.requires_demo and not demo_mode:
+            # ★ 记 0 而不是不记：`result` 是 CI / 探针的**对账口径**，
+            #   键少一个会被读成「这一步不存在」，比「存在但跳过」更难排。
+            result[step.key] = 0
+            _log.info("⏭️ {} 跳过：演示数据步骤，DEMO_MODE=false", step.label)
+            continue
         result[step.key] = await _try(step.label, _resolve(step.target))
     return result

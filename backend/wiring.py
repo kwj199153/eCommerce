@@ -154,18 +154,18 @@ SEED_STEPS: tuple[SeedStep, ...] = (
     #      正好把"图与商品不对应"重新灌回去 —— 而老板明确只要"保证亚马逊1"。
     #      ⇒ 去掉补灌。`only_for_shop_ids` 参数保留在各 seed 里
     #        （有 `test_seed_shop_ids.py` 守着，将来要"给指定店铺补灌"仍可用）。
-    SeedStep("demo_store", "演示店铺标记", "modules.stores.demo:ensure_demo_stores"),
+    SeedStep("demo_store", "演示店铺标记", "modules.stores.demo:ensure_demo_stores", requires_demo=True),
     # ② 产品库（SPU + SKU 分表；为每个已存在店铺各灌一份）
-    SeedStep("products", "产品库", "modules.products.seed:seed_products_if_empty"),
+    SeedStep("products", "产品库", "modules.products.seed:seed_products_if_empty", requires_demo=True),
     # ③ 素材库
-    SeedStep("assets", "素材库", "modules.assets.seed:seed_assets_if_empty"),
+    SeedStep("assets", "素材库", "modules.assets.seed:seed_assets_if_empty", requires_demo=True),
     # ④ 候选选品库
-    SeedStep("candidates", "候选选品库", "modules.candidates.seed:seed_candidates_if_empty"),
+    SeedStep("candidates", "候选选品库", "modules.candidates.seed:seed_candidates_if_empty", requires_demo=True),
     # ⑤ 竞品监控池
     #    注意：本 seed 不硬编码 shop_id，而是查 stores 表取真实店铺 id 逐个灌。
     #    真实租户 id 是 X-Shop-ID 里的 store_xxxxxxxx，写死 "shop-1" 会导致
     #    那批数据任何请求都查不到（2026-09-12 已修，见 test_seed_shop_ids.py）。
-    SeedStep("monitors", "竞品监控池", "modules.monitors.seed:seed_monitors_if_empty"),
+    SeedStep("monitors", "竞品监控池", "modules.monitors.seed:seed_monitors_if_empty", requires_demo=True),
     # ⑤b 竞品快照（把上面的监控池**展开**成逐日时序行）
     #     ★ 顺序有硬依赖：本步的输入就是 `monitors` 表，池子为空则一行都不展开
     #       （刻意不去编一批竞品 —— 那正是本轮要删掉的东西）。
@@ -179,14 +179,17 @@ SEED_STEPS: tuple[SeedStep, ...] = (
         "competitor_snapshots",
         "竞品快照",
         "modules.amazon_sp.seed:seed_competitor_snapshots_if_empty",
+        requires_demo=True,
     ),
     # ⑥ 平台规则库（6 条规则 + 5 篇带正文的文档 / 每店铺）
     SeedStep(
-        "platform_rules", "平台规则库", "modules.platform_rules.seed:seed_platform_rules_if_empty"
+        "platform_rules", "平台规则库", "modules.platform_rules.seed:seed_platform_rules_if_empty",
+        requires_demo=True,
     ),
     # ⑦ 业务话术库（每店铺一份默认库 + 6 条通用问答）
     SeedStep(
-        "knowledge_base", "业务话术库", "modules.knowledge_base.seed:seed_knowledge_if_empty"
+        "knowledge_base", "业务话术库", "modules.knowledge_base.seed:seed_knowledge_if_empty",
+        requires_demo=True,
     ),
     # ⑧ 技能仓库（第 181 轮 · 批 B）
     #    ★ 与演示店铺**同构**的两步：① 确保示例技能存在（幂等，不覆盖已有正文）
@@ -194,7 +197,7 @@ SEED_STEPS: tuple[SeedStep, ...] = (
     #      详见 `modules/skills/seed.py` 的文件头。
     #    ★ 它不依赖店铺，也不给任何店铺灌数据 —— 技能是**账号级**资源，
     #      与「一店铺一租户」的业务数据是两个维度。
-    SeedStep("skills", "技能仓库（演示示例）", "modules.skills.seed:ensure_demo_skills"),
+    SeedStep("skills", "技能仓库（演示示例）", "modules.skills.seed:ensure_demo_skills", requires_demo=True),
     # ⑨ 交易履约域（订单 / 明细 / 物流 / 差评 / 归因 / 补偿规则 / SKU 健康分）
     #
     #    ★ 为什么排在**最后**：它依赖上面 ② 的产品库 —— `pick_anchor_sku`
@@ -205,7 +208,7 @@ SEED_STEPS: tuple[SeedStep, ...] = (
     #      在接上真实平台凭据之前，只有它能给出可演示的内容；
     #      `service.is_mock_source()` 让上层能在回答里如实标注这一点，
     #      而不是让「演示数据」与「真实同步」在界面上长得一模一样。
-    SeedStep("trade", "交易履约（订单/物流/差评）", "modules.trade.seed:seed_trade_if_empty"),
+    SeedStep("trade", "交易履约（订单/物流/差评）", "modules.trade.seed:seed_trade_if_empty", requires_demo=True),
     # ⑩ 选品市场洞察快照（第 305 轮 · 蓝海挖掘大盘云图）
     #    ★ 演示 mock 只灌演示账号店铺（is_demo=True），真实账号空态 fail-closed。
     #    seed 内部默认目标 = 演示店铺，不碰真实账号数据。
@@ -213,6 +216,7 @@ SEED_STEPS: tuple[SeedStep, ...] = (
         "market_snapshots",
         "选品市场洞察快照",
         "modules.product_research.seed:seed_market_snapshots_if_empty",
+        requires_demo=True,
     ),
 )
 

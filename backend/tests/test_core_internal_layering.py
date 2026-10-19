@@ -270,6 +270,11 @@ IMPORT_TIME_EDGES: set[tuple[str, str]] = {
     ("backup", "logger"),
     ("backup", "observability"),
     ("backup", "redis"),
+    # ★ 第 385 轮（演示种子守卫）：`seed_base_data()` 要按 `DEMO_MODE` 决定
+    #   是否执行演示数据步骤 ⇒ `bootstrap -> config`。这是**定义性依赖**
+    #   （引导动作要知道当前是不是演示环境），同 `database -> config` 一族；
+    #   刻意放**顶层**而不是藏进函数体 —— 藏起来只会让本门禁看不见耦合。
+    ("bootstrap", "config"),
     ("bootstrap", "logger"),
     ("checkpoint", "config"),
     ("database", "config"),
@@ -357,6 +362,13 @@ STANDALONE_UNITS: set[str] = {
     #   因为它被 `modules/billing/*` 在最内层调用，反向 import 业务包即成环。
     #   ⇒ 它到不了 config 是**设计**，不是孤岛，故登记在此。
     "timefmt",
+    # ★ 第 385 轮补登记（**非本轮引入的红**）：`core/money.py` 自第 378 轮
+    #   「金额改分」起存在，但当时没登记 → 从那时起本判据一直是红的。
+    #   它是**纯换算内核**（分 ⇄ 元、零容差比对），只 import decimal / typing。
+    #   刻意零耦合：金额精度不该被"当前是谁的配置"影响；且它被 billing 在
+    #   最内层调用，反向 import config 会把配置层拖进每一个算钱的地方。
+    #   ⇒ 到不了 config 是**设计**，补登记而不是补依赖。
+    "money",
 }
 
 #: 依赖图的根：配置真源。出度必须为 0。
