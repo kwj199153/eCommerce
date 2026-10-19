@@ -696,6 +696,9 @@ import { ref, computed, watch, inject, type Ref } from 'vue'
 import LineChart from '@/components/charts/LineChart.vue'
 import DonutChart from '@/components/charts/DonutChart.vue'
 import { useShopStore } from '@/stores/shop'
+// ★ 第 386 轮：409/422 的 detail 是**对象**（未授权 / 站点不支持）。
+//   直接读到界面上会渲染成 `[object Object]`，而且会把「未授权」说成「请求失败」。
+import { errorText, storeNotConnectedInfo, unsupportedMarketplaceInfo } from '@/api/errors'
 import {
   diagnoseAdAccount, analyzeSearchTerms, optimizeBids, analyzeCompetitors,
   isAdDataOk,
@@ -800,15 +803,24 @@ async function loadTab(tab: string, force = false) {
     statuses.value = { ...statuses.value, [tab]: { kind: 'ready' } }
   } catch (e: any) {
     const status = e?.response?.status
-    const detail = e?.response?.data?.detail
+    // ★★ 第 386 轮：**不许**再直接 `= e.response.data.detail`。
+    //   409（`{code: STORE_NOT_CONNECTED, store_id, reason, message}`）与
+    //   422（`UNSUPPORTED_MARKETPLACE`）的 detail 都是**对象**，直接当字符串用
+    //   会在界面上渲染成 `[object Object]` —— 比没有提示更糟，看起来像前端崩了。
+    //   归一到"一句话"的唯一实现是 `@/api/errors::detailText` / `errorText`。
+    const nc = storeNotConnectedInfo(e)
+    const um = nc ? null : unsupportedMarketplaceInfo(e)
     // ★ 400 = 后端 `get_current_shop_id` 的空值守卫。它是**按 HTTP 方法分流**的：
     //   写方法（POST/PUT/PATCH/DELETE）缺 X-Shop-ID ⇒ 直接 400；
     //   读方法才返回 None（端点自己回空列表）。
     //   而本模块这 4 个分析端点**全是 POST** ⇒ 「还没选店铺」在这里就长成 400。
     //   ★ 它是**可解释的业务结论**（去选个店铺即可），不是故障 ⇒ 必须归 empty 态。
     //   给「重试」按钮反而误导：重试一百次也还是没选店铺。
-    if (status === 400) return fail(tab, 'empty', detail || '请先在左上角选择店铺')
-    fail(tab, 'error', detail || e?.message || '请求失败')
+    if (status === 400) return fail(tab, 'empty', errorText(e, '请先在左上角选择店铺'))
+    // ★ 未授权 / 站点不支持：同样是「可解释的业务结论」，出口是去授权，
+    //   不是重试 ⇒ 归 empty 态（没有重试按钮），文案保持后端原话。
+    if (nc || um) return fail(tab, 'empty', (nc ?? um)!.message)
+    fail(tab, 'error', errorText(e, '请求失败'))
   }
 }
 

@@ -21,6 +21,12 @@ import {
 } from '@/api/authRefreshPolicy'
 // ★ L3-3（第 351 轮）：追踪 ID 的唯一实现（两个 HTTP 出口共用）。
 import { newTraceId, rememberTraceId, withTraceId } from '@/api/traceId'
+// ★ 第 386 轮：结构化 `detail` → 可读文案的**唯一实现**搬到了 `@/api/errors`。
+//   搬走的原因不是"整理文件"：409 / 422 的 detail 也是对象（`code=STORE_NOT_CONNECTED`
+//   等），于是**所有**读 detail 的前端位置都需要同一套归一 —— 留在本文件里，
+//   组件要么复制一份（两份实现必然漂移），要么直接读 `response.data.detail`
+//   把对象塞进界面（渲染成 `[object Object]`）。实测已有 19 处这样的读法。
+import { detailText } from '@/api/errors'
 // ★ 第 381 轮：baseURL 改从运行时取 —— 浏览器里 `API_ORIGIN === ''`，
 //   拼出来与原来的字面量 '/api/v1' **逐字符相同**；壳里则是注入的绝对 origin。
 //   ⇒ 写死相对路径的话，壳内每条请求都会命中 SPA 回落，拿到 200 + index.html。
@@ -127,26 +133,8 @@ function refreshOnce(): Promise<boolean> {
   return p
 }
 
-/**
- * 把后端 `detail` 归一成一句可读文案。
- *
- * ★ 为什么需要它（第 385 轮）：后端有**结构化 detail**（对象）的端点 ——
- *   档位闸回 `{code, message, limit, current, upgrade_url}`。直接把它喂给
- *   `message.error(detail)` 在 antd 里会渲染成 `[object Object]`，
- *   用户看到的东西比"没提示"更像崩溃（本项目铁律：失败路径必须回写
- *   用户能看懂的状态）。
- *
- * ★ 为什么优先取 `message` 而不是 JSON.stringify：后者会把
- *   `{"code":"PLAN_LIMIT_EXCEEDED",...}` 整块甩到 toast 里，对用户是无信息噪声。
- */
-function detailText(detail: unknown, fallback: string): string {
-  if (typeof detail === 'string' && detail.trim()) return detail
-  if (detail && typeof detail === 'object') {
-    const msg = (detail as { message?: unknown }).message
-    if (typeof msg === 'string' && msg.trim()) return msg
-  }
-  return fallback
-}
+// ★ 结构化 `detail` → 可读文案的唯一实现（见 `@/api/errors` 文件头）。
+//   本文件内部原有的 5 个调用点直接复用，不再保留同名包装。
 
 // ====== 请求拦截器 ======
 request.interceptors.request.use(
@@ -345,6 +333,31 @@ request.interceptors.response.use(
         //   ★ 用 warning 而不是 error：这不是系统故障，是"该升级了"。
         if (!silentError) {
           message.warning(withTraceId(detailText(data?.detail, '当前套餐额度不足，升级后可继续')))
+        }
+        break
+      }
+
+      case 409: {
+        // ★★ 409 在本 API 里**有两个用途**（第 386 轮）：
+        //   · STORE_NOT_CONNECTED     —— 该店铺还没完成平台授权（正常业务状态）
+        //   · INVOICE_NOT_REFUNDABLE  —— 账单状态不允许退款（管理端）
+        //   只按状态码分支的话，运营点退款会看到「请去授权店铺」——
+        //   归因直接指向错的地方。**必须按 code 分开**。
+        const code = (data?.detail as { code?: string } | undefined)?.code
+        if (!silentError) {
+          if (code === 'STORE_NOT_CONNECTED') {
+            // 用 warning 而不是 error：这不是故障，是「还差一步授权」。
+            message.warning(
+              withTraceId(
+                detailText(
+                  data?.detail,
+                  '该店铺尚未完成平台授权，请先在「店铺设置 → 连接平台」里完成授权',
+                ),
+              ),
+            )
+          } else {
+            message.error(withTraceId(detailText(data?.detail, '操作与当前状态冲突')))
+          }
         }
         break
       }

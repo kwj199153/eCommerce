@@ -34,6 +34,14 @@
       >
         重试
       </button>
+      <!-- ★ 「未授权」的出口不是重试：直接送用户去店铺设置，别让他自己找路由 -->
+      <button
+        v-if="banner.cta === 'settings'"
+        class="rv-retry rv-cta"
+        @click="goShopSettings"
+      >
+        去店铺设置
+      </button>
     </div>
 
     <!-- ① 经营概览 -->
@@ -526,6 +534,18 @@ import type { Ref } from 'vue'
 import BarChart from '@/components/charts/BarChart.vue'
 import UnsupportedNote from './ReviewUnsupportedNote.vue'
 import { useShopStore } from '@/stores/shop'
+// 「去店铺设置」要真的把用户送过去（见 goShopSettings 的注释）
+import { useRouter } from 'vue-router'
+// ★ 第 386 轮：后端 409/422 的 `detail` 是**对象**（`code=STORE_NOT_CONNECTED`
+//   / `UNSUPPORTED_MARKETPLACE`）。直接 `= e.response.data.detail` 会在界面上
+//   渲染成 `[object Object]`，而且会把「未授权」误报成「加载失败，请重试」——
+//   后者把用户按在一个永远点不好的按钮上。归一化只有一份实现（`@/api/errors`）。
+import {
+  errorText,
+  storeNotConnectedInfo,
+  unsupportedMarketplaceInfo,
+  type ConnectIssue,
+} from '@/api/errors'
 import {
   REVIEW_FETCHERS,
   type ReviewAdSum,
@@ -547,6 +567,7 @@ const reviewMode = inject<Ref<'chat' | 'data'>>('reviewMode', ref('chat') as Ref
 const isDataMode = computed(() => reviewMode.value === 'data')
 
 const shopStore = useShopStore()
+const router = useRouter()
 
 const DATA_VIEW_TABS = [
   { key: 'overview', label: '经营概览', icon: '📊' },
@@ -588,6 +609,24 @@ const reports = reactive<Record<string, ReviewReport | null>>({})
 const loading = ref(false)
 const loadError = ref('')
 
+/**
+ * 「这家店取不到数」的**可处理原因**（未授权 / 站点不支持）。
+ *
+ * ★ 与 `loadError` 分成两个 ref，而不是塞进同一个字符串：
+ *      · `loadError` ⇒ 真故障，出口是「重试」；
+ *      · `notConnected` ⇒ 业务状态，出口是「去店铺设置授权」。
+ *   压成一个字符串的后果是三元表达式里必须靠**文案匹配**来决定显示哪个按钮 ——
+ *   那种判据在文案一改就静默失效（本仓「按文案判」踩过的坑）。
+ */
+const connectIssue = ref<ConnectIssue | null>(null)
+/** 区分两类 issue：401 那种「授权流程不可用」与「站点不支持」的出口不同 */
+const connectIssueKind = ref<'not_connected' | 'unsupported' | ''>('')
+
+function clearConnectIssue() {
+  connectIssue.value = null
+  connectIssueKind.value = ''
+}
+
 const activeTab = ref<TabKey>((TOOL_TAB_MAP[props.currentToolId || ''] as TabKey) || 'overview')
 watch(
   () => props.currentToolId,
@@ -596,12 +635,33 @@ watch(
 
 const noShop = computed(() => !shopStore.currentShopId)
 
-const banner = computed<{ kind: string; text: string; retry: boolean } | null>(() => {
+const banner = computed<{
+  kind: string
+  text: string
+  retry: boolean
+  /** 横幅右侧的**非重试**出口：`settings` = 去店铺设置授权 */
+  cta?: 'settings' | 'none'
+} | null>(() => {
   if (noShop.value) {
     return {
       kind: 'warn',
       text: '尚未选择店铺 —— 复盘数据一律按店铺维度取数，请先在界面左上角选择一个店铺。',
       retry: false,
+    }
+  }
+  if (connectIssue.value) {
+    const issue = connectIssue.value
+    const goSettings = connectIssueKind.value === 'not_connected'
+    return {
+      kind: 'warn',
+      // ★ 把「为什么不给数字」说清楚：客户最容易的误解是「同步坏了」，
+      //   于是去查调度、去重试 —— 而实际只是少点了一次授权。
+      text: goSettings
+        ? `${issue.message}（未授权时复盘不返回任何数字，也不会用演示数据顶替）`
+        : `${issue.message} —— 当前仅支持 Amazon 的 10 个站点，请联系我们开通该站点。`,
+      // ★ 未授权/站点不支持都**不给「重试」**：重试改变不了这两件事。
+      retry: false,
+      cta: goSettings ? 'settings' as const : 'none' as const,
     }
   }
   if (loadError.value) return { kind: 'error', text: loadError.value, retry: true }
@@ -616,6 +676,7 @@ async function loadTab(tab: TabKey) {
   if (!missing.length) return
   loading.value = true
   loadError.value = ''
+  clearConnectIssue()
   try {
     const results: ReviewResponse[] = await Promise.all(
       missing.map((id) => REVIEW_FETCHERS[id](def.days))
@@ -637,11 +698,24 @@ async function loadTab(tab: TabKey) {
     })
   } catch (e: any) {
     const status = e?.response?.status
-    loadError.value =
-      e?.response?.data?.detail ||
-      (status === 403
-        ? '当前账号无权访问该店铺的复盘数据，请切换店铺后重试。'
-        : '复盘数据加载失败，请稍后重试。')
+    // ★ 顺序不能换：先认「这是业务状态」，再退到「这是故障」。
+    //   反过来的话，`errorText()` 会把 409 的 message 当成一句普通错误文案，
+    //   于是横幅显示「该店铺尚未完成平台授权…」+ 一个「重试」按钮 —— 更糟，
+    //   因为它看起来像"已经提示对了，点一下就好"。
+    const nc = storeNotConnectedInfo(e)
+    const um = nc ? null : unsupportedMarketplaceInfo(e)
+    if (nc || um) {
+      connectIssue.value = nc ?? um
+      connectIssueKind.value = nc ? 'not_connected' : 'unsupported'
+      loadError.value = ''
+    } else {
+      loadError.value = errorText(
+        e,
+        status === 403
+          ? '当前账号无权访问该店铺的复盘数据，请切换店铺后重试。'
+          : '复盘数据加载失败，请稍后重试。',
+      )
+    }
   } finally {
     loading.value = false
   }
@@ -649,7 +723,20 @@ async function loadTab(tab: TabKey) {
 
 function reload() {
   Object.keys(reports).forEach((k) => { reports[k] = null })
+  clearConnectIssue()
   void loadTab(activeTab.value)
+}
+
+/**
+ * 「去店铺设置」——未授权时唯一有效的出口。
+ *
+ * ★ 用 `router.push` 而不是弹一个「请去设置页」的提示：提示只是把问题描述一遍，
+ *   用户还得自己找路由。这里直接送过去。
+ * ★ 不深链到某个 tab：设置页的 tab 没有 query 契约（实测 `route.query` 零消费），
+ *   编一个 `?tab=stores` 只会静默失效 —— 静默失效比"点了没反应"更坏。
+ */
+function goShopSettings() {
+  void router.push('/settings')
 }
 
 watch(activeTab, (t) => { void loadTab(t) })
@@ -662,6 +749,7 @@ watch(
     if (!id) return
     Object.keys(reports).forEach((k) => { reports[k] = null })
     loadError.value = ''
+    clearConnectIssue()
     void loadTab(activeTab.value)
   },
   { immediate: true }
@@ -812,6 +900,9 @@ const profitCats = computed(() => {
 .rv-banner.error { background: rgba(255,77,79,.1); color: var(--danger); border-color: rgba(255,77,79,.35); }
 .rv-banner-text { flex: 1; min-width: 0; line-height: 1.5; }
 .rv-retry { border: 1px solid currentColor; background: transparent; color: inherit; border-radius: var(--radius-8); padding: 2px 10px; font-size: var(--font-size-11); cursor: pointer; white-space: nowrap; }
+/* ★ 授权引导按钮与「重试」同形但语义不同：warn 横幅上是**主出口**，因此加粗一点点。
+   只在 .rv-cta 上加 fontWeight —— 不动 .rv-retry，避免重试按钮跟着变重。 */
+.rv-cta { font-weight: 600; }
 .rv-unsupported { display: flex; align-items: center; gap: var(--space-6); min-height: 56px; padding: var(--space-12) var(--space-14); border: 1px dashed var(--border-base); border-radius: var(--radius-10); background: var(--bg-hover-light); color: var(--text-tertiary); font-size: var(--font-size-11-5); line-height: 1.6; }
 .rv-unsupported-icon { font-size: var(--font-size-15); opacity: .7; }
 .rv-mini-note { margin-top: var(--space-8); font-size: var(--font-size-10-5); color: var(--text-tertiary); line-height: 1.6; }
