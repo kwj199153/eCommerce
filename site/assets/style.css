@@ -1,5 +1,5 @@
 /* ==========================================================================
-   官网样式表 · 店管家 AI（跨境电商全链路 AI SaaS）
+   官网样式表 · 店管管（跨境电商全链路 AI SaaS）
    --------------------------------------------------------------------------
    ★ 这一页存在的目的：**主体对外可核实** + **产品能力可被看见**
      （备案载体 / 隐私政策 / 服务条款 / 联系方式 / 真实界面佐证）。
@@ -232,6 +232,18 @@ img { max-width: 100%; height: auto; }
 .btn-ghost:hover { border-color: var(--brand-lift); color: var(--brand-ink); }
 
 .note { margin: 18px 0 0; font-size: 13.5px; color: var(--ink-3); }
+/* r385 · 「数据接入现状」主动披露条：事实性信息，不抢正文视觉权重 */
+.data-status {
+  margin: 0 0 40px;
+  padding: 12px 16px;
+  border-left: 3px solid var(--brand-ink);
+  border-radius: 0 10px 10px 0;
+  background: var(--bg-soft);
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+.data-status b { color: var(--ink); }
 
 /* ------------------------------------------------------- 截图容器 .frame */
 .frame {

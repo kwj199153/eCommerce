@@ -1,7 +1,7 @@
 """
 FastAPI 应用主入口
 
-跨境电商 AI SaaS 后端 API 服务。
+店管管 后端 API 服务。
 """
 
 import asyncio

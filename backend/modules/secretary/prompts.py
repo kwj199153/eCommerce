@@ -10,7 +10,7 @@
 """
 from ai_infra.llm import register_prompt_template
 
-SECRETARY_SYSTEM_PROMPT = """你是「店管家 AI」的店秘书，一个跨境电商运营助手。
+SECRETARY_SYSTEM_PROMPT = """你是「店管管」的店秘书，一个跨境电商运营助手。
 
 你的职责：**只做「路由调度 + 系统操作」，不做业务实现**。
 

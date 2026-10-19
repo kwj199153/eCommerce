@@ -124,7 +124,7 @@ class Settings(BaseSettings):
     """应用全局配置"""
 
     # ====== 应用基础 ======
-    app_name: str = "跨境电商AI SaaS"
+    app_name: str = "店管管"
     app_version: str = "0.1.0"
     debug: bool = Field(default=False, description="调试模式")
     environment: str = Field(default="development", description="环境: development/staging/production")
@@ -373,7 +373,20 @@ class Settings(BaseSettings):
     # ====== 服务器配置 ======
     api_host: str = Field(default="0.0.0.0", description="API 监听地址")
     api_port: int = Field(default=8000, description="API 端口")
-    cors_origins: list[str] = Field(default=["http://localhost:5173", "http://localhost:3000"], description="CORS 允许的源")
+    # ★ 第 381 轮：桌面壳 / 平板 APK 里页面 origin 是 `tauri.localhost`，
+    #   而接口走绝对地址（`docs/产品侧上线契约.md` §3.3 的 8090 口）⇒ 每个请求都是跨域。
+    #   Windows（WebView2）= `http://tauri.localhost`；Android = `https://tauri.localhost`。
+    #   ⚠️ 线上 `.env` 若**显式**写了 `CORS_ORIGINS`，这里的默认值不生效 ——
+    #      必须在那边把这两条加进去（同族坑：`ENVIRONMENT=production` 覆盖默认值）。
+    cors_origins: list[str] = Field(
+        default=[
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+        ],
+        description="CORS 允许的源",
+    )
 
     # ====== 数据库 (PostgreSQL) ======
     database_url: str = Field(
@@ -533,7 +546,7 @@ class Settings(BaseSettings):
     aliyun_dm_account_name: str = Field(
         default="", description="发信地址（须已在控制台验证，如 noreply@mail.example.com）"
     )
-    aliyun_dm_from_alias: str = Field(default="跨境电商AI", description="发件人显示名")
+    aliyun_dm_from_alias: str = Field(default="店管管", description="发件人显示名")
 
     # 注册后是否必须验证邮箱才能登录。
     # ★ 默认 False —— 这一条决定了「打开它」是不是安全的：

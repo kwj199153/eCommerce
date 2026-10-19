@@ -404,8 +404,10 @@ check('B8c', 'Login `.logo h1` 取的是 **L2**（--primary）而不是 L1 —�
   })(), { 块: cssBlockAfter(src.login, '.logo h1') })
 check('B8d', 'index.html 不再引 /vite.svg（实测该文件**根本不存在** ⇒ 此前 favicon 是 404）',
   !/vite\.svg/.test(stripComments(src.indexHtml)), null)
-check('B8e', 'index.html 引的是 /favicon.svg',
-  /rel="icon"[^>]*href="\/favicon\.svg"/.test(src.indexHtml), null)
+// ★ 第 383 轮：允许 `?v=<数字>` 破缓存后缀。此前把 href 钉成精确的 `/favicon.svg`，
+//   于是加版本号（正确做法）反而判红 —— 判据该管的是「指向哪个文件」，不是「带不带查询串」。
+check('B8e', 'index.html 引的是 /favicon.svg（允许 ?v= 破缓存后缀）',
+  /rel="icon"[^>]*href="\/favicon\.svg(?:\?v=\d+)?"/.test(src.indexHtml), null)
 
 /* ================================================ [9] B9/B10/B11 三道硬约束 */
 console.log()
@@ -428,6 +430,37 @@ check('B11a', '两处 .logo-avatar 的底色都取 var(--brand-ink)（与 favico
 check('B11b', '`.logo-avatar` 的圆角与 favicon 的 rx 同比例（18.75% = 9/48）',
   /border-radius:\s*18\.75%/.test(logoAvatars.workspace || '') &&
     /border-radius:\s*18\.75%/.test(logoAvatars.login || ''), null)
+
+/* ============================ [12] B12 SVG 注释里不得出现连续两个短横 */
+// ★ 第 383 轮实锤：`public/favicon.svg` 的注释里写了带前缀短横的 CSS 变量名，
+//   整份文件因此**不是合法 XML** ⇒ 浏览器加载失败后**静默沿用旧图标**
+//   （tab 上一直是旧项目那个蓝底「学」字，不报错、不警告、build 也不红）。
+//   判据直接钉**根因**（注释体里的 `--`），而不是事后找 XML 解析器。
+console.log()
+console.log('[12] B12 SVG 注释合法性（连续短横 ⇒ 非合法 XML ⇒ 浏览器静默沿用旧图标）')
+const SVG_DIRS = [
+  { label: '产品站', dir: path.join(ROOT, 'public') },
+  { label: '官网', dir: path.resolve(ROOT, '..', 'site', 'assets') },
+]
+let svgCount = 0
+const svgBad = []
+for (const { label, dir } of SVG_DIRS) {
+  if (!fs.existsSync(dir)) continue
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith('.svg')) continue
+    svgCount += 1
+    const body = fs.readFileSync(path.join(dir, f), 'utf8')
+    for (const m of body.matchAll(/<!--([\s\S]*?)-->/g)) {
+      if (m[1].includes('--')) {
+        svgBad.push(`${label}/${f}`)
+        break
+      }
+    }
+  }
+}
+check('B12', `扫描 ${svgCount} 个 svg：注释体里无连续短横`, svgCount >= 2 && svgBad.length === 0, {
+  命中: svgBad.join(' / ') || '无',
+})
 
 /* ------------------------------------------------------------------ 汇总 */
 console.log()

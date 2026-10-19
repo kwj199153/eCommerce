@@ -6,7 +6,7 @@
           class="logo-avatar"
           data-brand-mark
         ><BrandMark /></span>
-        <h1>跨境电商AI SaaS</h1>
+        <h1>店管管</h1>
         <p>一站式 AI 原生跨境电商全链路平台</p>
       </div>
 

@@ -47,7 +47,7 @@ async def _get_my_subscription_impl() -> dict:
             "plan_name": str,        # e.g. "pro"
             "plan_display_name": str, # e.g. "Pro · 专业版"
             "status": str,           # active / trialing / cancelled ...
-            "price_monthly": float,
+            "price_monthly_fen": int,
             "period_start": str,     # ISO datetime
             "period_end": str | None,
             "cancel_at_period_end": bool,
@@ -101,7 +101,8 @@ async def _get_my_subscription_impl() -> dict:
             "plan_name": plan.name,
             "plan_display_name": plan.display_name,
             "status": sub.status,
-            "price_monthly": float(plan.price_monthly or 0),
+            # ★ 单位**分**（收款金额一律整数分，见 core/money.py）
+            "price_monthly_fen": int(plan.price_monthly_fen or 0),
             "period_start": sub.current_period_start.isoformat() if sub.current_period_start else None,
             "period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
             "cancel_at_period_end": bool(sub.cancel_at_period_end),

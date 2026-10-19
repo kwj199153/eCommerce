@@ -1,8 +1,10 @@
 <!--
-  店管家 AI 品牌标识 —— 官网 favicon。
+  店管管 品牌标识 —— 官网 favicon。
 
-  ★ 底色 `#2b20df` = `--brand-ink`（产品站 `src/theme/presets.ts` 的 `BRAND_VARS`；
-    本站同值定义在 `assets/style.css` 的 `--brand-ink`）：两站标识自此一致（第 373 轮）。
+  ★ 底色 `#2b20df` = brand-ink 变量（CSS 变量名前面是两个连字符；产品站定义在
+    `src/theme/presets.ts` 的 `BRAND_VARS`，本站同值在 `assets/style.css`）：两站标识自此一致（第 373 轮）。
+    ★★★ 注释里**不得**出现连续两个短横：整个文件会因此不是合法 XML，
+         浏览器加载失败后**静默沿用旧图标**（第 373~383 轮 tab 上那个蓝底「学」字就是这么来的）。
     此前本站是**柱状图**（三根白柱 + `#4f46e5` 底）—— 柱状图与"店"没有任何可对应的
     形状关系，产品站也与它不同形。现在**几何真源唯一**。
 
@@ -16,7 +18,7 @@
     跨设备"的极端场景，同一标识在任何设备上长得一样）、零授权风险、任意尺寸不糊。
     详见 `docs/图形标识设计稿-r373b.html` 与 `docs/品牌标识与品牌色-r373.md`。
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="店管家 AI">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="店管管">
   <rect width="48" height="48" rx="9" fill="#2b20df"/>
   <path d="M11.7 8.4 H36.3 Q37.9 8.4 38.7 10.5 L41 15.4 a5.667 3.3 0 0 1 -11.333 0 a5.667 3.3 0 0 1 -11.333 0 a5.667 3.3 0 0 1 -11.333 0 L9.3 10.5 Q10.1 8.4 11.7 8.4 Z" fill="#ffffff"/>
   <path d="M10.5 21 V36.8 Q10.5 39.4 13 39.4 H35 Q37.5 39.4 37.5 36.8 V21" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round"/>

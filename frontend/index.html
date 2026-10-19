@@ -5,9 +5,15 @@
     <!-- 品牌标识 favicon（第 373 轮）：此前是 `/vite.svg`（Vite 出厂图标，从没换过）。
          几何真源 = src/components/BrandMark.vue；本文件是它删掉「笑脸」那一条 path 的
          严格子集 —— 16px 下笑脸会与墙体糊成一体（判据 scripts/check-brand-mark.cjs）。 -->
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>跨境电商AI SaaS</title>
+    <!-- ★ 第 383 轮：`?v=383` 破缓存。此前这份 SVG 的注释里写了带前缀短横的 CSS 变量名，
+         整份文件不是合法 XML ⇒ 浏览器加载失败后**静默沿用旧图标**（同 origin 上旧项目的
+         蓝底「学」字），且不加版本号时强刷也未必重新请求。 -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=383" />
+    <!-- ★ 第 381 轮：`viewport-fit=cover` 是给 iOS 用的（Android WebView 的
+         `env(safe-area-inset-*)` 恒为 0px，那边由壳推 CSS 变量，见 src/styles/safe-area.css）。
+         不加它，iOS 上刘海区会留白；加了在桌面/Android 上无副作用。 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>店管管</title>
     <!--
       首屏防白闪：早于任何 JS bundle 与样式表执行。
       本脚本里有 4 组字面量是「复制点」（无 TS 类型可依赖），全部由

@@ -48,7 +48,7 @@ AIGC_SELECTION_TRANSLATE_SYSTEM = (
 register_prompt_template("aigc_selection_translate", AIGC_SELECTION_TRANSLATE_SYSTEM)
 
 AIGC_ENHANCE_PROMPT_SYSTEM = (
-        """你是跨境电商 SaaS「店管家」的提示词工程师。
+        """你是跨境电商 SaaS「店管管」的提示词工程师。
 用户会在对话框里写一句口语化的需求，你要把它改写成一段更清晰、更可执行的提示词。
 
 硬性规则：

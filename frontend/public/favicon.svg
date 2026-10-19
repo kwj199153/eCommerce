@@ -1,7 +1,13 @@
 <!--
-  店管家 AI 品牌标识 —— 产品站 favicon。
+  店管管 品牌标识 —— 产品站 favicon。
 
-  ★ 底色 `#2b20df` = `--brand-ink`（`src/theme/presets.ts` 的 `BRAND_VARS`，**L1 品牌层**）：
+  ★ 底色 `#2b20df` = brand-ink 变量（CSS 变量名前面是两个连字符；定义在
+    `src/theme/presets.ts` 的 `BRAND_VARS`，**L1 品牌层**）：
+
+  ★★★ 注释里**不得**出现连续两个短横 —— 那会让整个文件不是合法 XML，
+       浏览器加载 favicon 失败后**静默沿用旧图标**（不报错、不警告）。
+       第 373~383 轮 tab 上一直是旧项目的蓝底「学」字，原因就是本行曾写成带前缀的变量名。
+       ⇒ 判据：`.workbuddy/probes/scan-svg-xml.py`（全仓 svg 必须 100% 可解析）。
     与官网 `site/assets/favicon.svg` **同一个色** —— 两站标识自此一致（第 373 轮）。
     标识底色**不随主题变**：品牌识别的定义就是"不管在哪儿都是这个色"。
     （此前这里是 Vite 的出厂紫色闪电，`index.html` 引的也是 `/vite.svg` —— 从没换过。）
@@ -17,7 +23,7 @@
     跨设备"的极端场景，同一标识在任何设备上长得一样）、零授权风险、任意尺寸不糊。
     详见 `docs/图形标识设计稿-r373b.html` 与 `docs/品牌标识与品牌色-r373.md`。
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="店管家 AI">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="店管管">
   <rect width="48" height="48" rx="9" fill="#2b20df"/>
   <path d="M11.7 8.4 H36.3 Q37.9 8.4 38.7 10.5 L41 15.4 a5.667 3.3 0 0 1 -11.333 0 a5.667 3.3 0 0 1 -11.333 0 a5.667 3.3 0 0 1 -11.333 0 L9.3 10.5 Q10.1 8.4 11.7 8.4 Z" fill="#ffffff"/>
   <path d="M10.5 21 V36.8 Q10.5 39.4 13 39.4 H35 Q37.5 39.4 37.5 36.8 V21" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round"/>

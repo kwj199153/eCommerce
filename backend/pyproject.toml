@@ -37,7 +37,7 @@
 [project]
 name = "ecommerce-ai-saas-backend"
 version = "0.1.0"
-description = "店管家 AI —— 一站式 AI 原生跨境电商全链路 SaaS 后端"
+description = "店管管 —— 一站式 AI 原生跨境电商全链路 SaaS 后端"
 requires-python = ">=3.11"
 readme = "README.md"
 
