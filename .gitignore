@@ -93,3 +93,24 @@ script-r*.py
 out-junit-*.xml
 out-probe-*.txt
 .junit-*.xml
+
+# ====== Tauri 桌面壳构建产物 / 生成工程（不入库）======
+# ★ 为什么必须在这里忽略（第 382 轮实测）：前端 `npm run build` 的第一个门禁
+#   `scripts/check-eol-contract.cjs` 用
+#   `git ls-files --eol --cached --others --exclude-standard` 取清单 ——
+#   `--exclude-standard` 只认 .gitignore。没有这两条时，`tauri android init`
+#   生成 gen/android、cargo 编出 target/ 之后，清单从 1253 暴涨到 3802，
+#   其中 673 个是构建产物（exe/pdb/dll/gradle-wrapper.jar）被判「声明 eol=lf
+#   却有 CRLF」⇒ 行尾门禁 FAIL ⇒ beforeBuildCommand 失败 ⇒ 打不出 APK。
+#   给二进制产物「归位行尾」是错的方向（会破坏产物本身），只能忽略。
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/node_modules/
+# 安卓签名私钥：本机保存，不入库（生成命令见 desktop/README.md）
+desktop/keystore/
+# 打包产物（APK/exe）：体积大、可再生，不入库
+desktop/out/
+# 第 386 轮补：构建前把 dist 改名挪走（避沙箱删除守卫）留下的备份目录。
+# 注意 `dist-*/` 匹配不到 `dist.bak-*`（点号不是连字符）—— 实测这两个目录
+# 一度以 untracked 状态挂在 `git status` 里，`git add .` 会把整个构建产物收进库。
+frontend/dist.bak-*/

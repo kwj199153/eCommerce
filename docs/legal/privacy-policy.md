@@ -1,10 +1,10 @@
-# 店管家 AI 隐私政策（草稿）
+# 店管管 隐私政策（草稿）
 
 > **草案状态**：工程侧模板，未经法务审阅，不得对外发布。
 > 占位符说明见 [`PLACEHOLDERS.md`](./PLACEHOLDERS.md)。
 > 最后更新：{{EFFECTIVE_DATE}}　生效日期：{{EFFECTIVE_DATE}}
 
-{{COMPANY_LEGAL_NAME}}（下称"我们"）运营 店管家 AI（域名 {{SERVICE_DOMAIN}}，
+{{COMPANY_LEGAL_NAME}}（下称"我们"）运营 店管管（域名 {{SERVICE_DOMAIN}}，
 下称"本服务"）——一个面向跨境电商卖家的 AI 运营 SaaS，功能覆盖选品、Listing 生成、
 广告分析、智能客服、竞品监控与素材生成。
 

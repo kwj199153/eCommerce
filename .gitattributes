@@ -85,6 +85,7 @@
 *.jpeg binary
 *.gif  binary
 *.ico  binary
+*.icns binary
 *.pdf  binary
 *.xlsx binary
 *.xls  binary
@@ -94,6 +95,9 @@
 *.ttf   binary
 *.mp3  binary
 *.mp4  binary
+# 签名密钥是二进制容器（里面有裸 CR），不声明会被行尾门禁当成「漂移的文本」
+*.jks   binary
+*.keystore binary
 
 # lock 文件：体积大且机械生成，不参与 diff 展示
 package-lock.json -diff linguist-generated

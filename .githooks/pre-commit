@@ -37,8 +37,21 @@ for f in $FILES; do
       fail=1
       ;;
     .env|*/.env|.env.local|*/.env.local|.env.production|*/.env.production|.env.development|*/.env.development)
-      msg="${msg}\n  [密钥]      $f  —— 含真实密钥，只应提交 .env.example"
-      fail=1
+      # ★ 区分「首次入库」与「修改已跟踪文件」（第 386 轮修判据）：
+      #   一刀切拦「修改」与本仓事实冲突 —— `frontend/.env.production` 自
+      #   797e59d 起就在库里，内容全是 VITE_* 构建开关（无任何密钥）。
+      #   拦它只有一个结局：改用 --no-verify，而那会**顺带关掉本 hook 的
+      #   其它所有检查**（大文件 / 调试残留 / 冲突标记），等于把门禁整体废掉
+      #   —— 比误报一次坏得多。
+      #   ⇒ 只在「首次入库」或「本次 diff 真的新增了疑似凭据行」时拦。
+      if ! git cat-file -e "HEAD:$f" 2>/dev/null; then
+        msg="${msg}\n  [密钥]      $f  —— 新增 .env 文件，只应提交 .env.example"
+        fail=1
+      elif git diff --cached -U0 -- "$f" 2>/dev/null \
+           | grep -qE '^\+[^+].*(sk-[A-Za-z0-9]{8}|AKIA[0-9A-Z]{8}|ghp_[A-Za-z0-9]{10}|-----BEGIN|(SECRET|PASSWORD|API_KEY|ACCESS_TOKEN)[[:space:]]*=)'; then
+        msg="${msg}\n  [密钥]      $f  —— 本次修改新增了疑似凭据行"
+        fail=1
+      fi
       ;;
   esac
 done

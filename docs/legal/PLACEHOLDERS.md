@@ -85,7 +85,7 @@
 
 | 占位符 | 处置 | 依据（可复现） |
 |---|---|---|
-| `SERVICE_NAME` | 回填「店管家 AI」 | `frontend/src/views/Workspace.vue`（logo 文案）、`frontend/src/config/tourSteps.ts`、`README.md` |
+| `SERVICE_NAME` | 回填「店管管」 | `frontend/src/views/Workspace.vue`（logo 文案）、`frontend/src/config/tourSteps.ts`、`README.md` |
 | `YEAR` | 回填「2026」 | `git log --reverse` 首条提交日期 2026-09-10（首个发布年份） |
 | `PAYMENT_PROVIDER` | 回填「支付宝（Alipay）」 | `backend/core/config.py`：`KNOWN_UNIMPLEMENTED_GATEWAYS` 只含 stripe / wechat / wechatpay / paypal，`PAYMENT_NOTIFY_PATH` 指向 alipay ⇒ 唯一已接入网关 |
 | `EMAIL_PROVIDER` | 回填「阿里云邮件推送（DirectMail）」 | `backend/core/config.py`：`EMAIL_PROVIDER` 可选值仅 console / aliyun_dm / disabled，生产要求 `aliyun_dm` + `ALIYUN_DM_*`；实现在 `backend/core/identity/mailer.py` |
