@@ -90,6 +90,38 @@ def _shop(shop_id: str = SHOP) -> dict:
     return {"X-Shop-ID": shop_id}
 
 
+@pytest.fixture(autouse=True)
+def _stub_data_source(monkeypatch):
+    """把**取数**那一层换掉：本文件测的是「契约与归属」，不是「数据从哪来」。
+
+    ★☆ 这个桩为什么是必需的（第 386 轮改动带来的口径变化）
+    ------------------------------------------------------
+      改造前本文件的 20 条用例能过，靠的是旧工厂的**静默 mock 回退**：
+      `store_test` 在库里但没授权 ⇒ `get_data_source()` 悄悄返回
+      `MockAmazonDataSource`，于是端点照常 200。
+      静默回退被删除之后，同一个请求变成 `StoreNotConnected`（→ 409）。
+      **这不是回归，正是本轮要的行为**（真实客户不该看到编造数据）。
+
+    ★ 为什么是「在这里打桩」而不是「让 store_test 变成演示店 / 把 DEMO_MODE
+      在测试环境打开」：后者等于把刚拆掉的静默假数据换个地方装回去，而且
+      会让「契约测试」和「演示链路」耦在一起 —— 将来演示档一关，这批用例
+      集体变红，红的原因跟契约毫无关系。
+
+    ★ 打桩位置必须是 `service._source`：它是模块内**按名字调用**的唯一取数口
+      （6 个能力都写 `source = await _source(store_id)`）。打在
+      `modules.amazon_sp.open_data_source` 上对已在 import 期绑定的名字无效
+      （本仓踩过：from-import 冻结后 `patch.object` 静默失效）。
+    """
+    from modules.amazon_sp import MockAmazonDataSource
+    import modules.review_analyst.service as service
+
+    async def _stub(store_id: str):
+        # 真造一个 mock 实例而不是 MagicMock：端点会真的调 fetch_* 并读返回行的字段
+        return MockAmazonDataSource(seed=42)
+
+    monkeypatch.setattr(service, "_source", _stub)
+
+
 # ============================================================
 # 1. 缺 / 空 / 纯空白 X-Shop-ID ⇒ 400
 # ============================================================
@@ -576,3 +608,43 @@ def test_envelope_message_judge_selfcheck(snippet, should_catch):
         assert caught, f"判据瞎了：{snippet!r} 是历史病根形态，却没抓到"
     else:
         assert not caught, f"判据误伤：{snippet!r} 是合规形态（短回执），却被判红"
+
+
+# ============================================================
+# 8. ★ P0-3：未授权店铺 ⇒ 409 + code=STORE_NOT_CONNECTED（**不是** 500）
+# ============================================================
+
+@pytest.mark.parametrize("path,body,name", ENDPOINTS, ids=IDS)
+async def test_unconnected_store_is_409_not_500(client, path, body, name, monkeypatch):
+    """客户还没授权平台时，复盘端点必须回 409 + 可识别的 code。
+
+    ★ 判据为什么必须是「409 且 code 对」而不是「不是 200」：
+      `_guard` 的兜底分支是 `except Exception → 500`，它会把
+      `StoreNotConnected` 一起吞进去。500 的表现是「服务端坏了」，于是客户
+      去查日志、运维去查调度 —— 而真因是「这家店没点授权」。归因反向。
+      实测：接上按店凭据后，第一个真实客户在没授权的店上点「复盘」，
+      看到的就是 `利润审计失败: 店铺 store_xxx 未授权`（HTTP 500）。
+
+    ★ 为什么还要断言 `code`：409 在这个 API 里不止一种含义（例如
+      `INVOICE_NOT_REFUNDABLE`）。只判状态码的话，前端无法区分「去授权」
+      与「这笔不能退」，只能弹一句含糊的错。
+    """
+    from modules.amazon_sp import StoreNotConnected
+    import modules.review_analyst.service as service
+
+    async def _raise(store_id: str):
+        exc = StoreNotConnected(store_id, "该店铺尚未完成 Amazon 授权", reason="no_credentials")
+        raise exc
+
+    monkeypatch.setattr(service, "_source", _raise)
+
+    r = await client.post(path, json=body, headers=_shop())
+    assert r.status_code == 409, (
+        f"{name} 期望 409（未授权是业务状态），实际 {r.status_code} {r.text[:300]}"
+    )
+    detail = r.json().get("detail") or {}
+    assert detail.get("code") == "STORE_NOT_CONNECTED", detail
+    assert detail.get("store_id") == SHOP, detail
+    assert detail.get("reason") == "no_credentials", detail
+    # 文案必须指向「去授权」，而不是「稍后重试」——后者会让客户一直等
+    assert "授权" in (detail.get("message") or ""), detail

@@ -61,21 +61,32 @@ ORDER_ID = "112-1234567-8901234"
 
 
 def _patch_factory(monkeypatch, behavior):
-    """把**门面**上的 `get_data_source` 换掉，并记录每次调用的 `prefer` 值。
+    """把**门面**上的 `open_data_source` 换掉，并记录每次调用的 `prefer` 值。
 
     ★ 打桩必须打在 `modules.amazon_sp`（门面）上，不能打
       `modules.amazon_sp.data_sources`：生产代码按门禁 G-1 只从门面取名字，
       打在子模块上的桩**永远不被查到**（见 `test_facade_monkeypatch_targets.py`）。
+      `orders.py` 里写的是函数内 `from modules.amazon_sp import open_data_source`，
+      调用时才从模块对象取属性 ⇒ 打在门面上的桩**能**被查到。
+
+    ★ 桩本身必须是 `async def`：第 386 轮起入口要读库解密，返回的是协程。
+      写成同步函数会在 `await` 处抛 `TypeError: object _Src can't be used in
+      'await' expression` —— 而那条 `TypeError` 会被 `except Exception` 吞掉，
+      于是用例**全都还能过**，只是永远走「平台不可用」分支（假绿）。
     """
     calls: list[str] = []
+    store_ids: list[str] = []
 
-    def fake(prefer="auto", **kwargs):
+    async def fake(store_id, prefer="auto", **kwargs):
         calls.append(prefer)
+        store_ids.append(store_id)
         return behavior(prefer, **kwargs)
+
+    fake.store_ids = store_ids  # type: ignore[attr-defined]
 
     import modules.amazon_sp as facade
 
-    monkeypatch.setattr(facade, "get_data_source", fake)
+    monkeypatch.setattr(facade, "open_data_source", fake)
     return calls
 
 

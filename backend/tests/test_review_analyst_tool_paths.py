@@ -299,7 +299,14 @@ async def test_ad_review_grades_campaigns_by_acos(monkeypatch):
         _ad_row("b-edge", spend=32.0, sales=100.0),   # acos 32.0 → B（边界含）
         _ad_row("c-high", spend=50.0, sales=100.0),   # acos 50.0 → C
     ]
-    monkeypatch.setattr(ra_service, "_source", lambda: _StubAdSource(ads))
+    # ★ 第 386 轮：`_source` 从 `()` 改成 `(store_id)` 且变成 async
+    #   （按店取数要读库解密）。桩必须跟着变，否则报
+    #   `TypeError: <lambda>() takes 0 positional arguments but 1 was given`——
+    #   而这条 TypeError 会被 `_guard` 的兜底分支吞成 500，看起来像别的问题。
+    async def _stub_source(store_id):
+        return _StubAdSource(ads)
+
+    monkeypatch.setattr(ra_service, "_source", _stub_source)
 
     data = await ra_service.ad_review(ra_service.AdReviewRequest(days=7), SHOP)
 

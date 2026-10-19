@@ -28,7 +28,7 @@
   4. 文件名 `conftest.py` / `test_*.py` / `*_test.py`
   5. **显式 mock 模块**：文件名含 `mock` 的 .py（当前恰有 2 个，见
      `_KNOWN_MOCK_MODULES`）。理由：这些模块的「假」写在名字里、是公开的，
-     而且它们的唯一入口 `modules.amazon_sp.get_data_source()` 在缺凭据时会
+     而且它们的唯一入口 `modules.amazon_sp.open_data_source(store_id)` 在缺凭据时会
      `logger.warning`（「有声的假数据」）。与之相对，`platforms/amazon/client.py`
      的假数据是**静默**的 —— 所以它在基线里、必须归零。
      ★ 这份清单被 `test_excluded_mock_modules_are_exactly_the_known_list` 钉住：
@@ -57,7 +57,7 @@
         A/B 预期增幅 2 + A+ 模块 SEO 评分 1。归宿是「接真源，或改成显式的『未测』状态」
         （与 `#728` 对合规子块的处置同形）。
       * `platforms/amazon/client.py` 14 处 —— 旧适配器的编数（已逐点打 MOCK 告警）。
-        归宿不是改这个文件，而是**消费方改走 `modules.amazon_sp.get_data_source()`**；
+        归宿不是改这个文件，而是**消费方改走 `modules.amazon_sp.open_data_source(store_id)`**；
         在此之前它们留在基线里，靠 `test_no_file_exceeds_baseline` 冻结住。
   - 目标：**0**。
 

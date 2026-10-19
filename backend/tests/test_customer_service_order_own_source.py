@@ -78,8 +78,12 @@ def traced(monkeypatch):
     monkeypatch.setattr(trade_facade, "get_order_context", _own)
     monkeypatch.setattr(trade_facade, "get_order_context_miss", _own_miss, raising=False)
 
-    def _factory(prefer=None, **kw):
-        calls.append(("platform", prefer))
+    # ★ 第 386 轮：入口从 `get_data_source(prefer=...)`（无 store_id）换成
+    #   `open_data_source(store_id, prefer=...)`，且是**异步**的（要读库解密）。
+    #   这里把 store_id 一并记进 calls —— 「按店取数」的判据必须包含
+    #   「传的是不是这个店铺」，只记 prefer 的话，退化成全局入口也能过。
+    async def _factory(store_id, prefer=None, **kw):
+        calls.append(("platform", store_id, prefer))
 
         class _Src:
             def fetch_order_tracking(self, order_id):
@@ -87,7 +91,7 @@ def traced(monkeypatch):
         return _Src()
 
     import modules.amazon_sp as amazon_sp
-    monkeypatch.setattr(amazon_sp, "get_data_source", _factory)
+    monkeypatch.setattr(amazon_sp, "open_data_source", _factory)
 
     # 会话工厂不会被真正用到（get_order_context 已被替换），但留个兜底防真连库
     return calls
@@ -156,7 +160,9 @@ async def test_falls_back_to_platform_when_own_source_misses(agent, traced, monk
 
     assert info is None
     assert ("own", SHOP, ORDER) in traced, "库里没有也必须先问过自有库"
-    assert ("platform", "sp_api") in traced, "自有库未命中应回退平台适配层"
+    # ★ 三元组而不是 `("platform", "sp_api")`：第 386 轮起平台取数**按店**，
+    #   所以判据必须同时钉住「走的是本店铺」，否则退化成全局入口也能过。
+    assert ("platform", SHOP, "sp_api") in traced, "自有库未命中应回退平台适配层（且按本店铺）"
     # ★ 两个源都试过 ⇒ 原因里两段都要有。只报一段会让「库里没同步到」
     #   和「平台根本没有」混成同一句话，归因反向。
     assert "自有订单库中查无此订单" in why

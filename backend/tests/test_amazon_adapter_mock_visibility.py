@@ -294,6 +294,17 @@ def test_uses_stdlib_logging_not_loguru():
 
 @pytest.mark.parametrize("method", sorted(MOCK_METHODS))
 def test_warning_message_points_at_the_real_data_source(method):
-    """告警必须给出「去哪儿拿真数据」，否则它只是一句抱怨。"""
+    """告警必须给出「去哪儿拿真数据」，否则它只是一句抱怨。
+
+    ★ 第 386 轮：真实入口从 `get_data_source()`（无 store_id，全局一把钥匙）
+      换成 `open_data_source(store_id)`。判据必须跟着改 —— 否则会出现
+      两个方向都坏掉：文案改了但用例还钉旧串（红），或者有人把文案改回旧入口
+      而用例仍绿（这条判据就白写了）。
+    """
     src = CLIENT.read_text(encoding="utf-8")
-    assert "modules.amazon_sp.get_data_source()" in src, "告警里缺少真实数据源指引"
+    assert "modules.amazon_sp.open_data_source(store_id)" in src, (
+        "告警里缺少真实数据源指引（应为 open_data_source(store_id)）"
+    )
+    assert "get_data_source()" not in src, (
+        "告警仍指向已删除的旧入口 get_data_source() —— 照着它去找的人会扑空"
+    )

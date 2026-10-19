@@ -9,7 +9,7 @@
 
 §1 数据源**具体实现**必须经工厂
    本项目的 SP-API 数据源有三件套：抽象 `data_sources/base.py`、
-   工厂 `data_sources/__init__.py::get_data_source()`、实现 `mock_source` / `sp_api_source`。
+   工厂 `data_sources/__init__.py::open_data_source(store_id)`、实现 `mock_source` / `sp_api_source`。
    业务模块直接 import 实现类（或直接实例化）会让「抽象 + 工厂」形同虚设 ——
    实测的历史形态是 `review_analyst` 里 `_source = MockAmazonDataSource(seed=42)`
    的**模块级单例**，后果是配好真实凭据也永远跑假数据，且没有任何报错。
@@ -36,6 +36,13 @@ BACKEND = Path(__file__).resolve().parents[1]
 EXCLUDE_DIR_PARTS = {
     "__pycache__", "tests", "alembic", "logs", "uploads",
     ".venv", "venv", "site-packages",
+    # ★ `.workbuddy` 是 gitignored 的草稿目录（`.gitignore:71`），里面是历轮
+    #   临时补丁/探针脚本。它们**不进仓库**，也就不是「源码形态」的判据对象；
+    #   不排除的话，本地留着一个 r371 的探针就能把这道门禁顶红 ——
+    #   而红的原因是「我的回收站里有垃圾」，不是「代码违规」。
+    #   实测就是 `backend/.workbuddy/probes/verify-r371-briefing.py` 跨包引了
+    #   `modules.monitors.tasks` 的私有符号，把这条判据顶成了假红。
+    ".workbuddy",
 }
 
 
@@ -112,17 +119,17 @@ def scan_direct_source_imports() -> list[tuple[str, int, str]]:
             if concrete:
                 hits.append(
                     (rel, lineno,
-                     f"从 {module or '<相对>'} 取出具体数据源类 {concrete}（应改用 get_data_source）")
+                     f"从 {module or '<相对>'} 取出具体数据源类 {concrete}（应改用 open_data_source）")
                 )
     return hits
 
 
 def test_no_module_bypasses_the_data_source_factory():
-    """业务代码不得绕过 `get_data_source()` 直接引用数据源实现。"""
+    """业务代码不得绕过 `open_data_source()` 直接引用数据源实现。"""
     hits = scan_direct_source_imports()
     assert hits == [], (
         "以下位置绕开了数据源工厂（改用 "
-        "`from modules.amazon_sp.data_sources import get_data_source`）：\n"
+        "`from modules.amazon_sp import open_data_source`）：\n"
         + "\n".join(f"  {f}:{ln}  {why}" for f, ln, why in hits)
     )
 
@@ -133,8 +140,15 @@ def test_the_factory_is_the_only_door():
     assert factory.exists(), "数据源工厂文件不见了"
     tree = _parse(factory)
     assert tree is not None
-    defines = {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}
-    assert "get_data_source" in defines, "工厂里没有 get_data_source"
+    # ★ 必须是 `(FunctionDef, AsyncFunctionDef)`：第 386 轮起入口是
+    #   `async def open_data_source(store_id)`（要读库解密）。只认 FunctionDef
+    #   会让这条自检直接失败，而失败原因看起来像「工厂不存在」——
+    #   归因跑偏的第一步就是这里。
+    defines = {
+        n.name for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert "open_data_source" in defines, "工厂里没有 open_data_source"
     exported = set()
     for n in tree.body:
         if isinstance(n, ast.Assign):
@@ -143,7 +157,7 @@ def test_the_factory_is_the_only_door():
                     if isinstance(n.value, ast.List):
                         exported = {e.value for e in n.value.elts
                                     if isinstance(e, ast.Constant)}
-    assert "get_data_source" in exported, "get_data_source 不在 __all__ 里"
+    assert "open_data_source" in exported, "open_data_source 不在 __all__ 里"
 
 
 # ================================================================ §2
@@ -275,7 +289,7 @@ def test_import_boundary_gates_are_not_vacuous():
     assert "SpApiDataSource" in set(mods[0][2]) & CONCRETE_SOURCE_CLASSES
 
     # §1：经工厂 import 不算违规
-    t = ast.parse("from modules.amazon_sp.data_sources import get_data_source\n")
+    t = ast.parse("from modules.amazon_sp.data_sources import open_data_source\n")
     mods = _imported_modules(t)
     assert mods[0][1] not in SOURCE_IMPL_MODULES
     assert not (set(mods[0][2]) & CONCRETE_SOURCE_CLASSES)
