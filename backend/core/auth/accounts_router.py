@@ -419,6 +419,7 @@ async def list_members(
 async def invite_member(
     account_id: str,
     data: MemberInviteRequest,
+    request: Request,
     current_user: User = Depends(_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -434,6 +435,18 @@ async def invite_member(
       "先建个占位用户" —— 占位用户会污染 users 表、拿到无法登录的账号。
     """
     await require_account_permission(db, current_user, account_id, "member.manage")
+
+    # ★★ 席位闸（第 385 轮 · 商用审查 P0-5）：`max_users` 此前无人拦
+    #   ⇒ 免费版（1 席位）也能加 20 个人，企业版的"多用户"卖点无差异。
+    #   ★ 延迟 import：本文件在 `core/` 下，**顶层**不得 import modules
+    #     （见 tests/test_core_layering.py）；`plan_limits` 本身是 KERNEL 层
+    #     模块，函数内引用是既有范式（同 `core/metering/usage_tracker.py`）。
+    from modules.billing import METRIC_USERS, enforce_account_limit
+
+    from core.auth.demo_identity import is_demo_request
+
+    if not is_demo_request(request):
+        await enforce_account_limit(db, account_id=account_id, metric=METRIC_USERS)
 
     role = (data.role or "").strip().lower()
     if role not in ASSIGNABLE_ACCOUNT_ROLES:

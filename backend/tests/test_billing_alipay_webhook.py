@@ -140,7 +140,7 @@ async def _post_notify(client, params: dict):
 async def _make_pending_invoice(
     user_id: str,
     *,
-    amount: float = 2990.0,
+    amount_fen: int = 299000,
     plan_id: int = 2,
     cycle: str = "yearly",
     trade_no: str = None,
@@ -157,7 +157,7 @@ async def _make_pending_invoice(
     async with async_session_factory() as db:
         await db.execute(
             text(
-                "INSERT INTO invoices (id, user_id, number, amount, currency, status,"
+                "INSERT INTO invoices (id, user_id, number, amount_fen, currency, status,"
                 " description, issued_at, plan_id, billing_cycle, transaction_id,"
                 " payment_channel, pay_url, created_at)"
                 " VALUES (:id, :u, :num, :amt, 'CNY', 'pending', :desc, :ts, :pid,"
@@ -167,7 +167,7 @@ async def _make_pending_invoice(
                 "id": invoice_id,
                 "u": user_id,
                 "num": "INV-" + uuid.uuid4().hex[:10].upper(),
-                "amt": amount,
+                "amt": amount_fen,
                 "desc": "专业版年付",
                 "ts": now,
                 "pid": plan_id,
@@ -185,7 +185,7 @@ async def _invoice_row(invoice_id: str) -> dict:
         row = (
             await db.execute(
                 text(
-                    "SELECT status, paid_at, amount, payment_channel, plan_id"
+                    "SELECT status, paid_at, amount_fen, payment_channel, plan_id"
                     " FROM invoices WHERE id = :i"
                 ),
                 {"i": invoice_id},
@@ -450,7 +450,7 @@ async def test_amount_mismatch_is_rejected(client, make_user, monkeypatch):
     """
     _configure(monkeypatch)
     owner = await make_user("aliamount")
-    inv = await _make_pending_invoice(owner["user_id"], amount=2990.0)
+    inv = await _make_pending_invoice(owner["user_id"], amount_fen=299000)
 
     r = await _post_notify(
         client, _signed_form(**_paid_notify(inv["trade_no"], amount="0.01"))

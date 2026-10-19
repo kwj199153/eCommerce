@@ -45,7 +45,7 @@ async def _invoices_of(user_id: str) -> list[tuple]:
         rows = (
             await db.execute(
                 text(
-                    "SELECT number, amount, status, description, idempotency_key "
+                    "SELECT number, amount_fen, status, description, idempotency_key "
                     "FROM invoices WHERE user_id = :u ORDER BY issued_at"
                 ),
                 {"u": user_id},
@@ -79,10 +79,11 @@ async def test_change_plan_writes_invoice(client, auth_on, user, auth_headers):
 
     rows = await _invoices_of(user["user_id"])
     assert len(rows) == 1, f"期望 1 条账单，实际 {rows}"
-    number, amount, status, desc, idem = rows[0]
+    number, amount_fen, status, desc, idem = rows[0]
     assert status == "paid"
-    assert amount == pytest.approx(pro["price_yearly"]), (
-        f"实收 {amount} 与套餐年价 {pro['price_yearly']} 不一致"
+    # ★ 整数分**精确相等**（不再用 approx）：这正是改成整数分要买到的东西。
+    assert amount_fen == pro["price_yearly_fen"], (
+        f"实收 {amount_fen} 分与套餐年价 {pro['price_yearly_fen']} 分不一致"
     )
     assert "年付" in desc
     assert idem, "账单必须有幂等键（唯一约束兜底并发重复提交）"
@@ -111,17 +112,18 @@ async def test_display_price_equals_charge_amount(client, auth_on, user, auth_he
             ).scalar_one_or_none()
             if plan is None:
                 continue
-            assert p["price_monthly"] == pytest.approx(plan_amount(plan, "monthly"))
-            assert p["price_yearly"] == pytest.approx(plan_amount(plan, "yearly")), (
-                f"{p['name']}: 展示年价 {p['price_yearly']} != 应扣年价 "
-                f"{plan_amount(plan, 'yearly')}"
+            assert p["price_monthly_fen"] == plan_amount(plan, "monthly")
+            assert p["price_yearly_fen"] == plan_amount(plan, "yearly"), (
+                f"{p['name']}: 展示年价 {p['price_yearly_fen']} 分 != 应扣年价 "
+                f"{plan_amount(plan, 'yearly')} 分"
             )
-            assert p["price_yearly"] == pytest.approx(yearly_price(plan.price_monthly))
+            assert p["price_yearly_fen"] == yearly_price(plan.price_monthly_fen)
 
 
 def test_pricing_helpers_are_consistent():
     """价目 helper 的单点自检：口径只有一处实现，边界值也不许分叉。"""
-    assert yearly_price(299.0) == 2990.0
+    # ★ 分口径：29900 分（299 元）→ 年付 299000 分（2990 元），整数域内精确
+    assert yearly_price(29900) == 299000
     # 非法周期一律回落 monthly（否则会静默按年扣款）
     assert normalize_cycle("YEARLY") == "yearly"
     assert normalize_cycle("weekly") == "monthly"
@@ -129,16 +131,16 @@ def test_pricing_helpers_are_consistent():
     assert normalize_cycle("") == "monthly"
 
     class _P:
-        price_monthly = 299.0
+        price_monthly_fen = 29900
 
-    assert plan_amount(_P, "monthly") == 299.0
-    assert plan_amount(_P, "yearly") == 2990.0
-    assert plan_amount(_P, "weekly") == 299.0      # 非法周期按 monthly
+    assert plan_amount(_P, "monthly") == 29900
+    assert plan_amount(_P, "yearly") == 299000
+    assert plan_amount(_P, "weekly") == 29900      # 非法周期按 monthly
 
     class _Free:
-        price_monthly = 0
+        price_monthly_fen = 0
 
-    assert plan_amount(_Free, "yearly") == 0.0
+    assert plan_amount(_Free, "yearly") == 0
 
 
 # ====== 3. 零元不开票 ======
@@ -589,9 +591,9 @@ async def test_first_purchase_race_returns_409_not_500(
             text(
                 # ★ created_at / issued_at 必须显式给：模型上的 default=datetime.utcnow
                 #   是 Python 侧默认值，只在走 ORM 时生效；原生 SQL 会直接撞 NOT NULL。
-                "INSERT INTO invoices (id, user_id, number, amount, currency, status, "
+                "INSERT INTO invoices (id, user_id, number, amount_fen, currency, status, "
                 "description, issued_at, created_at, idempotency_key) VALUES "
-                "(:id, :u, :n, 1.0, 'CNY', 'paid', '并发赢家占位', now(), now(), :k)"
+                "(:id, :u, :n, 100, 'CNY', 'paid', '并发赢家占位', now(), now(), :k)"
             ),
             {
                 "id": str(uuid.uuid4()),
@@ -650,9 +652,9 @@ async def test_other_integrity_errors_are_not_swallowed(
     async with get_async_session() as db:
         await db.execute(
             text(
-                "INSERT INTO invoices (id, user_id, number, amount, currency, status, "
+                "INSERT INTO invoices (id, user_id, number, amount_fen, currency, status, "
                 "description, issued_at, created_at) VALUES "
-                "(:id, :u, :n, 1.0, 'CNY', 'paid', '占用了这个账单号', now(), now())"
+                "(:id, :u, :n, 100, 'CNY', 'paid', '占用了这个账单号', now(), now())"
             ),
             {"id": str(uuid.uuid4()), "u": user["user_id"], "n": taken_number},
         )
@@ -673,7 +675,7 @@ async def test_other_integrity_errors_are_not_swallowed(
                     id=str(uuid.uuid4()),
                     user_id=intent.user_id,
                     number=taken_number,          # ← 故意撞号
-                    amount=float(intent.amount),
+                    amount_fen=int(intent.amount_fen),
                     currency="CNY",
                     status="paid",
                     description="撞号账单",

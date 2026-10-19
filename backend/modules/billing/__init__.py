@@ -16,5 +16,20 @@
     与本门面管的「模块间横向引用」是**两个不同的轴**。
 """
 from modules.billing.models import Subscription, SubscriptionPlan
+from modules.billing.plan_limits import (
+    METRIC_SHOPS,
+    METRIC_USERS,
+    enforce_account_limit,
+    get_plan_limits,
+)
 
-__all__ = ["Subscription", "SubscriptionPlan"]
+__all__ = [
+    "Subscription",
+    "SubscriptionPlan",
+    # ★ 第 385 轮（商用审查 P0-5）：档位闸。导出的是**函数与常量**，不是子模块
+    #   —— 门面契约第 3 条禁止 re-export 子模块。
+    "METRIC_SHOPS",
+    "METRIC_USERS",
+    "enforce_account_limit",
+    "get_plan_limits",
+]

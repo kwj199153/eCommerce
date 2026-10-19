@@ -13,7 +13,7 @@ Bearer Token。所以这条路由必须挂在鉴权之外（main.py 里不加 BU
   ① **验签**（`AlipayGateway.verify_notify`）：用支付宝公钥验 RSA2 签名。
      没有这一步，任何人 `curl -d "out_trade_no=...&trade_status=TRADE_SUCCESS"`
      就能白拿一份年付套餐。这是支付集成里最经典的漏洞。
-  ② **金额核对**（`payments.amount_matches`）：验签只证明"消息来自支付宝"，
+  ② **金额核对**（`payments.amount_matches`，整数分、零容差）：验签只证明"消息来自支付宝"，
      不证明"金额和我们账单一致"。不核金额，一张 0.01 元的真通知
      就能开通 2990 元的套餐。
 
@@ -168,12 +168,12 @@ async def alipay_notify(request: Request, db: AsyncSession = Depends(get_db)):
         return PlainTextResponse(_ACK)
 
     # ---- 金额核对（见文件头门 ②）----
-    if not amount_matches(invoice, notify.amount_yuan):
+    if not amount_matches(invoice, notify.amount_fen):
         # ★ 不激活、不回 success：这是一笔"钱与单不匹配"的异常，必须留给人看见。
         _log.critical(
             "支付宝回调金额与账单不符 ⇒ 拒绝开通（需人工核对）"
-            " invoice={} 账单金额={} 通知金额={} out_trade_no={} trade_no={}",
-            invoice.number, invoice.amount, notify.total_amount,
+            " invoice={} 账单金额={}分 通知金额={} out_trade_no={} trade_no={}",
+            invoice.number, invoice.amount_fen, notify.total_amount,
             notify.out_trade_no, notify.trade_no,
         )
         return PlainTextResponse(_NACK, status_code=status.HTTP_400_BAD_REQUEST)

@@ -29,7 +29,9 @@ async def test_plans_contract_aligned(client, auth_on):
 
     for p in plans:
         assert isinstance(p["id"], str), "套餐 id 应为字符串"
-        assert "price_yearly" in p, "缺 price_yearly"
+        # ★ 第 378 轮：金额字段一律带 `_fen`（单位＝分）
+        assert "price_yearly_fen" in p, "缺 price_yearly_fen"
+        assert "price_monthly_fen" in p, "缺 price_monthly_fen"
         assert "limits" in p and isinstance(p["limits"], dict), "limits 应为嵌套对象"
         assert "features" in p and isinstance(p["features"], list), "features 应为数组"
         # limits 内部字段
@@ -93,7 +95,9 @@ async def test_subscribe_changes_plan_and_creates_invoice(
         ).scalars().all()
         assert len(invs) == 1, "切换套餐应生成一条账单"
         assert invs[0].status == "paid"
-        assert invs[0].amount == pro.price_monthly * 10, "年付金额应为月付×10"
+        assert invs[0].amount_fen == pro.price_monthly_fen * 10, (
+            "年付金额（分）应为月付（分）×10"
+        )
 
 
 async def test_subscribe_unknown_plan_404(client, auth_on, user, auth_headers):

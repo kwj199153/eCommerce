@@ -29,6 +29,11 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
+# ★ 分/元换算的**实现**在 core/money.py（唯一出口）：外部适配层
+#   `platforms/payment/alipay.py` 也要用它，而适配层不许 import 业务模块。
+#   这里只做 re-export，让计费域的调用方仍能从 pricing 取到同一批函数。
+from core.money import fen_to_yuan_text, yuan_to_fen
+
 __all__ = [
     "MONTHS_CHARGED_PER_YEAR",
     "CYCLE_DAYS",
@@ -36,6 +41,8 @@ __all__ = [
     "normalize_cycle",
     "yearly_price",
     "plan_amount",
+    "fen_to_yuan_text",
+    "yuan_to_fen",
     "cycle_days",
     "period_end",
     "is_period_active",
@@ -64,27 +71,30 @@ def normalize_cycle(cycle: Optional[str]) -> str:
     return c if c in VALID_CYCLES else "monthly"
 
 
-def yearly_price(monthly: float) -> float:
-    """按年付口径折算年价（唯一实现）。"""
-    return round(float(monthly or 0) * MONTHS_CHARGED_PER_YEAR, 2)
+# 本节所有金额函数的单位都是**分（int）**。
+
+def yearly_price(monthly_fen: int) -> int:
+    """按年付口径折算年价（唯一实现）。入参与返回都是**分**。"""
+    return int(monthly_fen or 0) * MONTHS_CHARGED_PER_YEAR
 
 
-def plan_amount(plan, billing_cycle: str) -> float:
+def plan_amount(plan, billing_cycle: str) -> int:
     """
     某个套餐在指定周期下的**应扣金额**（唯一实现）。
 
     Args:
-        plan: SubscriptionPlan 实例（需有 price_monthly）
+        plan: SubscriptionPlan 实例（需有 price_monthly_fen）
         billing_cycle: monthly / yearly（非法值按 monthly）
 
     Returns:
-        金额（元），保留两位小数
+        金额（**分**，整数）
     """
     cycle = normalize_cycle(billing_cycle)
-    monthly = float(getattr(plan, "price_monthly", 0) or 0)
-    if monthly <= 0:
-        return 0.0
-    return yearly_price(monthly) if cycle == "yearly" else round(monthly, 2)
+    monthly_fen = int(getattr(plan, "price_monthly_fen", 0) or 0)
+    if monthly_fen <= 0:
+        return 0
+    return yearly_price(monthly_fen) if cycle == "yearly" else monthly_fen
+
 
 
 def cycle_days(billing_cycle: str) -> int:

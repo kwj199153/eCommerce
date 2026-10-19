@@ -65,6 +65,7 @@ from sqlalchemy.pool import NullPool
 #   而本仓的判据是「谁需要谁读」：调度表读节奏，任务体读窗口。
 from core.config import BILLING_RECONCILE_LOOKBACK_DAYS, config
 from core.logger import get_logger
+from core.money import yuan_to_fen
 from core.observability.metrics import CELERY_TASK_RESULTS
 from core.redis import celery_app
 
@@ -253,12 +254,12 @@ async def _reconcile(db, *, lookback_days: Optional[int] = None) -> dict[str, An
 
         if status_text in ("TRADE_SUCCESS", "TRADE_FINISHED"):
             if invoice.status in ("pending", "expired"):
-                if not amount_matches(invoice, _yuan(result.get("total_amount"))):
+                if not amount_matches(invoice, yuan_to_fen(result.get("total_amount"))):
                     mismatched += 1
                     logger.critical(
                         "[billing.tasks] 对账异常：金额不符，拒绝补开通 invoice={} "
-                        "账单={} 支付宝={}",
-                        invoice.number, invoice.amount, result.get("total_amount"),
+                        "账单={}分 支付宝={}",
+                        invoice.number, invoice.amount_fen, result.get("total_amount"),
                     )
                     continue
                 # ★ 这正是对账存在的意义：webhook 丢了，钱在支付宝侧已经收妥，
@@ -289,14 +290,6 @@ async def _reconcile(db, *, lookback_days: Optional[int] = None) -> dict[str, An
         "mismatched": mismatched,
         "errors": errors,
     }
-
-
-def _yuan(raw: Any) -> Optional[float]:
-    """支付宝的金额是字符串；解析失败返回 None（由 amount_matches 判为不符）。"""
-    try:
-        return round(float(raw), 2)
-    except (TypeError, ValueError):
-        return None
 
 
 @celery_app.task(bind=True, name=TASK_RECONCILE)

@@ -156,7 +156,8 @@ class UsageTracker:
             "plan": {
                 "name": plan.name,
                 "display_name": plan.display_name,
-                "price_monthly": plan.price_monthly,
+                # ★ 单位**分**（与 billing 域同口径，别再在这里改成元）
+                "price_monthly_fen": int(plan.price_monthly_fen or 0),
             },
             "usage": {
                 "api_calls": {
@@ -516,7 +517,7 @@ async def init_default_plans(db: AsyncSession):
             id=1,
             name="free",
             display_name="免费版",
-            price_monthly=0,
+            price_monthly_fen=0,
             api_calls_limit=100,
             agent_chat_limit=50,
             max_shops=3,
@@ -527,7 +528,7 @@ async def init_default_plans(db: AsyncSession):
             id=2,
             name="pro",
             display_name="专业版",
-            price_monthly=299,
+            price_monthly_fen=29900,
             api_calls_limit=5000,
             agent_chat_limit=500,
             max_shops=10,
@@ -538,7 +539,7 @@ async def init_default_plans(db: AsyncSession):
             id=3,
             name="enterprise",
             display_name="企业版",
-            price_monthly=999,
+            price_monthly_fen=99900,
             api_calls_limit=50000,
             agent_chat_limit=5000,
             max_shops=50,

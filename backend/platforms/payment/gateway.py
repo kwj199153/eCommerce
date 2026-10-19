@@ -20,7 +20,7 @@
 
     gateway = get_gateway()
     result = await gateway.charge(ChargeIntent(
-        user_id=..., amount=..., currency="CNY", description="专业版年付",
+        user_id=..., amount_fen=299000, currency="CNY", description="专业版年付",
         plan_name="pro", billing_cycle="yearly", idempotency_key="sub:...",
     ))
     if not result.success:
@@ -78,8 +78,10 @@ stripe / wechat / wechatpay / paypal 仍是占位名 —— 把 PAYMENT_GATEWAY
            # ★ 三件必须做的事：
            #   a. 透传幂等键 → stripe.PaymentIntent.create(..., idempotency_key=intent.idempotency_key)
            #      否则网络重试 / 双击会真的扣两次钱。
-           #   b. 金额单位换算：Stripe 用「分」（int），intent.amount 是「元」（float）。
-           #      必须 round(amount * 100) 并断言 > 0，浮点直接 int() 会少一分。
+           #   b. 金额单位：本层已统一为**整数分**（`intent.amount_fen`），
+           #      Stripe / 微信支付的 `amount` 本身就是分 ⇒ **直接透传，不要乘 100**。
+           #      ★ 改前这里是「元 float × 100」，第 378 轮后不再需要换算；
+           #        若照着旧注释再乘一次，会实收 100 倍的钱。
            #   c. 不要在这里返回 status="paid" 的账单！
            #      这一步只创建了 PaymentIntent，钱还没到账。
            #      正确做法：建一张 status="pending" 的 Invoice 落库，
@@ -124,6 +126,7 @@ stripe / wechat / wechatpay / paypal 仍是占位名 —— 把 PAYMENT_GATEWAY
 |-----------|---------------------|---------------------|-------------------|
 | 认证      | Secret Key (Bearer) | RSA2 应用私钥签名    | 商户私钥 + 平台证书 |
 | 金额单位  | 分（int）           | 元（str，两位小数）  | 分（int）          |
+| 本层换算  | 直接透传            | 唯一换算点在 adapter | 直接透传            |
 | 幂等机制  | Idempotency-Key 头  | out_trade_no        | out_trade_no       |
 | 回调验签  | whsec_ 签名头       | 支付宝公钥验签       | 平台证书 + AES 解密 |
 | 异步确认  | PaymentIntent 事件  | notify_url 异步通知  | notify_url 异步通知 |
@@ -155,7 +158,9 @@ class ChargeIntent:
     """一次扣款请求的输入参数（网关无关）"""
 
     user_id: str
-    amount: float                       # 金额（元）
+    #: 金额（**分**，整数）。第 378 轮起全项目金额单位为分 —— 只有外部网关
+    #: 需要元的形态（支付宝），换算在 adapter 内用 `pricing.fen_to_yuan_text` 做一次。
+    amount_fen: int
     currency: str = "CNY"
     description: str = ""
     billing_cycle: str = "monthly"      # monthly / yearly
@@ -192,7 +197,8 @@ class InvoiceDraft:
 
     user_id: str
     number: str                                  # 账单号 INV-xxxx
-    amount: float
+    #: 金额（**分**，整数）。与 `Invoice.amount_fen` 同名同单位，落库不做换算。
+    amount_fen: int
     currency: str = "CNY"
     status: str = "paid"                        # paid / pending / failed / refunded / expired
     description: str = ""
@@ -324,9 +330,13 @@ class MockGateway:
     settlement_mode = SETTLEMENT_IMMEDIATE
 
     async def charge(self, intent: ChargeIntent) -> ChargeResult:
-        amount = round(float(intent.amount or 0), 2)
+        # ★ 整数分：`round(,2)` 那套是浮点时代的写法，现在金额本来就是整数，
+        #   再 round 一次只会掩盖"上游传了小数分"这种真缺陷。
+        amount_fen = int(intent.amount_fen or 0)
+        if amount_fen != (intent.amount_fen or 0):
+            raise ValueError(f"金额必须是整数分，收到 {intent.amount_fen!r}")
 
-        if amount <= 0:
+        if amount_fen <= 0:
             return ChargeResult(
                 success=True,
                 invoice=None,
@@ -341,7 +351,7 @@ class MockGateway:
             id=str(uuid.uuid4()),
             user_id=intent.user_id,
             number=f"INV-{now.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}",
-            amount=amount,
+            amount_fen=amount_fen,
             currency=intent.currency or "CNY",
             status="paid",
             description=intent.description or "",

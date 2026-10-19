@@ -45,10 +45,12 @@
    支付宝自己会去重；而 `InvoiceDraft.transaction_id` 的唯一约束在我们这一侧
    再加一道闸（两道闸的分工见 modules/billing/models.py 的 Invoice 注释）。
 
-② **金额必须转换且校验**：支付宝用「元（两位小数字符串）」，`intent.amount`
-   是 float。必须 `f"{amount:.2f}"` —— 直接 `str(amount)` 会送出 `"2990.0"`
-   甚至 `"2.99e+03"`，前者支付宝能容忍、后者直接报参数错误。
-   并断言 `amount > 0`：零元单走不到这里（调用方已短路），但**真走到就是 bug**，
+② **金额必须转换且校验**：支付宝用「元（两位小数字符串）」，而我们内部
+   一律是**整数分**（`intent.amount_fen`，见 `core/money.py`）。
+   换算只走 `core.money.fen_to_yuan_text` —— 直接拼字符串会送出 `"2990"`
+   或 `"2990.0"`（前者支付宝按元解析、后者格式不符），
+   而 `str(fen/100)` 又会把 float 的尾巴带进去。
+   并断言 `amount_fen > 0`：零元单走不到这里（调用方已短路），但**真走到就是 bug**，
    与其把一张 ¥0.00 的待支付单丢给支付宝，不如当场炸掉。
 
 ③ **必须验签，且响应也要验**：
@@ -88,6 +90,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from core.config import config
 from core.logger import get_logger
+from core.money import fen_to_yuan_text, yuan_to_fen
 from core.resilience import RetryPolicy, call_with_retry
 from platforms.payment.gateway import (
     PENDING_PAYMENT_TTL_MINUTES,
@@ -381,13 +384,14 @@ class NotifyResult:
         return self.trade_status in _CLOSED_TRADE_STATUSES
 
     @property
-    def amount_yuan(self) -> Optional[float]:
-        """金额转 float；解析失败返回 None（**不**兜底成 0：
-        0 会让"金额对不上"的校验静默通过，而那正是要拦的情况）。"""
-        try:
-            return round(float(self.total_amount), 2)
-        except (TypeError, ValueError):
-            return None
+    def amount_fen(self) -> Optional[int]:
+        """金额转**整数分**；解析失败返回 None（**不**兜底成 0：
+        0 会让"金额对不上"的校验静默通过，而那正是要拦的情况）。
+
+        ★ 支付宝这一侧是元字符串，它是全项目**唯一**的"元 → 分"入口
+          （`core.money.yuan_to_fen`，Decimal 实现）。
+        """
+        return yuan_to_fen(self.total_amount)
 
     @property
     def paid_at_utc(self) -> Optional[datetime]:
@@ -555,13 +559,14 @@ class AlipayGateway:
             GatewayConfigError: 配置不完整或验签失败（调用方应转 503，
                 且**绝不能**降级成"支付成功"）。
         """
-        amount = round(float(intent.amount or 0), 2)
-        if amount <= 0:
+        amount_fen = int(intent.amount_fen or 0)
+        if amount_fen <= 0:
             # ★ 走到这里说明调用方的短路逻辑出了问题（零元单应当在那里就被拦下）。
             #   报错而不是返回一张 ¥0.00 的待支付单：后者会让用户在支付宝上
             #   扫到一个零元订单，且它在我们库里占着一个 pending 状态。
             raise GatewayConfigError(
-                f"支付宝不接受非正数金额（收到 {amount}）：零元单应在调用网关之前短路"
+                f"支付宝不接受非正数金额（收到 {intent.amount_fen!r} 分）："
+                f"零元单应在调用网关之前短路"
             )
 
         out_trade_no = out_trade_no_for(intent.idempotency_key)
@@ -569,8 +574,8 @@ class AlipayGateway:
 
         biz = {
             "out_trade_no": out_trade_no,
-            # ★ 两位小数字符串。见模块 docstring 第 ② 条。
-            "total_amount": f"{amount:.2f}",
+            # ★ 分 → 元（两位小数字符串），**唯一**换算出口。见 docstring 第 ② 条。
+            "total_amount": fen_to_yuan_text(amount_fen),
             "subject": (intent.description or "订阅套餐")[:256],
             "timeout_express": f"{PENDING_PAYMENT_TTL_MINUTES}m",
             # 回调地址必须在**请求参数**里给（每次下单都可以不同），
@@ -614,7 +619,7 @@ class AlipayGateway:
         invoice = InvoiceDraft(
             user_id=intent.user_id,
             number=f"INV-{now.strftime('%Y%m%d%H%M%S')}-{out_trade_no[-4:]}",
-            amount=amount,
+            amount_fen=amount_fen,
             currency=intent.currency or "CNY",
             # ★★ status 是 **pending**，不是 paid。这一行是整个两段式的地基：
             #    它让「账单存在」与「钱到账」彻底解耦，webhook 才有东西可改。

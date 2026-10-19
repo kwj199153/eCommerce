@@ -1,5 +1,12 @@
 /**
  * 订阅 & 计费 API
+ *
+ * ★★ 金额的单位是**分**（`*_fen`，整数），不是元（第 378 轮）。
+ *   后端 `invoices.amount_fen` / `subscription_plans.price_monthly_fen` 都是
+ *   整数分（理由见 `backend/core/money.py`）。前端**只有** `fenText()` 一处除以 100 ——
+ *   散在各处除以 100 必然出现"这块除了、那块忘了"（差 100 倍，而两块都很像真的）。
+ *
+ *   ★ 字段名带 `_fen` 是刻意的：改单位不改名字，界面会静默按元渲染。
  */
 
 import { get, post, put } from './request'
@@ -10,8 +17,10 @@ export interface SubscriptionPlan {
   id: string
   name: string
   display_name: string
-  price_monthly: number
-  price_yearly: number
+  /** ★ 月价（**分**，整数）。显示走 `fenText()` */
+  price_monthly_fen: number
+  /** ★ 年价（**分**，整数，后端按「月付 × 10」折算） */
+  price_yearly_fen: number
   features: string[]
   limits: {
     api_calls_per_month: number
@@ -50,7 +59,8 @@ export interface Subscription {
 export interface Invoice {
   id: string
   number: string
-  amount: number
+  /** ★ 金额（**分**，整数，正=收款 / 负=退款）。显示走 `fenText()` */
+  amount_fen: number
   currency: string
   status: 'paid' | 'pending' | 'failed' | 'refunded'
   description: string
@@ -79,7 +89,8 @@ export interface PaymentMethod {
 export interface PendingPayment {
   invoice_id: string
   number: string
-  amount: number
+  /** ★ 金额（**分**，整数）。显示走 `fenText()` */
+  amount_fen: number
   currency: string
   /** 'pending' | 'paid' | 'expired' | 'failed' | 'refunded' */
   status: string
@@ -99,6 +110,29 @@ export interface PendingPayment {
   expires_at: string | null
   /** 仅在已支付的账单上出现（轮询接口会给） */
   paid_at?: string | null
+}
+
+// ====== 金额显示（唯一换算点） ======
+
+/**
+ * 分 → 显示文本。**全前端唯一**一处除以 100。
+ *
+ * 口径与后端 `core/money.fen_text` 一致：
+ *   · 整数元不带小数（`¥299`，不是 `¥299.00`）—— 套餐价都是整数元，
+ *     拖着 `.00` 只会让价格排版多占两个字宽；
+ *   · 非整数元给两位小数（`¥12.34`）；
+ *   · 0 显示 `¥0`（免费版）。
+ *
+ * ★ 负数（退款）保留符号：`-¥12.34`。表格里另有一列样式按符号上色，
+ *   但符号不能靠 CSS 画 —— 屏幕阅读器读不到 `::before` 的内容。
+ */
+export function fenText(fen: number | null | undefined): string {
+  const n = Number(fen ?? 0)
+  if (!Number.isFinite(n)) return '¥-'
+  const sign = n < 0 ? '-' : ''
+  const abs = Math.abs(n)
+  const yuan = abs / 100
+  return `${sign}¥${Number.isInteger(yuan) ? String(yuan) : yuan.toFixed(2)}`
 }
 
 // ====== API 函数 ======

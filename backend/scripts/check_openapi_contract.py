@@ -102,10 +102,10 @@ DEFAULT_FORCED_ENV = {
     #   `main.py` 的 `FastAPI(title=config.app_name, version=config.app_version, ...)`
     #   ⇒ 它们直接进 `info.title` / `info.version`。
     #   不固定的话，本地（`.env` 写 `APP_NAME=CrossBorder-AI-SaaS`）与 CI
-    #   （无 `.env` ⇒ 代码默认值 `跨境电商AI SaaS`）导出**不同**契约，
+    #   （无 `.env` ⇒ 代码默认值 `店管管`）导出**不同**契约，
     #   门禁退化成「本地恒绿、CI 恒红」—— 正是本文件开头警告的那件事。
     #   取值 = `.env.example` = 代码默认值（`docker-compose.yml` 未设 APP_NAME）。
-    "APP_NAME": "跨境电商AI SaaS",
+    "APP_NAME": "店管管",
     "APP_VERSION": "0.1.0",
 }
 

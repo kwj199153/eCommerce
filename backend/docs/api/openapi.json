@@ -4221,6 +4221,23 @@
         "title": "RefreshTokenRequest",
         "type": "object"
       },
+      "RefundRequest": {
+        "description": "退款登记请求（第 385 轮 · 商用审查 P0-4）。\n\n★ 这是**登记**不是**打款**：资金退还由运营在支付宝商户后台完成，\n  本接口只把「这笔钱已经退了」记进账本，让对账/客服/发票能看到痕迹。\n  详见 `modules/billing/payments.py::refund_invoice()` 的文件头。",
+        "properties": {
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "revoke_subscription": {
+            "default": true,
+            "title": "Revoke Subscription",
+            "type": "boolean"
+          }
+        },
+        "title": "RefundRequest",
+        "type": "object"
+      },
       "RejectDispositionBody": {
         "properties": {
           "notes": {
@@ -6358,7 +6375,7 @@
   },
   "info": {
     "description": "一站式 AI 原生跨境电商全链路 SaaS",
-    "title": "跨境电商AI SaaS",
+    "title": "店管管",
     "version": "0.1.0"
   },
   "openapi": "3.1.0",
@@ -9566,6 +9583,62 @@
         ]
       }
     },
+    "/api/v1/billing/invoices/{invoice_id}/refund": {
+      "post": {
+        "description": "把一张已支付账单登记为**已退款**（平台超管）。\n\n★★ 重要边界（请勿在文案里含糊）：本接口**不发起真实退款**。\n  资金退还必须在支付宝商户后台人工完成 —— 本项目尚无商户资质，\n  `alipay.trade.refund` 的真实报文无法验证，写一条没人验证过的\n  **资金调用**比不写更危险（它会让人以为\"点了就退了\"）。\n  ⇒ 正确顺序：先在支付宝后台退款 → 再调本接口登记。\n\n★ 为什么不给普通用户开放：退款是资金动作，用户自助退款需要风控与\n  反欺诈（否则「买完用一个月再退」没有成本）。当前阶段是人工审批。",
+        "operationId": "refund_invoice_endpoint_api_v1_billing_invoices__invoice_id__refund_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoice_id",
+            "required": true,
+            "schema": {
+              "title": "Invoice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefundRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Refund Invoice Endpoint",
+        "tags": [
+          "计费与用量"
+        ]
+      }
+    },
     "/api/v1/billing/payment-methods": {
       "get": {
         "description": "获取支付方式列表",
@@ -9916,6 +9989,89 @@
         "summary": "Alipay Notify",
         "tags": [
           "计费-支付"
+        ]
+      }
+    },
+    "/api/v1/briefings": {
+      "get": {
+        "description": "简报列表（日期倒序）+ **未读数**。\n\n★ 未读数与列表放**同一个响应**而不是两个端点：铃铛每次轮询两个数都要，\n  拆成两条会让「徽标说 3 条、点开只有 2 条」成为可能\n  （两次请求之间恰好又生成了一份）。同款判据见 `trade` 的列表接口。",
+        "operationId": "list_daily_briefings_api_v1_briefings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Daily Briefings",
+        "tags": [
+          "竞品监控池"
+        ]
+      }
+    },
+    "/api/v1/briefings/{briefing_id}/read": {
+      "post": {
+        "description": "把一条简报标为已读（**幂等**：重复调用不改首次的 `read_at`）。\n\n★ 拿不到时回 **404**，不静默成功：静默成功会让前端把徽标清掉，\n  而服务端仍是未读 ⇒ 刷新一下又冒出来，用户看到的是\n  「点了没反应、还越来越多」。\n★ 归属条件进**查询**（`mark_read_svc` 内部），不在 Python 里比：\n  否则「不存在」与「不属于你」会走出不同路径，那个差异就是一个\n  可枚举他人 briefing_id 的存在性探测器。",
+        "operationId": "mark_daily_briefing_read_api_v1_briefings__briefing_id__read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "briefing_id",
+            "required": true,
+            "schema": {
+              "title": "Briefing Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Daily Briefing Read",
+        "tags": [
+          "竞品监控池"
         ]
       }
     },
@@ -16151,7 +16307,7 @@
         ]
       },
       "post": {
-        "description": "创建新店铺",
+        "description": "创建新店铺\n\n★ 档位闸（第 385 轮 · 商用审查 P0-5）：`max_shops` 此前只在\n  `billing/router.py:159` 被**展示**，全仓无拦截点 ⇒ 免费版能建 50 家店，\n  企业版与免费版在\"能开多少店\"上完全一样（升级理由不足）。\n  现在按**账户所有者的订阅**判档，超限 402 + 升级引导。",
         "operationId": "create_store_api_v1_stores_post",
         "requestBody": {
           "content": {

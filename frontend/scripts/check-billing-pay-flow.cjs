@@ -355,6 +355,62 @@ check(
 }
 
 // ---------------------------------------------------------------------------
+// D. 金额单位（第 378 轮）：全链路是**整数分**，前端只有一处除以 100
+// ---------------------------------------------------------------------------
+// ★ 为什么这条要进门禁而不是靠 review：单位错了**不会报错**。
+//   `amount`（元）与 `amount_fen`（分）都长得像"金额"，把后者当元渲染
+//   就是整整 100 倍 —— 2990 与 299000 在页面上都像是真的。
+//   判据一律跑在**剥掉注释**的源码上（注释里写着「这里是分」不算数）。
+{
+  const apiCode = api
+  const viewCode = view
+
+  // D1 前端不许再读无单位的 `price_monthly` / `price_yearly` / `amount`
+  const legacy = []
+  for (const [name, re] of [
+    ['price_monthly(?![_a-zA-Z])', /price_monthly(?![_a-zA-Z])/],
+    ['price_yearly(?![_a-zA-Z])', /price_yearly(?![_a-zA-Z])/],
+    ['record.amount(?![_a-zA-Z])', /record\.amount(?![_a-zA-Z])/],
+    ['payPayment.amount(?![_a-zA-Z])', /payPayment\.amount(?![_a-zA-Z])/],
+  ]) {
+    if (re.test(viewCode) || re.test(apiCode)) legacy.push(name)
+  }
+  check(
+    'D1 订阅页与契约层不再出现无单位的金额字段（price_monthly / price_yearly / record.amount）',
+    legacy.length === 0,
+    legacy.length ? '命中：' + legacy.join(', ') : 'clean'
+  )
+
+  // D2 `amount = number` 这类字段必须带 `_fen` 后缀（改单位不改名 = 静默差 100 倍）
+  const bareDecl = /^\s*(?:\/\*\*[\s\S]*?\*\/\s*)?amount\s*:\s*number/m.test(apiCode)
+  check('D2 契约类型里没有裸 `amount: number`（金额字段必须叫 `*_fen`）', !bareDecl)
+
+  // D3 唯一换算点：前端只允许 `fenText` 里出现 `/ 100`
+  // ★ 不用 `\b` 收尾：本仓踩过「脚本里的 \b 被吃成退格符 ⇒ 正则永远不匹配」
+  //   的坑（判据看起来 0 命中、实则恒不匹配）。用 (?!\d) 表达同样的边界。
+  const divisions = (viewCode.match(/\/\s*100(?!\d)/g) || []).length
+  check(
+    'D3 订阅页里没有第二处「÷100」（换算只许发生在 api/billing.ts::fenText）',
+    divisions === 0,
+    `views/Subscription.vue 出现 ${divisions} 处 /100`
+  )
+
+  check(
+    'D4 `fenText` 定义在契约层且是导出函数（组件只能消费，不许各写一份）',
+    /export\s+function\s+fenText\s*\(/.test(apiCode)
+  )
+
+  // D5 渲染必须走 fenText：模板里不许再拼 `¥{{ ... }}` 直接吐数字
+  //    （`fenText` 自带 ¥；手拼 ¥ + 原始数字 = 把分当元）
+  const rawYen = (viewCode.match(/¥\{\{/g) || []).length
+  check(
+    'D5 模板里没有 `¥{{ }}` 手拼金额（一律 `{{ fenText(...) }}`）',
+    rawYen === 0,
+    `出现 ${rawYen} 处`
+  )
+}
+
+// ---------------------------------------------------------------------------
 // 汇总
 // ---------------------------------------------------------------------------
 

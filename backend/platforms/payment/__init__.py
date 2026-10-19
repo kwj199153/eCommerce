@@ -12,7 +12,7 @@
     from platforms.payment import get_gateway, ChargeIntent, ChargeResult
 
     gateway = get_gateway()
-    result = await gateway.charge(ChargeIntent(user_id=..., amount=...))
+    result = await gateway.charge(ChargeIntent(user_id=..., amount_fen=...))
 """
 
 from platforms.payment.gateway import (

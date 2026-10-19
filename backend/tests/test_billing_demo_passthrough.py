@@ -140,7 +140,7 @@ async def _demo_invoices(user_id: str) -> list[tuple]:
         rows = (
             await db.execute(
                 text(
-                    "SELECT amount, status, plan_id, billing_cycle, payment_channel "
+                    "SELECT amount_fen, status, plan_id, billing_cycle, payment_channel "
                     "FROM invoices WHERE user_id = :u ORDER BY issued_at"
                 ),
                 {"u": user_id},
@@ -214,11 +214,12 @@ async def test_demo_token_subscribes_without_scanning(
     # 账单落在**演示账号主人**名下（不是某个前端传上来的 id —— 前端只传了哨兵串）
     rows = await _demo_invoices(owner["user_id"])
     assert len(rows) == 1, f"演示身份订阅应恰好产生 1 张账单，实际 {rows}"
-    amount, status, plan_id, cycle, channel = rows[0]
+    amount_fen, status, plan_id, cycle, channel = rows[0]
     assert status == "paid", f"同步形态下账单必须是 paid（钱与权限同时到位）：{rows[0]}"
     assert cycle == "yearly"
     assert channel, "账单必须记下支付渠道（对账要按它筛）"
-    assert abs(amount - 2990.0) < 0.01, f"年付金额应等于价目表，实际 {amount}"
+    # ★ 整数分精确相等：2990 元 = 299000 分
+    assert amount_fen == 299000, f"年付金额应为 299000 分，实际 {amount_fen}"
 
 
 # ============================================================================

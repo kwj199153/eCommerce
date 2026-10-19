@@ -376,6 +376,37 @@ async def test_filter_accessible_stores_no_identity_gets_only_demo_stores():
 
 # ====== 4. 团队共享：成员能进、能写，但删不了店 ======
 
+async def _promote_to_pro(email: str) -> None:
+    """把该用户订阅提到 **pro** 档（10 店 / 5 席）。
+
+    ★ 为什么这两个用例需要它（第 385 轮）：
+      档位闸（`modules/billing/plan_limits.py`）上线后，**免费版只有 1 个席位**
+      （`max_users=1` 的含义是"只有你自己"）⇒ 免费版用户邀请第一个人就被 402。
+      而本文件的这两个用例要验的是**角色矩阵与成员共享**，不是计费口径；
+      让它们跑在免费档上，等于用配额把权限测试挡在门外。
+
+    ★ 为什么不改成直接断言 402：那属于 `tests/test_plan_limits.py` 的职责
+      （那边有专门的边界/错误体用例）。同一个用例同时验两件事，红的时候
+      分不清是矩阵坏了还是配额变了。
+    """
+    from sqlalchemy import select
+
+    from core.database import async_session_factory
+    from core.identity.models import User
+    from modules.billing.models import Subscription, SubscriptionPlan
+
+    async with async_session_factory() as db:
+        plan = (
+            await db.execute(select(SubscriptionPlan).where(SubscriptionPlan.name == "pro"))
+        ).scalar_one()
+        uid = (await db.execute(select(User.id).where(User.email == email))).scalar_one()
+        sub = (
+            await db.execute(select(Subscription).where(Subscription.user_id == uid))
+        ).scalar_one()
+        sub.plan_id = plan.id
+        await db.commit()
+
+
 async def test_account_member_shares_account_stores(client, auth_on, user, auth_headers):
     """
     账户成员能访问该账户下的店铺（这是本次收拢**唯一的功能目标**）。
@@ -405,7 +436,8 @@ async def test_account_member_shares_account_stores(client, auth_on, user, auth_
             f"非成员竟然能读该店：{pre.status_code} {pre.text[:200]}"
         )
 
-        # 邀请
+        # 邀请（★ 免费版 1 席，先提到 pro —— 见 `_promote_to_pro`）
+        await _promote_to_pro(user["email"])
         inv = await client.post(
             f"/api/v1/accounts/{account_id}/members",
             json={"email": b["email"], "role": "member"},
@@ -471,6 +503,8 @@ async def test_viewer_role_is_read_only(client, auth_on, user, auth_headers):
         me = await client.get("/api/v1/accounts/me", headers=auth_headers)
         account_id = me.json()["account"]["id"]
 
+        # ★ 免费版 1 席 —— 先提到 pro（同上）
+        await _promote_to_pro(user["email"])
         inv = await client.post(
             f"/api/v1/accounts/{account_id}/members",
             json={"email": v["email"], "role": "viewer"},

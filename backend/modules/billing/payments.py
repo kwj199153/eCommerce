@@ -41,9 +41,12 @@ mock 支付下，`change_plan` 一个函数从头做到尾：
    真出现时，钱**确实到了**，拒收的代价是用户付了钱没权益 ——
    比多开一个周期严重得多。⇒ 认账，并打一条 warning 留痕。
 
-④ **金额必须核对。**
-   `total_amount` 与账单金额不符时**不开通**，只落 failed + 告警。
+④ **金额必须核对，且**逐分**核（零容差）。**
+   通知里的 `total_amount`（元字符串）转成整数分后，与账单的 `amount_fen`
+   **必须完全相等**才算数；不符时**不开通**，只落 failed + 告警。
    不核金额的话，一个 0.01 元的通知就能开通 2990 元的年付套餐。
+   ★ 第 378 轮把口径从「元 float + 1 分容差」改成「整数分 + 零容差」：
+     带容差的比对会把"少收一分"判成对账通过，而一分钱正是最适合批量试的量。
 """
 
 from __future__ import annotations
@@ -211,15 +214,20 @@ async def expire_stale_pending(
 # 金额核对
 # ============================================================================
 
-def amount_matches(invoice: Invoice, amount_yuan: Optional[float]) -> bool:
-    """通知/查询拿到的金额是否与账单一致（容忍 1 分钱以内的浮点误差）。
+def amount_matches(invoice: Invoice, paid_fen: Optional[int]) -> bool:
+    """通知/查询拿到的金额是否与账单一致（**整数分，零容差**）。
 
     ★ `None`（金额字段缺失或解析失败）一律判为**不匹配**：
       支付通知里没有金额，本身就是报文异常，不该被"宽松处理"。
+
+    ★ 为什么**没有**容差参数：两边都是整数分，任何 1 分的差异都必须是
+      "这笔钱不是这张单的钱"（改价了 / 通知串单了 / 有人试 0.01）。
+      改前这里是 `abs(a - b) < 0.01` 的浮点容差 —— 那种写法会让
+      "少收一分"通过校验，而对账时又看不出来（差额落在一个允许范围内）。
     """
-    if amount_yuan is None:
+    if paid_fen is None:
         return False
-    return abs(round(float(invoice.amount or 0), 2) - round(float(amount_yuan), 2)) < 0.01
+    return int(paid_fen) == int(invoice.amount_fen or 0)
 
 
 # ============================================================================
@@ -379,11 +387,121 @@ async def settle_invoice(
         )
 
     _log.info(
-        "结算完成 id={} user={} plan={} cycle={} amount={} out_trade_no={} trade_no={}",
-        invoice.id, invoice.user_id, plan.name, cycle, invoice.amount,
+        "结算完成 id={} user={} plan={} cycle={} amount_fen={} out_trade_no={} trade_no={}",
+        invoice.id, invoice.user_id, plan.name, cycle, invoice.amount_fen,
         invoice.transaction_id, trade_no,
     )
     return SettleOutcome(ok=True, activated=True, subscription=sub, reason="activated")
+
+
+# ============================================================================
+# 退款登记：把「已支付的账单」标记为已退款（第 385 轮 · 商用审查 P0-4）
+# ============================================================================
+#
+# ★★★ 本函数**不动钱**，只动账。
+#   资金退还必须在支付宝商户后台人工操作 —— 本项目**没有**商户号，
+#   也就不可能验证 `alipay.trade.refund` 的真实报文。写一条没人验证过的
+#   资金调用，比不写更危险（它会让人以为"点了就退了"）。
+#   ⇒ 本轮的语义是：**运营在支付宝后台退完钱，回这里登记**。
+#     这样对账、客服、发票三条线才有痕迹，而不会出现"钱退了、系统里还是已支付"。
+#
+# ★ 为什么仍然放在本模块（而不是 billing/router.py 里就地改）：
+#   `invoice.status` 的写入点必须收敛 —— 现在只有两处：
+#     · `settle_invoice()` → paid
+#     · `refund_invoice()` → refunded
+#   散到端点里就会长出第三、第四处，而每一处都可能漏掉校验或漏掉审计。
+
+_REFUNDABLE_STATUSES = frozenset({"paid"})
+
+
+@dataclass
+class RefundOutcome:
+    """`refund_invoice()` 的结果。"""
+
+    ok: bool
+    #: 本次调用之前就已经是 refunded（重复点击 / 重复提交）—— 正常路径，不是异常
+    already_refunded: bool = False
+    #: 是否顺带撤销了订阅（`revoke_subscription=True` 且订阅生效中）
+    subscription_revoked: bool = False
+    reason: str = ""
+
+
+async def refund_invoice(
+    db: AsyncSession,
+    invoice_id: str,
+    *,
+    operator_id: str,
+    reason: str = "",
+    revoke_subscription: bool = True,
+) -> RefundOutcome:
+    """把一张 **已支付** 账单标记为已退款（唯一入口）。
+
+    Args:
+        operator_id: 平台超管 user id（写进 `refund_operator_id`，审计用）。
+        reason: 退款原因（截断到 255 字符）。
+        revoke_subscription: 是否同时撤销该用户的订阅。默认 True ——
+            「钱退了、权限还留着」是退款场景里最常见的一笔漏账。
+
+    ★ 幂等：先 `FOR UPDATE` 锁账单行再判状态。重复提交第二次走
+      `already_refunded`，不会重复改订阅（否则第二次会把用户**新买的**
+      套餐也一并撤销）。
+    ★ 事务边界：本函数自己 `commit()`，理由同 `settle_invoice` ——
+      「账单状态」与「订阅撤销」必须同时生效。
+    """
+    moment = datetime.utcnow()
+
+    result = await db.execute(
+        select(Invoice)
+        .where(Invoice.id == invoice_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    invoice = result.scalar_one_or_none()
+    if invoice is None:
+        await db.commit()
+        return RefundOutcome(ok=False, reason="invoice_not_found")
+
+    if invoice.status == "refunded":
+        # ★ 用 commit 而非 rollback 释放行锁，理由同 settle_invoice 的 already_paid：
+        #   rollback 会让 session 内对象过期，调用方再读属性就撞 MissingGreenlet。
+        await db.commit()
+        return RefundOutcome(ok=True, already_refunded=True, reason="already_refunded")
+
+    if invoice.status not in _REFUNDABLE_STATUSES:
+        # pending / failed / expired 退不了款（钱根本没到账）。
+        await db.commit()
+        _log.warning(
+            "退款拒绝：账单状态不可退 id={} status={} operator={}",
+            invoice.id, invoice.status, operator_id,
+        )
+        return RefundOutcome(ok=False, reason=f"status_conflict:{invoice.status}")
+
+    invoice.status = "refunded"
+    invoice.refunded_at = moment
+    invoice.refund_reason = (reason or "").strip()[:255] or None
+    invoice.refund_operator_id = operator_id
+
+    revoked = False
+    if revoke_subscription and invoice.user_id:
+        sub = (
+            await db.execute(
+                select(Subscription)
+                .where(Subscription.user_id == invoice.user_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+        # 只撤销「还在生效」的订阅：已 cancelled/expired 的不用再动
+        if sub is not None and sub.status in ("active", "trialing", "past_due"):
+            sub.status = "cancelled"
+            revoked = True
+
+    await db.commit()
+    _log.info(
+        "退款登记完成 invoice={} user={} amount_fen={} revoked={} operator={} reason={}",
+        invoice.id, invoice.user_id, invoice.amount_fen, revoked, operator_id, reason,
+    )
+    return RefundOutcome(ok=True, subscription_revoked=revoked, reason="refunded")
 
 
 # ============================================================================
@@ -401,7 +519,8 @@ def pending_payment_payload(invoice: Invoice) -> dict[str, Any]:
     return {
         "invoice_id": invoice.id,
         "number": invoice.number,
-        "amount": invoice.amount,
+        # ★ 单位是**分**。前端只做一次 /100（`api/billing.ts::fenText`）。
+        "amount_fen": invoice.amount_fen,
         "currency": invoice.currency,
         "status": invoice.status,
         "plan_id": str(invoice.plan_id) if invoice.plan_id is not None else None,

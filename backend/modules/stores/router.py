@@ -19,6 +19,7 @@ from models.store import (
     StoreDetailResponse, FeeTemplate, FeeTemplateCreate,
     DiscountTemplate, StoreStatus, ConnectionStatus, SyncStatus,
 )
+from core.auth.demo_identity import is_demo_request
 from core.auth.dependencies import require_auth_if_enabled
 # ★★★ P1-c（2026-09-16）：归属/权限判定的**唯一真源**。
 #   本模块**不再**自己比较 owner_id —— 改造前 `_check_store_owner` 与
@@ -677,10 +678,17 @@ async def get_store(
 @router.post("", response_model=Store, status_code=201)
 async def create_store(
     data: StoreCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_auth_if_enabled),
 ):
-    """创建新店铺"""
+    """创建新店铺
+
+    ★ 档位闸（第 385 轮 · 商用审查 P0-5）：`max_shops` 此前只在
+      `billing/router.py:159` 被**展示**，全仓无拦截点 ⇒ 免费版能建 50 家店，
+      企业版与免费版在"能开多少店"上完全一样（升级理由不足）。
+      现在按**账户所有者的订阅**判档，超限 402 + 升级引导。
+    """
     store_id = f"store_{uuid.uuid4().hex[:8]}"
 
     # 自动推断 currency 和 region_code
@@ -723,6 +731,21 @@ async def create_store(
         #   ⇒ `stores_store.account_id` 的外键会因「目标账户不存在」而违例。
         #   （`expire_on_commit=False` 已配置，commit 后 current_user 仍可读。）
         await db.commit()
+
+    # ★★ 档位闸（第 385 轮）：店铺数按**账户**计，档位取账户所有者的订阅。
+    #    · `account_id is None`（匿名 / AUTH 关闭）⇒ 放行：没有归属容器就无从计数，
+    #      且演示站用的是同一条路径。
+    #    · 演示身份 ⇒ 放行：演示账号名下本就有 4 家店，按免费版 3 家算会让
+    #      "再建一家看看"直接撞墙。判据复用 `is_demo_request`（与配额豁免同源）。
+    if account_id is not None and not is_demo_request(request):
+        # ★ 函数内延迟 import：`modules/stores` 是 KERNEL 层，而
+        #   `test_module_layering.py::test_kernel_modules_do_not_depend_on_modules_tree_at_import_time`
+        #   禁止内核在 **import 期**依赖 modules/ 树（内核要能跨行业复用）。
+        #   走门面（`from modules.billing import <name>`）—— 门面契约只放行
+        #   `__all__` 里声明过的名字。
+        from modules.billing import METRIC_SHOPS, enforce_account_limit
+
+        await enforce_account_limit(db, account_id=account_id, metric=METRIC_SHOPS)
 
     store = Store(
         id=store_id,

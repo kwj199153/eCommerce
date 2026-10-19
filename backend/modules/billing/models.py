@@ -41,7 +41,10 @@ class SubscriptionPlan(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(50), unique=True)  # free / pro / enterprise
     display_name: Mapped[str] = mapped_column(String(100))  # 免费版 / 专业版 / 企业版
-    price_monthly: Mapped[float] = mapped_column(default=0)  # 月费（元）
+    # ★ 第 378 轮：单位由「元」改为「**分**」（整数）。理由见 `pricing.fen_to_yuan_text`：
+    #   金额用浮点存，`299 * 10` 这类折算迟早出现 `2990.0000000000005`，
+    #   而它会原样出现在账单上。存分之后折算全在整数域里做，不存在"差一分"。
+    price_monthly_fen: Mapped[int] = mapped_column(Integer, default=0, server_default='0')  # 月费（分）
     api_calls_limit: Mapped[int] = mapped_column(default=100)  # API 调用限制/月
     agent_chat_limit: Mapped[int] = mapped_column(default=50)  # Agent 对话次数/月
     max_shops: Mapped[int] = mapped_column(default=3)  # 最大店铺数
@@ -82,7 +85,11 @@ class Subscription(Base):
 
     # LLM 消耗计量（由 core/metering/llm_meter.py 按调用累积落库）
     llm_tokens_used: Mapped[int] = mapped_column(Integer, default=0, server_default='0')          # 累计 token 数
-    llm_cost_used: Mapped[float] = mapped_column(Float, default=0.0, server_default='0')          # 累计成本（元）
+    # ★ 这一列**保持"元 float、6 位小数"**，第 378 轮**不**跟着改成分（刻意的例外）：
+    #   它是**内部成本计量**，不是收款金额。单次 LLM 调用常见 0.0003 元 = 0.03 分，
+    #   存整数分会被四舍五入成 0 —— 计量直接归零，且"用了很多但成本显示 0"这种
+    #   假数据比浮点误差危险得多。收款金额（invoices / plans）才必须整数分。
+    llm_cost_used: Mapped[float] = mapped_column(Float, default=0.0, server_default='0')          # 累计成本（元，6 位小数）
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -120,7 +127,11 @@ class Invoice(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)  # UUID
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     number: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # 账单号 INV-xxxx
-    amount: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 金额（元，正=收款，负=退款）
+    # ★ 第 378 轮：元 float → **分** int（正=收款，负=退款）。
+    #   这是「钱」的那一列，必须与网关的整数分**逐分**可比（见 payments.amount_matches）。
+    amount_fen: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default='0'
+    )  # 金额（分，正=收款，负=退款）
     currency: Mapped[str] = mapped_column(String(8), default="CNY")
     # paid / pending / failed / refunded / expired
     #   ★ expired = 「下单后超时未支付」或「被后一笔新订单顶掉」，由定时任务或下单路径写入。
@@ -175,10 +186,25 @@ class Invoice(Base):
     #   而对账时那张废单看起来和「真实漏单」一模一样。
     pay_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
 
+    # ====== 退款（第 385 轮 · 商用审查 P0-4）======
+    #
+    # ★ 缺陷形态：`status` 的注释里一直列着 `refunded`，但全仓**没有任何写入
+    #   路径** —— 那个枚举值是死字母。结果是「客户要退款」这件事在系统里
+    #   无法表达：运营只能去改 SQL，而对账、客服、发票三条线都看不到痕迹。
+    #
+    # ★ 为什么是三列而不是一个新表：本轮的退款语义是「**整单**退款」
+    #   （一次账单对应一次资金退还），部分退款/多次退款属于另一层模型，
+    #   在还没有真实商户号之前先不猜。三列足够回答运营要问的三件事：
+    #   什么时候退的、为什么退的、谁批的。
+    refunded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    refund_reason: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    #: 平台超管的 user id（审计用；不建外键 —— 操作人离职删号不该带走账单）
+    refund_operator_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     def __repr__(self) -> str:
-        return f"<Invoice(number={self.number}, amount={self.amount}, status={self.status})>"
+        return f"<Invoice(number={self.number}, amount_fen={self.amount_fen}, status={self.status})>"
 
 
 # ====== 支付方式 ======

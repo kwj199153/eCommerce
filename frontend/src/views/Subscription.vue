@@ -21,7 +21,7 @@
           <span>{{ subscription.plan.display_name }}</span>
         </div>
         <div class="plan-price">
-          ¥{{ subscription.plan.price_monthly }}<span class="period">/月</span>
+          {{ fenText(subscription.plan.price_monthly_fen) }}<span class="period">/月</span>
           <a-tag
             v-if="subscription.status === 'trialing'"
             color="orange"
@@ -211,14 +211,14 @@
               {{ plan.display_name }}
             </h3>
             <div class="plan-pricing">
-              <span class="price-monthly">¥{{ plan.price_monthly }}</span>
+              <span class="price-monthly">{{ fenText(plan.price_monthly_fen) }}</span>
               <span class="price-unit">/月</span>
             </div>
             <div class="plan-yearly-hint">
               <!-- ★ 月价 0（免费版）时 `1 - 0/(0*12)` = NaN ⇒ 曾显示「省 NaN%」。
                    算不出节省比例时如实说「永久免费」，不要给一个坏数字。 -->
               <template v-if="planYearlySaving(plan) !== null">
-                年付 ¥{{ plan.price_yearly }}/年（省 {{ planYearlySaving(plan) }}%）
+                年付 {{ fenText(plan.price_yearly_fen) }}/年（省 {{ planYearlySaving(plan) }}%）
               </template>
               <template v-else>
                 永久免费
@@ -300,9 +300,11 @@
           />
         </template>
         <template #bodyCell="{ column, record }">
-          <template v-if="column.dataIndex === 'amount'">
-            <span :class="{ 'amount-negative': record.amount < 0 }">
-              {{ record.amount >= 0 ? '+' : '' }}¥{{ Math.abs(record.amount).toFixed(2) }}
+          <template v-if="column.dataIndex === 'amount_fen'">
+            <!-- ★ 单位是分：正负号由这里加（表格要整齐的 +/-），金额走 fenText
+                 唯一换算点；`Math.abs` 之后再交给它，避免渲染出 `+-¥`。 -->
+            <span :class="{ 'amount-negative': record.amount_fen < 0 }">
+              {{ record.amount_fen >= 0 ? '+' : '' }}{{ fenText(Math.abs(record.amount_fen)) }}
             </span>
           </template>
           <template v-if="column.dataIndex === 'status'">
@@ -465,7 +467,7 @@
             @click="billingCycle = 'monthly'"
           >
             <div class="cycle-price">
-              ¥{{ selectedPlanForUpgrade.price_monthly }}
+              {{ fenText(selectedPlanForUpgrade.price_monthly_fen) }}
             </div>
             <div class="cycle-period">
               按月付费
@@ -483,7 +485,7 @@
               省 {{ yearlySaving }}%
             </div>
             <div class="cycle-price">
-              ¥{{ selectedPlanForUpgrade.price_yearly }}
+              {{ fenText(selectedPlanForUpgrade.price_yearly_fen) }}
             </div>
             <div class="cycle-period">
               按年付费
@@ -523,7 +525,7 @@
       >
         <div class="pay-summary">
           <span class="pay-plan">{{ payPlanLabel }}</span>
-          <span class="pay-amount">{{ payCurrencySymbol }}{{ payPayment.amount.toFixed(2) }}</span>
+          <span class="pay-amount">{{ payAmountText }}</span>
         </div>
         <div class="pay-order">
           订单号：{{ payPayment.number }}
@@ -646,6 +648,7 @@ import {
   type Invoice,
   type PaymentMethod,
   type PendingPayment,
+  fenText,
 } from '@/api/billing'
 import { useShopStore } from '@/stores/shop'
 
@@ -814,8 +817,9 @@ const switchVerb = computed(() => {
   if (!target) return '确认'
   const cur = subscription.value?.plan
   if (!cur || target.id === cur.id) return '续费'
-  if (target.price_monthly > cur.price_monthly) return '升级'
-  if (target.price_monthly < cur.price_monthly) return '降级'
+  // ★ 比的是**分**（整数）：同价判定必须精确，浮点尾数会把「切换」说成「升级」。
+  if (target.price_monthly_fen > cur.price_monthly_fen) return '升级'
+  if (target.price_monthly_fen < cur.price_monthly_fen) return '降级'
   return '切换'
 })
 
@@ -844,10 +848,21 @@ const payPlanLabel = computed(() => {
   return plansError.value ? '套餐信息未加载' : cycle
 })
 
-/** 货币符号 —— 目前后端只出 CNY，写在这里是为了不在模板里散布硬编码 */
-const payCurrencySymbol = computed(() =>
-  (payPayment.value?.currency || 'CNY') === 'CNY' ? '¥' : (payPayment.value?.currency || '') + ' '
-)
+/**
+ * 待支付金额文案 —— 分 → 元，唯一换算点是 `fenText`。
+ *
+ * ★ 为什么不沿用「符号 + toFixed(2)」：`amount_fen` 是**整数分**，
+ *   `toFixed(2)` 会把 299000 渲染成 `299000.00`（差 100 倍，且看起来很像真的）。
+ * ★ 非 CNY 目前后端不会返回，但也不静默套用 ¥ —— 币种与金额必须一起出现，
+ *   否则那个「¥」会变成一句谎。
+ */
+const payAmountText = computed(() => {
+  const pay = payPayment.value
+  if (!pay) return ''
+  const cur = (pay.currency || 'CNY').toUpperCase()
+  const text = fenText(pay.amount_fen)
+  return cur === 'CNY' ? text : `${cur} ${text.replace('¥', '')}`
+})
 
 /** 倒计时文案 mm:ss */
 const payRemainingText = computed(() => {
@@ -861,7 +876,7 @@ const payRemainingText = computed(() => {
 const invoiceColumns = [
   { title: '账单号', dataIndex: 'number', width: 180 },
   { title: '描述', dataIndex: 'description' },
-  { title: '金额', dataIndex: 'amount', align: 'right' as const },
+  { title: '金额', dataIndex: 'amount_fen', align: 'right' as const },
   { title: '状态', dataIndex: 'status', width: 100 },
   { title: '日期', dataIndex: 'issued_at', width: 120 },
   { title: '操作', dataIndex: 'actions', width: 140 },
@@ -897,11 +912,11 @@ function formatDate(time: string | null): string {
  *   塌成一个值必然在某一侧说谎。
  */
 function planYearlySaving(p: SubscriptionPlan): number | null {
-  const monthlyTotal = p.price_monthly * 12
+  const monthlyTotal = p.price_monthly_fen * 12
   if (!(monthlyTotal > 0)) return null
   // 年付不比月付便宜（含同价、倒挂）时不宣称「省」
-  if (!(p.price_yearly < monthlyTotal)) return null
-  return Math.round((1 - p.price_yearly / monthlyTotal) * 100)
+  if (!(p.price_yearly_fen < monthlyTotal)) return null
+  return Math.round((1 - p.price_yearly_fen / monthlyTotal) * 100)
 }
 
 function formatNumber(n: number): string {

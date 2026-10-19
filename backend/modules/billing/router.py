@@ -5,8 +5,10 @@
 
 契约说明：本路由的响应字段与前端 `frontend/src/api/billing.ts` 严格对齐。
   - 套餐 `id` 输出为字符串（`str(plan.id)`），前端按字符串比较做「当前套餐」高亮
-  - 套餐补全 `price_yearly`（后端无该列，按「年付 = 月付 × 10」折算）、
+  - 套餐补全 `price_yearly_fen`（后端无该列，按「年付 = 月付 × 10」折算）、
     `limits` 嵌套对象、`features` 字符串数组（后端存 JSON 字符串，此处解析）
+  - ★ 第 378 轮：**所有金额字段的单位是「分」**（`*_fen`，整数）。
+    前端只在一处除以 100（`api/billing.ts::fenText`），后端不再输出元。
   - 订阅补全 `billing_cycle`、`cancel_at_period_end`、`usage.ai_gen_*`（AIGC 复用 API 额度口径）
 
 ★ P1-4（2026-09-15）价目口径收敛
@@ -52,6 +54,7 @@ from modules.billing.pricing import (
 from modules.billing.payments import (
     find_reusable_pending,
     pending_payment_payload,
+    refund_invoice,
     supersede_other_pending,
 )
 from core.identity.models import User
@@ -92,7 +95,7 @@ def _invoice_from_draft(
         id=draft.id or str(uuid.uuid4()),
         user_id=draft.user_id,
         number=draft.number,
-        amount=draft.amount,
+        amount_fen=draft.amount_fen,
         currency=draft.currency,
         status=draft.status,
         description=draft.description,
@@ -128,6 +131,19 @@ class PaymentMethodActionRequest(BaseModel):
     action: Literal["set_default", "detach"]
 
 
+class RefundRequest(BaseModel):
+    """退款登记请求（第 385 轮 · 商用审查 P0-4）。
+
+    ★ 这是**登记**不是**打款**：资金退还由运营在支付宝商户后台完成，
+      本接口只把「这笔钱已经退了」记进账本，让对账/客服/发票能看到痕迹。
+      详见 `modules/billing/payments.py::refund_invoice()` 的文件头。
+    """
+
+    reason: str = ""
+    #: 是否同时撤销订阅（默认是）。「钱退了、权限还留着」是最常见的一笔漏账。
+    revoke_subscription: bool = True
+
+
 # ====== 序列化 helper（前后端契约对齐） ======
 
 def _serialize_plan(plan: SubscriptionPlan) -> dict:
@@ -140,14 +156,16 @@ def _serialize_plan(plan: SubscriptionPlan) -> dict:
     # ★ 后端无 price_yearly 列，按统一价目口径折算。
     #   ★★ 与 change_plan 的扣款金额共用 `yearly_price()`——这是「展示价 == 收款价」
     #   的硬保证。此处**不允许**再写一遍 `* 10`（改价时必须两处同改 = 迟早出事）。
-    price_yearly = yearly_price(plan.price_monthly)
+    price_yearly_fen = yearly_price(plan.price_monthly_fen)
 
     return {
         "id": str(plan.id),
         "name": plan.name,
         "display_name": plan.display_name,
-        "price_monthly": plan.price_monthly,
-        "price_yearly": price_yearly,
+        # ★ 单位是**分**。字段名带 `_fen` 是刻意的：改单位而不改名字，
+        #   前端会静默按元渲染（差 100 倍，且两个数字都很像真的）。
+        "price_monthly_fen": int(plan.price_monthly_fen or 0),
+        "price_yearly_fen": int(price_yearly_fen),
         "features": features,
         "limits": {
             "api_calls_per_month": plan.api_calls_limit,
@@ -226,7 +244,7 @@ async def list_plans(
     说明：套餐列表属于公开信息（用户登录前即可查看定价），不挂鉴权依赖。
     """
     result = await db.execute(
-        select(SubscriptionPlan).order_by(SubscriptionPlan.price_monthly)
+        select(SubscriptionPlan).order_by(SubscriptionPlan.price_monthly_fen)
     )
     plans = result.scalars().all()
     return {"plans": [_serialize_plan(p) for p in plans]}
@@ -422,7 +440,7 @@ async def change_plan(
     try:
         charge = await gateway.charge(ChargeIntent(
             user_id=current_user.id,
-            amount=amount,
+            amount_fen=amount,
             currency="CNY",
             description=f"{plan.display_name}{'年付' if billing_cycle == 'yearly' else '月付'}",
             billing_cycle=billing_cycle,
@@ -640,13 +658,18 @@ async def list_invoices(
             {
                 "id": inv.id,
                 "number": inv.number,
-                "amount": inv.amount,
+                # ★ 单位是**分**（与「待支付」同口径，前端一处 /100）
+                "amount_fen": int(inv.amount_fen or 0),
                 "currency": inv.currency,
                 "status": inv.status,
                 "description": inv.description,
                 "issued_at": utc_iso(inv.issued_at),
                 "paid_at": utc_iso(inv.paid_at),
                 "pdf_url": inv.pdf_url,
+                # ★ 第 385 轮：退款痕迹要能显示（否则用户问"我退的钱到哪了"，
+                #   客服在界面上看不到任何凭据）。
+                "refunded_at": utc_iso(inv.refunded_at),
+                "refund_reason": inv.refund_reason,
             }
             for inv in items
         ],
@@ -784,6 +807,61 @@ async def update_payment_method(
 
 
 # ====== 内部管理接口（仅管理员） ======
+
+@router.post("/invoices/{invoice_id}/refund")
+async def refund_invoice_endpoint(
+    invoice_id: str,
+    payload: RefundRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """把一张已支付账单登记为**已退款**（平台超管）。
+
+    ★★ 重要边界（请勿在文案里含糊）：本接口**不发起真实退款**。
+      资金退还必须在支付宝商户后台人工完成 —— 本项目尚无商户资质，
+      `alipay.trade.refund` 的真实报文无法验证，写一条没人验证过的
+      **资金调用**比不写更危险（它会让人以为"点了就退了"）。
+      ⇒ 正确顺序：先在支付宝后台退款 → 再调本接口登记。
+
+    ★ 为什么不给普通用户开放：退款是资金动作，用户自助退款需要风控与
+      反欺诈（否则「买完用一个月再退」没有成本）。当前阶段是人工审批。
+    """
+    outcome = await refund_invoice(
+        db,
+        invoice_id,
+        operator_id=admin_user.id,
+        reason=payload.reason,
+        revoke_subscription=payload.revoke_subscription,
+    )
+
+    if not outcome.ok:
+        if outcome.reason == "invoice_not_found":
+            raise HTTPException(status_code=404, detail="账单不存在")
+        if outcome.reason.startswith("status_conflict:"):
+            current = outcome.reason.split(":", 1)[1]
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "INVOICE_NOT_REFUNDABLE",
+                    "status": current,
+                    "message": (
+                        f"账单当前状态为 {current}，只有已支付（paid）的账单可以退款。"
+                        "未到账的账单请直接关闭/等它过期。"
+                    ),
+                },
+            )
+        raise HTTPException(status_code=400, detail=f"退款失败：{outcome.reason}")
+
+    return {
+        "success": True,
+        # ★ 重复提交返回 already_refunded=True 而不是报错 —— 与 settle_invoice
+        #   的 already_paid 同口径：重复是正常路径，不是异常。
+        "already_refunded": outcome.already_refunded,
+        "subscription_revoked": outcome.subscription_revoked,
+        "invoice_id": invoice_id,
+        "note": "已在系统内登记退款；资金退还需在支付宝商户后台完成（本接口不发起真实退款）。",
+    }
+
 
 @router.post("/init-plans")
 async def initialize_plans(
