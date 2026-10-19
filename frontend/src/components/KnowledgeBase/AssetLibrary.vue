@@ -1213,6 +1213,24 @@ onMounted(() => {
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: var(--space-14);
   align-content: start;
+  /*
+   * ★★ 第 379 轮：`grid-auto-rows: max-content` 是修 pad 上卡片重叠的**承重那一行**。
+   *
+   *   现象（老板平板实拍）：卡片互相压、缩略图只剩一条细带、手机档连图都没有。
+   *   实测（`.workbuddy/probes/cdp-asset-pad-overlap.mjs`，四档视口）：
+   *     电脑 216×93 / pad 横 241×49 / pad 竖 241×25 / 手机 208×**0**。
+   *
+   *   原因不是"没媒体查询"，也不是"图没加载"（`naturalWidth=1024`、`complete=true`）：
+   *   本网格高度由 `flex:1` 钉在父级剩余空间上，行是 `auto` 时行高会被
+   *   **压到正好铺满容器**（手机档每行只剩 51px，而卡内文字要 123px ⇒ 溢出卡外 = 重叠）。
+   *   `align-content:start` 管的是"内容整体在容器里的对齐"，**管不住行被压缩**。
+   *
+   *   改成 `max-content` 之后：行高只由卡片自身内容决定，装不下就**滚动**
+   *   （注入对照实测：`gridScroll` 由 false 变 true，卡内溢出 74 → 0）。
+   *   选它而不是 `align-items:start`，是因为后者会让同一行卡片**高度参差不齐**；
+   *   `max-content` 保留"同行等高"的整齐观感。
+   */
+  grid-auto-rows: max-content;
   padding-bottom: var(--space-12);
 }
 
@@ -1237,6 +1255,23 @@ onMounted(() => {
   background: var(--bg-sidebar);
   cursor: zoom-in;
   overflow: hidden;
+  /*
+   * ★★ 第 379 轮：`flex: none` 是**第二道防线**（不是承重的那一行，别搞反）。
+   *
+   *   现象：`.asset-card` 是 flex 列，thumb 作为它的项默认 `flex-shrink: 1`
+   *   ⇒ 卡片一被压，thumb 就无底线收缩，`aspect-ratio: 1/1` 计算值明明正确
+   *   （实测 `aspect=1 / 1`）却完全不生效：216×93 → 241×49 → 241×25 → 208×**0**。
+   *
+   *   实测结论（反向注入，四档视口）：
+   *     · 只留上面那行 `grid-auto-rows: max-content`、删掉本行 ⇒ **四档全绿**
+   *       （卡片不再被压 ⇒ 没有收缩压力 ⇒ shrink 根本不会触发）
+   *     · 两行都去掉 ⇒ **非 1:1 9/9、手机档卡内溢出 6/9、四档全红**
+   *   所以真正修好问题的是 `grid-auto-rows`；本行是"若将来有人给卡片加高度约束 /
+   *   把行改回拉伸，thumb 立刻又塌"这个回归路径的免疫针，成本为零，故保留。
+   *
+   *   ⚠️ 别把它写成"缺它不可" —— 那样注释就是在替一行冗余代码编造理由。
+   */
+  flex: none;
 }
 
 .asset-thumb img {
@@ -1435,5 +1470,135 @@ onMounted(() => {
 .al-color-swatch.active {
   border-color: var(--text-primary);
   transform: scale(1.15);
+}
+
+/* ==========================================================================
+   窄屏（pad 竖 / 手机）：分组栏让位，卡片按可用宽度重新分列
+   ==========================================================================
+   ★★ 第 379 轮。与 `ProductLibrary.vue` 末尾那段是**同一族修复**（那两个库的
+      `.al-* / .pl-*` 骨架是照抄的，缺陷也照抄了）：分组栏固定 220px 不让位，
+      手机 390 宽时内容区只剩 ~170px，统计卡被压成竖排（"素材 / 总数"）、
+      卡片被裁到右边看不见。实测见 `.workbuddy/probes/cdp-asset-pad-overlap.mjs`
+      的 `phone-390x844` 档截图。
+   ★ 素材库**不需要**动卡片：`.stat-cards` 恰好是 4 张（素材总数 / 图片 / 视频 /
+     已绑定产品），本来就够一行 —— 和产品库那次"5 张卡换行"不是一回事。
+   ★ 媒体查询必须写在样式块**末尾**：它不提升特异性，写前面会被同特异性的基础规则盖掉。
+   ========================================================================== */
+@media (max-width: 900px) {
+  .al-page {
+    flex-direction: column;
+  }
+
+  /* 分组栏：左侧 220px 竖列 → 顶部一条横向 chips（分组切换/加号/更多菜单全保留） */
+  .al-sidebar {
+    width: auto;
+    height: auto;
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-6);
+    padding: var(--space-8) var(--space-12);
+    border-right: none;
+    border-bottom: 1px solid var(--border-base);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .al-sidebar-header {
+    flex: none;
+    gap: var(--space-2);
+    padding: 0 var(--space-4) 0 0;
+  }
+
+  .al-sidebar-title {
+    white-space: nowrap;
+  }
+
+  .al-group-item {
+    flex: none;
+    padding: 4px var(--space-10);
+    border-radius: var(--radius-10);
+    font-size: var(--font-size-12);
+  }
+
+  .al-group-item.active {
+    border-right: none;
+    border-bottom: 2px solid var(--primary);
+  }
+
+  .al-group-item--ungrouped {
+    margin-top: 0;
+    border-top: none;
+    padding-top: 4px;
+  }
+
+  .al-group-empty {
+    flex: none;
+    padding: 0 var(--space-8);
+    white-space: nowrap;
+  }
+
+  /* 侧栏底部那三行（8 张图片 / 1 个视频 / 9 个绑定产品）与顶部统计卡**逐项重复** ⇒ 横条里省掉 */
+  .al-sidebar-summary {
+    display: none;
+  }
+
+  .al-content {
+    padding: var(--space-12);
+  }
+
+  /* 工具栏在窄屏必然放不下：允许换行，别让它把内容区顶出可视宽 */
+  .al-toolbar {
+    flex-wrap: wrap;
+    gap: var(--space-8);
+  }
+
+  .stat-cards {
+    gap: var(--space-8);
+  }
+
+  .stat-card {
+    padding: var(--space-8) var(--space-10);
+    min-width: 0;
+  }
+
+  .stat-value {
+    font-size: var(--font-size-18);
+  }
+
+  .stat-label {
+    font-size: var(--font-size-11);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* 手机档：210px 单列太浪费，改两列；统计卡再收一档字号 */
+@media (max-width: 480px) {
+  .al-content {
+    padding: var(--space-8) var(--space-10);
+  }
+
+  .asset-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--space-10);
+  }
+
+  .stat-cards {
+    gap: var(--space-6);
+  }
+
+  .stat-card {
+    padding: 6px var(--space-8);
+  }
+
+  .stat-value {
+    font-size: var(--font-size-16);
+  }
+
+  .stat-label {
+    font-size: var(--font-size-10);
+  }
 }
 </style>

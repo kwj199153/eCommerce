@@ -50,3 +50,97 @@
   font-size: var(--font-size-16);
   margin-right: var(--space-10);
 }
+
+/* ====== 分组标题行右端的**动作按钮**（第 376 轮） ======================
+   第一个消费方是「数字员工」标题右侧的能力广场入口 ——
+   它在上一轮还是菜单里的最后一项，读起来像「第八个员工」。
+
+   ★ 为什么写在这个文件而不是 `AgentList.vue` 的 scoped style：
+     它是**标题行规格的一部分**（同一行、同一高度、同一右边界），
+     而这个文件就是标题行规格的唯一真源。写在组件里会让"标题行长什么样"
+     重新分裂成两处 —— 正是第 260 轮收口掉的那个形状。
+
+   ★ 尺寸取 22×22 而**不改**标题的 32px 高度：`check-sidebar-layout.cjs` 的
+     S2a 要求三个标题等高的前提是 `height: 32px` 由标题自己声明；
+     按钮必须完全待在这 32px 内（纵向不撑开、横向靠 `margin-left: auto` 贴右）。
+   ★ 颜色只用主题变量（`--text-tertiary` → `--text-secondary`）：
+     硬编码色值会同时踩 `check-theme-colors.cjs` 与深色档的对比度矩阵。 */
+.sidebar-section-title .section-action {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-4);
+  background: transparent;
+  /* ★ 常态取 `--text-secondary`（不是 tertiary）：它是这一组里**唯一**的能力广场入口
+     （第 376 轮起菜单里那一项已删），用 tertiary 会和标题文字糊成一片、
+     在浅底上几乎读不出"这里有个可以点的东西"。 */
+  color: var(--text-secondary);
+  font-size: var(--font-size-14);
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-section-title .section-action:hover {
+  /* fallback 写 `transparent`：`--bg-hover-light` 只在 light / dark 两档定义，
+     第三档（macaron）没有 ⇒ 不加兜底的话 hover 会变成"什么都没有"的假反馈。 */
+  background: var(--bg-hover-light, transparent);
+  color: var(--text-primary);
+}
+
+.sidebar-section-title .section-action:focus-visible {
+  /* ★ 用 `--brand`（三档主题都定义的那一个，见 theme/presets.ts 的四档 `--brand*`）。
+     不写 `var(--brand-primary, #0958d9)` —— 本仓**没有** `--brand-primary`，
+     那个 fallback 会恒生效，等于把焦点环钉在已退役的旧蓝上（且是硬编码色值）。 */
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+/* 折叠态（80px 图标条）**不显示**这个按钮。
+   ★ 依据是量出来的，不是拍的：折叠后标题行可用宽度只剩 48px（80 − padding 16×2），
+     塞进 22px 按钮，浏览器把「数字员工」压成两行并裁掉下半截
+     （实测截图 `.workbuddy/probes/out/plaza-entry-collapsed.png`，
+      按钮自身也被挤到 14px 宽 —— `cdp-plaza-entry.mjs` 的 G4 组量过）。
+   ★ 折叠态本来就是「只留图标」的形态，而本按钮没有独立的图标位（它住在标题行里）；
+     用户点汉堡展开即可看到 —— 那才是它的语义位置（与"数字员工"这个分组平级）。 */
+.ant-layout-sider-collapsed .sidebar-section-title .section-action {
+  display: none;
+}
+
+/* ====== 矮视口紧凑档（第 377 轮）=========================================
+   老板报的现场：pad 横屏（1024×768）左侧边栏看不全、得下滑。
+
+   CDP 实测（`.workbuddy/probes/cdp-sidebar-fit.mjs`，不是估算）：
+     · 内容总高 **805px** = logo 64 + 数字员工 285 + 资料库/能力 395 + 账户 61，
+       与视口**宽度无关**（字号、行高都不随宽度变）；
+     · 1024×768 差 **37px**；768×1024 / 834×1112 / 390×844 三档本来放得下；
+     · ★ 只把字号 14 缩到 12 —— **省 0px**。行高写死 34px，字号不参与占位。
+       老板最初提的"字体缩小"这条路实测无效：真正占位的是**行高**。
+
+   所以压缩的是行高与分组标题，字号**不动**：
+     16 项 × 4px + 3 标题 × 6px + 账户条 12px = **94px** ⇒ 805 → 711px。
+
+   ★ 为什么按 `max-height` 分档，而不是继续用宽度那个 1100：
+     这个缺陷的轴是**高度**。1280×720 的笔记本、带浏览器工具栏的 iPad
+     都会中招，而它们宽度远超 1100 —— 只按宽度分档在那类设备上根本不触发。
+   ★ 阈值 860 = 内容 805 + 55 余量：竖屏 iPad（1024）/ Air（1112）不触发，
+     横屏 iPad（768）/ 720 笔记本 / 手机（844，地址栏还要再吃掉几十像素）触发。
+   ★ 代价（已跟老板说明并被选中）：触屏可点高度 34 → 30px，低于 iOS 44 的建议值。
+     换来的是一页放下、16 个入口零删减；若是"多一次点击"的分组折叠，
+     触屏可点区能保住，但每次找库都要先展开。这是取舍，不是遗漏。 */
+@media (max-height: 860px) {
+  .sidebar-nav-menu .ant-menu-item {
+    height: 30px;
+    line-height: 30px;
+  }
+
+  .sidebar-section-title {
+    height: 28px;
+    margin-top: var(--space-6);
+  }
+}

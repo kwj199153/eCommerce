@@ -286,13 +286,18 @@ check('B11', '该条的未读圆点消失（已读态落到界面）', stillUnre
 // ---------------------------------------------------------------------------
 // A 组：能力广场（侧栏入口 → 抽屉 → 分组/卡片 → 点卡片切回对话）
 // ---------------------------------------------------------------------------
-/** 按文案找侧栏菜单项（类名定位在 check-sidebar-layout 里另有一条）。
- *  ★ 必须**先滚进视口**再取矩形：侧栏 8 个数字员工 + 资料库一长串，
- *    900px 高的视口里「能力广场」在折叠线以下 —— 直接按 rect 点会落在**别的元素**上，
- *    症状是「入口明明在，点了没反应」（探针第一次跑就是这么假红的）。 */
-const menuItemExpr = (text) => `(() => {
-  const it = [...document.querySelectorAll('.ant-menu-item')]
-    .find(e => (e.innerText || '').trim().includes(${JSON.stringify(text)}))
+/** 侧栏「能力广场」入口 —— ★ 第 376 轮起它**不在菜单项里**了：
+ *  老板要求挪到「数字员工」分组标题行的右端（`.agent-list .section-action`），
+ *  因为它原本排在「运营复盘师」后面，会被读成"第八个员工"。
+ *
+ *  ★ 这里原先按 `.ant-menu-item` + 文本找。入口一挪，那条选择器就永远 null ⇒
+ *    A1 红。**红是对的**（它确实不在那儿了），但必须同时把选择器与判据文案一起更新，
+ *    否则下一个人看到"A1 侧栏存在能力广场入口 FAIL"会以为入口丢了，去把菜单项加回来。
+ *
+ *  ★ 仍然**先滚进视口**再取矩形：窄屏下侧栏是可滚动的浮层，标题行通常已在视口内，
+ *    但滚一下零成本，且能避免"入口明明在、点了没反应"（探针第一版就是这么假红的）。 */
+const plazaEntryExpr = `(() => {
+  const it = document.querySelector('.agent-list .section-action')
   if (!it) return null
   it.scrollIntoView({ block: 'center' })
   const r = it.getBoundingClientRect()
@@ -310,8 +315,8 @@ if (await rectOf('.ant-drawer-close')) {
   //   而不是「入口没生效」。（先看到这条再改代码，就不会去改对的实现。）
   await waitFor(`!document.querySelector('.ant-drawer-mask')`, 6000)
 }
-const plazaItem = await run(menuItemExpr(PLAZA_TITLE))
-check('A1', `侧栏存在「${PLAZA_TITLE}」入口`, !!plazaItem, plazaItem)
+const plazaItem = await run(plazaEntryExpr)
+check('A1', `侧栏「数字员工」标题行右端存在「${PLAZA_TITLE}」入口`, !!plazaItem, plazaItem)
 // ★ 前置自证：简报抽屉若还开着，它的**遮罩**会吃掉这次点击 ——
 //   症状是「入口明明在，点了没反应」。把它列成判据，不靠 waitFor 沉默兜住。
 const bellStillOpen = await run(drawerOpenExpr(BELL_TITLE))
@@ -327,14 +332,13 @@ if (plazaItem) {
     return {
       cls: String(e.className || '').slice(0, 40),
       txt: String(e.textContent || '').trim().slice(0, 16),
-      inMenuItem: !!e.closest('.ant-menu-item'),
+      inEntry: !!e.closest('.section-action'),
     }
   })()`)
-  // ★ 口径是「点落在菜单项**内部**」而不是「最上层元素就是菜单项」：
-  //   菜单项里套着 `<span class="ant-menu-title-content">能力广场</span>`，
-  //   按 `cls.includes('ant-menu-item')` 判会把**正确**的点判成失败（本轮实测）
-  check('A1b', '点击落点未被遮挡（elementFromPoint 落在菜单项内部）',
-    !!hit && hit.inMenuItem === true, { at: { px, py }, hit })
+  // ★ 口径是「点落在按钮**内部**」而不是「最上层元素就是按钮」：
+  //   按钮里套着 `<svg>`（`AppstoreOutlined`），按 className 判会把**正确**的点判成失败。
+  check('A1b', '点击落点未被遮挡（elementFromPoint 落在入口按钮内部）',
+    !!hit && hit.inEntry === true, { at: { px, py }, hit })
   await clickAt(px, py)
 }
 const plazaOpen = await waitFor(drawerOpenExpr(PLAZA_TITLE), 8000)

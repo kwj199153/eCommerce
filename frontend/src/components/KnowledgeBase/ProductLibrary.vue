@@ -105,6 +105,15 @@
     <!-- 右侧内容区 -->
     <div class="pl-content">
       <!-- 统计卡片 -->
+      <!--
+        ★★ 第 379 轮：老板要求「在售 Listing 卡片取消，保证电脑端 / pad / 手机端都是一行显示完」。
+        原来这里是 **5 张**卡，而 `.stat-cards` 是 `repeat(4, 1fr)` ⇒ 第 5 张被挤到第二行，
+        在任何宽度下都换行（电脑端也一样，只是不容易注意）。删掉第 5 张后恰好 4 张 = 一行。
+
+        ⚠️ 这里的「一行」是**结构性质**，不是运气：卡片数必须 == 列数。
+        以后要加/减统计卡，要么同步改 `grid-template-columns`，要么就别加第 5 张 ——
+        `scripts/check-product-stats-row.cjs` 会数「模板卡片数」与「列数」是否相等。
+      -->
       <div class="stat-cards">
         <div class="stat-card">
           <div class="stat-value">
@@ -136,14 +145,6 @@
           </div>
           <div class="stat-label">
             平均利润率
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value green">
-            {{ activeCount }}
-          </div>
-          <div class="stat-label">
-            在售 Listing
           </div>
         </div>
       </div>
@@ -1510,9 +1511,9 @@ async function removeMonitoredCompetitor(asin: string) {
 }
 
 // ====== 计算属性 ======
-const activeCount = computed(() =>
-  store.items.filter(p => p.listing_status === 'active').length
-)
+// ★ 第 379 轮：`activeCount`（在售 Listing）随那张统计卡一起删掉 —— 只删模板留 computed
+//   会变成"没人读的假数据源"（下次有人以为它还在驱动界面）。删除前已 grep 全仓确认
+//   唯一消费点就是被删的那张卡（模板内 `activeCount` 0 处）。
 const draftCount = computed(() =>
   store.items.filter(p => p.status === 'draft').length
 )
@@ -2051,9 +2052,9 @@ onMounted(() => {
   color: var(--text-primary);
 }
 
-.stat-value.green {
-  color: var(--success);
-}
+/* `.stat-value.green` 已随「在售 Listing」卡一起删除（第 379 轮）——
+   留着就是没人消费的死样式：下次有人加 `class="stat-value green"` 会以为自己拿到了
+   某种既定语义色，实际那只是从一张已下线的卡片上掉下来的残留。 */
 
 .stat-value.orange {
   color: var(--warning);
@@ -2903,5 +2904,130 @@ onMounted(() => {
   gap: var(--space-4);
   font-size: var(--font-size-12);
   color: var(--text-disabled);
+}
+
+/* ==========================================================================
+   窄屏（pad 竖 / 手机）：分组栏让位，统计卡保持**四张一行**
+   ==========================================================================
+   ★★ 第 379 轮。老板要求「自有产品库的在售 Listing 卡片取消，保证电脑端、pad 端和
+      手机端网页显示都是一行显示完成」。删卡只是"结构上够"，真正的拦路虎是**宽度**：
+
+      改动前实测（`.workbuddy/probes/cdp-product-stats-row.mjs`）：
+        手机 390 宽 → 分组栏固定 220px 不让位 → 内容区只剩 ~170px
+        → 4 张统计卡被压成 **59px 宽**，`$104.0K` 与「草稿待完善」全部**折行竖排**。
+      这不是"卡不够一行"，而是"每张卡里的话放不下一行" —— 用户看到的「没显示完」正是它。
+
+      ★ 为什么必须动分组栏：390-48(padding)=342px 里塞 4 张卡，每张 ~79px；
+        再把 220px 的分组栏留在左边，就只剩 ~170px，任何字号都救不回来。
+        所以窄屏把分组栏从「左侧 220px 竖列」改成「顶部一条横向 chips」：
+        **功能一个不删**（分组切换、加号、更多菜单都在），只是换了个方向。
+
+      ★ 为什么媒体查询写在文件末尾：媒体查询**不提升特异性**。写在前面的规则会被
+        后面同特异性的基础规则盖掉（r377 在 `sidebar-nav.css` 上踩过这个坑，静默失效）。
+   ========================================================================== */
+@media (max-width: 900px) {
+  .pl-page {
+    flex-direction: column;
+  }
+
+  /* 分组栏：竖列 → 顶部横条 */
+  .pl-sidebar {
+    width: auto;
+    height: auto;
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-6);
+    padding: var(--space-8) var(--space-12);
+    border-right: none;
+    border-bottom: 1px solid var(--border-base);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .pl-sidebar-header {
+    flex: none;
+    gap: var(--space-2);
+    padding: 0 var(--space-4) 0 0;
+  }
+
+  .pl-sidebar-title {
+    white-space: nowrap;
+  }
+
+  /* chips 形态：竖列的左右留白在这里是多余的，改成胶囊 */
+  .pl-group-item {
+    flex: none;
+    padding: 4px var(--space-10);
+    border-radius: var(--radius-10);
+    font-size: var(--font-size-12);
+  }
+
+  /* 竖列靠右的 3px 主色条，横排时改成底部一条 —— 否则会顶在 chip 右侧很怪 */
+  .pl-group-item.active {
+    border-right: none;
+    border-bottom: 2px solid var(--primary);
+  }
+
+  .pl-group-item--ungrouped {
+    margin-top: 0;
+    border-top: none;
+  }
+
+  .pl-group-empty {
+    flex: none;
+    padding: 0 var(--space-8);
+    white-space: nowrap;
+  }
+
+  /* 内容区：窄屏收边距，把宽度全留给卡片 */
+  .pl-content {
+    padding: var(--space-12);
+  }
+
+  /* 统计卡：**四列一步不换**（这是老板的硬要求），靠缩字号 / 缩内边距换空间 */
+  .stat-cards {
+    gap: var(--space-8);
+  }
+
+  .stat-card {
+    padding: var(--space-8) var(--space-10);
+    min-width: 0; /* ★ 网格项默认 min-width:auto ⇒ 内容不肯缩，会撑破列宽 */
+  }
+
+  .stat-value {
+    font-size: var(--font-size-18);
+  }
+
+  .stat-label {
+    font-size: var(--font-size-11);
+    /* ★ 不加 nowrap 就会「草稿 / 待完 / 善」竖着排（改动前手机档的实际样子） */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* 手机档再收一档：390-32 = 358px / 4 列 - 3×8gap ⇒ 每列 ~83px */
+@media (max-width: 480px) {
+  .pl-content {
+    padding: var(--space-8) var(--space-10);
+  }
+
+  .stat-cards {
+    gap: var(--space-6);
+  }
+
+  .stat-card {
+    padding: 6px var(--space-8);
+  }
+
+  .stat-value {
+    font-size: var(--font-size-16);
+  }
+
+  .stat-label {
+    font-size: var(--font-size-10);
+  }
 }
 </style>

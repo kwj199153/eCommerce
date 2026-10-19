@@ -1184,4 +1184,25 @@ const copyAccountId = async () => {
   border-color: var(--border-base) !important;
   min-width: 0;
 }
+/* ====== 矮视口紧凑档（第 377 轮）========================================
+   与 `src/styles/sidebar-nav.css` 末尾那条同源、同一阈值。
+
+   为什么这条规则必须待在文件**末尾**：媒体查询**不提高优先级**，
+   `.user-trigger { padding: 6px 8px }` 的基础规则写在前面的话，
+   同选择器后者胜 ⇒ 这条覆盖会静默失效（第一版就被插到了基础规则之前）。
+   CDP 复核方式：读 `.account-entry` 的 computed padding-top 应为 4px。
+
+   量出来的必要性：pad 横屏 768 高下侧栏内容 805px，差 37px。
+   账户条让 12px（纵向 padding 8→4、触发条 6→4），配合菜单行高压缩共 94px
+   ⇒ 805 → 711px。头像 32px **不缩** —— 它是可点面积主体，缩了还会
+   破坏与菜单项的视觉对齐。阈值 860 的来历见 `sidebar-nav.css`。 */
+@media (max-height: 860px) {
+  .account-entry {
+    padding: var(--space-4) var(--space-12);
+  }
+
+  .user-trigger {
+    padding: var(--space-4) var(--space-8);
+  }
+}
 </style>

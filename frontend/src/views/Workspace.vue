@@ -2,6 +2,7 @@
   <a-layout
     class="workspace-container"
     :class="{
+      'is-narrow': isNarrow,
       'review-data-mode': isReviewDataMode,
       'listing-data-mode': isReviewDataMode && isListingAgent,
       'aigc-data-mode': isReviewDataMode && isAigcAgent,
@@ -9,9 +10,16 @@
     }"
   >
     <!-- 左侧边栏 -->
+    <!-- ★ 第 375 轮：窄屏下收起宽度取 **0**（宽屏沿用 antd 默认 80）。
+         理由：窄屏下左栏是 `position: fixed` 浮层，留 80px 窄条等于一条
+         盖在中栏左边的**常驻**遮条（点它没反应、还挡内容）。
+         80 不是本仓的设计值，是 antd `a-layout-sider` 的默认 `collapsedWidth`，
+         所以刻意不并进 `PANEL_W`（那张表只放"本仓自己定的槽位宽度"）。
+         恢复入口仍在顶部工具栏的 `.collapse-btn`（`MenuFold/MenuUnfold` 双态图标）。 -->
     <a-layout-sider
       :width="PANEL_W.sidebar"
       :collapsed="sidebarCollapsed"
+      :collapsed-width="isNarrow ? 0 : 80"
       theme="light"
       class="sidebar"
     >
@@ -36,7 +44,7 @@
             v-if="!sidebarCollapsed"
             class="logo-name"
           >
-            <span class="logo-title">店管家 AI</span>
+            <span class="logo-title">店管管</span>
             <span
               v-if="currentShop"
               class="logo-shop-name"
@@ -206,7 +214,7 @@
               title="对话模式：中间对话宽，右侧看板窄"
               @click="setReviewMode('chat')"
             >
-              <MessageOutlined /> 对话模式
+              <MessageOutlined /> <span class="ms-label">对话模式</span>
             </button>
             <button
               class="mode-switch-btn"
@@ -214,7 +222,7 @@
               title="大屏模式：右侧看板占大部分宽度，对话压缩为窄侧栏"
               @click="setReviewMode('data')"
             >
-              <AreaChartOutlined /> {{ isListingAgent ? '文案模式' : '大屏模式' }}
+              <AreaChartOutlined /> <span class="ms-label">{{ isListingAgent ? '文案模式' : '大屏模式' }}</span>
             </button>
           </div>
 
@@ -285,6 +293,15 @@
       />
     </a-layout-sider>
 
+    <!-- 窄屏遮罩（第 375 轮）：左右栏在窄屏下改成了**浮层**（见本文件 style 的
+         `.is-narrow` 段），这块盖在中栏之上、浮层之下（z-index 55 < 60）。
+         只在「窄屏 + 真有浮层打开」时渲染（判据 `narrowScrimVisible`）。 -->
+    <div
+      v-if="narrowScrimVisible"
+      class="ws-scrim"
+      @click="closeNarrowPanes"
+    />
+
     <!-- 记忆与进化 Drawer（全局，由侧栏菜单触发） -->
     <MemoryEvolution v-model:open="memoryDrawerOpen" />
 
@@ -300,7 +317,7 @@
 </template>
 
 <script setup lang="ts">
-import { PANEL_W } from '@/config/layout'
+import { NARROW_MEDIA_QUERY, PANEL_W } from '@/config/layout'
 import { SEM } from '@/theme/semantic'
 import { ref, provide, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
@@ -376,6 +393,45 @@ const knowledgeStore = useKnowledgeStore()
 // 侧边栏状态
 const sidebarCollapsed = ref(false)
 const rightPanelCollapsed = ref(false)
+
+/* ====== 窄屏判据（第 375 轮 · pad / 手机适配）======
+ *
+ * ★★★ 全组件**只算这一处**，然后 provide 下发：消费方**不许**自己再 matchMedia 一次 ——
+ *   两个 MQL 实例在同一次 resize 里可能落在不同帧，于是顶栏与主体对"窄不窄"
+ *   给出不同答案（eEducation 第 450 轮踩过，本仓照此规避）。
+ * ★★★ 为什么用 JS `matchMedia` 而不是纯 CSS `@media`：窄屏不只是"换个排法"，
+ *   还要**改 JS 行为** —— ① 进窄屏时默认收起左右栏（它们此时是浮层，不收起就盖住中栏）
+ *   ② 导航切换后自动收起左栏（否则浮层盖着，看起来"点了没反应"）。
+ *   `@media` 只能改样式、JS 读不到 ⇒ 会出现「CSS 已是单栏、JS 还按三栏算」的半截状态。
+ * ★ 阈值与判据串的唯一真源是 `@/config/layout` 的 `VIEWPORT_BP` / `NARROW_MEDIA_QUERY`
+ *   （为什么是 1100 见该文件注释：788 是中栏归零的硬下限，iPad 横屏 1024 中栏只剩 236px）。
+ */
+const narrowMql = window.matchMedia(NARROW_MEDIA_QUERY)
+const isNarrow = ref(narrowMql.matches)
+
+/**
+ * 进窄屏时收起两栏。
+ * ★ 只需处理「进入」方向：离开窄屏**不**自动展开 —— 用户自己收起来的栏，
+ *   不该因为转了一下屏幕就被强行打开（与新手引导 `ensureSidebar` 那条纪律同源）。
+ */
+const collapsePanesForNarrow = () => {
+  sidebarCollapsed.value = true
+  rightPanelCollapsed.value = true
+}
+
+const onNarrowChange = (e: MediaQueryListEvent) => {
+  isNarrow.value = e.matches
+  if (e.matches) collapsePanesForNarrow()
+}
+narrowMql.addEventListener('change', onNarrowChange)
+onUnmounted(() => narrowMql.removeEventListener('change', onNarrowChange))
+
+// ★ `change` 只在**跨界**时触发 ⇒ 冷启动时已经处在窄屏（手机直接打开）不会收到通知，
+//   必须在这里补一次，否则手机上首次进入就是"左栏浮层盖满屏"。
+if (isNarrow.value) collapsePanesForNarrow()
+
+provide('isNarrow', isNarrow)
+
 const memoryDrawerOpen = ref(false)
 const settingsDrawerOpen = ref(false)
 /** 审计日志抽屉（第 328 轮）。入口在账户菜单，且只对平台超管渲染。 */
@@ -488,6 +544,56 @@ const isSecretaryAgent = computed(() => currentAgent.value?.id === 'secretary')
 const canExpandRightPanel = computed(
   () => currentView.value === 'chat' && rightPanelCollapsed.value && !isSecretaryAgent.value
 )
+
+/**
+ * 窄屏下「有浮层正打开」⇒ 渲染遮罩（第 375 轮）。
+ *
+ * ★ 条件必须与两栏各自的**挂载/展开**条件同源，写宽写窄都会出错：
+ *   · 左栏：任何视图都渲染（模板里没有 v-if）⇒ 只看 `!sidebarCollapsed`
+ *   · 右栏：`v-if="currentView === 'chat' && !isSecretaryAgent"` ⇒ 三者都要判，
+ *     否则秘书/非对话视图下会冒出一层**没有浮层可关**的灰罩，点了还没反应
+ *   （同 `canExpandRightPanel` 那条纪律：两份条件各写一遍必然漂移，故收成这一处）。
+ */
+const narrowScrimVisible = computed(() => {
+  if (!isNarrow.value) return false
+  const leftOpen = !sidebarCollapsed.value
+  const rightOpen =
+    currentView.value === 'chat' && !isSecretaryAgent.value && !rightPanelCollapsed.value
+  return leftOpen || rightOpen
+})
+
+/** 点遮罩 = 收起当前打开的浮层（窄屏下两栏都是盖在中栏上的浮层） */
+const closeNarrowPanes = () => {
+  sidebarCollapsed.value = true
+  rightPanelCollapsed.value = true
+}
+
+/**
+ * 窄屏：**任何导航都收起左右栏浮层**（第 375 轮）。
+ *
+ * ★ 为什么用 watch 覆盖，而不是挨个改进点击处理：导航路径不止"点左栏菜单"——
+ *   还有 `goHome()`、新手引导命令、知识库跳转、深链落地等**程序化**切换。
+ *   逐个改必然漏（漏了的表现是：浮层盖着中栏、用户以为"点了没反应"）。
+ * ★ 右栏**也要收**：宽屏下"切 agent 顺带把配置面板展开"是对的（三栏并排、互不遮挡），
+ *   窄屏下它却是**盖在中栏上的浮层** ⇒ 导航完还开着，等于用户刚点的东西被自己盖住。
+ *   用户想配置时点顶部那个展开按钮即可（`rightPanelCollapsed = false`，
+ *   那条路径不经过 watch，不会被误收）。
+ * ★ 只关心"变了"，不关心变成什么：窄屏下两栏本就是浮层，任何一次导航
+ *   都意味着"用户已经选完了"。
+ * ★ 挂在 `currentAgent` + `currentView` 两个真源上（本仓所有导航最终都落在它们之一）。
+ *
+ * ★★★ `flush: 'post'` 不能省（第 375 轮实测踩过）：
+ *   本文件有 **12 处** `rightPanelCollapsed.value = false`，其中大半是**导航路径上
+ *   的自动展开**（切 agent 时"选中工具就展开右栏"、从资料库返回、goHome 等）。
+ *   默认 `flush: 'pre'` 的 watch 会在**它们之前**执行 ⇒ 我这边刚收起，
+ *   后面那 12 处又把它打开了（症状：窄屏点一个 agent，右栏浮层直接糊住中栏）。
+ *   放到 `post`（DOM 更新后）⇒ 任何自动展开都被这一刀兜住。
+ *   而「用户主动点展开按钮」（模板里 `@click="rightPanelCollapsed = false"`）
+ *   不经过 agent/view 变化 ⇒ **不会**被本 watch 误收，两条意图不打架。
+ */
+watch([currentAgent, currentView], () => {
+  if (isNarrow.value) collapsePanesForNarrow()
+}, { flush: 'post' })
 
 // 选品分析师三工具（选品大盘 / 蓝海挖掘 / 利润测算）的**统一**判据见下方
 // `isProductResearchWideTool`（第 313 轮收口）。
@@ -671,6 +777,19 @@ const toggleSidebar = () => {
 // 选 ②。
 // ★ 两条命令都**只展开、不折叠**：引导无权把一个用户自己收起来的侧栏反过来扣回去，
 //   也不该负责把它恢复成原样（首次进入时默认本来就是展开态，副作用天然为零）。
+//
+// ★★★ 第 376 轮补：窄屏下这两条命令打开的是**浮层**（fixed + 84vw + 遮罩），
+//   而引导原本**没有"用完收回"的机制** ⇒ 讲完左栏那几步，浮层就一直糊在中栏上
+//   （真机实证：390 视口 dispatch `tour:ensure-sidebar` 后左栏 1px→260px、
+//    遮罩出现；再切一次视图仍是 260 —— 因为 `goto-chat` 时视图本来就是 chat，
+//    `watch([currentAgent,currentView])` 不触发）。
+//   ⇒ 补一条对称命令 `tour:reset-layout`：引导**每切一步之前**发一次，
+//     窄屏下把两栏收回折叠态；宽屏下本函数什么也不做（三栏是默认形态，复位无意义）。
+//   ★ 为什么"复位"由发命令侧在每步开头调用，而不是"进入窄屏时"：引导可以在
+//     一个已经展开的左栏上开始讲，那时并没有任何"窄屏切换"事件可挂。
+function resetLayoutForNarrow() {
+  if (isNarrow.value) collapsePanesForNarrow()
+}
 function ensureSidebar() {
   sidebarCollapsed.value = false
 }
@@ -848,6 +967,8 @@ onMounted(() => {
   // 新手引导的两条幂等布局命令（发命令侧：components/Tour/TourHost.vue）
   window.addEventListener('tour:ensure-sidebar', ensureSidebar)
   window.addEventListener('tour:ensure-right-panel', ensureRightPanel)
+  // ★ 第 376 轮：引导每步开头的"布局复位"（窄屏下收浮层，宽屏下空转）
+  window.addEventListener('tour:reset-layout', resetLayoutForNarrow)
 
   // ★★ 店铺列表 = 应用级基础数据，必须在主界面挂载时主动拉一次。
   //    曾经它只在「店铺群」弹层挂载时（ShopPopoverContent.onMounted）加载，
@@ -896,6 +1017,7 @@ onUnmounted(() => {
   window.removeEventListener('review-send-to-chat', handleReviewToChat as EventListener)
   window.removeEventListener('tour:ensure-sidebar', ensureSidebar)
   window.removeEventListener('tour:ensure-right-panel', ensureRightPanel)
+  window.removeEventListener('tour:reset-layout', resetLayoutForNarrow)
 })
 
 const handleViewNavigate = (e: Event) => {
@@ -1464,5 +1586,97 @@ const handleToolAnalysis = (params: any) => {
 /* 隐藏 ant-design 默认的 trigger（我们用自定义按钮） */
 .right-panel :deep(.ant-layout-sider-trigger) {
   display: none !important;
+}
+
+/* ====== 窄屏（pad / 手机）· 单栏外壳（第 375 轮） ======
+   ★ 判据与阈值在 JS（`isNarrow`）与 `config/layout.ts`（`VIEWPORT_BP`），
+     本段只负责「窄了该怎么排」。
+   ★ 工作原理：左右栏在窄屏下 `position: fixed` **脱离文档流** ⇒ 中栏自动吃满整屏。
+     **不是**「把三栏压窄」—— 压窄治不了本：第 375 轮七档真机实测，
+     360 / 390 / 430 / 768 四个视口下**中栏全是 0px**、横向溢出最高 428px，
+     而被压到 0 的恰恰是唯一不可或缺的中栏（对话主区）⇒ 只能换形态。
+
+   ⚠️ 这里用 `max-width` 夹住、**不改写** `width`：antd 把栏宽写成 inline style
+      （左栏 260 / 右栏按 `isWidePanel` 取 340 或 528），改写 width 就得在 CSS 里
+      再写一遍槽位数字 ⇒ 多一份真源。`max-width` 只在"装不下"时生效，
+      收起态（width: 0）不受影响 —— 这也正是**不需要** `:not(.is-collapsed)` 限定
+      的原因（限定是为"覆盖 width"那种写法准备的）。 */
+
+/* ── 1) 左栏：脱流、贴左、浮在中栏之上 ── */
+.is-narrow .sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  height: 100%;
+  z-index: 60;
+  /* 84vw 兜底：极窄屏（<310px）上留出可点遮罩的边缘，读得出"这是浮层" */
+  max-width: 84vw !important;
+  /* ★★★ `min-width: 0` 不能省。antd 的 sider 会在 **inline style** 里写
+     `min-width: <栏宽>`，而 CSS 规范里 **min-width 优先于 max-width**
+     ⇒ 只写 max-width 会被 min-width 顶回去（第 375 轮实测：computed maxWidth
+     确实变成了 84vw，但元素实宽仍是 260 / 528，肉眼看不出来为什么）。
+     收起态不受影响：宽度仍由 antd 的 `width` 决定，而它此时比 max-width 小。 */
+  min-width: 0 !important;
+}
+.is-narrow .sidebar:not(.ant-layout-sider-collapsed) {
+  box-shadow: 2px 0 14px rgba(0, 0, 0, 0.2);
+}
+
+/* ── 2) 右栏：从右侧滑入的浮层（同理，不改写 width） ── */
+.is-narrow .right-panel {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  height: 100%;
+  z-index: 60;
+  /* 92vw 兜底：528 在手机上必然超宽，留 8% 露出底下的中栏 */
+  max-width: 92vw !important;
+  /* ★ 同左栏：`min-width: 0` 不能省（antd 把 min-width 写在 inline style 里，
+     而 min-width 优先于 max-width，只夹 max-width 等于没夹）。 */
+  min-width: 0 !important;
+}
+.is-narrow .right-panel:not(.ant-layout-sider-collapsed) {
+  box-shadow: -2px 0 14px rgba(0, 0, 0, 0.2);
+}
+
+/* ── 3) 遮罩：铺满、垫在左右栏之下（55 < 60） ──
+   ★ 只在「窄屏 + 真有浮层打开」时渲染（`narrowScrimVisible`）⇒ 宽屏下节点不存在。 */
+.ws-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* ── 4) 窄屏下解除「大屏模式」的中栏钉宽 ──
+   `.workspace-container.review-data-mode .main-content` 把中栏钉死 400px
+   （= `PANEL_W.boardChat`）。手机上 400 已超过视口 ⇒ 必然横向溢出；
+   且大屏模式的前提是"右栏在场边吃宽"，窄屏下右栏是浮层，前提不成立。
+   ⇒ 窄屏一律让中栏吃满，右栏回落到浮层形态。
+   ⚠️ 选择器必须写成 `.workspace-container.is-narrow.review-data-mode`（**同一个元素**上的
+      三个类），不能写成 `.is-narrow .workspace-container…`（那就变成后代，永远不命中）。 */
+.workspace-container.is-narrow.review-data-mode .main-content {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+.workspace-container.is-narrow.review-data-mode .right-panel {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  max-width: 92vw !important;
+}
+
+/* ── 5) 顶栏降级：模式切换只留图标 ──
+   ★ 实测（第 375 轮）：360 屏上 `.header-right` 本身宽 358px（视口 360），
+     于是通知铃铛被顶出屏幕 14px、整页横向溢出。
+   ★ 为什么先收这一处而不是别的：两个模式按钮各带 4 个汉字（≈90px/个），
+     而它们的语义已经写在同一元素的 `title` 里 ⇒ **收了不丢信息**、还能省约 100px。
+     对比：收掉 `ConversationToolbar`（查找 / 分享 / 历史）会真的少掉入口，
+     所以那一组**不收**，宁可让它在窄屏里横向可滚。 */
+.is-narrow .mode-switch-btn .ms-label {
+  display: none;
 }
 </style>

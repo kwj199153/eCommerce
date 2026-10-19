@@ -4,7 +4,21 @@
     data-tour="tour-agent-list"
   >
     <div class="sidebar-section-title">
-      数字员工
+      <span class="section-label">数字员工</span>
+      <!-- 能力广场（第 371 轮引入，第 376 轮换位）：
+           原来它是菜单里的**最后一项**，紧接着「运营复盘师」—— 结果被读成「第八个员工」，
+           而它其实是**陈列面入口**（看每个员工会什么），不是员工本身。
+           现在挪到分组标题行的右端：与整个分组平级，语义对；同时菜单少一行 34px。
+           `data-tour` 锚点不动（`tour-agent-list` 仍挂在本组件根节点上）。 -->
+      <button
+        class="section-action"
+        type="button"
+        title="能力广场 · 看看每个数字员工现在就能做什么"
+        aria-label="打开能力广场"
+        @click="plazaOpen = true"
+      >
+        <AppstoreOutlined />
+      </button>
     </div>
     <a-menu
       class="sidebar-nav-menu"
@@ -37,19 +51,6 @@
           即将上线
         </a-tag>
       </a-menu-item>
-
-      <!-- 能力广场（第 371 轮）：技能**陈列**面。
-           与「Skill 仓库」是同一份数据源的相反视角 —— 仓库答「这条技能对不对」，
-           广场答「我能用它做什么」。入口刻意放进本菜单（而不是新起一个分组）：
-           `check-sidebar-layout.cjs` 的 S6a/S6b 判「恰好 3 处分组标题 / 3 处分节菜单」。
-           它的 key 不是任何 agent id，`handleSelectAgent` 里先于查表拦截。 -->
-      <a-menu-item
-        :key="ABILITY_PLAZA_KEY"
-        title="看看每个数字员工现在就能做什么"
-      >
-        <AppstoreOutlined />
-        <span>能力广场</span>
-      </a-menu-item>
     </a-menu>
 
     <AbilityPlazaDrawer v-model:open="plazaOpen" />
@@ -63,34 +64,25 @@ import { AppstoreOutlined } from '@ant-design/icons-vue'
 import { useAgentStore } from '@/stores/agent'
 import AbilityPlazaDrawer from '@/components/AbilityPlaza/AbilityPlazaDrawer.vue'
 
-/**
- * 「能力广场」入口在菜单里的 key。
- *
- * ★ 必须不可能与任何 agent id 相等（那些都是 kebab-case 业务名），
- *   否则会被下面的 `agentList.find()` 当成一个员工。
- */
-const ABILITY_PLAZA_KEY = '__ability-plaza__'
-
 const agentStore = useAgentStore()
 
-/** 能力广场抽屉的开关（抽屉组件自包含，不往上抛事件） */
+/**
+ * 能力广场抽屉的开关（抽屉组件自包含，不往上抛事件）。
+ * ★ 第 376 轮：入口从菜单项改成「分组标题行右端的图标按钮」⇒ 不再需要
+ *   `ABILITY_PLAZA_KEY` 这类"假员工键"，也不会再被 `handleSelectAgent` 当成员工处理。
+ */
 const plazaOpen = ref(false)
 
-// Agent 列表（从 store 获取，排除「店秘书」——它已由左上角 Logo「店管家 AI」作为唯一入口）
+// Agent 列表（从 store 获取，排除「店秘书」——它已由左上角 Logo「店管管」作为唯一入口）
 const agentList = computed(() => agentStore.agentList.filter(a => a.id !== 'secretary'))
 
 // 当前选中的 Agent ID
 const currentAgentId = computed(() => agentStore.currentAgent?.id || '')
 
 // 选择 Agent
+// ★ 第 376 轮：能力广场的拦截分支已随菜单项一起删除（入口改到分组标题行右端，
+//   走 `@click="plazaOpen = true"`，不再经过本函数）。菜单里现在**只有**员工。
 const handleSelectAgent = ({ key }: { key: string }) => {
-  // ★ 能力广场是**入口**不是「员工」：先于查表拦截，且**不设高亮**
-  //   （`:selected-keys` 仍停在当前员工）—— 否则关掉抽屉后菜单会显示
-  //   「选中了能力广场」，而它并不对应任何员工。
-  if (key === ABILITY_PLAZA_KEY) {
-    plazaOpen.value = true
-    return
-  }
   const agent = agentList.value.find(a => a.id === key)
   if (agent && agent.status !== 'coming_soon') {
     agentStore.setCurrentAgent(agent)

@@ -145,6 +145,17 @@ import {
 /** 布局命令事件名（由 Workspace 侧监听并执行；本组件不认识它们的实现） */
 const EVT_ENSURE_SIDEBAR = 'tour:ensure-sidebar'
 const EVT_ENSURE_RIGHT_PANEL = 'tour:ensure-right-panel'
+/**
+ * ★★★ 第 376 轮：每步开头的**布局复位**（反方向的对称命令）。
+ *
+ * 为什么必须有：`ensure-sidebar` / `ensure-right-panel` 在窄屏下打开的是
+ * `position: fixed` 的**浮层**（84vw/92vw + 遮罩），而引导原先只在"下一步"时
+ * 继续往前开 —— **没有任何一步负责把它收回**。真机实证（390 视口）：
+ * 讲完左栏那几步后左栏仍是 260px、遮罩仍在，用户看到的是「手机上左侧边栏
+ * 一直糊在脸上」，而不是折叠态。宽屏下这条命令**空转**（三栏本来就在），
+ * 所以放在每步开头对宽屏行为零影响。
+ */
+const EVT_RESET_LAYOUT = 'tour:reset-layout'
 /** 切回对话视图复用**既有**的事件：Workspace 的 onMounted 已经在监听它了 */
 const EVT_VIEW_NAVIGATE = 'view-navigate'
 /** 重播入口（账户菜单发） */
@@ -171,6 +182,11 @@ function runPrepare(p?: TourPrepare) {
   else if (p === 'ensure-right-panel') window.dispatchEvent(new CustomEvent(EVT_ENSURE_RIGHT_PANEL))
   else if (p === 'goto-chat')
     window.dispatchEvent(new CustomEvent(EVT_VIEW_NAVIGATE, { detail: { view: 'chat' } }))
+}
+
+/** 布局复位：窄屏下把上一步打开的浮层收回折叠态（宽屏下接收侧空转） */
+function runReset() {
+  window.dispatchEvent(new CustomEvent(EVT_RESET_LAYOUT))
 }
 
 /**
@@ -208,6 +224,11 @@ async function goto(i: number) {
   const step: TourStep = TOUR_STEPS[i]
   store.index = i
   store.setRect(null)
+
+  // ★★ 顺序不能反：**先复位、再按需展开**。反过来的话，上一步的浮层会被本步的
+  //    `ensure-*` 重新打开后才被复位收掉 ⇒ 表现为"闪一下又没了"（或干脆关不掉）。
+  runReset()
+  await nextFrames(1)
 
   runPrepare(step.prepare)
   await nextFrames(2)
@@ -270,6 +291,9 @@ function decline() {
 
 function finish() {
   cancelNarration()
+  // ★ 第 376 轮：讲完（或 Esc / 跳过）也要复位 —— 最后一步 `libraries` 正是
+  //   `ensure-sidebar`（左栏浮层），不复位就等于**讲完把手机屏幕一半留在浮层上**。
+  runReset()
   const hadSkips = store.skips.length > 0
   store.finish()
   summaryOpen.value = hadSkips

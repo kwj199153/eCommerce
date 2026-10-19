@@ -226,7 +226,7 @@
       row-key="id"
       :pagination="{ pageSize: 15, size: 'small', showTotal: (t: number) => `共 ${t} 条` }"
       size="middle"
-      :scroll="{ y: 'calc(100vh - 380px)' }"
+      :scroll="{ x: 900, y: 'calc(100vh - 380px)' }"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.dataIndex === 'question'">
@@ -1130,5 +1130,37 @@ onMounted(() => {
 
 :deep(.ant-table-body) {
   overflow-y: auto !important;
+}
+/* ================= 窄屏（≤900px） =================
+ * `.page-header` 与 `.toolbar` 同病：`space-between` + 不换行 ⇒
+ * 390 档 `header-actions` 里的 4 个按钮整组顶出容器 363px（`新增话术` 被切掉）。
+ * 而 `.page-title`（「通用话术库」5 个字）被右侧按钮组挤到 **一字一行**（实测 5 行）
+ * —— 标题折成竖排是「看不全」里最刺眼的一种。
+ * 换行后标题独占第一行，按钮组落到第二行，两者都不再互挤。
+ */
+@media (max-width: 900px) {
+  /* 溢出由下面两组子容器负责收回；`.page-header` 这一条管的是**排版**：
+     没有它，标题组和按钮组会交错成错位块（溢出判据看不出来，截图能看出来）。 */
+  .page-header {
+    flex-wrap: wrap;
+    row-gap: var(--space-8);
+    align-items: flex-start;
+  }
+
+  .header-left,
+  .header-actions {
+    flex-wrap: wrap;
+  }
+
+}
+
+/* 手机档：`.filter-bar` 里是「搜索框 280px + 2 个下拉」。
+ * 不换行时三个一起挤：搜索框被压到约 140px，placeholder 只剩「搜...」——
+ * 溢出/折行/窄列三把尺子都测不到（input 里的文字不参与布局测量），
+ * 是从截图看出来的。所以这一条**只在 390 档**加（768 档三个并排本来就放得下）。 */
+@media (max-width: 480px) {
+  .filter-bar {
+    flex-wrap: wrap;
+  }
 }
 </style>

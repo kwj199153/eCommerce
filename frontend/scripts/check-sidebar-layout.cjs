@@ -55,11 +55,14 @@ function check(ok, label, detail) {
   results.push({ ok: !!ok, label, detail })
 }
 
-function read(rel) {
-  const p = path.join(ROOT, rel)
-  if (!fs.existsSync(p)) return null
+function read(p) {
+  // ★ 第 376 轮：支持绝对路径覆盖（`SIDEBAR_CSS` / `SIDEBAR_AGENTLIST`），
+  //   供变异自证脚本 `.workbuddy/probes/mutate-plaza-entry.mjs` 把"改坏的副本"喂进来
+  //   —— 全程不碰真源。相对路径仍按 ROOT 解析（既有判据零改动）。
+  const full = path.isAbsolute(p) ? p : path.join(ROOT, p)
+  if (!fs.existsSync(full)) return null
   // 行尾归一化必须**真做**：本仓同一文件可 CRLF / LF 混存（该目录里就有）
-  return fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
+  return fs.readFileSync(full, 'utf8').replace(/\r\n/g, '\n')
 }
 
 /** 剥掉 HTML 注释、块注释、行注释 —— 返回「只有代码」的文本。 */
@@ -80,6 +83,26 @@ function ruleBody(css, selector) {
   return css.slice(i + selector.length, j)
 }
 
+/** 抽 `@media (max-height: Npx) { ... }` 的**块体**（括号配平，不靠缩进猜）。
+ *  ★ 不用正则 `\{[\s\S]*?
+\}`：块内嵌套规则里也有 `}`，
+ *    一旦同文件有第二个媒体查询就会串到别人的块里去。 */
+function mediaBlock(src, maxH) {
+  const i = src.indexOf(`@media (max-height: ${maxH}px)`)
+  if (i < 0) return null
+  const open = src.indexOf('{', i)
+  if (open < 0) return null
+  let depth = 0
+  for (let k = open; k < src.length; k++) {
+    if (src[k] === '{') depth++
+    else if (src[k] === '}') {
+      depth--
+      if (depth === 0) return src.slice(open + 1, k)
+    }
+  }
+  return null
+}
+
 /** 解析 `padding` shorthand 的 上/下 两个位置（未声明视为 null）。 */
 function paddingTB(body) {
   const m = /(?:^|[;{\s])padding:\s*([^;]+);/.exec(body)
@@ -90,12 +113,12 @@ function paddingTB(body) {
   return { top, bottom, raw: m[1].trim() }
 }
 
-const cssRaw = read('styles/sidebar-nav.css')
+const cssRaw = read(process.env.SIDEBAR_CSS || 'styles/sidebar-nav.css')
 const mainTs = read('main.ts')
-const agentList = read('components/Sidebar/AgentList.vue')
+const agentList = read(process.env.SIDEBAR_AGENTLIST || 'components/Sidebar/AgentList.vue')
 const knowledge = read('components/Sidebar/KnowledgeBase.vue')
 const workspace = read('views/Workspace.vue')
-const account = read('components/Sidebar/AccountMenu.vue')
+const account = read(process.env.SIDEBAR_ACCOUNT || 'components/Sidebar/AccountMenu.vue')
 
 const css = code(cssRaw)
 const al = code(agentList)
@@ -178,6 +201,82 @@ check(!!childRule && /min-height:\s*100%/.test(childRule), 'S9c sider-children �
 //   856 / 768 两档下把这个盒子的 height: 100% 去掉前后，computed height 都是 768px、
 //   账户入口位置逐像素相同（.ant-layout-sider 自己是 flex 容器，盒子被拉伸定高）。
 //   写一条永远测不出差别的断言等于给「信仰」盖章 —— 删掉，并在源码里留证。
+
+// ---------------- S12 能力广场入口的位置（第 376 轮） ----------------
+// 老板原话：「能力仓库位置改到数字员工的右侧红框处」。
+// 它原本是菜单里的**最后一项**，紧跟「运营复盘师」⇒ 被读成"第八个员工"。
+// 本组防的是**回退**：有人顺手把它加回菜单，就又变成两个入口 / 又排在员工后面。
+// 静态只能判"它住在标题行里、菜单里没有它"；"是否真的贴右端"由
+// `.workbuddy/probes/cdp-plaza-entry.mjs` 在浏览器里量（静态读不出 flex 的实际位置）。
+const menuItemBlocks = [...al.matchAll(/<a-menu-item[\s\S]*?<\/a-menu-item>/g)].map((m) => m[0])
+check(menuItemBlocks.length >= 1, 'S12a 能从 AgentList 切出 <a-menu-item> 块（防空集）', menuItemBlocks.length)
+check(
+  menuItemBlocks.every((b) => !/能力广场/.test(b)),
+  '★ S12b 能力广场**不在**任何菜单项里（否则又成了"第 N 个员工"）',
+  menuItemBlocks.filter((b) => /能力广场/.test(b)).length,
+)
+check(
+  /class="section-action"/.test(al) && /@click="plazaOpen = true"/.test(al),
+  '★ S12c 标题行右端有 `.section-action` 按钮，且它直接打开抽屉（不被当成菜单项）',
+)
+check(
+  /\.sidebar-section-title \.section-action\s*\{[\s\S]*?margin-left:\s*auto/.test(cssRaw || ''),
+  '★ S12d 按钮靠 `margin-left: auto` 贴右端（唯一真源在 sidebar-nav.css）',
+)
+check(
+  !/\.section-action\s*\{/.test(al),
+  'S12e AgentList.vue 里没有第二份 `.section-action` 样式（收口到全局真源）',
+)
+check(
+  /\.ant-layout-sider-collapsed \.sidebar-section-title \.section-action\s*\{[\s\S]*?display:\s*none/.test(cssRaw || ''),
+  'S12f 折叠态（80px）隐藏该按钮（实测会把它压成 14px 宽并把标题挤成两行）',
+)
+
+// ---------------- S13 矮视口紧凑档（第 377 轮）----------------
+// 老板报的现场：pad 横屏（1024x768）侧边栏看不全、要下滑。
+// 实测（.workbuddy/probes/cdp-sidebar-fit.mjs）：侧栏内容总高 805px 固定，
+// 768 高差 37px；只缩字号 14->12 省 **0px**（行高写死 34px，字号不参与占位）。
+// ⇒ 这一组同时守三件事：档位存在 / 阈值三方一致 / 压的是行高不是字号。
+//   为什么必须守「不是字号」：有人按直觉改字号的话，界面会变难读而空间一点没省,
+//   是典型的「看着像修好了、其实没修」的假修复。
+const layoutTs = read(process.env.SIDEBAR_LAYOUT || 'config/layout.ts')
+const compactMaxHeight = (() => {
+  const m = /compactMaxHeight:\s*(\d+)/.exec(layoutTs || '')
+  return m ? Number(m[1]) : null
+})()
+check(compactMaxHeight != null, 'S13a layout.ts 声明了 VIEWPORT_BP.compactMaxHeight（高度轴真源）', compactMaxHeight)
+
+const cssCompact = compactMaxHeight ? mediaBlock(cssRaw || '', compactMaxHeight) : null
+check(!!cssCompact, `S13b sidebar-nav.css 有 @media (max-height: ${compactMaxHeight}px) 块`, cssCompact ? 'FOUND' : 'MISSING')
+
+const cssItemRule = cssCompact ? ruleBody(cssCompact, '.sidebar-nav-menu .ant-menu-item') : null
+const cssItemH = cssItemRule ? Number((/height:\s*(\d+)px/.exec(cssItemRule) || [])[1]) : null
+check(cssItemH != null && cssItemH === 30, '★ S13c 紧凑档把菜单行高压到 30px（基础 34px）', cssItemH)
+
+const cssTitleRule = cssCompact ? ruleBody(cssCompact, '.sidebar-section-title') : null
+const cssTitleH = cssTitleRule ? Number((/height:\s*(\d+)px/.exec(cssTitleRule) || [])[1]) : null
+check(cssTitleH != null && cssTitleH === 28, '★ S13d 紧凑档把分组标题压到 28px（基础 32px）', cssTitleH)
+
+const acctCompact = compactMaxHeight ? mediaBlock(account || '', compactMaxHeight) : null
+check(
+  !!acctCompact,
+  '★ S13e AccountMenu.vue 用的是**同一个**阈值（这个数字两处硬编码，必须对齐）',
+  acctCompact ? 'FOUND' : 'MISSING',
+)
+// ★ 必须把匹配**限定在 .account-entry 自己的规则体**里：
+//   写成 /\.account-entry\s*\{[\s\S]*?--space-4/ 的话，[\s\S]*? 会越过本规则的 `}`
+//   一直找到隔壁 .user-trigger 的 --space-4 ⇒ 恒真（变异 M5 第一次就是这么逃逸的）。
+const acctEntryRule = acctCompact ? ruleBody(acctCompact, '.account-entry') : null
+check(
+  !!acctEntryRule && /padding:\s*var\(--space-4\)/.test(acctEntryRule),
+  'S13f 账户条纵向 padding 压到 --space-4（省 12px，与菜单压缩合计 94px）',
+  acctEntryRule && acctEntryRule.trim().slice(0, 48),
+)
+check(
+  !!cssCompact && !/font-size\s*:/.test(cssCompact),
+  '★ S13g 紧凑档**不许动字号**（实测缩字号省 0px，只会让字更难读）',
+  cssCompact ? (/(font-size\s*:)/.exec(cssCompact) || ['none'])[0] : 'n/a',
+)
 
 // ---------------- S10 npm 脚本登记 ----------------
 const pkg = (() => {

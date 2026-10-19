@@ -275,6 +275,13 @@
     </div>
 
     <!-- 规则列表 -->
+    <!-- 第 380 轮：表格加了 `scroll.x`（见下方 a-table 的 :scroll）。
+         宽表必须能在**自己的容器里横滚**，否则列会被压窄 —— 同组的话术库
+         「问题」列就曾被压成 0px（整列消失）。
+         ★ 但实测：本表在 390 档把 x 删掉，六档仍全绿 ⇒ 当前这套列宽组合下它
+           **并非必需**（规则标题 280 + 生效日期 110 + 状态 100 + 操作 130 都定了宽，
+           自适应的「内容预览」拿得到剩余空间）。保留只为与话术库(900) / 竞品池(1180)
+           / 产品库(1040) 同一范式，不是"缺它就会坏"；下次有人删它不必当成回归。 -->
     <a-table
       :columns="columns"
       :data-source="store.filteredItems"
@@ -282,7 +289,7 @@
       row-key="id"
       :pagination="{ pageSize: 12, size: 'small', showTotal: (t: number) => `共 ${t} 条规则` }"
       size="middle"
-      :scroll="{ y: 'calc(100vh - 360px)' }"
+      :scroll="{ x: 900, y: 'calc(100vh - 360px)' }"
     >
       <template #bodyCell="{ column, record }">
         <!-- 标题列 -->
@@ -2254,5 +2261,50 @@ onMounted(() => {
   font-size: var(--font-size-12);
   color: var(--text-tertiary);
   margin: 0;
+}
+/* ================= 窄屏（≤900px） =================
+ * 同族问题两处：
+ *   · `.pr-header`：标题 + 4 个按钮（含「文档管理」角标）不换行 ⇒ 390 档按钮组顶出 92px
+ *   · `.toolbar`：三个筛选下拉（全部平台/分类/状态）不换行 ⇒ 390 档顶出 314px
+ * 390 档 `pr-title`（「平台规则库」）被挤成 5 行。
+ */
+@media (max-width: 900px) {
+  /* `.pr-header` 这一条管排版（标题组 / 按钮组各占整行），溢出由
+     `.header-actions` 收回 —— 两者分工不同，删了前者不红但会交错。 */
+  .pr-header {
+    flex-wrap: wrap;
+    row-gap: var(--space-10);
+  }
+
+  .header-actions {
+    /* ★ 原样式带 flex-shrink: 0 ⇒ 宽度锁死在 max-content（4 个按钮算出来 456px），
+     *   换了行也仍比 390 容器宽（实测溢出 66px）。必须让它独占一行拿到确定宽度，
+     *   内部的 flex-wrap 才有约束可用。 */
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+    row-gap: var(--space-8);
+  }
+
+  .toolbar-left {
+    flex-wrap: wrap;
+  }
+}
+/* 手机档：同上，390 宽 4 张卡各约 80px，「覆盖平台」5 个字在 12px 下 60px ⇒ 折行。
+ * 收 padding + 降到 10px（5 字 50px ≤ 卡内 62px）。 */
+@media (max-width: 480px) {
+  /* ★ 390 宽下 4 张卡各约 80px，`padding: 14px 16px` 吃掉 32px 后卡内只剩 46px，
+     而「候选总数 / 覆盖平台」在 12px 下要 48~60px ⇒ 标签**折成 2 行**（实测）。
+     收窄左右 padding 就够：卡内 62px，12px 的四字标签 48px 放得下。
+     对照实验里 `gap` / `.stat-value` 字号两条删掉后六档仍全绿 ⇒ 零贡献，不留；
+     `.stat-label` 降到 10px 也能单独修好，但那属于"为了塞下而缩字"，
+     在 padding 已经够用的情况下没有理由牺牲可读性。 */
+  .stat-card {
+    padding: var(--space-8) var(--space-4);
+  }
 }
 </style>

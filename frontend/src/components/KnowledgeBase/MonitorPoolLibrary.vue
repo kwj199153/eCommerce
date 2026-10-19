@@ -941,4 +941,15 @@ async function onRenameGroup(id: string, e: Event) {
 .grp-count { font-size: var(--font-size-12); color: var(--text-tertiary); white-space: nowrap; }
 .grp-hint { margin-top: var(--space-10); font-size: var(--font-size-12); color: var(--text-disabled); }
 .add-hint { margin-top: var(--space-8); font-size: var(--font-size-12); color: var(--text-disabled); }
+/* ================= 窄屏（≤900px） =================
+ * `.mp-head` = 标题（含 ASIN 总数标签）+ 右侧两个按钮，`space-between` 不换行。
+ * 390 档标题被挤成 6 行（「🎯 竞品监控池」一字一行）。
+ * 注意这里**只**加换行，不动统计卡的 `grid auto-fit`（它在六档里都自己排好了，
+ * 手机档自动变成 2×2 —— 那是合理结果，不需要干预）。
+ */
+@media (max-width: 900px) {
+  .mp-head {
+    flex-wrap: wrap;
+  }
+}
 </style>
