@@ -40,7 +40,7 @@ import subprocess
 from pathlib import Path
 
 BACKEND = Path(r"D:\ai\eCommerce\backend")
-PY = r"C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\python.exe"
+PY = str(BACKEND / ".venv" / "Scripts" / "python.exe")  # 仓内单一真源，不借外部解释器
 TEST_REL = "tests/test_skill_shortcut_flag.py"
 
 SERVICE = BACKEND / "modules" / "skills" / "service.py"

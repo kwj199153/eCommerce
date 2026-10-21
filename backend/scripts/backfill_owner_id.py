@@ -9,7 +9,7 @@
   统一回填到 tenant-test-a@example.com（测试用户）
 - tenant_id 保留（仍为 default_tenant，兼容；真实租户映射由后续 tenant_id 收口统一处理）
 
-用法（reactAgents 环境）：
+用法（backend/.venv 环境，见 docs/env-single-source.md）：
     cd backend
     python scripts/backfill_owner_id.py
 """

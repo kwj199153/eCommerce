@@ -19,12 +19,23 @@ echo.
 
 cd /d "%~dp0backend"
 
-rem --- Project python: conda env reactAgents ---
-set "PY=D:\work\anaconda\anaconda3\envs\reactAgents\python.exe"
+rem --- Project python: backend\.venv   (SINGLE SOURCE OF TRUTH) ---
+rem     Why .venv and NOT conda reactAgents:
+rem       backend/Dockerfile             = python:3.12-slim
+rem       .github/workflows/ci.yml       = PYTHON_VERSION "3.12"
+rem       backend/.venv                  = 3.12.14 (uv, isolated)
+rem       conda reactAgents              = 3.11.15  <-- local server used to
+rem       run a DIFFERENT minor than CI and production, which is exactly how
+rem       "tests green but service fails" starts.
+rem     %~dp0 = folder of this file, so no hard-coded drive letter.
+rem     Changing this line means changing backend/.venv, nothing else.
+set "PY=%~dp0backend\.venv\Scripts\python.exe"
 
 if not exist "%PY%" (
     echo ERROR: project python not found: %PY%
-    echo        Fix: create the conda env "reactAgents" first.
+    echo        Fix: backend\.venv is missing. Create it with:
+    echo          uv venv backend\.venv
+    echo          backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
     pause
     exit /b 1
 )
