@@ -20,4 +20,9 @@ from modules.assets.spec import ASSET_SPEC
 #:   按什么筛、值域是什么** —— 那份真源就是 spec，不在工具层再抄一份
 #:   （抄一份必然与内核真正校验的那份漂移）。
 #:   语义上读 spec 与读 `__all__` 里的读口是同一类事：都是「本库对外承诺的形状」。
-__all__ = ["ASSET_SPEC", "count_assets", "list_assets"]
+#: ★ 第 387 轮：注册即播种 / 「加载示例数据」按**点名店铺**灌数（`only_for_shop_ids`）。
+#: 消费方是 `modules/onboarding`，它在**函数内**延迟 import（本包多为 PLUGIN，
+#: 顶层互相引用会踩 `test_module_layering.py` 的 PLUGIN→PLUGIN 红线）。
+from modules.assets.seed import seed_assets_if_empty
+
+__all__ = ["ASSET_SPEC", "count_assets", "list_assets", "seed_assets_if_empty"]

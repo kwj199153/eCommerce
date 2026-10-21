@@ -64,6 +64,11 @@ from .risk_scan import (
     scan_text,
 )
 
+#: ★ 第 387 轮：注册即播种 / 「加载示例数据」按**点名店铺**灌数（`only_for_shop_ids`）。
+#: 消费方是 `modules/onboarding`，它在**函数内**延迟 import（本包多为 PLUGIN，
+#: 顶层互相引用会踩 `test_module_layering.py` 的 PLUGIN→PLUGIN 红线）。
+from modules.trade.seed import seed_trade_if_empty
+
 __all__ = [
     # 数据模型
     "OrderRecord", "OrderItemRecord", "ShipmentRecord", "CustomerReviewRecord",
@@ -135,4 +140,5 @@ __all__ = [
     "scan_reviews_risk",
     # 工具层（供宿主 Agent bind_tools）
     "trade_tools", "set_shop_id_resolver",
+    "seed_trade_if_empty",
 ]

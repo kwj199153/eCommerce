@@ -12,7 +12,13 @@ from modules.knowledge_base.spec import FAQ_SPEC
 from modules.knowledge_base.db_model import KnowledgeBaseRecord, KnowledgeFaqRecord
 
 #: ★ 第 218 轮（P1b）扩出口：`FAQ_SPEC` —— 资料库工具用它生成排序 / 过滤维度说明。
+#: ★ 第 387 轮：注册即播种 / 「加载示例数据」按**点名店铺**灌数（`only_for_shop_ids`）。
+#: 消费方是 `modules/onboarding`，它在**函数内**延迟 import（本包多为 PLUGIN，
+#: 顶层互相引用会踩 `test_module_layering.py` 的 PLUGIN→PLUGIN 红线）。
+from modules.knowledge_base.seed import seed_knowledge_if_empty
+
 __all__ = [
     "FAQ_SPEC", "count_faqs", "list_faqs",
     "KnowledgeBaseRecord", "KnowledgeFaqRecord",
+    "seed_knowledge_if_empty",
 ]

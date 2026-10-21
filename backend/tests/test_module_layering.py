@@ -111,6 +111,12 @@ MODULE_LAYERS: dict[str, str] = {
     "review_analyst": PLUGIN,
     "secretary": PLUGIN,
     "skills": PLUGIN,
+    # ★ 第 387 轮：新手引导（注册即播种 + 加载示例数据）。
+    #   判 PLUGIN 的关键：它只被**组合根**（main.py 的钩子登记 / 路由装配）引用，
+    #   没有任何模块在顶层 import 它；反过来它要用的 9 个 seed 宿主全是
+    #   PLUGIN/SHARED，全部**函数内**延迟 import，所以没有产生 PLUGIN→PLUGIN 的
+    #   顶层边（与 `library` 第 218 轮的处置同源）。
+    "onboarding": PLUGIN,
     "voice_clone": PLUGIN,
 }
 
@@ -172,6 +178,11 @@ MODULE_REASONS: dict[str, str] = {
         "它顶层只依赖 `ai_infra.*` 与 `core.*`（KERNEL）⇒ 方向合法。",
     "product_research": "选品研究；引用 candidates 走**函数内**延迟 import（非顶层）⇒ 插件",
     "review_analyst": "运营复盘；经数据源工厂消费 amazon_sp（SHARED），自身不被引用 ⇒ 插件",
+    "onboarding": "新手引导（第 387 轮）：注册后置动作（按账号建一家示例店铺）与"
+                  "「加载示例数据」端点。判 PLUGIN —— 面向用户的引导流程，"
+                  "**没有任何模块在顶层 import 它**（唯一消费方是组合根 main.py 的"
+                  "钩子登记 / 路由装配）；它对 9 个 seed 宿主一律**函数内**延迟 import，"
+                  "因此没有新增「PLUGIN → PLUGIN」顶层边（与 library 第 218 轮同源）。",
     "secretary": "店秘书（主对话 Agent）；顶层依赖 products / stores / billing / conversation，"
                  "全部落在 SHARED / KERNEL ⇒ 插件",
     "skills": "技能仓库（第 181 轮 · 批 B）：全局技能的新增 / 编辑 / 版本 / 权限 / 工具定义，"

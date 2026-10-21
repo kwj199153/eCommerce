@@ -13551,6 +13551,30 @@
         ]
       }
     },
+    "/api/v1/onboarding/sample-data": {
+      "post": {
+        "description": "给**当前选中的店铺**灌一份示例数据（幂等）。\n\n响应里 `is_sample=true` + `label` 是**契约的一部分**：前端必须据此标注\n「这是示例数据，不是真实平台数据」。删掉这两个字段会让界面无从区分，\n于是示例数据会以「真实数据」的样子出现在公开站上 —— 那正是本仓最忌讳的\n一类缺陷（假数据冒充实测）。\n\n★ `nothing_new=true` 不等于失败：各 seed 是 `*_if_empty`，该店已有数据时\n  不重复写。前端应显示「示例数据已存在」，而不是「加载失败」或「加载成功」。",
+        "operationId": "load_sample_data_endpoint_api_v1_onboarding_sample_data_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Load Sample Data Endpoint Api V1 Onboarding Sample Data Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Load Sample Data Endpoint",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
     "/api/v1/orchestrator/chat": {
       "post": {
         "description": "店秘书全局入口：识别用户意图，调用业务工具或返回导航/选择动作。\n\n决策层 B（跨会话记忆）+ C（checkpointer）：\n- 请求带 session_id 且**它属于当前用户** → 从 DB 读历史注入 + checkpoint 持久化\n- 其余情况（没带 / 不存在 / 不属于你）→ 新建会话，返回新 session_id 供前端持久化\n\n★ P0-1（2026-09-18）：`session_id` 是**客户端提供的**，所以必须先判归属。\n  不属于当前用户时**当作没有会话**（新建），且**不回显**传入的 ID ——\n  回显等于确认\"这个 ID 是真实的\"，可供枚举。\n  实测修复前：B 持有效 token 传 A 的 session_id → 200 + A 的历史全文\n  （读到后还被当作上下文喂给 LLM），本轮消息也会写进 A 的会话。\n\n返回：\n- reply：面向用户的回复文本\n- actions：有序动作列表（选产品 → 切 Agent 等），前端按顺序 dispatchAppAction\n- action：向后兼容字段（= actions 最后一个）\n- tool_calls：本次调用的工具名（调试/埋点用）\n- session_id：会话 ID（前端持久化，后续请求带回）",

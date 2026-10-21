@@ -254,6 +254,19 @@ async def register(
             new_user.id, new_user.email, email_error,
         )
 
+    # 5b. 注册后置钩子（第 387 轮 · 网站管理员 P0-3）
+    #
+    #   ★ 为什么用「钩子表」而不是直接在这调 `modules.onboarding`：
+    #     `core/` 顶层禁止 import `modules/`（tests/test_core_layering.py）。
+    #     机制住在 `core.identity.post_register`，具体做什么由组合根
+    #     （main.py）注入 —— 与 `core/bootstrap.py::seed_base_data(steps=...)`
+    #     同一套思路。
+    #   ★ 钩子失败**不挡注册**（用户已经建好了），但结果必须回给调用方：
+    #     静默失败会让用户面对一个空店铺列表去猜。详见 post_register.py 文件头。
+    from core.identity import post_register as _post_register
+
+    onboarding = await _post_register.run_post_register_hooks(db, new_user)
+
     # 6. 生成 Token
     tokens = create_token_pair(
         user_id=new_user.id,
@@ -272,6 +285,9 @@ async def register(
         #   为 true 时它决定了用户能不能登录，前端据此提示"点这里重发"。
         "email_sent": email_sent,
         "email_error": email_error,
+        # ★ 第 387 轮：注册后置钩子的结果（建店成功与否）。
+        #   前端据此决定「首屏那家示例店铺」要不要显示，以及显示什么。
+        "onboarding": onboarding,
     }
 
 

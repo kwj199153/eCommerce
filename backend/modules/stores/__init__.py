@@ -19,4 +19,17 @@ from modules.stores.demo import demo_account_email
 #:   **不产生任何 IO / 建表 / 后台任务**（与上面 `demo_account_email` 同理）。
 from modules.stores.demo import demo_store_ids
 
-__all__ = ["stores_router", "demo_account_email", "demo_store_ids"]
+#: ★ 第 387 轮：注册即播种要「按新账号建一家店」。
+#: 为什么要走门面而不是让 `modules/onboarding` 自己 insert 一行：
+#:   `modules/stores/router.py` 里维护着读缓存 `_store_db`（`/api/v1/stores` 的
+#:   读源）。绕过 `create_store` 直接写 PG ⇒ 新店**要等重启才出现**，且不报错。
+#: 本行导出的是**已经成对写好缓存 + 落库**的那个原语。
+#: ★ 它 import 期不产生任何 IO（只定义函数），与上面两行同理。
+from modules.stores.provisioning import create_store_for_account
+
+__all__ = [
+    "stores_router",
+    "demo_account_email",
+    "demo_store_ids",
+    "create_store_for_account",
+]

@@ -680,6 +680,25 @@ app.include_router(amazon_sp_router)  # 路由已包含 /api/v1 前缀
 from modules.stores.router import router as stores_router
 app.include_router(stores_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀
 
+# ===== 新手引导 / 加载示例数据（第 387 轮 · 网站管理员 P0-2 + P0-3）=====
+#
+# ★ 组合根在这里做**两件**事，缺一不可：
+#   ① `include_router` —— 让 `POST /api/v1/onboarding/sample-data` 存在；
+#   ② `register_post_register_hook` —— 让「注册完建一家示例店铺」真的发生。
+#      钩子表在 core 里是空的（core 不认识 modules），
+#      没有这一行就**没有任何后置动作**，而且不会报错 —— 注册照常 201，
+#      用户照常看到空店铺列表。这正是「装配漏一行 = 功能不存在」的典型形态。
+#
+# ★ 为什么计量（API_QUOTA）与业务鉴权都挂上：这个端点是**写**操作（灌数据），
+#   与相邻的 products / candidates 等写端点同档。不挂 API_QUOTA 会让它成为
+#   唯一一条「不计费的写入口」。
+from modules.onboarding import bootstrap_new_user as _bootstrap_new_user
+from modules.onboarding import onboarding_router
+from core.identity.post_register import register_post_register_hook
+
+register_post_register_hook(_bootstrap_new_user)
+app.include_router(onboarding_router, prefix="/api/v1", dependencies=BUSINESS_AUTH + API_QUOTA)
+
 # 产品库模块（资料库 PG 持久化）
 from modules.products.router import router as products_router
 app.include_router(products_router, dependencies=BUSINESS_AUTH)  # 路由已包含 /api/v1 前缀

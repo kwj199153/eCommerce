@@ -38,6 +38,11 @@ from modules.amazon_sp.data_sources import (
 )
 from modules.amazon_sp.snapshot_repo import load_competitor_snapshots
 
+#: ★ 第 387 轮：注册即播种 / 「加载示例数据」按**点名店铺**灌数（`only_for_shop_ids`）。
+#: 消费方是 `modules/onboarding`，它在**函数内**延迟 import（本包多为 PLUGIN，
+#: 顶层互相引用会踩 `test_module_layering.py` 的 PLUGIN→PLUGIN 红线）。
+from modules.amazon_sp.seed import seed_competitor_snapshots_if_empty
+
 __all__ = [
     # ★ 接口与 Mock 也出口：`prefer="mock"` 的返回类型必须可被调用方 isinstance 判断
     #   （`sync_all_shops` 要区分「演示店走 mock」与「真实店」，脚本要造演示数据）。
@@ -51,4 +56,5 @@ __all__ = [
     "StoreCredential",
     "StoreNotConnected",
     "UnsupportedMarketplace",
+    "seed_competitor_snapshots_if_empty",
 ]

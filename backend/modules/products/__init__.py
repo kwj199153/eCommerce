@@ -27,4 +27,9 @@ from modules.products.db_model import SkuRecord, SpuRecord
 from modules.products.router import spu_to_dict
 from modules.products.spec import PRODUCT_SPEC
 
-__all__ = ["SkuRecord", "SpuRecord", "PRODUCT_SPEC", "spu_to_dict"]
+#: ★ 第 387 轮：注册即播种 / 「加载示例数据」按**点名店铺**灌数（`only_for_shop_ids`）。
+#: 消费方是 `modules/onboarding`，它在**函数内**延迟 import（本包多为 PLUGIN，
+#: 顶层互相引用会踩 `test_module_layering.py` 的 PLUGIN→PLUGIN 红线）。
+from modules.products.seed import seed_products_if_empty
+
+__all__ = ["SkuRecord", "SpuRecord", "PRODUCT_SPEC", "spu_to_dict", "seed_products_if_empty"]

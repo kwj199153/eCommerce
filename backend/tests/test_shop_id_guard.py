@@ -196,6 +196,13 @@ EXPECTED_STRICT_MODULES = {
     #   （实测 35 行 ×4 张表），豁免会把「你没选店铺」这句**可行动**的提示，
     #   换成一份看起来正常、却不知属于谁的报告 —— 归因错误。
     "modules/review_analyst/router.py",
+    # ★ 第 387 轮新增（网站管理员 P0-2「加载示例数据」）。
+    #   为什么必须 strict：`POST /onboarding/sample-data` 往**当前店铺**灌示例数据，
+    #   没有店铺就没有灌的对象 —— 豁免成 optional 会让它拿到 `None` 然后
+    #   要么 500、要么静默不灌却回「成功」。两种都比一句
+    #   「请先选择店铺」更糟（后者是可行动的，前者是"看起来坏了"）。
+    #   它的归属校验不自己写：`get_current_shop_id` 是 `X-Shop-ID` 的唯一真源。
+    "modules/onboarding/router.py",
     # ★ 第 143 轮 A4 新增。`/customer-service/ticket/create` 在 A4 之前**连
     #   X-Shop-ID 都不取** —— 所以即便建了表也落不下租户维度（`shop_id` 为空
     #   会被外键拒绝，用户看到 500 且报错里带约束名）。A4 一边给工单建表落库、

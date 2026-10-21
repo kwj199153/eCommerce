@@ -80,7 +80,24 @@
               暂无市场洞察数据
             </p>
             <p class="mi-empty-sub">
-              请先接入第三方类目数据源，或切换到演示账号查看示例。
+              请先接入第三方类目数据源，或先加载一份示例数据看看这个大盘长什么样。
+            </p>
+            <!-- ★ 第 387 轮：把「或切换到演示账号」换成**自己能点的按钮**。
+                 原来那句是诚实的，但对已登录的真实账号来说它不可行动
+                 （演示账号是另一套凭据，用户切不过去）。 -->
+            <button
+              v-if="canLoadSample"
+              class="mi-empty-action"
+              :disabled="loadingSample"
+              @click="onLoadSample"
+            >
+              {{ loadingSample ? '正在加载…' : '加载示例数据（非真实平台数据）' }}
+            </button>
+            <p
+              v-else
+              class="mi-empty-sub"
+            >
+              请先在左上角选择店铺
             </p>
           </div>
 
@@ -286,6 +303,15 @@ import { getMarketInsightTreemap } from '@/api/productResearch'
 import EChartsTreemap from '@/components/charts/EChartsTreemap.vue'
 import { getToolDefinition, type ToolDefinition } from '@/components/ChatPanel/tools/toolDefinitions'
 import { topLabel, midLabel, displayCategory } from '@/config/categoryTaxonomy'
+// ★ 第 387 轮（网站管理员 P0-2）：空态要给一个「真的能点」的出口。
+//   `errorText` 是结构化 detail 的唯一归一实现（`@/api/errors`），
+//   不许在这写 `e?.response?.data?.detail || '兜底'`（对象会被渲染成 [object Object]）。
+// ★ 别名导入：本文件已有一个 `const message = ref('')`（后端的提示文案），
+//   直接 `import { message }` 会与之重名（TS 报 duplicate identifier）。
+import { message as antdMessage } from 'ant-design-vue'
+import { errorText } from '@/api/errors'
+import { loadSampleData } from '@/api/onboarding'
+import { useShopStore } from '@/stores/shop'
 
 /**
  * 选品市场洞察大盘云图（第 305 轮 · 蓝海挖掘大盘云图）
@@ -332,6 +358,14 @@ const source = ref('')
 const message = ref('')
 const loading = ref(false)
 const loadError = ref('')
+// ★ 示例数据的加载态与「大盘加载态」分开：两者同时发生（加载完要 reload），
+//   共用一个 ref 会让按钮在数据回来前就恢复可点，用户会连点两次
+//   —— 后端幂等所以不会重复灌，但界面上看起来像"点了没反应"。
+const loadingSample = ref(false)
+const shopStore = useShopStore()
+// 没有店铺时按钮不该出现：后端会 400（缺 X-Shop-ID），
+// 而那对用户是一句无法行动的报错 —— 该先让他去选店。
+const canLoadSample = computed(() => !!shopStore.currentShopId)
 const selectedKey = ref<string>('')
 
 // 大屏/对话模式：读 Workspace 注入的 reviewMode（第 312 轮对齐 AIGC 双模式）。
@@ -376,6 +410,35 @@ async function reload() {
     nodes.value = []
   } finally {
     loading.value = false
+  }
+}
+
+/**
+ * 加载示例数据（第 387 轮）。
+ *
+ * ★ 必须把「这是示例」说进成功提示里：只说「加载了 42 条」，
+ *   用户会以为那是真实市场数据 —— 而这正是管理员要求「诚实空态」的原因。
+ * ★ `nothing_new` 不是失败：seed 是 `*_if_empty`，已有数据就不重复写。
+ *   把它显示成「加载成功」或「加载失败」都是错的两个方向。
+ */
+async function onLoadSample() {
+  if (loadingSample.value) return
+  loadingSample.value = true
+  try {
+    const resp: any = await loadSampleData()
+    const data = resp?.data?.data ?? resp?.data ?? {}
+    if (data.nothing_new) {
+      antdMessage.info('该店铺已有示例数据，未重复写入')
+    } else {
+      antdMessage.success(`已加载 ${data.total ?? 0} 条示例数据（${data.label || '非真实平台数据'}）`)
+    }
+    // 重新拉一次大盘：新灌的快照会带 is_demo=True ⇒ 后端回 degraded=true
+    // ⇒ 界面上「数据真源」自动变黄字「演示数据」。标注不是前端写死的。
+    await reload()
+  } catch (e: any) {
+    antdMessage.error(errorText(e, '加载示例数据失败，请稍后重试'))
+  } finally {
+    loadingSample.value = false
   }
 }
 
@@ -617,6 +680,23 @@ function trendLabel(t: string): string {
 .mi-empty-icon { font-size: var(--font-size-32); }
 .mi-empty-title { font-size: var(--font-size-14); font-weight: 600; color: var(--text-secondary); margin: 0; }
 .mi-empty-sub { font-size: var(--font-size-12); margin: 0; max-width: 280px; line-height: 1.6; }
+/* 空态里的动作按钮：比正文重一点、比主色按钮轻一点（它不是主流程） */
+.mi-empty-action {
+  margin-top: 10px;
+  padding: 5px 12px;
+  font-size: var(--font-size-12);
+  color: var(--text-primary, #1f2329);
+  background: var(--bg-elevated, #fff);
+  border: 1px solid var(--border-strong, #d0d3d9);
+  border-radius: var(--radius-6, 6px);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.mi-empty-action:hover:not(:disabled) {
+  color: var(--primary, #1668dc);
+  border-color: var(--primary, #1668dc);
+}
+.mi-empty-action:disabled { cursor: not-allowed; opacity: 0.6; }
 
 /* 六维度明细：第 314 轮压缩垂直留白（原 padding 11/13 + 每格上下 4px，空得比内容多） */
 .mi-detail {

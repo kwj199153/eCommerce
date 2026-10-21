@@ -22,4 +22,9 @@ from modules.monitors.spec import MONITOR_SPEC
 #: 资料库工具经此读到监控池（老板拍的「竞品池就是竞品监控池，P1 全库覆盖」）。
 #: ★ 第 218 轮（P1b）扩出口：`MONITOR_SPEC` ——
 #:   资料库工具要用它生成「能按什么排 / 按什么筛」的 description（同 assets 包）。
-__all__ = ["MonitorRecord", "MONITOR_SPEC", "count_monitors", "list_monitors"]
+#: ★ 第 387 轮：注册即播种 / 「加载示例数据」按**点名店铺**灌数（`only_for_shop_ids`）。
+#: 消费方是 `modules/onboarding`，它在**函数内**延迟 import（本包多为 PLUGIN，
+#: 顶层互相引用会踩 `test_module_layering.py` 的 PLUGIN→PLUGIN 红线）。
+from modules.monitors.seed import seed_monitors_if_empty
+
+__all__ = ["MonitorRecord", "MONITOR_SPEC", "count_monitors", "list_monitors", "seed_monitors_if_empty"]
