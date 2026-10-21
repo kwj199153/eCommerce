@@ -54,7 +54,10 @@ from core.auth.accounts import (
     resolve_account_role,
     require_account_permission,
 )
-from core.auth.dependencies import require_authenticated_user
+from core.auth.dependencies import (
+    oauth2_scheme_optional,
+    require_authenticated_user,
+)
 from core.database import get_db
 from core.identity.account_models import (
     Account,
@@ -106,6 +109,12 @@ class MemberUpdateRequest(BaseModel):
 async def _current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    # ★ A3（r389）：本函数只是 `require_authenticated_user` 的**包装**
+    #   （判定逻辑仍只有一份）。而 openapi 的 security 声明只在
+    #   「依赖链上直接出现 scheme 的那一层」生效 ⇒ 包一层就断。
+    #   所以包装层也要带 _scheme，否则 /accounts 的 9 个 op 全是 security=None。
+    #   放末尾：`(request, db)` 的位置语义不能动。
+    _scheme: Optional[str] = Depends(oauth2_scheme_optional),
 ) -> User:
     """
     强制身份（fail-closed）。演示模式（无身份）返回 401 而不是放行。

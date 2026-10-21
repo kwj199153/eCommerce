@@ -149,11 +149,54 @@ async def lifespan(app: FastAPI):
     _log.info("✅ 资源已释放")
 
 
+# ====== openapi 顶层 tag 定义（A5 · r389）======
+# 为什么要有：各 router 自己带的中文 tag（31 个）只出现在 operation 上，
+# 顶层 `openapi.tags` 是空的 ⇒ 外部 Agent 拿到的是一堆散落的 op，
+# 没有「有哪几块能力」这一层。补上之后 `/openapi.json` 自带目录。
+#
+# ★ 判据：`set(所有 op 级 tag) ⊆ set(本清单的 name)`。
+#   新增一个带新 tag 的 router 却忘了在这里登记 ⇒
+#   tests/test_openapi_contract.py 会红（清单式分母的代价，故意如此）。
+_OPENAPI_TAGS = [
+    {"name": "认证", "description": "登录、注册、令牌刷新与登出"},
+    {"name": "账号安全", "description": "双因素、会话与安全设置"},
+    {"name": "本机免密", "description": "本机设备免密登录（开发与桌面端）"},
+    {"name": "账户与成员", "description": "账户信息、成员与权限"},
+    {"name": "audit", "description": "审计日志查询"},
+    {"name": "用户自助", "description": "用户自助资料与 API Key 管理"},
+    {"name": "计费与用量", "description": "套餐、订阅、用量与配额"},
+    {"name": "计费-支付", "description": "下单、支付回调与发票"},
+    {"name": "选品分析", "description": "选品评分与市场机会分析"},
+    {"name": "Listing 生成优化", "description": "标题/五点/描述生成与优化"},
+    {"name": "广告分析", "description": "广告投放数据分析"},
+    {"name": "智能客服", "description": "客服会话、消息与策略"},
+    {"name": "竞品情报监控", "description": "竞品采集与情报汇总"},
+    {"name": "AIGC 媒体生成 (Phase 7)", "description": "图片/视频等 AIGC 内容生成"},
+    {"name": "运营复盘师", "description": "店铺运营复盘与利润审计"},
+    {"name": "amazon-sp", "description": "Amazon SP-API 集成（授权、订单、库存）"},
+    {"name": "stores", "description": "店铺管理（创建、授权、连接状态）"},
+    {"name": "onboarding", "description": "新用户引导与示例数据"},
+    {"name": "产品库", "description": "SPU/SKU 商品主数据"},
+    {"name": "素材库", "description": "图片/视频素材与分组"},
+    {"name": "候选选品库", "description": "候选商品池与分组"},
+    {"name": "竞品监控池", "description": "竞品监控目标与快照"},
+    {"name": "平台规则库", "description": "平台规则文档与版本"},
+    {"name": "业务话术库", "description": "客服话术模板与命中"},
+    {"name": "差评处置", "description": "差评审核、归因与处置"},
+    {"name": "店秘书", "description": "店秘书 Agent 对话入口"},
+    {"name": "会话持久化", "description": "会话与消息持久化"},
+    {"name": "长期记忆", "description": "记忆蒸馏与检索"},
+    {"name": "技能管理", "description": "技能目录与按需加载"},
+    {"name": "提示词覆写", "description": "提示词版本与覆写"},
+    {"name": "客服语音（附加模块）", "description": "语音克隆与客服语音"},
+]
+
 # ====== 创建 FastAPI 实例 ======
 app = FastAPI(
     title=config.app_name,
     version=config.app_version,
     description="一站式 AI 原生跨境电商全链路 SaaS",
+    openapi_tags=_OPENAPI_TAGS,
     lifespan=lifespan,
     docs_url="/docs" if config.debug else None,  # 生产环境关闭文档
     redoc_url="/redoc" if config.debug else None,

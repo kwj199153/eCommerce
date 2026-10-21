@@ -21,7 +21,25 @@ from core.observability.context import set_request_context
 
 
 # OAuth2 密码模式（自动从请求头提取 Bearer Token）
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+#
+# ★ A1（r389 · 运维 P0-4）：tokenUrl 原写 "/api/auth/login"，而真实路径是
+#   "/api/v1/auth/login"（identity router prefix="/auth" + main.py 挂载 prefix="/api/v1"）。
+#   照 schema 调 -> 404 ⇒ 任何标准客户端（OpenAPI codegen / MCP / Agent）
+#   第一步就断，且 404 会被误判成「没有登录接口」。判据见
+#   tests/test_openapi_contract.py::test_a1_token_url_is_callable。
+AUTH_TOKEN_URL = "/api/v1/auth/login"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=AUTH_TOKEN_URL)
+
+# ★ A3（r389 · 运维 P0-4）：**只为让 openapi 看得见 securityScheme**，不参与校验。
+#   为什么必须 auto_error=False：默认 True 时，缺 Authorization 头会在**依赖解析阶段**
+#   直接 401 —— 而 `require_auth_if_enabled` 的语义是 optional auth
+#   （AUTH_REQUIRED=false 的本地演示必须能匿名进入）。运维侧踩过同类事故：
+#   演示模式整片 401。auto_error=False 的 scheme **仍会**写进
+#   components.securitySchemes 并传播到挂载它的路由，所以「看得见」与
+#   「不改变行为」可以兼得。
+oauth2_scheme_optional = OAuth2PasswordBearer(
+    tokenUrl=AUTH_TOKEN_URL, auto_error=False
+)
 
 # ★ 前端演示哨兵串的前缀 —— 定义已**下移**到 `core/auth/demo_identity.py`
 #   （第 182 轮）。理由：它和「解析成谁」是同一件事的两半，分开放会让将来
@@ -218,6 +236,12 @@ async def get_current_active_user(
 async def require_auth_if_enabled(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    # ★ A3（r389）：这个参数**只用于**把 securityScheme 传播进 openapi，
+    #   函数体一次都不读它（token 仍从 request.headers 手动解析，见下方）。
+    #   ★ 必须在**末尾**：本函数有直接调用点 `require_auth_if_enabled(request, db)`
+    #   （usage_tracker ×3、tenant/middleware ×1）。插在中间会把 AsyncSession
+    #   吃成 _scheme，而 db 退回 Depends 标记对象 ⇒ 运行期 500，且 openapi/import 都正常。
+    _scheme: Optional[str] = Depends(oauth2_scheme_optional),
 ) -> Optional[User]:
     """
     受开关控制的鉴权依赖（用于路由级批量挂载）—— **optional auth（可选用户）**
@@ -325,9 +349,15 @@ async def require_auth_if_enabled(
 
 async def require_authenticated_user(
     request: Request,
+    # ★ A3（r389）：同 require_auth_if_enabled —— 只为让 openapi 看见
+    #   securityScheme，函数体不引用；auto_error=False 保证缺头时不预抛 401。
     db: AsyncSession = Depends(get_db),
     *,
     what: str = "该功能",
+    # ★ A3（r389）：只为让 openapi 看见 securityScheme，函数体不引用。
+    #   keyword-only 是刻意的：调用点写成 require_authenticated_user(request, db, what=...)
+    #   （accounts_router:123、memory/router:114），位置参数不能被动。
+    _scheme: Optional[str] = Depends(oauth2_scheme_optional),
 ) -> User:
     """
     **强制身份**（fail-closed）：拿不到有效身份一律 401，绝不静默放行。
@@ -395,6 +425,9 @@ async def require_authenticated_user(
 async def get_acting_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    # ★ A3（r389）：只为让 openapi 看见 securityScheme，函数体不引用；
+    #   auto_error=False 保证缺头时不预抛 401。放末尾，不动 (request, db) 位置语义。
+    _scheme: Optional[str] = Depends(oauth2_scheme_optional),
 ) -> Optional[User]:
     """解析「本次请求**究竟以谁的身份**在做事」（第 182 轮）。
 
@@ -462,6 +495,9 @@ async def get_acting_user(
 async def require_acting_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    # ★ A3（r389）：只为让 openapi 看见 securityScheme，函数体不引用；
+    #   auto_error=False 保证缺头时不预抛 401。放末尾，不动 (request, db) 位置语义。
+    _scheme: Optional[str] = Depends(oauth2_scheme_optional),
 ) -> User:
     """**行动者**（fail-closed）：认演示身份，但**真匿名一律 401**。
 

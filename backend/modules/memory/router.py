@@ -48,11 +48,16 @@
     挂上去会把同一路由下的 CRUD 一起计费。
 """
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth.dependencies import require_authenticated_user
+from core.auth.dependencies import (
+    oauth2_scheme_optional,
+    require_authenticated_user,
+)
 from core.database import get_db
 from core.identity.models import User
 from core.metering.usage_tracker import check_api_quota
@@ -109,6 +114,10 @@ router = APIRouter(prefix="/memory", tags=["长期记忆"])
 async def _REQUIRE_USER(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    # ★ A3（r389）：同上 —— 包装层也要带 _scheme，否则 /memory 的 5 个 op
+    #   在 openapi 里是 security=None（行为本来就是 fail-closed，只是看不见）。
+    #   放末尾，不动 `(request, db)` 位置语义。
+    _scheme: Optional[str] = Depends(oauth2_scheme_optional),
 ) -> User:
     """fail-closed 身份门；主语固定为「长期记忆」，只影响 401 文案。"""
     return await require_authenticated_user(request, db, what="长期记忆")
