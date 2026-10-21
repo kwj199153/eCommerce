@@ -74,9 +74,9 @@ conda 下另有 7 个环境：`chapter2`、`chapter4`、`fastapi`、`graphrag`�
 
 ---
 
-## 3. 单一真源的三条不变式（已门禁化）
+## 3. 单一真源的不变式（已门禁化）
 
-门禁文件：`backend/tests/test_env_single_source.py`（5 条，反向注入 5/5）。
+门禁文件：`backend/tests/test_env_single_source.py`（6 条，反向注入 6/6）。
 
 | 编号 | 不变式 | 抓住什么回退 |
 |---|---|---|
@@ -85,6 +85,21 @@ conda 下另有 7 个环境：`chapter2`、`chapter4`、`fastapi`、`graphrag`�
 | **I2** | 生成器 TEXT 与产物 bat 的关键行**双向**一致 | ①只改 bat（drift）②只改生成器（产物过期） |
 | **I2b** | `LOG_SINK_ROLE=worker/beat` 必须两边都在 | P0-2 日志治理回归 |
 | **I3** | `backend/scripts/*.py` 不得出现外部解释器绝对路径 | 借 `.workbuddy` / `anaconda` 的解释器 |
+| **I4** | Node 大版本在 `.nvmrc` / `engines` / `Dockerfile` / `ci.yml` 四处一致 | Node 悄悄漂到 24（本地过、CI 挂） |
+
+### 3.1 Node 这半的状态
+
+| 位置 | 版本 | 声明方式 |
+|---|---|---|
+| `frontend/.nvmrc` | **22** | r388 新增 |
+| `frontend/package.json` `engines.node` | `>=22.0.0 <23` | r388 新增 |
+| `frontend/Dockerfile` | `node:22-alpine` | 原有 |
+| `.github/workflows/ci.yml` | `NODE_VERSION: "22"` | 原有 |
+| 本机 `node -v` | 22.22.2 | — |
+
+改前这四处**事实上**一致，但**没有一处**是声明式的 —— 换台机器、换个 nvm 档位就会漂，
+而漂了只表现为「本地 build 过、CI build 挂」（或反过来），归因成本极高。
+
 
 判据形态的讲究（都是踩过的）：
 

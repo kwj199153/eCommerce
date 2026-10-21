@@ -180,3 +180,45 @@ def test_i3_repo_scripts_do_not_borrow_external_interpreter():
     assert not offenders, (
         "这些脚本借了外部解释器（应指向 backend/.venv 或 sys.executable）：\n  %s"
         % "\n  ".join("%s:%d %r" % o for o in offenders))
+
+
+# ------------------------------------------------------------------- I4
+def _major(s: str) -> str | None:
+    m = re.search(r"(\d+)", s)
+    return m.group(1) if m else None
+
+
+def test_i4_node_version_is_pinned_and_consistent():
+    """Node 大版本必须在 .nvmrc / package.json engines / Dockerfile / CI 四处一致。
+
+    背景：Python 那半统一之前，Node 这半是「三方事实上一致，但没有一处声明」
+    —— CI=22、`frontend/Dockerfile`=`node:22-alpine`、本机`node -v`=22.22.2。
+    事实一致不等于锁定：换台机器/换个 nvm 档位就漂，而漂了只表现为
+    「本地 build 过、CI build 挂」或反之。r388 补 `.nvmrc` + `engines`。
+    """
+    nvmrc = ROOT / "frontend" / ".nvmrc"
+    assert nvmrc.exists(), "缺 frontend/.nvmrc ⇒ Node 版本没有任何声明"
+    pinned = _major(_read(nvmrc))
+    assert pinned, ".nvmrc 里读不出大版本：%r" % _read(nvmrc)[:40]
+
+    # ① package.json engines
+    import json
+    pkg = json.loads(_read(ROOT / "frontend" / "package.json"))
+    node_range = (pkg.get("engines") or {}).get("node")
+    assert node_range, "frontend/package.json 缺 engines.node"
+    assert _major(node_range) == pinned, (
+        "engines.node=%r 与 .nvmrc=%r 的首个版本号不一致" % (node_range, pinned))
+
+    # ② Dockerfile
+    df = _read(ROOT / "frontend" / "Dockerfile")
+    df_majors = re.findall(r"^\s*FROM\s+node:(\d+)", df, re.MULTILINE)
+    assert df_majors, "frontend/Dockerfile 里找不到 `FROM node:<major>` ⇒ 判据没扫到"
+    assert all(m == pinned for m in df_majors), (
+        "Dockerfile 的 node 大版本 %s 与 .nvmrc=%s 不一致" % (df_majors, pinned))
+
+    # ③ CI
+    ci = _read(ROOT / ".github" / "workflows" / "ci.yml")
+    ci_majors = re.findall(r"NODE_VERSION:\s*[\"']?(\d+)", ci)
+    assert ci_majors, "ci.yml 里找不到 NODE_VERSION ⇒ 判据没扫到"
+    assert all(m == pinned for m in ci_majors), (
+        "CI 的 NODE_VERSION %s 与 .nvmrc=%s 不一致" % (ci_majors, pinned))
