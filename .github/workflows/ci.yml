@@ -127,7 +127,7 @@ jobs:
       #   生产模式的鉴权行为由 test_auth_and_tenant.py 里的 auth_on 夹具单独开关。
       AUTH_REQUIRED: "false"
       DATABASE_URL: postgresql+asyncpg://kevin:123456@localhost:5432/postgres
-      REDIS_URL: redis://localhost:6379/0
+      REDIS_URL: redis://localhost:6379/3
       CELERY_BROKER_URL: redis://localhost:6379/1
       CELERY_RESULT_BACKEND: redis://localhost:6379/2
       # 限流在测试里必须关：几百个请求会在几十秒内触发 60/min 阈值

@@ -164,7 +164,10 @@ services:
       #   这里显式覆盖 .env 里的本地地址，让本地与容器两种环境共用同一份 .env。
       # ★ 与 postgres 服务的口令同源：生产改 POSTGRES_PASSWORD 时必须同步改这里。
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://kevin:123456@postgres:5432/postgres}
-      REDIS_URL: redis://redis:6379/0
+      # 本地 compose 的 redis 是独立容器（my-redis），分库本无意义；但库号与
+      # .env.example 保持同值，否则「照 compose 跑」与「照 example 跑」是两种形态 ——
+      # 本地绿、线上红就是这么来的（worker/beat 的 REDIS_URL 同理，其 broker 另在 /1）。
+      REDIS_URL: redis://redis:6379/3
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       # 容器里日志由 Docker 负责收集/轮转 → 出 JSON 便于采集
@@ -201,7 +204,7 @@ services:
     environment:
       # ★ 与 postgres 服务的口令同源：生产改 POSTGRES_PASSWORD 时必须同步改这里。
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://kevin:123456@postgres:5432/postgres}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/3
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       LOG_JSON: "true"
@@ -253,7 +256,7 @@ services:
     environment:
       # ★ 与 postgres 服务的口令同源：生产改 POSTGRES_PASSWORD 时必须同步改这里。
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://kevin:123456@postgres:5432/postgres}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/3
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       LOG_JSON: "true"

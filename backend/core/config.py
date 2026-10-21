@@ -410,7 +410,10 @@ class Settings(BaseSettings):
     #   **根本不会回退到 IPv4** ⇒ 限流中间件的 Redis 后端从未生效、静默降级为
     #   进程内计数（"门禁存在 ≠ 在执行"），/health 每次探活也白等 1 秒。
     #   直接写 127.0.0.1 省掉这段解析，Linux / Docker 下与 localhost 完全等价。
-    redis_url: str = Field(default="redis://127.0.0.1:6379/0", description="Redis 连接 URL")
+    # ★ 库号 3：0 留给 eEducation 现状（0 是「谁都没配」的默认落点，本项目不占）、
+    #   1/2 是 Celery broker/result。三处真源（本行、.env.example、docker-compose.yml）
+    #   必须同值，由 tests/test_redis_db_allocation.py 的 D1 钉住。
+    redis_url: str = Field(default="redis://127.0.0.1:6379/3", description="Redis 连接 URL")
     celery_broker_url: str = Field(default="redis://127.0.0.1:6379/1", description="Celery Broker URL")
     celery_result_backend: str = Field(default="redis://127.0.0.1:6379/2", description="Celery Result Backend")
 
