@@ -26,7 +26,7 @@ import { newTraceId, rememberTraceId, withTraceId } from '@/api/traceId'
 //   等），于是**所有**读 detail 的前端位置都需要同一套归一 —— 留在本文件里，
 //   组件要么复制一份（两份实现必然漂移），要么直接读 `response.data.detail`
 //   把对象塞进界面（渲染成 `[object Object]`）。实测已有 19 处这样的读法。
-import { detailText } from '@/api/errors'
+import { detailText, quotaDenialInfo, quotaGuidance } from '@/api/errors'
 // ★ 第 381 轮：baseURL 改从运行时取 —— 浏览器里 `API_ORIGIN === ''`，
 //   拼出来与原来的字面量 '/api/v1' **逐字符相同**；壳里则是注入的绝对 origin。
 //   ⇒ 写死相对路径的话，壳内每条请求都会命中 SPA 回落，拿到 200 + index.html。
@@ -362,13 +362,29 @@ request.interceptors.response.use(
         break
       }
 
-      case 429:
-        // 限流
-        if (!silentError) message.warning(withTraceId(data?.detail || '操作过于频繁，请稍后再试'))
+      case 429: {
+        // ★ 第 387 轮（网站管理员 P1-1）：429 有三种来源，必须分开处理。
+        //   ① 配额用尽       `QUOTA_EXCEEDED`        → 升级/等重置
+        //   ② 订阅失效       `SUBSCRIPTION_INACTIVE` → 恢复订阅（重试无效）
+        //   ③ 登录锁定/限流   detail 是**字符串**（带 Retry-After）
+        // 改造前这里写的是 `data?.detail || '操作过于频繁'`，在前两种情况下
+        // 会把「订阅过期」显示成「操作过于频繁，请稍后再试」—— 用户会一直重试，
+        // 而重试永远不会成功（这正是管理员反馈的归因陷阱）。
+        const quota = quotaDenialInfo(error)
+        if (!silentError) {
+          if (quota) {
+            message.warning(withTraceId(quotaGuidance(quota)))
+          } else {
+            message.warning(withTraceId(detailText(data?.detail, '操作过于频繁，请稍后再试')))
+          }
+        }
         break
+      }
 
       case 500:
-        if (!silentError) message.error(withTraceId(data?.detail || '服务器内部错误'))
+        // ★ 同一轮的配套修正：500 的 detail 也可能是对象
+        //   （`QUOTA_USAGE_TYPE_UNKNOWN` 走的是 500，那是服务端 bug 不是用户超额）。
+        if (!silentError) message.error(withTraceId(detailText(data?.detail, '服务器内部错误')))
         break
 
       default:

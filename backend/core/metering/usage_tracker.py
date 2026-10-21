@@ -6,6 +6,7 @@
 """
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, status, Depends, Request, BackgroundTasks
@@ -32,6 +33,124 @@ class UsageType:
     DATA_EXPORT = "data_export"  # 数据导出
 
 
+# ====== 配额拒绝的语义（第 387 轮 · 网站管理员 P1-1）======
+#
+# ★★★ 为什么必须拆成两个 code（这不是"文案美化"）
+#
+#   改造前有**两处** 429 都只说"额度"：
+#     · `check_quota` 前置检查 —— 订阅失效时返回「订阅无效或已过期」，
+#       额度不足时返回「API 调用次数不足，剩余 N 次」；
+#     · `record_usage` 原子扣减失败 —— **一律**抛「API 调用次数已达上限」。
+#
+#   第二处最致命：`record_usage` 返回 False 有四种成因（无订阅 / 订阅失效 /
+#   超限 / 未知计量类型），却被压成同一句话。于是「订阅过期」在界面上长得
+#   和「额度用完」一模一样 ⇒ 用户去充值/升级（没用），运维去查用量曲线
+#   （也没有异常）。归因方向被文案带偏，而日志里什么都没有。
+#
+#   ⇒ 现在：原因用 `code` 表达（机器可判），文案只负责解释它。
+#     两种原因的处理动作**不同**：
+#       QUOTA_EXCEEDED        → 升级套餐 / 等额度重置
+#       SUBSCRIPTION_INACTIVE → 恢复订阅（等多久都不会好，没有 Retry-After）
+QUOTA_CODE_EXCEEDED = "QUOTA_EXCEEDED"
+QUOTA_CODE_SUBSCRIPTION_INACTIVE = "SUBSCRIPTION_INACTIVE"
+QUOTA_CODE_USAGE_UNKNOWN = "QUOTA_USAGE_TYPE_UNKNOWN"
+
+_USAGE_LABELS = {
+    UsageType.API_CALL: "API 调用",
+    UsageType.AGENT_CHAT: "Agent 对话",
+    UsageType.AIGC_GENERATION: "AIGC 生成",
+    UsageType.DATA_EXPORT: "数据导出",
+}
+
+
+@dataclass(frozen=True)
+class QuotaDenial:
+    """一次「配额拒绝」的完整说明（**不含**任何用户身份信息）。"""
+
+    code: str
+    message: str
+    usage_type: str
+    used: Optional[int] = None
+    limit: Optional[int] = None
+    remaining: Optional[int] = None
+
+    @property
+    def action(self) -> str:
+        """给前端的动作建议（前端据此决定按钮：升级 / 续费 / 都不给）。"""
+        if self.code == QUOTA_CODE_SUBSCRIPTION_INACTIVE:
+            return "renew_subscription"
+        if self.code == QUOTA_CODE_EXCEEDED:
+            return "upgrade_plan"
+        return "contact_support"
+
+    def to_payload(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "code": self.code,
+            "message": self.message,
+            "usage_type": self.usage_type,
+            "action": self.action,
+        }
+        if self.used is not None:
+            payload["used"] = self.used
+        if self.limit is not None:
+            payload["limit"] = self.limit
+        if self.remaining is not None:
+            payload["remaining"] = self.remaining
+        return payload
+
+
+def _subscription_inactive_denial(usage_type: str) -> QuotaDenial:
+    return QuotaDenial(
+        code=QUOTA_CODE_SUBSCRIPTION_INACTIVE,
+        # ★ 文案里必须写明「与次数无关」：否则用户第一反应永远是"我就调了几次"。
+        message="订阅无效或已过期（与调用次数无关，请先恢复订阅）",
+        usage_type=usage_type,
+    )
+
+
+def _over_limit_denial(subscription, usage_type: str) -> QuotaDenial:
+    """按用量类型读出 used/limit，构造「确实用完了」的拒绝。"""
+    plan = subscription.plan
+    if usage_type == UsageType.AGENT_CHAT:
+        used = int(subscription.agent_chats_used or 0)
+        limit = int(plan.agent_chat_limit or 0)
+    else:
+        # AIGC / 导出都记在 api_calls 上（权重不同），读同一组字段。
+        used = int(subscription.api_calls_used or 0)
+        limit = int(plan.api_calls_limit or 0)
+    label = _USAGE_LABELS.get(usage_type, usage_type)
+    return QuotaDenial(
+        code=QUOTA_CODE_EXCEEDED,
+        message=f"{label}额度已用完（已用 {used}/{limit} 次）",
+        usage_type=usage_type,
+        used=used,
+        limit=limit,
+        remaining=max(0, limit - used),
+    )
+
+
+def _quota_http_exception(denial: QuotaDenial) -> HTTPException:
+    """把 QuotaDenial 变成 429。
+
+    ★ `SUBSCRIPTION_INACTIVE` **不带** `Retry-After`：
+      给一个等待时间等于暗示"等一会儿就好"。订阅失效等多久都不会好，
+      客户端若照做（本项目前端确实读 Retry-After 做退避），
+      就变成了"对着一个永远不变的状态重试"。
+    ★ `QUOTA_USAGE_TYPE_UNKNOWN` 不走这里 —— 那是服务端 bug，不是用户超额。
+    """
+    headers = {
+        "X-RateLimit-Limit": str(config.rate_limit_requests_per_day),
+        "X-RateLimit-Remaining": "0",
+    }
+    if denial.code == QUOTA_CODE_EXCEEDED:
+        headers["Retry-After"] = "86400"
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=denial.to_payload(),
+        headers=headers,
+    )
+
+
 # ====== 用量追踪器 ======
 
 class UsageTracker:
@@ -42,14 +161,14 @@ class UsageTracker:
     """
 
     @staticmethod
-    async def record_usage(
+    async def record_usage_ex(
         db: AsyncSession,
         user_id: str,
         usage_type: str,
         amount: int = 1,
-    ) -> bool:
+    ) -> Optional[QuotaDenial]:
         """
-        记录一次使用量
+        记录一次使用量（**原子扣减**），失败时返回**带原因**的拒绝。
 
         Args:
             user_id: 用户 ID
@@ -57,7 +176,9 @@ class UsageTracker:
             amount: 使用数量（默认 1）
 
         Returns:
-            True 记录成功，False 失败（如超出限额）
+            None 表示记录成功；否则是 `QuotaDenial`（含 code）。
+            ★ 与旧的 `bool` 返回值的区别：`False` 把「无订阅 / 订阅失效 /
+              超限 / 计量类型未知」四种成因压成同一个值，调用方只能猜。
         """
         # 1. 查询用户订阅 —— ★★ 并发加固（P1-6 / 2026-09-16）
         #
@@ -89,41 +210,61 @@ class UsageTracker:
         subscription = result.scalar_one_or_none()
 
         if not subscription or not subscription.is_active:
-            return False
+            return _subscription_inactive_denial(usage_type)
 
         # 2. 更新对应的使用量字段
         if usage_type == UsageType.API_CALL:
             new_used = subscription.api_calls_used + amount
             if new_used > subscription.plan.api_calls_limit:
-                return False  # 超出限制
+                return _over_limit_denial(subscription, usage_type)
             subscription.api_calls_used = new_used
 
         elif usage_type == UsageType.AGENT_CHAT:
             new_used = subscription.agent_chats_used + amount
             if new_used > subscription.plan.agent_chat_limit:
-                return False
+                return _over_limit_denial(subscription, usage_type)
             subscription.agent_chats_used = new_used
 
         elif usage_type == UsageType.AIGC_GENERATION:
             # AIGC 使用 API 调用额度
             new_used = subscription.api_calls_used + (amount * 10)  # AIGC 权重更高
             if new_used > subscription.plan.api_calls_limit:
-                return False
+                return _over_limit_denial(subscription, usage_type)
             subscription.api_calls_used = new_used
 
         elif usage_type == UsageType.DATA_EXPORT:
             new_used = subscription.api_calls_used + (amount * 5)  # 导出权重中等
             if new_used > subscription.plan.api_calls_limit:
-                return False
-            subscription.api_calls_used = new_used
+                return _over_limit_denial(subscription, usage_type)
 
         else:
-            return False
+            # ★ 这是**服务端 bug**（调用方传了没定义的类型），不是用户超额。
+            #   调用方会把它变成 500 而不是 429 —— 用 429 表达"你请求太多"
+            #   会让运维去查用量，而真因是代码里拼错了一个常量。
+            return QuotaDenial(
+                code=QUOTA_CODE_USAGE_UNKNOWN,
+                message=f"未知的计量类型：{usage_type!r}（服务端配置错误）",
+                usage_type=str(usage_type),
+            )
 
         subscription.updated_at = datetime.utcnow()
         await db.commit()
 
-        return True
+        return None
+
+    @staticmethod
+    async def record_usage(
+        db: AsyncSession,
+        user_id: str,
+        usage_type: str,
+        amount: int = 1,
+    ) -> bool:
+        """兼容壳：`True` = 记录成功。
+
+        ★ 保留它的唯一理由是历史调用点（含测试）用的是布尔语义；
+          需要**区分失败原因**的新代码请用 `record_usage_ex`。
+        """
+        return (await UsageTracker.record_usage_ex(db, user_id, usage_type, amount)) is None
 
     @staticmethod
     async def get_usage_info(
@@ -187,17 +328,17 @@ class UsageTracker:
         }
 
     @staticmethod
-    async def check_quota(
+    async def check_quota_ex(
         db: AsyncSession,
         user_id: str,
         usage_type: str,
         amount: int = 1,
-    ) -> tuple[bool, str]:
-        """
-        检查用户是否有足够的配额
+    ) -> Optional[QuotaDenial]:
+        """检查用户是否有足够的配额；不足时返回**带原因**的拒绝。
 
-        Returns:
-            (是否允许, 原因说明)
+        ★ 这只是"友好前置检查"，与 `record_usage_ex` 的原子扣减之间天然有
+          竞态窗口（两个并发请求都可能通过）。真正决定"这一笔算不算得进去"
+          的是后者 —— 所以两处都必须能给出原因，不能只有前者会说人话。
         """
         # ★ 延迟导入（core 顶层禁 import modules，见 tests/test_core_layering.py）
         from modules.billing.models import Subscription
@@ -207,21 +348,36 @@ class UsageTracker:
         subscription = result.scalar_one_or_none()
 
         if not subscription or not subscription.is_active:
-            return False, "订阅无效或已过期"
+            return _subscription_inactive_denial(usage_type)
 
         plan = subscription.plan
 
         if usage_type == UsageType.API_CALL:
             if subscription.api_calls_used + amount > plan.api_calls_limit:
-                remaining = max(0, plan.api_calls_limit - subscription.api_calls_used)
-                return False, f"API 调用次数不足，剩余 {remaining} 次"
+                return _over_limit_denial(subscription, usage_type)
 
         elif usage_type == UsageType.AGENT_CHAT:
             if subscription.agent_chats_used + amount > plan.agent_chat_limit:
-                remaining = max(0, plan.agent_chat_limit - subscription.agent_chats_used)
-                return False, f"Agent 对话次数不足，剩余 {remaining} 次"
+                return _over_limit_denial(subscription, usage_type)
 
-        return True, ""
+        return None
+
+    @staticmethod
+    async def check_quota(
+        db: AsyncSession,
+        user_id: str,
+        usage_type: str,
+        amount: int = 1,
+    ) -> tuple[bool, str]:
+        """兼容壳：(是否允许, 原因说明)。
+
+        ★ 需要区分原因（配额 vs 订阅）的代码请用 `check_quota_ex`；
+          本壳只把 `QuotaDenial.message` 摊平成字符串。
+        """
+        denial = await UsageTracker.check_quota_ex(db, user_id, usage_type, amount)
+        if denial is None:
+            return True, ""
+        return False, denial.message
 
     @staticmethod
     async def record_llm_consumption(
@@ -302,19 +458,11 @@ async def check_api_quota(
         logger.debug("演示身份 ⇒ 跳过 API 额度检查（demo_mode=%s）", config.demo_mode)
         return current_user
 
-    allowed, reason = await UsageTracker.check_quota(
+    denial = await UsageTracker.check_quota_ex(
         db=db, user_id=current_user.id, usage_type=UsageType.API_CALL,
     )
-    if not allowed:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=reason or "API 调用次数已达上限",
-            headers={
-                "X-RateLimit-Limit": str(config.rate_limit_requests_per_day),
-                "X-RateLimit-Remaining": "0",
-                "Retry-After": "86400",
-            },
-        )
+    if denial is not None:
+        raise _quota_http_exception(denial)
 
     # ★ 扣减结果不能丢（P1-6）：上面的 check_quota 只是「友好前置检查」，
     #   它和扣减之间天然有竞态窗口（两个并发请求都可能通过检查）。真正决定
@@ -324,16 +472,20 @@ async def check_api_quota(
     #   （形式上挂了三层依赖，实际仍可越过限额）。
     #   ★ 判据：门禁的「判定」和「记账」若分两步，第二步的结果必须被回读，
     #     否则第一步只是个友好提示。
-    if not await UsageTracker.record_usage(db, current_user.id, UsageType.API_CALL):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="API 调用次数已达上限",
-            headers={
-                "X-RateLimit-Limit": str(config.rate_limit_requests_per_day),
-                "X-RateLimit-Remaining": "0",
-                "Retry-After": "86400",
-            },
-        )
+    # ★★★ 这里的返回值必须带原因（改造前一律说「已达上限」）：
+    #   走到这一步说明**前置检查通过、原子扣减失败** —— 两种可能：
+    #     ① 并发窗口里别人先扣满了 ⇒ QUOTA_EXCEEDED（等额度重置有效）
+    #     ② 订阅在两次读取之间失效 ⇒ SUBSCRIPTION_INACTIVE（等再久也没用）
+    #   压成一句话的后果是：②会被显示成「额度用完」，用户去充值、
+    #   运维去查用量曲线，两边都查不到东西。
+    denial = await UsageTracker.record_usage_ex(db, current_user.id, UsageType.API_CALL)
+    if denial is not None:
+        if denial.code == QUOTA_CODE_USAGE_UNKNOWN:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=denial.to_payload(),
+            )
+        raise _quota_http_exception(denial)
     return current_user
 
 
@@ -423,14 +575,11 @@ async def meter_agent_chat(
     demo_identity = is_demo_request(request)
 
     if not demo_identity:
-        allowed, reason = await UsageTracker.check_quota(
+        denial = await UsageTracker.check_quota_ex(
             db=db, user_id=current_user.id, usage_type=UsageType.AGENT_CHAT,
         )
-        if not allowed:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=reason or "Agent 对话次数已达上限",
-            )
+        if denial is not None:
+            raise _quota_http_exception(denial)
 
     user_id = current_user.id
     reset_meter()
@@ -483,14 +632,11 @@ async def check_agent_chat_quota(
         logger.debug("演示身份 ⇒ 跳过 Agent 对话额度检查")
         return current_user
 
-    allowed, reason = await UsageTracker.check_quota(
+    denial = await UsageTracker.check_quota_ex(
         db=db, user_id=current_user.id, usage_type=UsageType.AGENT_CHAT,
     )
-    if not allowed:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=reason or "Agent 对话次数已达上限",
-        )
+    if denial is not None:
+        raise _quota_http_exception(denial)
     return current_user
 
 
