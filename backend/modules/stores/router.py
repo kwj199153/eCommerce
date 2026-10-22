@@ -19,7 +19,7 @@ from models.store import (
     StoreDetailResponse, FeeTemplate, FeeTemplateCreate,
     DiscountTemplate, StoreStatus, ConnectionStatus, SyncStatus,
 )
-from core.auth.demo_identity import is_demo_request
+from core.auth.demo_identity import is_demo_account, is_demo_request
 from core.auth.dependencies import require_auth_if_enabled
 # ★★★ P1-c（2026-09-16）：归属/权限判定的**唯一真源**。
 #   本模块**不再**自己比较 owner_id —— 改造前 `_check_store_owner` 与
@@ -820,6 +820,25 @@ async def transfer_store(
 
     ⚠️ 演示模式（`current_user is None`）：两道门都放行，与其余店铺端点一致。
     """
+    # ★★ 演示账号写保护（第 391 轮）：公开口令的账号**不能把店铺转走**。
+    #
+    #   这条比"删店"更隐蔽：转移**不删任何数据**，看起来完全无害，但
+    #   `ensure_demo_stores()` 的判据是 `store.account_id == 演示账户 id`
+    #   （双向收敛，见 `modules/stores/demo.py`）⇒ 店一旦转到别的账户，
+    #   **下一次启动就会被打回 is_demo=False**，演示身份从此看不到它。
+    #   而数据还在库里、接口一切正常 —— 现象是"演示账号少了店铺"，归因无迹可循。
+    #
+    #   ⇒ 与删店同一位置（取店之前）：这是对这个身份的整体策略，
+    #     不该因"这家店存在与否"返回不同状态码。
+    if is_demo_account(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "这是公开的演示账号，不支持转移店铺归属（演示数据需要保持完整）。"
+                "如需体验账户/团队功能，请注册你自己的账号。"
+            ),
+        )
+
     store = _get_store(store_id)
 
     # ① 源侧：对这家店要有写权限（否则就是"把别人的店搬走"）
@@ -873,6 +892,25 @@ async def delete_store(
     为什么用 RESTRICT 而不是 CASCADE：删店是低频高风险操作，
     "误点一下连带删掉一家店的全部数据" 的代价，远高于 "删店时被提示先清理数据"。
     """
+    # ★★ 演示账号写保护（第 391 轮）：公开口令的账号**不能删店**。
+    #
+    #   演示账号名下那 4 家店（亚马逊1/2、虾皮1/2）是「演示数据」的唯一载体，
+    #   删掉一家 = 演示少一块，而且**没有恢复路径**（删店是物理删除，
+    #   接口层只靠外键 RESTRICT 兜底；先清数据再删就真的没了）。
+    #   而它恰恰是唯一会被陌生人登录的账号。
+    #
+    #   ⇒ 拦在取店**之前**：这是对这个身份的**整体策略**（"演示账号不删店"），
+    #     不该因为"这家店存在/不存在"而给出不同答案 —— 否则同一个动作
+    #     在两种参数下分别返回 403 与 404，反而成了一个存在性探针。
+    if is_demo_account(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "这是公开的演示账号，不支持删除店铺（演示数据需要保持完整）。"
+                "如需体验删除流程，请注册你自己的账号。"
+            ),
+        )
+
     store = _get_store(store_id)  # 验证存在性（不存在直接 404）
     # 删店不可逆 ⇒ 收紧到 owner/admin（viewer 与 member 均 403）
     await _ensure_store_access(db, store, current_user, permission="store.delete")

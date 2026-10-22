@@ -36,6 +36,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.auth.demo_identity import is_demo_account
 from core.auth.dependencies import get_current_user
 from core.auth.jwt_handler import create_token_pair, verify_token
 # ★ P0-2（2026-09-16）：客户端 IP 提取去重（原先本文件自带一份拷贝）
@@ -307,6 +308,30 @@ async def change_password(
       若只返回"成功"，用户立刻掉线、得重新登录 —— 体验差且容易被当成 bug。
       返回新 token 后：当前设备无感续用，其他设备全部下线。
     """
+    # ★★ 演示账号写保护（第 391 轮）：公开口令的账号**不能改自己的密码**。
+    #
+    #   场景：演示账号的 email + 口令会写在简历/面试材料里，任何拿到它的人
+    #   都能登录。而本端点只要求「当前密码正确」——公开了口令就等于公开了
+    #   修改权。一个人手滑改掉，**下一个人（以及面试现场的你）全部登不进**，
+    #   而现场没有邮箱通道可以重置（那个 email 是 `@example.com`，收不到信）。
+    #
+    #   ⇒ 拦在**认证之后、改密之前**：先让 `get_current_user` 正常鉴权
+    #     （匿名/坏 token 仍然是 401，不改变既有语义），再按身份拒绝。
+    #
+    #   ★ 为什么用 403 而不是 400：这不是"参数不对"，是"这个身份没有这项权利"。
+    #     两者的前端处置不同 —— 400 提示改输入，403 提示换一条路。
+    #
+    #   ★ 文案里**不出现**具体邮箱或口令：本端点是已登录态，但错误文案会进
+    #     日志与前端 toast，没有必要在这里重复身份信息。
+    if is_demo_account(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "这是公开的演示账号，不支持修改密码（否则下一位访客将无法登录）。"
+                "如需体验完整功能，请注册你自己的账号。"
+            ),
+        )
+
     if not verify_password(payload.current_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

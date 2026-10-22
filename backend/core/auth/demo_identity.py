@@ -202,8 +202,36 @@ async def resolve_demo_user(
     return user
 
 
+def is_demo_account(user: Optional[User]) -> bool:
+    """这个 user 是不是**对外公开的演示账号**（按身份判，不按凭据判）。
+
+    ★ 与 `is_demo_request` 的分工（两件不同的事，不能合并）：
+        · `is_demo_request` 看**凭据形态**（`Authorization: Bearer demo-…` 哨兵串）；
+        · 本函数看**身份**（`user.email == config.demo_account_email`）。
+      线上现状是 `DEMO_MODE=false` ⇒ 哨兵那一路**走不通**，但演示账号本身
+      仍然会（按简历/面试需要）被公开口令登录 ⇒ 「谁是演示账号」必须能按
+      身份回答，否则写保护就无从挂载。
+
+    ★ 它只用来**加限制**，所以判错方向只能是"漏保护"，不能是"误伤"：
+      配置为空 ⇒ False（等于"本站没有演示账号"）。
+      反过来（空配置时把所有账号都当演示账号）会把所有人锁在门外 ——
+      一个配置项没填就全站不能改密码，这是比不保护严重得多的故障。
+
+    ★ 大小写与空白都归一：`DEMO_ACCOUNT_EMAIL` 是手写在 `.env` 里的，
+      `Demo@Example.com ` 与 `demo@example.com` 必须是同一个身份。
+      User.email 在库里有 unique 约束但不保证大小写一致（PG 默认区分大小写）。
+    """
+    if user is None:
+        return False
+    configured = (config.demo_account_email or "").strip().lower()
+    if not configured:
+        return False
+    return (getattr(user, "email", "") or "").strip().lower() == configured
+
+
 __all__ = [
     "DEMO_SENTINEL_PREFIX",
+    "is_demo_account",
     "is_demo_credential",
     "is_demo_request",
     "resolve_demo_user",

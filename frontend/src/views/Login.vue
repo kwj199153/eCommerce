@@ -164,6 +164,27 @@
                 登录
               </a-button>
             </a-form-item>
+
+            <!-- ★ 第 391 轮：演示账号**预填**入口（不是伪登录）。
+                 · 只填两个输入框，仍然由用户点上面那个真正的登录按钮
+                   ⇒ 走 `/auth/login`，服务端照常校验、照常发 token；
+                 · 未配置（默认）时**整段不渲染**：没配就没有入口，
+                   而不是摆一个点下去会填错东西的按钮；
+                 · 为什么不用「一键体验」那条路：它塞的是 `demo-token` 哨兵，
+                   后端 `DEMO_MODE=false` 时只会换来一整屏 401。
+                 细节见 `src/config/demoAccountHint.ts` 顶部。 -->
+            <div
+              v-if="DEMO_HINT.ready"
+              class="demo-hint-row"
+            >
+              <button
+                type="button"
+                class="forgot-link"
+                @click="fillDemoAccount"
+              >
+                填入演示账号
+              </button>
+            </div>
           </a-form>
         </a-tab-pane>
 
@@ -350,6 +371,9 @@ import { message } from 'ant-design-vue'
 import BrandMark from '@/components/BrandMark.vue'
 import { useUserStore } from '@/stores/user'
 import { DEMO_MODE, DEMO_TOKEN, DEMO_REFRESH_TOKEN, DEMO_USER } from '@/config/demoMode'
+// 演示账号「填入」提示 —— 与上面的 DEMO_MODE 是**两件不同的事**：
+// 上面那个是哨兵直通（伪登录），这个是真实凭据的预填（仍走 /auth/login）。
+import { DEMO_HINT } from '@/config/demoAccountHint'
 import { useKnownAccounts, forgetAllAccounts, type KnownAccount } from '@/config/knownAccounts'
 import { isRemembered, rememberedAccountCount, forgetRemembered } from '@/config/authVault'
 import { forgotPassword } from '@/api/auth'
@@ -593,6 +617,22 @@ const handleRegister = async () => {
       message.error(error?.response?.data?.detail || '注册失败，请检查填写内容')
     }
   }
+}
+
+/**
+ * 把演示账号的 email/口令**预填**进登录表单（第 391 轮）。
+ *
+ * ★ 刻意**不**自动提交：提交必须由用户点按钮发起。
+ *   自动提交会让「登录」这个动作变成一次没有点击就发生的事 ——
+ *   与本仓既有判据（「不接受没点就发生的事」，见上面"记住登录状态"那条注释）冲突；
+ *   而且一旦口令过期，用户看到的是一个自己没点过就弹出的错误。
+ *
+ * ★ 也刻意不写 localStorage：本函数只改表单两个字段，
+ *   不产生任何凭据状态。真正的凭据由 `/auth/login` 的响应写入。
+ */
+const fillDemoAccount = () => {
+  loginForm.email = DEMO_HINT.email
+  loginForm.password = DEMO_HINT.password
 }
 
 // 测试模式：一键体验
@@ -891,6 +931,13 @@ watch(
   line-height: 1.5;
   color: var(--primary);
   cursor: pointer;
+}
+
+/* 演示账号预填入口（第 391 轮）：登录按钮正下方居中，视觉上属于"这次登录的
+   附加选项"，不抢主按钮的注意力。颜色沿用 .forgot-link（同级文字操作）。 */
+.demo-hint-row {
+  margin-top: calc(-1 * var(--space-4));
+  text-align: center;
 }
 
 .forgot-link:hover {

@@ -46,6 +46,11 @@ logs/
 # ====== Environment ======
 .env
 .env.local
+# Vite 的「本机覆盖」档（`*.local` 优先级最高，只在构建机上存在）。
+# ★ r391：演示账号的预填口令走这里，**绝不入库** —— 它会被编译进产物、
+#   对任何打开页面的人可见；虽然面试场景下这是有意的，但没有任何理由
+#   把它变成仓库历史的一部分（一入库就永久可查，轮换也删不掉）。
+.env.*.local
 # Prometheus 抓 /metrics 用的 Bearer 令牌（内容 = METRICS_TOKEN 的值，绝不入库）
 observability/metrics_token
 

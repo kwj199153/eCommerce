@@ -162,6 +162,75 @@ function checkFailClosedDefault() {
   }
 }
 
+/** ④ 演示账号「填入」提示的形态（第 391 轮，H1~H4）
+ *
+ * 背景：登录页有一个可选入口，点一下把演示账号的 email/口令**预填**进表单
+ * （用户仍点真正的登录按钮，走 `/auth/login`）。它由
+ * `VITE_DEMO_HINT_EMAIL` / `VITE_DEMO_HINT_PASSWORD` 控制，留空即不渲染。
+ *
+ * 为什么要门禁：这两个值会被**编译进产物**，形态一旦写错，后果都是
+ * 「面试官点一下、点登录、看到一个莫名其妙的错误」，而这**只能**在现场发现。
+ */
+function checkDemoHint() {
+  // 合并三份 env（低优先级在前，后者覆盖前者），与 Vite 的加载顺序一致。
+  const merged = {}
+  for (const file of [...ENV_FILES].reverse()) {
+    if (!fs.existsSync(file)) continue
+    Object.assign(merged, parseEnv(fs.readFileSync(file, 'utf8')))
+  }
+  const email = String(merged.VITE_DEMO_HINT_EMAIL || '').trim()
+  const password = String(merged.VITE_DEMO_HINT_PASSWORD || '').trim()
+  const demoOn = String(merged.VITE_DEMO_MODE || '').toLowerCase() === 'true'
+
+  if (!email && !password) {
+    notes.push('演示账号「填入」提示未配置 ⇒ 登录页不显示该入口（合法）')
+    return
+  }
+
+  // H1：必须成对。半配 = 点下去密码框仍然空着，把"准备好了"和"还差一步"
+  //     画成同一个样子（`demoAccountHint.ts::ready` 也会因此为 false，
+  //     即"配了却不显示"—— 那种静默最难排查）。
+  if (!email || !password) {
+    fail(
+      'VITE_DEMO_HINT_EMAIL / VITE_DEMO_HINT_PASSWORD 必须成对设置：' +
+        `当前 email=${email ? '已填' : '空'}、password=${password ? '已填' : '空'}。` +
+        '半配的后果是"配了但不渲染"，属于静默失效。',
+    )
+    return
+  }
+
+  // H2：与哨兵直通**互斥**。两套东西的语义完全相反（伪登录 vs 真凭据），
+  //     同时存在时"登录页到底走哪条"取决于渲染顺序，属于必然出错的设计。
+  if (demoOn) {
+    fail(
+      'VITE_DEMO_MODE=true 与 VITE_DEMO_HINT_* 不能共存：' +
+        '前者是哨兵伪登录（后端 DEMO_MODE=false 时会全站 401），' +
+        '后者是真凭据预填（走 /auth/login）。请只保留后者。',
+    )
+  }
+
+  // H3：口令不得含易混字符。这个口令要在面试现场被**手打**（或至少肉眼核对），
+  //     0/O、1/l/I 造成的失败会被误读成"凭据错了"。
+  const ambiguous = [...new Set(password.split('').filter((ch) => '0O1lI'.includes(ch)))]
+  if (ambiguous.length) {
+    fail(
+      `VITE_DEMO_HINT_PASSWORD 含易混字符 ${JSON.stringify(ambiguous)}：` +
+        '现场手打时 0/O、1/l/I 会被看错，失败现象与"口令错了"无法区分。' +
+        '请改用纯字母数字且不含这五个字符的口令。',
+    )
+  }
+
+  // H4：email 形态。写错一个字符同样是"看起来配好了"。
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    fail(`VITE_DEMO_HINT_EMAIL 不是合法邮箱形态：${JSON.stringify(email)}`)
+  }
+
+  notes.push(
+    '演示账号「填入」提示已配置 ⇒ 「轮换口令必须同批重建产物并重新上线」，' +
+      '否则旧产物会预填旧口令（比不填更糟）',
+  )
+}
+
 /** ③ 门禁必须真的在 build 链里 */
 function checkWiredIntoBuild() {
   if (!fs.existsSync(PKG)) {
@@ -187,6 +256,7 @@ function checkWiredIntoBuild() {
 function main() {
   checkEnvFiles()
   checkFailClosedDefault()
+  checkDemoHint()
   checkWiredIntoBuild()
 
   for (const n of notes) console.log(`  · ${n}`)
