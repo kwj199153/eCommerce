@@ -51,7 +51,7 @@ const AGENT_LIST: Agent[] = [
     id: 'aigc-media',
     name: 'AIGC 媒体生成器',
     icon: PictureOutlined,
-    description: 'AI商品绘图、主图诊断、短视频分镜、AI视频生成',
+    description: 'AI商品绘图、主图诊断、短视频脚本与分镜',
     status: 'active',
   },
   // 4. Listing 优化师

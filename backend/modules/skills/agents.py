@@ -77,7 +77,7 @@ AGENT_CATALOG: List[Dict[str, str]] = [
         "name": "AIGC 媒体生成器",
         "id": "aigc-media",
         "title": "AIGC 媒体生成器",
-        "description": "AI 商品绘图、主图诊断、短视频分镜、AI 视频生成",
+        "description": "AI 商品绘图、主图诊断、短视频脚本与分镜",
     },
     {
         "name": "ListingGenerator",
