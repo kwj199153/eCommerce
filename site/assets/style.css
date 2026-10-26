@@ -82,7 +82,7 @@
   --brand: #4f46e5;        /* 主色 · 深底强调 / 装饰线 / 大字号点缀（白字 6.29:1） */
   --brand-ink: #2b20df;    /* 深靛 · 白底链接与按钮底（白字 8.84:1） */
   --brand-lift: #c2bff8;   /* 亮靛 · 深色带上的强调（对带底 10.07:1） */
-  --brand-wash: #edecfe;   /* 极浅靛 · 浅色底（eyebrow / tag）= 产品 --info-bg */
+  --brand-wash: #edecfe;   /* 极浅靛 · 浅色底（tag）= 产品 --info-bg */
 
   /* ★★ 「待填」占位色**必须与品牌色拉开距离**：品牌色是靛（色相 243.4°），
      占位色取**琥珀**（~26°），色相差 **142°** ⇒ 绝不会把"这里要填信息"
@@ -184,17 +184,9 @@ img { max-width: 100%; height: auto; }
 
 .hero-copy { text-align: center; max-width: 860px; }
 
-.eyebrow {
-  display: inline-block;
-  margin: 0 0 18px;
-  padding: 5px 14px;
-  border-radius: 999px;
-  background: var(--brand-wash);
-  color: var(--brand-ink);
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
+/* ★ `.eyebrow`（首屏那枚圆角徽标）随 r398 一起删掉了：用户要求取消
+   「跨境电商运营 · 已接通 Amazon SP-API」这句话，它在 HTML 里的消费点归零
+   ⇒ 样式留着就是死代码。要加回来时记得同时恢复 HTML 与这里的规则。 */
 
 .hero h1 {
   margin: 0 0 20px;
@@ -232,6 +224,32 @@ img { max-width: 100%; height: auto; }
 .btn-ghost:hover { border-color: var(--brand-lift); color: var(--brand-ink); }
 
 .note { margin: 18px 0 0; font-size: 13.5px; color: var(--ink-3); }
+
+/* ★ 首屏双栏（r398）：视频必须在首屏**整段可见**，不是"露出一个边"。
+   单栏版式下视频顶边落在 619px 处 —— 1440x900 只露 47%、1366x768 只露 24%
+   （实测，见 `.workbuddy/probes/r398_hero_measure.mjs`）。
+   压间距最多省 150px，仍到不了 768 笔记本 ⇒ 只有改版式这一条路。
+   窄屏（<1080）保持原来的上下结构：平板上视频本来就能整段落在首屏里。 */
+@media (min-width: 1080px) {
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: center;
+    column-gap: clamp(28px, 3.6vw, 52px);
+    max-width: var(--maxw);
+    margin-inline: auto;
+    padding: 56px 24px;
+  }
+  .hero > .wrap { max-width: none; width: auto; margin: 0; padding: 0; }
+  .hero-copy { text-align: left; }
+  /* ★ 字号必须按**左栏宽度**收：46px 时「把跨境运营的每一步，」要 506px，
+     而左栏只有 470px ⇒ 被挤断成「每一 / 步，」两行（r398 截图实见）。
+     40px × 11 字 = 440px，左栏 481px 留出余量。 */
+  .hero h1 { font-size: clamp(30px, 2.9vw, 40px); }
+  .hero-copy .lead { margin-inline: 0; max-width: none; }
+  .hero-copy .cta-row { justify-content: flex-start; }
+  .hero-frame { margin-top: 0; }
+}
 /* r385 · 「数据接入现状」主动披露条：事实性信息，不抢正文视觉权重 */
 .data-status {
   margin: 0 0 40px;
@@ -296,6 +314,18 @@ img { max-width: 100%; height: auto; }
   aspect-ratio: 16 / 9;
   background: var(--band-bg); /* 与视差带同色：解码前是深色块，不是白闪 */
 }
+
+/* ★ 视频下方的一句说明（r398）：视频搬进首屏后，原来那个「一分钟演示」小节
+   的 h2 与首屏 H1 重复，只把它的两句话挪到这里。灰小字、居中，与 .note 同观感。 */
+.demo-note {
+  margin: 14px auto 8px;
+  max-width: 760px;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.8;
+  color: var(--ink-3);
+}
+.demo-note b { color: var(--ink-2); }
 
 /* ★ 文字稿（r396）：折叠着不占版面，展开后两栏。
    `<details>` 是**浏览器原生**的展开/收起，零 JS —— 与整站"零 JS"约束一致。 */

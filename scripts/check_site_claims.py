@@ -15,8 +15,9 @@
 ==============================================================================
 ★ 判据（三条，互相不可替代）
 ==============================================================================
-  C1  首屏 eyebrow 里点名的平台 ⊆ CONNECTED（已接通集合）
-      —— 抓「首屏又列上未接通平台」。
+  C1  首屏（<section class="hero"> 整段）点名的平台 ⊆ CONNECTED（已接通集合）
+      —— 抓「首屏又列上未接通平台」。按**区块**取文本、不按装饰 class 取：
+         r398 删掉 eyebrow 徽标后，锚 class 的判据当场失效（见 _hero_text 注释）。
   C2  `site/index.html` 必须存在 `.data-status` 披露条，且点名 Amazon SP-API
       —— 抓「披露段被顺手删掉」。删掉不等于撒谎，但会让 C1 的修改失去解释。
   C3  隐私政策的数据源表格行，不得把 Amazon 与未接通平台**并列**成数据源
@@ -89,27 +90,36 @@ def _platforms_in(text: str) -> set[str]:
     return found
 
 
-def _eyebrow(html: str) -> str | None:
-    m = re.search(r'<p[^>]*class="[^"]*\beyebrow\b[^"]*"[^>]*>(.*?)</p>', html, re.S)
-    return m.group(1) if m else None
+def _hero_text(html: str) -> str | None:
+    """首屏 = `<section class="hero">` 整段的可见文本。
+
+    ★ 判据**不能锚在某个装饰性 class 上**。r385 时这里抓的是 `.eyebrow`
+      （首屏那枚圆角徽标）；r398 用户要求取消那句话，徽标连同 class 一起删掉，
+      判据当场报「判据已失效，非页面正确」—— **判据自己坏了，报错却长得像页面问题**。
+      改成按**区块**取文本后，首屏删/加任何装饰元素都不影响这条判据。
+    """
+    m = re.search(r'<section class="hero">(.*?)</section>', html, re.S)
+    if not m:
+        return None
+    # 注释里的字不算：注释里写「已接通 TikTok」不该让这条变红
+    return re.sub(r"<[^>]+>", "", re.sub(r"<!--.*?-->", "", m.group(1), flags=re.S))
 
 
-def c1_eyebrow(g: Gate, index_html: str) -> None:
-    raw = _eyebrow(index_html)
-    if raw is None:
-        g.ng("C1 首屏 eyebrow 可定位", "没找到 class=eyebrow 的段落（判据已失效，非页面正确）")
+def c1_hero(g: Gate, index_html: str) -> None:
+    text = _hero_text(index_html)
+    if text is None:
+        g.ng("C1 首屏可定位", '找不到 <section class="hero"> 段（判据失效，非页面正确）')
         return
-    text = re.sub(r"<[^>]+>", "", raw)
     names = _platforms_in(text)
     extra = names - set(CONNECTED)
     if extra:
         g.ng(
-            "C1 首屏只点名已接通平台",
-            f"eyebrow 出现未接通平台 {sorted(extra)}；原文「{text.strip()}」",
+            "C1 首屏不点名未接通平台",
+            f"首屏出现未接通平台 {sorted(extra)}；首屏文本「{text.strip()[:80]}…」",
         )
     else:
         named = ",".join(sorted(names)) or "（无平台名）"
-        g.ok("C1 首屏只点名已接通平台", f"点名 {named} ⊆ {sorted(CONNECTED)}")
+        g.ok("C1 首屏不点名未接通平台", f"点名 {named} ⊆ {sorted(CONNECTED)}")
 
 
 def c2_disclosure(g: Gate, index_html: str) -> None:
@@ -190,7 +200,7 @@ def main() -> int:
     privacy_html = privacy_path.read_text(encoding="utf-8")
 
     print("[C1~C2] 官网首屏与披露")
-    c1_eyebrow(g, index_html)
+    c1_hero(g, index_html)
     c2_disclosure(g, index_html)
 
     print("\n[C3] 隐私政策数据源口径")

@@ -465,7 +465,12 @@ function mp4Info(p) {
 }
 
 function st20() {
-  const html = read(join(SITE_DIR, 'index.html'))
+  // ★ 先剥 HTML 注释再判。注释里写到 `<video>` 这种**标签名**时，
+  //   `/<video\b([\s\S]*?)>/` 会先命中那条注释（attrs 是空的）⇒ 同时报
+  //   「poster 缺失 / preload 缺 / 缺 playsinline」三条，而文件其实完全正确。
+  //   r398 实踩：把视频搬进首屏后加了一句解释性注释，ST20 立刻变成假红。
+  //   判据只看真标签，注释里的留痕不算（与 ST17 同一条纪律）。
+  const html = read(join(SITE_DIR, 'index.html')).replace(/<!--[\s\S]*?-->/g, '')
   const at = html.indexOf('id="demo"')
   const seg = at >= 0 ? html.slice(at) : ''
   const bad = []
@@ -651,6 +656,33 @@ async function rt(base) {
   // 取 10 留出"合理重构会换掉几个元素"的余量，同时远高于"面积≈0"的失败态。
   check('RT7', `品牌色真的渲染出来了：${usedCount} 个元素在用它（四档 token = ${brandTokens.join(' ')}，需 ≥10）`,
     usedCount >= 10, { usedCount, brandTokens })
+
+  /**
+   * RT8 ★ 演示视频在首屏**整段可见**（用户 2026-10-26：「视频要放在首页，不要滚动才看见」）
+   *
+   * ★ 为什么必须是真机几何：hero 的高度由 h1 的行数（clamp + vw）、lead 的折行数、
+   *   字体回退共同决定 ⇒ 手算出来的是"设计意图"，不是"这台机器上实际长什么样"。
+   *   单栏版式实测视频顶边落在 619px 处：1440x900 露 47%、1366x768 只露 24%
+   *   （露出一个边，等于看不见）。
+   *
+   * ★ 判据取「整段可见」而不是「露出一部分」：只判 top < innerHeight 时，
+   *   "露出 24% 的边"那种版式照样绿 —— 而那正是这条要防的形态。
+   *   窄屏（<1080）走上下结构，视频本来就在文案下方，本判据只管桌面三档。
+   */
+  const heroVis = {}
+  for (const [w, h] of [[1440, 900], [1366, 768], [1920, 1080]]) {
+    await goto('/index.html', w, h)
+    heroVis[`${w}x${h}`] = await run(`(() => {
+      const v = document.querySelector('#demo video')
+      if (!v) return { err: '首屏找不到 #demo video' }
+      const r = v.getBoundingClientRect()
+      return { top: Math.round(r.top), bottom: Math.round(r.bottom), ih: innerHeight }
+    })()`)
+  }
+  const heroBad = Object.entries(heroVis).filter(([, m]) => m.err || m.bottom > m.ih + 1)
+  check('RT8', `演示视频首屏整段可见（${
+    Object.entries(heroVis).map(([k, m]) => (m.err ? `${k} 缺失` : `${k} 底${m.bottom}/视口${m.ih}`)).join(' · ')
+  }）`, heroBad.length === 0, heroVis)
 
   /** 截图（给人工目视用）
    *  ⚠️ 必须**先关动效**再抓整页：`.reveal` 初始态是 opacity:0，
