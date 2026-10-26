@@ -57,11 +57,30 @@ for f in $FILES; do
 done
 
 # ---------- 2. 大文件（>2MB）：仓库变重后很难瘦回来 ----------
+# ★ 例外：`site/assets/video/`（官网演示片）—— 与上面 `.env.production` 同一个道理：
+#   这条规则和事实冲突时，一刀切的结局是改用 --no-verify，而那会**顺带关掉本 hook
+#   的其它所有检查**（密钥 / 调试残留 / 冲突标记），比误报一次坏得多。
+#   为什么它必须入库：
+#     官网是**零构建**产物，`site/` 即线上内容。视频不在库里 ⇒ clone 下来站点缺这段，
+#     上线按清单同步时**静默漏传**，而失败方式是"点播放才 404"——页面其余部分全正常，
+#     没有任何征兆。相比"仓库变重"（可修），"漏传"是不可见的。
+#   ⇒ 放行，但给**硬上限 8 MB**（与 `site/verify-site.mjs` 的 ST20 同口径）：
+#     再往上就不是"压过的演示片"而是"没压的源片"（源片 15 MB），仍然拦。
+VIDEO_LIMIT=8388608
 for f in $FILES; do
   if [ -f "$f" ]; then
     sz=$(git cat-file -s ":$f" 2>/dev/null || echo 0)
     case "$sz" in
       ''|*[!0-9]*) sz=0 ;;
+    esac
+    case "$f" in
+      site/assets/video/*)
+        if [ "$sz" -gt "$VIDEO_LIMIT" ]; then
+          msg="${msg}\n  [大文件]    $f  —— $((sz / 1024 / 1024)) MB（官网视频上限 8 MB；超过说明没压过，跑 .workbuddy/tmp/mkweb.sh 重压）"
+          fail=1
+        fi
+        continue
+        ;;
     esac
     if [ "$sz" -gt 2097152 ]; then
       msg="${msg}\n  [大文件]    $f  —— $((sz / 1024 / 1024)) MB（阈值 2 MB）"

@@ -426,6 +426,119 @@ function st19() {
     strict, { mine: mine.map((d) => d.slice(0, 26) + '…'), theirs: theirs.map((d) => d.slice(0, 26) + '…') })
 }
 
+/* ---------------------------------------------------- ⑳ 一分钟演示视频 */
+/**
+ * ★ 为什么这条必须存在：视频是**唯一一个坏掉了页面照样打开**的资产。
+ *   · 路径写错 ⇒ 版面正常，点播放 404
+ *   · 压片忘了 `-movflags +faststart` ⇒ 能播，但要下完整个文件才开始
+ *   · 换成未压缩的源片 ⇒ 也能播，只是首屏多 10 MB
+ *   · figcaption 写「01:01」而文件其实 62 秒 ⇒ 没有任何人会发现
+ *   这四种全是静默的，而客户端第一次点播放时全都看得见。
+ *
+ * ★ 期望值一律现算，不手写：
+ *   · 时长 ⇒ 读 mp4 的 `mvhd`（timescale / duration）
+ *   · 页脚标注 ⇒ 从 `figcaption` 抓 `MM:SS`，必须等于**四舍五入到秒**的文件时长
+ *   · faststart ⇒ `moov` 必须出现在 `mdat` 之前
+ *   · 字幕 ⇒ 以 `WEBVTT` 开头、只含 LF、且 `default` 才会自动显示
+ */
+function mp4Info(p) {
+  const buf = readFileSync(p)
+  const i = buf.indexOf('mvhd')
+  let dur = null
+  if (i >= 0) {
+    const ver = buf[i + 4]
+    if (ver === 0) {
+      const ts = buf.readUInt32BE(i + 16)
+      dur = ts ? buf.readUInt32BE(i + 20) / ts : null
+    } else {
+      const ts = buf.readUInt32BE(i + 24)
+      const du = Number(buf.readBigUInt64BE(i + 28))
+      dur = ts ? du / ts : null
+    }
+  }
+  return {
+    dur,
+    faststart: i >= 0 && buf.indexOf('moov') < buf.indexOf('mdat'),
+    hasAudio: buf.indexOf('mp4a') >= 0,
+    bytes: buf.length,
+  }
+}
+
+function st20() {
+  const html = read(join(SITE_DIR, 'index.html'))
+  const at = html.indexOf('id="demo"')
+  const seg = at >= 0 ? html.slice(at) : ''
+  const bad = []
+
+  const vm = /<video\b([\s\S]*?)>/.exec(seg)
+  if (!vm) { check('ST20', '演示视频：<video> 存在且资产自洽', false, { why: '#demo 段里没有 <video>' }); return }
+  const attrs = vm[1]
+  const src = (() => {
+    const a = /\bsrc\s*=\s*["']([^"']+)["']/.exec(attrs)
+    if (a) return a[1]
+    const s = /<source\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/.exec(seg)
+    return s ? s[1] : null
+  })()
+  const poster = (/\bposter\s*=\s*["']([^"']+)["']/.exec(attrs) || [])[1]
+  const rel = (v) => join(SITE_DIR, String(v).replace(/^\.\//, ''))
+
+  for (const [k, v] of [['src', src], ['poster', poster]]) {
+    if (!v) bad.push(`${k} 缺失`)
+    else if (!existsSync(rel(v))) bad.push(`${k} 文件不存在：${v}`)
+  }
+  // 零 JS 站没有"进视口再加载"的手段 ⇒ 不写 preload=none 就是首屏静默拉整段
+  const preload = (/\bpreload\s*=\s*["']([^"']+)["']/.exec(attrs) || [])[1]
+  if (preload !== 'none') bad.push(`preload=${preload ?? '(缺)'}，首屏会下载整段视频`)
+  if (!/\bplaysinline\b/.test(attrs)) bad.push('缺 playsinline（iOS 会劫持成全屏）')
+  // ★ 硬字幕已烧进画面 ⇒ 再加字幕轨就是两层字幕叠在一起（实测截图里同一句话出现两次）
+  if (/<track\b/i.test(seg)) bad.push('出现 <track> 字幕轨：成片已把字幕烧进画面，会叠成两层')
+
+  // 视频文件的客观事实（体积 / faststart / 音轨 / 时长）—— 时长后面两处对账都要用
+  let dur = null
+  if (src && existsSync(rel(src))) {
+    const info = mp4Info(rel(src))
+    dur = info.dur
+    if (info.bytes > 8 * 1024 * 1024) bad.push(`视频 ${(info.bytes / 1048576).toFixed(1)}MB，超过 8MB 上限`)
+    if (!info.faststart) bad.push('moov 不在 mdat 之前（缺 -movflags +faststart，要下完才开播）')
+    if (!info.hasAudio) bad.push('没有音频轨')
+    if (!dur) bad.push('读不出 mp4 时长')
+  }
+
+  // 文字稿自称的句数与时长必须与真实情况自洽（两个数字都由文件本身给出，不手写）
+  const det = /<details\b[^>]*class="demo-transcript"[\s\S]*?<\/details>/.exec(seg)
+  if (!det) bad.push('缺 <details class="demo-transcript"> 全文文字稿')
+  else {
+    const claimed = /<summary>[^<]*?（(\d+)\s*句\s*·\s*(\d{1,2}:\d{2})）/.exec(det[0])
+    const items = [...det[0].matchAll(/<li>\s*<time>[^<]*<\/time>([^<]*)<\/li>/g)].map((m) => m[1].trim())
+    if (!claimed) bad.push('文字稿 summary 没写「N 句 · MM:SS」，无处对账')
+    else {
+      if (Number(claimed[1]) !== items.length) bad.push(`summary 自称 ${claimed[1]} 句，实际 ${items.length} 条`)
+      if (dur) {
+        const [mm, ss] = claimed[2].split(':').map(Number)
+        if (mm * 60 + ss !== Math.round(dur)) bad.push(`文字稿标注 ${claimed[2]} 与文件 ${dur.toFixed(2)}s 不一致`)
+      }
+    }
+    if (items.length < 5) bad.push(`文字稿只有 ${items.length} 条，疑似被删空`)
+    const short = items.filter((t) => t.length < 4)
+    if (short.length) bad.push(`${short.length} 条文字稿过短：${short.slice(0, 2)}`)
+  }
+
+  // 页脚标注必须与文件时长一致（四舍五入到秒）—— 时长变了而文案没跟上就是虚假陈述
+  const cap = /<figcaption>([^<]*)<\/figcaption>/.exec(seg)
+  const shown = cap ? /(\d{1,2}):(\d{2})/.exec(cap[1]) : null
+  if (!shown) bad.push('figcaption 没写 MM:SS 时长，无处对账')
+  else if (dur) {
+    const want = Math.round(dur)
+    const got = Number(shown[1]) * 60 + Number(shown[2])
+    if (want !== got) bad.push(`标注 ${shown[0]} 与文件 ${dur.toFixed(2)}s（应写 ${Math.floor(want / 60)}:${String(want % 60).padStart(2, '0')}）不一致`)
+  }
+
+  // ★ name 只描述"判什么"，不写"现在是绿的"：否则 FAIL 时它还在说
+  //   「preload=none · 字幕 default」，读者会以为报错的是别的东西。
+  check('ST20', `演示视频 ${dur ? dur.toFixed(1) + 's' : '（时长读不出）'}：判 引用存在 · preload=none · playsinline · faststart · 有音轨 · 无字幕轨（硬字幕）· 标注与文字稿自洽`,
+    bad.length === 0, bad)
+}
+
 /* ========================================================== 真机判据 */
 
 let ws, msgId = 0
@@ -570,7 +683,7 @@ async function rt(base) {
 async function main() {
   console.log('=== 静态判据 ===')
   st1(); st2(); st3(); st4(); st5(); st6(); st7(); st8(); st9(); st10(); st11(); st12(); st13(); st14()
-  st15(); st16(); st17(); st18(); st19()
+  st15(); st16(); st17(); st18(); st19(); st20()
 
   if (!existsSync(CHROME)) { console.log(`\nPROBE-ERR: 找不到 chrome：${CHROME}`); process.exit(2) }
 

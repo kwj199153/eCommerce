@@ -286,6 +286,49 @@ img { max-width: 100%; height: auto; }
   color: var(--ink-3);
 }
 
+/* ★ 演示视频（r396）：与 .frame img 同宽度规则，另加 aspect-ratio 占位。
+   `preload="none"` 时视频本身不解码，poster 也要等下载 —— 没有 aspect-ratio
+   的话在 poster 到达前高度算不出来，会把下面一整段顶下去再弹回来。 */
+.frame video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: var(--band-bg); /* 与视差带同色：解码前是深色块，不是白闪 */
+}
+
+/* ★ 文字稿（r396）：折叠着不占版面，展开后两栏。
+   `<details>` 是**浏览器原生**的展开/收起，零 JS —— 与整站"零 JS"约束一致。 */
+.demo-transcript {
+  margin-top: 16px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+.demo-transcript summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--brand-ink);
+  width: fit-content;
+}
+.demo-transcript summary:hover { text-decoration: underline; }
+.demo-transcript ol {
+  margin: 14px 0 0;
+  padding-left: 1.5em;
+  columns: 2;
+  column-gap: 36px;
+}
+.demo-transcript li { margin: 0 0 7px; break-inside: avoid; }
+.demo-transcript time {
+  margin-right: 8px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+@media (max-width: 768px) {
+  .demo-transcript ol { columns: 1; }
+}
+
 /* ---------------------------------------------------------------- 视差带 */
 .band {
   position: relative;
