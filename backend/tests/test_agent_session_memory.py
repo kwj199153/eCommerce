@@ -158,8 +158,8 @@ async def test_session_and_identity_are_both_required():
 
     used.clear()
     await a.run_session({"messages": []}, session_id="s-1", user_id="u-1")
-    assert used == [("memory", {"configurable": {"thread_id": "probe3:u-1:s-1"}})], (
-        f"两者齐全时必须走带记忆的图: {used}"
+    _assert_memory_invoke(
+        used, where="两者齐全", thread_id="probe3:u-1:s-1"
     )
 
 
@@ -252,6 +252,39 @@ def _assert_memoryless_marked(cfg, *, where: str) -> None:
     )
 
 
+def _assert_memory_invoke(used, *, where: str, thread_id: str) -> dict:
+    """断言「有会话 + 有身份」这一路：走**带 checkpointer** 的图，`thread_id` 精确。
+
+    ★ 为什么只钉 `configurable.thread_id`、**不**钉整个 config 字典
+      （第 400 轮 P2 的教训）：`run_session` / `stream_session` 现在会给每一份
+      config 注入 `recursion_limit`（`ai_infra/recursion_guard.py`：超步上限
+      `2 * max_iterations + 8`）。整字典相等立刻假红，而那条红读起来像
+      「thread_id 算错了」—— 指向**完全错误**的方向。
+      本条要守的安全属性只有两条：
+        ① 用哪张图（带 checkpointer 的那张 ≠ 不留记忆的那张）；
+        ② 键是什么（`ns:user:session`，两个用户撞同一个串就串味）。
+      `recursion_limit` 的存在性由 `tests/test_recursion_guard.py` 单独钉，
+      不在这里再钉一遍（同一事实两份判据 ⇒ 改一处忘另一处）。
+    ★ 仍然钉「不许带 memoryless 标记」：这是 `_assert_memoryless_marked` 的反面，
+      只是不再用整字典相等来表达。
+    """
+    assert len(used) == 1, f"{where}: 驱动图的次数不对: {used}"
+    tag, cfg = used[0]
+    assert tag == "memory", (
+        f"{where}: 没走带 checkpointer 的图 ⇒ 这一段根本不会留记忆: {used}"
+    )
+    tid = ((cfg or {}).get("configurable") or {}).get("thread_id")
+    assert tid == thread_id, (
+        f"{where}: thread_id 不对（期望 {thread_id}，实得 {tid}）—— "
+        f"键错了就是「记忆错人」，比没有记忆严重: {used}"
+    )
+    mode = ((cfg or {}).get("metadata") or {}).get("session_mode")
+    assert mode != "memoryless", (
+        f"{where}: 有会话有身份却带上了 memoryless 标记 ⇒ HITL 会按「无会话」拒绝: {used}"
+    )
+    return cfg
+
+
 def _assert_memoryless_invoke(used, *, where: str) -> None:
     """
     断言「无会话 / 无身份」这一路（`ainvoke` 形态，`used == [(tag, cfg)]`）：
@@ -303,9 +336,9 @@ async def test_no_session_leaves_no_memory():
 
     used.clear()
     await a.run_session({"messages": []}, session_id="s-9", user_id="u-9")
-    assert used == [
-        ("memory", {"configurable": {"thread_id": "probe:u-9:s-9"}})
-    ], f"有会话 + 有身份时没走带记忆的图 / thread_id 不对: {used}"
+    _assert_memory_invoke(
+        used, where="有会话 + 有身份", thread_id="probe:u-9:s-9"
+    )
 
 
 async def test_stream_session_shares_the_same_thread_rule():
@@ -330,9 +363,14 @@ async def test_stream_session_shares_the_same_thread_rule():
             {"messages": []}, session_id="s-7", user_id="u-7"
         )
     ]
-    assert used == [
-        ({"configurable": {"thread_id": "probe2:u-7:s-7"}}, "v2")
-    ], used
+    # ★ 同 `_assert_memory_invoke` 的口径：只钉「哪张图 / 哪个键 / 流式版本」，
+    #   不对整个 config 做字典相等（P2 给 config 注入了 `recursion_limit`）。
+    assert len(used) == 1, used
+    _cfg, _ver = used[0]
+    assert _ver == "v2", used
+    assert (_cfg.get("configurable") or {}).get("thread_id") == "probe2:u-7:s-7", (
+        f"流式入口的 thread_id 与非流式不一致（同一会话会各记一半）: {used}"
+    )
     assert out == [{"event": "on_chat_model_stream"}]
 
     used.clear()
