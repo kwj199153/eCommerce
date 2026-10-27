@@ -70,7 +70,14 @@ MODULES = BACKEND / "modules"
 AI_INFRA = BACKEND / "ai_infra"
 AGENT_PY = MODULES / "product_research" / "agent_product_research.py"
 STATE_PY = AI_INFRA / "session_state.py"
-HITL_PY = MODULES / "product_research" / "agent_hitl.py"
+# ★ 第 400 轮 P0-2：`resume_approval` 的**实质实现**从 `agent_hitl.py` 搬到了
+#   中立层 `modules/hitl/hitl.py`（`agent_hitl.py` 只剩一层适配壳，把
+#   `bind_context` / `hydrate_state` 这些宿主能力当参数递进去）。
+#   ⇒ 判据必须跟着读中立层：读适配壳会看到"没有 bind_context 调用"，
+#     而那是**搬运的结果**，不是"忘了绑定"。
+#   ★ 这正是本仓那条老教训的又一次：判据钉的是**位置**，搬文件时判据要跟着搬，
+#     否则红的是「搬迁」，读起来却像「功能退化」。
+HITL_PY = MODULES / "hitl" / "hitl.py"
 STORE_PY = MODULES / "conversation" / "state_store.py"
 # ★ C 刀（r338）：会话/状态块搬到了 `agent_session.py` —— 本文件那 7 条**形态**
 #   判据因此改读它。行为判据不动：薄壳在，`agent._x()` 照旧可调。

@@ -91,6 +91,14 @@ MODULE_LAYERS: dict[str, str] = {
     "library": SHARED,
     # ★ 第 283 轮新增：交易履约 + 买家反馈域。判 SHARED 不是随手选的，见 MODULE_REASONS。
     "trade": SHARED,
+    # ★ 第 400 轮 P0-1/P0-2/P0-3 新增：人机协同（审批 / 澄清）的中立层。
+    #   判 SHARED 的关键与 `library` 同源：**三个 PLUGIN 在顶层 import 它**
+    #   （`product_research/agent_hitl.py`、`customer_service/agent_cs/core.py`、
+    #   `secretary/agent.py`）—— 若判 PLUGIN，这三条边立刻变成 PLUGIN→PLUGIN，
+    #   踩本文件红线。它自己只依赖 `core.*` / `ai_infra.*`，
+    #   对业务 Agent 的引用是 `registry.py` 里的**惰性字符串路径**（`importlib`），
+    #   没有顶层边。见 MODULE_REASONS。
+    "hitl": SHARED,
 
     # ---- PLUGIN：面向用户的功能模块。插件之间**不得**顶层互相 import。
     "ad_analysis": PLUGIN,
@@ -157,6 +165,17 @@ MODULE_REASONS: dict[str, str] = {
         "  ② `amazon_sp`（SHARED）的订单 / 评论拉取钩子以本模块的载荷契约为真源，\n"
         "     若 trade 判 PLUGIN，则「SHARED → PLUGIN」同样违规。\n"
         "自身顶层只依赖 core.*（KERNEL）与 products（SHARED），方向合法。",
+    "hitl":
+        "人机协同（审批 / 澄清）的**中立层**（第 400 轮 P0-1~P0-3 从 "
+        "`product_research/agent_hitl.py` 抽出来的那一份）。判 SHARED 而非 PLUGIN 的理由与 "
+        "`library` 同源：**三个 PLUGIN 都在顶层 import 它**"
+        "（`product_research/agent_hitl.py`、`customer_service/agent_cs/core.py`、"
+        "`secretary/agent.py`），若判 PLUGIN 这三条边立刻变成「PLUGIN → PLUGIN」；"
+        "它对业务 Agent 的引用是 `registry.py` 里的**惰性字符串路径**（`importlib.import_module`），"
+        "没有顶层边；自身只依赖 core.*（KERNEL）与 ai_infra.*（底座），方向合法。\n"
+        "★ 反面：这份逻辑若留在 `product_research`（原本就在那），其余两家要么 import 它"
+        "（PLUGIN→PLUGIN）、要么各抄一份 —— 后者正是第 400 轮之前的状态"
+        "（客服 `run_session` 那套永远抛 `HITLPrerequisiteError` 的私有实现）。",
     "ad_analysis": "广告分析视图；只被前端直接调用，无模块间顶层引用 ⇒ 插件",
     "aigc_media": "AIGC 图片 / 视频生成；产出物经 assets 落库，模块间无顶层共享 ⇒ 插件",
     "assets": "素材库；仅被 secretary 的**函数内**工具引用（非顶层），无共享需求 ⇒ 插件",

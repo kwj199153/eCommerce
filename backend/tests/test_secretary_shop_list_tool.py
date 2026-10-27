@@ -95,6 +95,14 @@ EXPECTED_PROMPT_TOKENS = frozenset(
         "set_theme",
         "switch_agent",
         "switch_shop",
+        # ★ 第 400 轮 P1-1：提示词新增规则 9，把「读能力三原语」写进可调范围
+        #   （老板「专用工具够不到时不要凭空说查不到」）。
+        #   三条都**真被装配**（`navigation_tools` 末尾 `*build_capability_tools()`），
+        #   所以它们能通过下面那条 `tokens - real` 的解析判据 ——
+        #   本条门禁的价值正是这一点：prompt 里写了名字，就得真有那个工具。
+        "describe_capability",
+        "find_capabilities",
+        "read_capability",
     }
 )
 

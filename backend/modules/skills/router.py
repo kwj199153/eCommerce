@@ -67,7 +67,7 @@ from core.auth.dependencies import get_acting_user
 from core.database import get_db
 from modules.skills import service
 from modules.skills.agents import AGENT_CATALOG
-from modules.skills.tools_catalog import TOOL_CATALOG, grouped_catalog, is_known_tool
+from modules.skills.tools_catalog import grouped_catalog, is_known_tool, shipped_catalog
 
 # ★★★ 这一行是**功能性的**，不是风格问题 —— 别删：
 #   `provider` 在 import 时执行 `install()`，把技能目录注入段与
@@ -167,10 +167,14 @@ async def list_tools():
         `tools_catalog.REJECTED_TOOL_ALIASES`）。界面侧据此可以判断
         「这个工具不止一家能用」，而不是把它显示成两家各有各的实现。
     """
+    # ★ 第 400 轮 P1-2：目录由「文案表 + 装配点」派生，取它请走 `shipped_catalog()`
+    #   —— 别直接读 `TOOL_CATALOG` 常量：那是**原地填充**的对象，
+    #   直接读会依赖"别处已经 ensure 过"这个隐含顺序。
+    catalog = shipped_catalog()
     return {
-        "items": TOOL_CATALOG,
+        "items": catalog,
         "grouped": grouped_catalog(),
-        "total": len(TOOL_CATALOG),
+        "total": len(catalog),
     }
 
 

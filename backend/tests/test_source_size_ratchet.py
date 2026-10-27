@@ -144,7 +144,14 @@ FROZEN_OVER_THRESHOLD: dict[str, int] = {
     "frontend/src/views/Login.vue": 922,
     "frontend/src/views/MemoryEvolution.vue": 918,
     "backend/modules/trade/risk_scan.py": 907,
-    "backend/modules/skills/tools_catalog.py": 893,
+    # ★ 第 400 轮 P1-2：`backend/modules/skills/tools_catalog.py` **移出**冻结表
+    #   （893 → 471）。它当年超阈值是因为「68 条目录项每条带 5 个字段 + 逐条注释」；
+    #   派生化之后表里只剩 `name: (title, description)` 一行一条，加一层派生逻辑，
+    #   合计连阈值的一半都不到。
+    #   ⇒ 棘轮的正向用法：**降下来了就移出**。留着它等于给这个文件留了 893 行的
+    #     "免费额度"，它再长回去也不会被拦。
+    #   ★ 移出之后它重新受 `test_no_new_oversized_source` 管：一旦再破 800 就是
+    #     "新的超阈值文件"，必须有人写下理由才准放松。
     "frontend/src/components/TaskConfigPanel/configs/StaticAssetConfig.vue": 889,
     "frontend/src/components/TaskConfigPanel/configs/ReviewConfig.vue": 880,
     "backend/alembic/versions/0d44a915bbb8_baseline_full_schema_squashed.py": 875,

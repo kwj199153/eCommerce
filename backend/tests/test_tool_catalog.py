@@ -1662,3 +1662,126 @@ def test_library_data_domains_have_registered_reader_sets():
         f"[lane D] REST↔工具双通道的锚点域丢了（实际满足的域：{sorted(dual)}）—— "
         "要么 select_product 不再走内核，要么 REST 列表端点挪走了，两者都要人判。"
     )
+
+
+# ============================================================================
+# P1-2（第 400 轮）派生化后的三条新判据
+#
+# ★ 为什么必须补：`TOOL_CATALOG` 从「手写表」变成「文案表 × 装配点派生」之后，
+#   原来那条「effect ⇔ has_side_effects」在**结构上不可能再红**了 ——
+#   生产代码自己就是拿 `has_side_effects()` 算出来的。
+#   留着它不删也不算资产：它变成了一条恒真断言（假绿）。
+#   ⇒ 把守的东西必须换成「派生的**前提**」与「派生的**完整性**」。
+# ============================================================================
+
+
+def test_assembly_points_are_declared_once():
+    """★★★ 判据 N：装配点名单**只有一份真源**，测试这份只是它的副本。
+
+    ★ 为什么这条值得单独一条判据：第 400 轮之前，`ASSEMBLY_POINTS` 只活在
+      本文件里，`tools_catalog.py` 的归属是**另一份手写数据**。
+      两份声明之间没有任何东西强制它们一致 —— 漂移的后果是「目录里少一个
+      Agent 的工具」或「目录说某工具属于 A，其实只有 B 装着它」，
+      而这两种都**不报错**（工具照样能勾，运行期静默调不到）。
+
+    现在真源搬进了 `modules/skills/tool_wiring.py`（生产侧要用），
+    本文件这份必须与它**逐条相同**：多一条 = 门禁在核一份过期的真值，
+    少一条 = 门禁看不见生产侧新增的装配点。
+    """
+    from modules.skills import tool_wiring
+
+    assert tuple(ASSEMBLY_POINTS) == tuple(tool_wiring.ASSEMBLY_POINTS), (
+        "本文件的 `ASSEMBLY_POINTS` 与生产侧 `modules/skills/tool_wiring.py` 不一致：\n"
+        f"  只在测试里: {[p for p in ASSEMBLY_POINTS if tuple(p) not in tool_wiring.ASSEMBLY_POINTS]}\n"
+        f"  只在生产里: {[p for p in tool_wiring.ASSEMBLY_POINTS if tuple(p) not in ASSEMBLY_POINTS]}\n"
+        "⇒ 新增/退役装配点请**两处同步**（生产侧是唯一真源，测试这份用于独立派生）。"
+    )
+    assert tuple(MECHANISM_TOOLS) == tuple(tool_wiring.MECHANISM_TOOLS)
+
+
+def test_tool_text_carries_text_only():
+    """★★★ 判据 O：文案表里**只许有文案**（结构判据，走 AST）。
+
+    ★ 守的是什么：`TOOL_TEXT` 的值必须是 `(展示名, 说明)` 这个二元组。
+      有人若把 `agent` / `effect` 写回表里（比如图省事加个第三元组元素、
+      或把值改成 dict），派生化就**悄悄退化成手写表**了 ——
+      而目录看起来一切正常（派生那边会忽略多出来的部分）。
+      ⇒ 这种回退必须转红，而不是"也能跑"。
+
+    ★ 为什么用 AST 而不是 `isinstance(v, tuple) and len(v) == 2` 的运行时检查：
+      运行时检查只能看见**当前值**；改成 dict 形态后如果 `_build()` 里做了
+      兼容（`if isinstance(...)`），运行时就再也看不出来了。AST 看的是**源文件
+      写成了什么**，更接近"不许这么写"这条意图。
+
+    ★ 反例（本条会红）：`"x": ("标题", "说明", "secretary")`、
+      `"x": {"title": "标题", "agent": "secretary"}`。
+    """
+    import ast
+
+    src = (BACKEND / "modules" / "skills" / "tools_catalog.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    node = None
+    for n in tree.body:
+        if isinstance(n, ast.AnnAssign) and getattr(n.target, "id", None) == "TOOL_TEXT":
+            node = n
+        elif isinstance(n, ast.Assign) and any(
+            getattr(t, "id", None) == "TOOL_TEXT" for t in n.targets
+        ):
+            node = n
+    assert node is not None, "找不到 `TOOL_TEXT` 定义（改名了？本判据需同步）"
+    assert isinstance(node.value, ast.Dict), (
+        f"`TOOL_TEXT` 不是字典字面量（{type(node.value).__name__}）—— "
+        "本判据只认字面量，动态构造会让『表里有什么』不可静态审阅。"
+    )
+
+    problems = []
+    for k, v in zip(node.value.keys, node.value.values):
+        name = ast.literal_eval(k)
+        if not isinstance(v, ast.Tuple):
+            problems.append(f"{name}: 值不是元组 ({type(v).__name__})")
+            continue
+        items = v.elts
+        if len(items) != 2:
+            problems.append(f"{name}: 元组有 {len(items)} 个元素（只允许 title, description）")
+            continue
+        for i, el in enumerate(items):
+            if not (isinstance(el, ast.Constant) and isinstance(el.value, str)):
+                problems.append(f"{name}: 第 {i + 1} 个元素不是字符串字面量")
+
+    assert not problems, (
+        "文案表里混进了非文案内容：\n  " + "\n  ".join(problems[:10]) + "\n"
+        "⇒ `agent` / `effect` / `agents` 一律由 `tool_wiring` 派生，不要写回表里"
+        "（写回来就多了一处能写错的地方，而它错了不会报错）。"
+    )
+
+
+def test_catalog_reports_no_gaps():
+    """★★★ 判据 P：派生的三类缺口必须为空，且**不许**静默跳过。
+
+    * `missing_text`    —— 装配点里有、没人写文案 ⇒ **界面看不见这个工具**；
+    * `orphan_text`     —— 写了文案、没人装配 ⇒ 死文案（勾了也调不起来）；
+    * `wiring_failures` —— 装配点解析失败（模块改名 / 工厂签名变 / metadata 冲突）。
+
+    ★ 这三类的共同症状是「界面少了一个工具」，而**没有任何一处会报错** ——
+      租户只是选不到它，或者选了一个永远不会生效的。
+      ⇒ 它们是"静默缺口"的**唯一出口**，必须由门禁咬住。
+    ★ 本条同时也是判据 A 的补位：A 比的是集合相等，若两边**同时**
+      少了同一批工具（比如某个装配点整体解析失败），A 会绿而 P 会红。
+    """
+    from modules.skills.tools_catalog import catalog_gaps, shipped_catalog
+
+    assert shipped_catalog(), "目录为空 —— 派生整体没跑起来（本条会假绿）"
+    gaps = catalog_gaps()
+    assert not gaps["wiring_failures"], (
+        "装配点解析失败：\n  " + "\n  ".join(gaps["wiring_failures"]) + "\n"
+        "⇒ 这些容器里的工具**全部**没进目录（界面上根本选不到）。"
+    )
+    assert not gaps["missing_text"], (
+        f"这些工具真被装配了，但 `TOOL_TEXT` 里没写文案：{gaps['missing_text']}\n"
+        "⇒ 后果是它们**不会下发到界面**（租户永远选不到），且不报错。"
+        "  修法：在 `modules/skills/tools_catalog.py::TOOL_TEXT` 里补一行。"
+    )
+    assert not gaps["orphan_text"], (
+        f"这些名字写在 `TOOL_TEXT` 里，但没有任何 Agent 装配它：{gaps['orphan_text']}\n"
+        "⇒ 死文案。若工具已退役，请删掉这一行；若只是改名，请同步文案表的键。"
+    )
