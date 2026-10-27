@@ -4,7 +4,7 @@
 ==============================================================================
 ★ 这条门禁拦的是什么
 ==============================================================================
-`modules/skills/tools_catalog.py` 是一张**手写表**（65 个业务工具），
+`modules/skills/tools_catalog.py` 是一张**手写表**（68 个业务工具），
 手写表最容易出的问题不是"写错"，而是**过时**：
 
   · 某个工具改名 ⇒ 表里那个名字在运行时不存在 ⇒ 界面下发一个不存在的工具，
@@ -33,7 +33,7 @@
 
 `build_product_tools` 产出哪些工具，**AST 看不见**，只有调用它才知道。
 ⇒ 本门禁 import 真实模块、真实调用工厂，取 `tool.name` 作为真值。
-   实测口径 = 65。沿革：原文 28 → 第 204 轮接线 19 个后 55 →
+   实测口径 = 68。沿革：原文 28 → 第 204 轮接线 19 个后 55 →
    批 A 收敛「同端点多名」后 57 → 批 B 接入候选生命周期三条后 60
    （`get_candidate` / `review_candidate` / `approve_candidate`）→
    第 207 轮退役竞品 5 条后 55 →
@@ -51,7 +51,10 @@
    **第 325 轮新增只读 `query_market_insight`（选品大盘读口）后 65**
    （选品分析师 8 → 9；老板「让 agent 可以读数据库，**解耦前端界面大盘**」⇒
    这份数据从「只有前端面板一条通道」变成「面板与对话同走 `MARKET_SNAPSHOT_SPEC`
-   这一份声明」；只读 ⇒ 分子仍为 5）。
+   这一份声明」；只读 ⇒ 分子仍为 5）→
+   **第 400 轮新增只读能力三原语后 68**（店秘书 19 → 22：
+   `find_capabilities` / `describe_capability` / `read_capability`；
+   目录从 `app.openapi()` 派生、只收 GET ⇒ 只读 ⇒ 分子仍为 5）。
 
 ==============================================================================
 ★ 五条判据（+ 两条自检）
@@ -64,7 +67,7 @@
      至少要引用一个本文件登记过的容器名 —— 否则新增 Agent 绑全新工具组时
      门禁会**静默放行**（本文件最容易出的假绿形态）
 
-  ★ 自检 1：装配点解析出的工具数 == 65（防 import 失败导致的空集 ⇒ 集合相等变恒真）
+  ★ 自检 1：装配点解析出的工具数 == 68（防 import 失败导致的空集 ⇒ 集合相等变恒真）
   ★ 自检 2：`TOOL_CATALOG` 非空（防"两边都是空集也算相等"）
 
   ★★ 第 205 轮新增四条（收敛「同端点多名」的落点）：
@@ -240,7 +243,7 @@ def real_tool_objects() -> dict:
 
 
 def test_real_assembly_is_not_vacuous():
-    """★ 自检：装配点必须真的解析出 65 个工具。
+    """★ 自检：装配点必须真的解析出 68 个工具。
 
     ★ 这条拦的是本文件最危险的假绿形态：**import 失败 / 工厂调用失败**，
       让 `real_tool_names()` 返回空集。那时若把判据 A 写成
@@ -249,8 +252,8 @@ def test_real_assembly_is_not_vacuous():
         直接指向"解析没跑起来"，而不是让人去猜。）
     """
     names = real_tool_names()
-    assert len(names) == 65, (
-        f"装配点解析出 {len(names)} 个工具（期望 65）：{sorted(names)}\n"
+    assert len(names) == 68, (
+        f"装配点解析出 {len(names)} 个工具（期望 68）：{sorted(names)}\n"
         f"⇒ 要么某个模块 import 失败、要么某个工厂调用失败、"
         f"要么新增/删除了工具而本文件的 ASSEMBLY_POINTS 没跟。"
     )
@@ -261,7 +264,7 @@ def test_catalog_is_not_vacuous():
     """★ 自检：目录表非空 —— 防"两边都是空集也算相等"。"""
     from modules.skills.tools_catalog import TOOL_CATALOG
 
-    assert len(TOOL_CATALOG) == 65, f"目录表有 {len(TOOL_CATALOG)} 条（期望 65）"
+    assert len(TOOL_CATALOG) == 68, f"目录表有 {len(TOOL_CATALOG)} 条（期望 68）"
 
 
 # ============================================================================
@@ -341,7 +344,10 @@ def test_catalog_effect_matches_runtime_side_effect_declaration():
 
 
 def test_the_expected_tools_need_approval():
-    """★ 已知事实固化：65 个工具里**恰好 5 个**需要人工审批（会写库的那 5 个）。
+    """★ 已知事实固化：68 个工具里**恰好 5 个**需要人工审批（会写库的那 5 个）。
+
+    ★ 为什么分母又变了（第 400 轮）：新增只读能力三原语（只发 GET，不写库）
+      ⇒ **分子不动**。本条真正钉的是分子，分母只是顺手写实。
 
     ★ 为什么分子 +1（第 287 轮）：`propose_review_disposition` 真往
       `review_dispositions` 落一行 —— 这是给那张三无表补的**写入点**。

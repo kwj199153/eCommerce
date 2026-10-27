@@ -69,6 +69,22 @@ _client_ip_var: contextvars.ContextVar[str] = contextvars.ContextVar(
 # 日志里代表「空」的占位符
 EMPTY = "-"
 
+#: 能力层内部调用可以**转发**的请求头（第 400 轮 P1-1）。
+#:
+#: ★ 为什么必须是一份白名单，而不是"把入站头全带过去"：
+#:   内部调用会**重新走一遍鉴权与租户依赖**，于是「谁能冒充谁」这件事
+#:   完全由这份名单决定。任何身份类自报头（`x-user-id` / `x-account-id` /
+#:   `x-role`）都**绝不能**在这份名单里 —— 带上它们等于给能力层一个
+#:   「以任意身份读任意租户」的开关，而它长成一次普通工具调用的样子。
+#: ★ `x-shop-id` 必须在：本仓的数据作用域只有一层（`X-Shop-ID → store_id`），
+#:   漏了它，读端点拿不到店铺上下文 ⇒ 读到空数据或（更糟）跨店铺数据。
+FORWARD_HEADER_ALLOW = ("authorization", "x-shop-id", "x-request-id")
+
+#: 转发头（小写键）。默认空字典 = 无请求上下文（脚本 / 定时任务）。
+_forward_headers_var: contextvars.ContextVar[dict] = contextvars.ContextVar(
+    "forward_headers", default={}
+)
+
 
 # ====== 写入 ======
 
@@ -109,6 +125,34 @@ def clear_request_context() -> None:
     _user_id_var.set("")
     _account_id_var.set("")
     _client_ip_var.set("")
+    # ★ 转发头也清：它含 `authorization`，留着会让同一连接的下一个请求
+    #   用**上一个用户**的身份做内部调用（比 request_id 串味严重得多）。
+    _forward_headers_var.set({})
+
+
+def set_forward_headers(headers) -> dict:
+    """把入站请求头里**白名单内**的那几个记进上下文（能力层内部调用用）。
+
+    ★ 过滤在这里做（而不是让调用方自己挑）：这是唯一一处决定
+      「哪些头可以越过进程边界」，收在一处才审得清。
+    ★ 返回实际记下的字典 —— 中间件可以据此打一行 debug 日志，
+      排查"内部调用为什么 401"时第一眼看的就是它。
+    """
+    picked = {}
+    for name in FORWARD_HEADER_ALLOW:
+        try:
+            value = headers.get(name)
+        except Exception:  # noqa: BLE001 —— 不是 Mapping/Headers 就当没有
+            value = None
+        if value:
+            picked[name] = str(value)
+    _forward_headers_var.set(picked)
+    return picked
+
+
+def current_forward_headers() -> dict:
+    """当前请求可转发的头（无上下文返回空字典）。"""
+    return dict(_forward_headers_var.get() or {})
 
 
 # ====== 读取 ======

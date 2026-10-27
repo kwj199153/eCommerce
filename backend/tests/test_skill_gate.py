@@ -1200,7 +1200,7 @@ async def test_tools_catalog_over_http(auth_off, client):
     #   ★ 这里是**名单式分母的第四处** —— 改目录表条数时请全仓 grep，
     #     漏一处就是一条静默漂移的断言（本轮实测：先漏了它，全量回归才抓到；
     #     第 287 轮又漏了一次 —— 同批同步的是 `test_tool_catalog.py` 那两处）。
-    assert body["total"] == len(TOOL_CATALOG) == 65, f"total={body['total']}"
+    assert body["total"] == len(TOOL_CATALOG) == 68, f"total={body['total']}"
 
     flat = {it["name"] for it in body["items"]}
     assert flat == {it["name"] for it in TOOL_CATALOG}, "端点下发的不是那张目录表"

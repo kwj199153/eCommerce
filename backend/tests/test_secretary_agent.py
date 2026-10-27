@@ -72,6 +72,8 @@ def test_navigation_tools_marker():
     names = {t.name for t in navigation_tools}
     # ★ 第 145 轮 批 B3 加 `ask_clarification`（提问工具）—— 它虽不产导航标记，
     #   但与 `handoff_to_agent` 同属「协调」类，且必须排在它**之前**（先问后交）。
+    # ★ 第 400 轮 P1-1：加只读能力三原语（`find` / `describe` / `read`）——
+    #   它们同样不产导航标记，属于「协调 / 取数」类，与导航工具同表。
     assert names == {
         "switch_agent",
         "open_view",
@@ -79,6 +81,9 @@ def test_navigation_tools_marker():
         "handoff_to_agent",
         "set_theme",
         "ask_clarification",
+        "find_capabilities",
+        "describe_capability",
+        "read_capability",
     }
 
     assert '"switch_agent"' in _switch_agent("product-research")
@@ -460,7 +465,7 @@ def test_ad_analysis_tools_registry():
 
 
 def test_secretary_agent_binds_tools():
-    """店秘书 agent 应持有 19 个工具（16 业务/导航 + 2 规划 + 1 技能加载），业务细粒度工具全部下沉到子 Agent"""
+    """店秘书 agent 应持有 22 个工具（19 业务/导航 + 2 规划 + 1 技能加载），业务细粒度工具全部下沉到子 Agent"""
     agent = SecretaryAgent(llm=MagicMock())
     # 8 → 9：第 145 轮 批 B3 把「提问」从提示词规则升级成真工具（`ask_clarification`）
     # 9 → 11：第 148 轮 C3 开启规划器，注入 `plan_tasks` / `update_task`（todo 外置落图状态）
@@ -473,7 +478,7 @@ def test_secretary_agent_binds_tools():
     #          —— 修前「读有哪些店铺」**没有工具**，只能拿 switch_shop（会真切店）
     #          或 get_my_subscription（套餐上限）凑数。
     names = [t.name for t in agent.tools]
-    assert len(names) == 19
+    assert len(names) == 22
     # 只断言数字会在内容漂移时静默退化成假绿：必须锁住「多出来的恰是这两个」
     planner_names = ["plan_tasks", "update_task"]
     assert sorted(set(names) & set(planner_names)) == planner_names

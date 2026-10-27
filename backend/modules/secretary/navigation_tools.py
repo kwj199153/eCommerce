@@ -17,6 +17,7 @@ from typing import Literal
 
 from langchain_core.tools import StructuredTool
 from ai_infra.tools.clarification import make_clarification_tool
+from ai_infra.capability import build_capability_tools
 from ai_infra.tools.side_effects import READ_ONLY_METADATA
 
 
@@ -245,4 +246,10 @@ navigation_tools = [
         ),
         metadata=READ_ONLY_METADATA,
     ),
+    # ★ 第 400 轮 P1-1：只读能力三原语（find → describe → read）。
+    #   放在**最后**不是随手：它们只在"上面这些专用工具都够不到"时才该被选中，
+    #   而工具排列对 LLM 有弱提示作用（详见本文件 ask_clarification 处的说明）。
+    #   ★ 三条都是 `READ_ONLY_METADATA` —— 查数据不该过审批闸门
+    #     （B 档的写能力 `call_capability` 才会，且必须单独一个工具名）。
+    *build_capability_tools(),
 ]

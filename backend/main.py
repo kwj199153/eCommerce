@@ -844,6 +844,22 @@ else:
     _log.info("🔌 附加模块未启用：语音克隆（VOICE_CLONE_ENABLED=false）")
 
 
+# ====== 能力层：把已装配的应用绑进只读能力目录（第 400 轮 P1-1）======
+# ★ 必须在**所有** router 挂载之后：目录是从 `app.openapi()` 派生的，
+#   早一次调用只会拿到半张目录（后挂的路由不在里面），而那个缺口
+#   **不会报错** —— 表现只是"有些能力 Agent 就是找不到"。
+try:
+    from ai_infra.capability import bind_app as _bind_capability_app
+
+    _cap_count = _bind_capability_app(app)
+    _log.info(f"🧭 只读能力目录已绑定：{_cap_count} 条 GET 能力")
+except Exception as _e:  # noqa: BLE001
+    # ★ 不让能力层拖垮启动：它是**增强**，不是主链路。
+    #   但也不静默 —— 打 error 并在端点 / 工具里如实回 `bound: false`
+    #   （工具侧的表现是 `{"bound": false, "hint": ...}`，不是"没有匹配"）。
+    _log.error(f"❌ 只读能力目录绑定失败（能力层不可用，其余功能不受影响）：{_e}")
+
+
 # ====== 开发模式启动 ======
 
 if __name__ == "__main__":

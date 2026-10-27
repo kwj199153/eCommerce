@@ -414,6 +414,30 @@ TOOL_CATALOG: List[Dict[str, Any]] = [
         "description": "把对话交接给某个专业 Agent 接管，由它在自己领域内继续追问与执行。",
         "effect": EFFECT_READ_ONLY,
     },
+    # ★ 第 400 轮 P1-1：只读能力三原语（从 `app.openapi()` 派生，不是手写端点）。
+    #   P1-2 会把 `name` / `agent` / `effect` 改成从工具对象派生 —— 那时这三条
+    #   只剩 `title` / `description` 需要人工写（给人看的文案，派生不出来）。
+    {
+        "agent": "secretary",
+        "name": "find_capabilities",
+        "title": "查找读能力",
+        "description": "在本系统已有的读端点里按关键词检索能力，返回名字与摘要（不含参数）。",
+        "effect": EFFECT_READ_ONLY,
+    },
+    {
+        "agent": "secretary",
+        "name": "describe_capability",
+        "title": "查看能力参数",
+        "description": "查看某个读能力的参数清单（名称 / 位置 / 必填 / 说明）。",
+        "effect": EFFECT_READ_ONLY,
+    },
+    {
+        "agent": "secretary",
+        "name": "read_capability",
+        "title": "读取数据",
+        "description": "按名字调用一个只读端点取数（GET），不修改任何数据。",
+        "effect": EFFECT_READ_ONLY,
+    },
     {
         "agent": "secretary",
         "name": "list_shops",

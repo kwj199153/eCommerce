@@ -51,7 +51,11 @@ from core.config import config
 from core.logger import get_logger
 # ★ P0-2：客户端 IP 提取收敛到唯一实现（原先本文件与 rate_limit 各抄了一份）
 from core.middleware.client_ip import client_ip
-from core.observability.context import clear_request_context, set_request_context
+from core.observability.context import (
+    clear_request_context,
+    set_forward_headers,
+    set_request_context,
+)
 # ★ L3-3（第 351 轮）：请求级**分段**计时（响应头 X-DB-Time-Ms / X-LLM-Time-Ms）。
 #   与 context 分开一个模块：context 管字符串标识（日志出口），它管毫秒累加
 #   （响应头出口）。详见 request_timing.py 的「为什么必须是可变容器」。
@@ -87,6 +91,16 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
         self.slow_request_ms = int(slow_request_ms)
 
     async def dispatch(self, request: Request, call_next):
+        # ★ 第 400 轮 P1-1：能力层做**内部调用**时要带着这轮请求的身份
+        #   （白名单与理由见 `core/observability/context.py::FORWARD_HEADER_ALLOW`）。
+        #   在这里抓而不是让工具自己取：工具拿不到 `Request` 对象，
+        #   而"每个工具各想办法"必然长出第 2 份实现。
+        # ★★ 必须写在下面那个 `if not self.enabled` **之前**：访问日志可以关，
+        #   「这轮请求是谁」不能跟着一起关 —— 否则日志一关，
+        #   能力层的内部调用就全部变成匿名（表现是所有读能力都 401/空数据，
+        #   而没有任何一条线索指向"日志开关"）。
+        set_forward_headers(request.headers)
+
         if not self.enabled:
             return await call_next(request)
 
