@@ -245,6 +245,10 @@ async function decide(d: ApprovalDecision) {
   submitting.value = true
   const res = await submitApprovalDecision({
     sessionId: sessionId.value,
+    // ★ 第 400 轮 P0-2：哪个 Agent 的审批，由**服务端**在 payload 里下发
+    //   （`data.agent`）。前端猜"当前在哪个页面"会在多 Agent 编排里打错端点，
+    //   而打错的失败方式是 404 —— 看起来像"这个功能没做"。
+    agentId: props.data?.agent || undefined,
     decision: d,
     reason: d === 'reject' ? reason.value.trim() || undefined : undefined,
     args: payloadArgs,

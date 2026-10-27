@@ -44,7 +44,8 @@ export function analyzeProfit(data: {
   // ★★ 第 200 轮修复：此前这里写的是 camelCase（productName / sellingPrice /
   //    costPrice / weightLbs / adAcosPct），而后端 `ProfitAnalysisRequest` 是
   //    snake_case ⇒ body 直接透传 ⇒ Pydantic 收不到必填字段 ⇒ **稳定 422**。
-  //    更刺眼的是**同一个文件**里 `chatWithProductResearcher` 与 `resumeApproval`
+  //    更刺眼的是 `chatWithProductResearcher` 与（当时同在本文件、现已迁到
+  //    `api/agentApproval.ts` 的）`resumeApproval`
   //    的注释都写着「必须与后端字段逐字一致」—— 规矩写在下面两处，
   //    却漏了上面这三处（契约铁律只对后写的函数生效）。
   //    当前这三个函数在前端**零调用**，所以从未爆出来。
@@ -99,30 +100,18 @@ export function chatWithProductResearcher(data: {
 }
 
 /**
- * 提交人工审批决策，恢复被 `interrupt()` 挂起的会话（HITL 闭环）。
+ * 提交人工审批决策 → **已迁走**（第 400 轮 P0-2）。
  *
- * ★ 为什么不能复用 `chatWithProductResearcher()`：
- *   被挂起的图停在 `tool_node` 上等一个 `Command(resume=...)`。
- *   用户在界面上点「批准」**不是在说话** —— 走 `/chat` 只会开一轮全新对话，
- *   那个待审批的操作仍会永久挂着（而且不报任何错）。
+ * 原来这里有个 `resumeApproval()` 打在 `/product-research/approval/resume` 上，
+ * 于是「能点批准」被绑死在选品分析师身上：客服 / trade 域的写工具同样会被
+ * `interrupt()` 挂起，却没有任何端点能放行。
  *
- * ★ 字段名必须与后端 `ApprovalResumeRequest` 逐字一致（snake_case）。
- *   写成 camelCase 会被 Pydantic 丢掉 ⇒ 必填缺失 ⇒ 稳定 422。
- * ★ `context_id` 必须是**首轮**那次对话的同一个会话 ID：thread_id 由服务端
- *   按（命名空间, 用户, 会话）重算，所以**不接受**客户端传 thread_id。
+ * 现在是 `api/agentApproval.ts::resumeAgentApproval(agent, payload)`，走通用端点
+ * `POST /agents/{agent}/approval/resume`。**不要在这里加回来** ——
+ * 一份「谁都能点的批准」只要出现第二个入口，两边迟早会漂移，
+ * 而漂移的表现是「点了批准 404」，看起来像这个功能没做。
+ * （`scripts/check-hitl-approval.cjs` 的 A1 会扫全 src 拦这个端点。）
  */
-export function resumeApproval(data: {
-  context_id: string
-  decision: 'accept' | 'reject' | 'edit' | 'response'
-  /** decision=reject：拒绝原因 */
-  reason?: string
-  /** decision=edit：改写后的工具入参（须非空） */
-  args?: Record<string, any>
-  /** decision=response：直接回复内容 */
-  feedback?: string
-}): Promise<any> {
-  return request.post('/product-research/approval/resume', data)
-}
 
 /**
  * 查询 Agent 能力说明

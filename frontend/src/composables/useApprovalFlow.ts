@@ -23,14 +23,30 @@
  *   ③ 结果原样展示后端返回的 `reply`，**不本地编造**「已入库」这类结论。
  */
 import { useChatStore } from '@/stores/chat'
-import { resumeApproval } from '@/api/productResearch'
+import { resumeAgentApproval, type ApprovalDecision } from '@/api/agentApproval'
 
-/** 四档决策，与后端 `ApprovalResumeRequest.decision` 的 `Literal` 逐字一致 */
-export type ApprovalDecision = 'accept' | 'reject' | 'edit' | 'response'
+/**
+ * 四档决策，与后端 `ApprovalResumeRequest.decision` 的 `Literal` 逐字一致。
+ *
+ * ★ 第 400 轮：**定义搬到了 `api/agentApproval.ts`**，这里只做转发。
+ *   搬走的原因是它原来在 `api` 与 `composable` 各写了一份 —— 同一份四档契约
+ *   两份实现，改一处漏一处的表现是「类型检查过了、后端 422」。
+ *   转发而不是让消费方改路径，是为了不惊动 `PendingApprovalCard.vue` 的 import。
+ */
+export type { ApprovalDecision }
 
 export interface ApprovalSubmitOptions {
   /** 会话 ID —— 必须与**首轮**那次对话的同一个（后端按它重算 thread_id） */
   sessionId: string
+  /**
+   * 哪个 Agent 的审批（第 400 轮 P0-2）。
+   *
+   * ★ 由**服务端**在审批 payload 的 `data.agent` 里下发，前端不猜当前页面 ——
+   *   同一张卡可能在多 Agent 编排里出现；猜错的后果是"点了批准 404"。
+   *   缺省（老 payload 没有这个字段）退回 `product-research`，
+   *   兼容改造前已发布的卡片。
+   */
+  agentId?: string
   decision: ApprovalDecision
   /** decision=reject：拒绝原因 */
   reason?: string
@@ -54,7 +70,7 @@ export interface ApprovalSubmitResult {
 export async function submitApprovalDecision(
   opts: ApprovalSubmitOptions,
 ): Promise<ApprovalSubmitResult> {
-  const { sessionId, decision, reason, args, feedback } = opts
+  const { sessionId, agentId, decision, reason, args, feedback } = opts
   const chatStore = useChatStore()
 
   // ① 前置校验：没有会话 ID 就不发请求。
@@ -75,7 +91,10 @@ export async function submitApprovalDecision(
   }
 
   try {
-    const resp: any = await resumeApproval({
+    // ★ 第 400 轮 P0-2：走**通用**端点 `/agents/{agent}/approval/resume`。
+    //   改造前这里打的是 `/product-research/approval/resume` —— 于是客服的
+    //   `create_ticket` 审批卡点下去必然 404，而界面会显示"已提交"。
+    const resp: any = await resumeAgentApproval(agentId, {
       // ⚠️ 字段名必须与后端 `ApprovalResumeRequest` 同名（snake_case）。
       //    写成 camelCase 会被 Pydantic 丢掉 → 必填缺失 → 稳定 422。
       context_id: sessionId,

@@ -49,11 +49,15 @@ const SRC_DIR = process.env.HITL_SRC_DIR
  * 把 SRC_DIR 指向副本时会连带找不到它们（本门禁第一次跑就是这么红的）。
  */
 const ENV = {
-  api: ['HITL_API_SRC', 'api/productResearch.ts', false],
+  // 第 400 轮 P0-2：审批 API 从 api/productResearch.ts 移到 api/agentApproval.ts
+  //   （通用端点 /agents/{agent}/approval/resume）
+  api: ['HITL_API_SRC', 'api/agentApproval.ts', false],
   flow: ['HITL_FLOW_SRC', 'composables/useApprovalFlow.ts', false],
   registry: ['HITL_REGISTRY_SRC', 'components/ChatPanel/results/conversation/registry.ts', false],
   card: ['HITL_CARD_SRC', 'components/ChatPanel/results/conversation/PendingApprovalCard.vue', false],
-  schemas: ['HITL_SCHEMAS_SRC', path.join('..', 'backend', 'modules', 'product_research', 'schemas.py'), true],
+  // 第 400 轮 P0-2：审批请求模型从 product_research/schemas.py 移到
+  //   modules/hitl/router.py（通用端点的中立模型）
+  schemas: ['HITL_SCHEMAS_SRC', path.join('..', 'backend', 'modules', 'hitl', 'router.py'), true],
   pkg: ['HITL_PKG_SRC', 'package.json', true],
 }
 
@@ -135,19 +139,37 @@ function assert(cond, msg) {
 
 // ==================== A. 链路完整性 ====================
 
-check('A1 api 层导出 resumeApproval，且打到 /product-research/approval/resume', () => {
+check('A1 api 层导出 resumeAgentApproval，且打到通用端点 /agents/{agent}/approval/resume', () => {
   const s = readCode(pick('api'))
-  assert(/export\s+function\s+resumeApproval\s*\(/.test(s), '缺 export function resumeApproval')
-  assert(s.includes("request.post('/product-research/approval/resume'"),
-    '未 POST 到 /product-research/approval/resume')
+  assert(/export\s+async\s+function\s+resumeAgentApproval\s*\(/.test(s),
+    '缺 export async function resumeAgentApproval')
+  assert(s.includes('/agents/${encodeURIComponent(id)}/approval/resume'),
+    '未 POST 到 /agents/{agent}/approval/resume（且 agent 必须 encodeURIComponent：' +
+    '值里出现 / ? # 会把路径改掉）')
+  // ★ 反向：不得再打回选品专用端点（那等于把「能点批准」重新绑死在选品上）
+  assert(!s.includes("'/product-research/approval/resume'"),
+    '还在打 /product-research/approval/resume —— 客服的审批卡点下去会 404')
+  // ★ 第 400 轮：上面这条只看 api 层，于是 `api/productResearch.ts` 里那份
+  //   **零调用点**的 `resumeApproval()` 活了下来 —— 而死代码就是「随时会被
+  //   写回来的第二入口」，它还顺手内联了第三份四档 union。
+  //   ⇒ 铺到全 src（剥注释后）。
+  const back = []
+  walkSrc((p, t) => {
+    if (t.includes('/product-research/approval/resume')) back.push(path.relative(SRC_DIR, p))
+  })
+  assert(back.length === 0,
+    `仍有代码在打选品专用审批端点：${back.join(', ')} ⇒ 四档契约会出现第二份实现`)
 })
 
-check('A2 编排模块真的调用 resumeApproval（不是自己拼 URL / 不是只弹提示）', () => {
+check('A2 编排模块真的调用 resumeAgentApproval（不是自己拼 URL / 不是只弹提示）', () => {
   const s = readCode(pick('flow'))
-  assert(/import\s*\{[^}]*\bresumeApproval\b[^}]*\}\s*from\s*'@\/api\/productResearch'/.test(s),
-    'useApprovalFlow 未从 @/api/productResearch 导入 resumeApproval')
-  assert(/await\s+resumeApproval\s*\(/.test(s), 'useApprovalFlow 未调用 resumeApproval')
+  assert(/import\s*\{[^}]*\bresumeAgentApproval\b[^}]*\}\s*from\s*'@\/api\/agentApproval'/.test(s),
+    'useApprovalFlow 未从 @/api/agentApproval 导入 resumeAgentApproval')
+  assert(/await\s+resumeAgentApproval\s*\(/.test(s), 'useApprovalFlow 未调用 resumeAgentApproval')
   assert(!/request\.post\(/.test(s), '编排模块不该自己发 axios 请求（应复用 api 层出口）')
+  // ★ 第 400 轮：agent 必须来自服务端下发的 payload，不由前端硬编码
+  assert(/agentId/.test(s),
+    '编排模块没有 agentId 参数 ⇒ 审批只能打一个 Agent 的端点（第 399 轮那个洞）')
 })
 
 check('A3 registry 登记了 pending_approval → 组件', () => {
@@ -235,7 +257,7 @@ check('B2 不得存在「只弹提示、不发请求」的审批 handler（假�
 check('C1 缺会话 ID 时必须在调用 resumeApproval 之前就返回（不发请求）', () => {
   const s = readCode(pick('flow'))
   const guard = s.indexOf('if (!sessionId)')
-  const call = s.indexOf('resumeApproval({')
+  const call = s.indexOf('resumeAgentApproval(')
   assert(guard >= 0, '缺 `if (!sessionId)` 前置守卫 ⇒ 无会话 ID 也会发请求，失败原因会被归到别处')
   assert(call >= 0, '未找到 resumeApproval 调用')
   assert(guard < call,
@@ -250,7 +272,7 @@ check('C2 resumeApproval 调用必须被 try 包住，且 catch 里必须回写�
   const calls = []
   const walk = (node, stack) => {
     if (ts.isCallExpression(node)) {
-      if (node.expression.getText(sf) === 'resumeApproval') calls.push({ node, stack: stack.slice() })
+      if (node.expression.getText(sf) === 'resumeAgentApproval') calls.push({ node, stack: stack.slice() })
     }
     const next = stack.concat(node)
     node.forEachChild((c) => walk(c, next))
@@ -288,11 +310,55 @@ check('D2 四档 decision 与后端 ApprovalResumeRequest 的 Literal 逐字一�
   assert(m, '未能在后端 schemas 里找到 decision 的 Literal 声明')
   const beVals = m[1].split(',').map((x) => x.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean).sort()
 
-  const fe = readCode(pick('api'))
-  const fm = fe.match(/decision\s*:[^\n]*/)
-  assert(fm, '未能从前端 api 里找到 decision 的类型声明')
-  const feVals = (fm[0].match(/'(accept|reject|edit|response)'/g) || [])
-    .map((x) => x.replace(/'/g, '')).sort()
+  // ★ 第 400 轮：前端把四档提成了类型别名 `export type ApprovalDecision = 'accept' | …`，
+  //   于是「找 `decision:` 字段再取该行的字面量」这条口径当场失效 ——
+  //   `decision: ApprovalDecision` 这行**一个引号都没有** ⇒ feVals=[] ⇒ 假红。
+  //   口径改成走 AST 取**联合类型的字符串字面量**：别名与内联属性两种形态都能读，
+  //   且不会被「字段名与字面量不在一行」这种排版差异骗到。
+  const ts = require(path.join(ROOT, 'node_modules', 'typescript'))
+  const apiFile = pick('api')
+  const sf = ts.createSourceFile(apiFile, read(apiFile), ts.ScriptTarget.ES2019, true)
+
+  const literalsOf = (typeNode) => {
+    if (!typeNode) return []
+    const parts = ts.isUnionTypeNode(typeNode) ? typeNode.types : [typeNode]
+    return parts
+      .filter((t) => ts.isLiteralTypeNode(t) && ts.isStringLiteral(t.literal))
+      .map((t) => t.literal.text)
+  }
+
+  let feVals = []
+  let feSource = ''
+  const visit = (node) => {
+    // 形态一：类型别名（当前实现）
+    if (
+      ts.isTypeAliasDeclaration(node) &&
+      node.name.getText(sf) === 'ApprovalDecision' &&
+      feVals.length === 0
+    ) {
+      feVals = literalsOf(node.type)
+      feSource = 'type ApprovalDecision'
+    }
+    // 形态二：`decision?: 'a' | 'b'` 内联联合（兼容旧实现，防有人改回去反被判红）
+    if (
+      feVals.length === 0 &&
+      (ts.isPropertySignature(node) || ts.isPropertyDeclaration(node)) &&
+      node.name &&
+      node.name.getText(sf) === 'decision'
+    ) {
+      const vals = literalsOf(node.type)
+      if (vals.length) {
+        feVals = vals
+        feSource = 'property `decision`'
+      }
+    }
+    node.forEachChild(visit)
+  }
+  visit(sf)
+  feVals = feVals.slice().sort()
+
+  assert(feSource, '未能从前端 api 里找到四档 decision 的联合类型（type ApprovalDecision 或 `decision:` 内联联合都没有）')
+  assert(feVals.length > 0, `找到 ${feSource}，但里面没有字符串字面量 ⇒ 取值口径又失效了`)
 
   assert(beVals.join('|') === feVals.join('|'),
     `前后端 decision 档位不一致：后端=[${beVals}] 前端=[${feVals}]`)

@@ -66,13 +66,21 @@ DISPLAY_APPROVAL_RESOLVED = "approval_resolved"
 DISPLAY_APPROVAL_FAILED = "approval_failed"
 
 
-def pending_approval_payload(interrupt_obj, context_id: Optional[str]) -> dict:
+def pending_approval_payload(
+    interrupt_obj, context_id: Optional[str], agent_id: Optional[str] = None
+) -> dict:
     """把 LangGraph 的 `Interrupt` 渲染成前端可直接展示的审批请求。
 
     ★ 刻意**不回传 `thread_id`**：前端只要把同一个 `session_id` 交回来，
       服务端会按**与首轮完全相同的口径**重算 thread_id
       （`BaseAgent.resolve_thread_id`）。把 thread_id 交给客户端，等于把
       「这条待审批操作归谁」交给请求方 —— 而 thread_id 里就含 user_id。
+
+    ★ `agent_id` 进 payload 的理由（第 400 轮 P0-2）：批准要去
+      `POST /api/v1/agents/{agent}/approval/resume`，而前端**不能**靠
+      "当前在哪个页面"去猜 —— 同一张卡可能出现在会诊/多 Agent 编排里。
+      由服务端在渲染卡片时把 agent 写进 payload，是唯一不会有第二份实现的做法。
+      传 `None` 时前端可退回 `product-research`（旧形态，兼容已发布版本）。
     """
     req = getattr(interrupt_obj, "value", None) or {}
     action = (req.get("action_request") or {}) if isinstance(req, dict) else {}
@@ -84,6 +92,7 @@ def pending_approval_payload(interrupt_obj, context_id: Optional[str]) -> dict:
         ),
         "data": {
             "type": DISPLAY_PENDING_APPROVAL,
+            "agent": agent_id,
             "approval": {
                 "interrupt_id": getattr(interrupt_obj, "id", None),
                 "action": tool_name,
@@ -162,6 +171,7 @@ async def detect_pending_approval(
     *,
     get_router: Callable[[], Any],
     log_tag: str = "hitl",
+    agent_id: Optional[str] = None,
 ) -> Optional[dict]:
     """判断「这张图此刻是不是停在一次人工审批上」；是则返回审批卡 payload。
 
@@ -194,7 +204,7 @@ async def detect_pending_approval(
 
     for task in (getattr(snapshot, "tasks", None) or []):
         for it in (getattr(task, "interrupts", None) or []):
-            return pending_approval_payload(it, context_id)
+            return pending_approval_payload(it, context_id, agent_id)
     return None
 
 

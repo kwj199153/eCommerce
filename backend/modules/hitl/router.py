@@ -31,7 +31,7 @@
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -48,7 +48,13 @@ class ApprovalResumeRequest(BaseModel):
     """审批决策请求体（与旧端点同字段，前端可复用同一个构造函数）。"""
 
     context_id: str = Field(..., min_length=1, description="会话 ID（首轮返回的那个）")
-    decision: str = Field(..., description="accept / reject / edit / response")
+    # ★ 用 Literal 而不是 str：非法档位在**请求校验层**就 422，
+    #   不会一路走到 `build_resume_payload` 才抛 ValueError。
+    #   前端 `api/agentApproval.ts` 的 `ApprovalDecision` 与这里逐字对齐
+    #   （`check-hitl-approval.cjs` 的 D2 会比对两边取值）。
+    decision: Literal["accept", "reject", "edit", "response"] = Field(
+        ..., description="accept / reject / edit / response"
+    )
     reason: Optional[str] = Field(None, description="拒绝时的原因")
     args: Optional[Dict[str, Any]] = Field(None, description="edit 时的改写后入参")
     feedback: Optional[str] = Field(None, description="response 时的补充说明")

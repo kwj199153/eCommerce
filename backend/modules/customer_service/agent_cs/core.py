@@ -190,6 +190,7 @@ class MixinCore:
             session_id, user_id,
             get_router=self._get_router,
             log_tag="customer_service",
+            agent_id="customer-service",
         )
         if pending is not None:
             # 结构化事件：`sse_event_stream` 按 event 字段分发，不计入正文
@@ -250,6 +251,7 @@ class MixinCore:
             session_id, user_id,
             get_router=self._get_router,
             log_tag="customer_service",
+            agent_id="customer-service",
         )
         if pending is not None:
             return AgentResponse(**pending)

@@ -28,6 +28,39 @@ import { renderOrderTrackingText } from '@/utils/orderTracking'
 /** 失败文案的业务名（`⚠️ <label>失败…`）。 */
 const LABEL = '客服请求'
 
+/**
+ * 客服会话 ID（第 400 轮 P0-1）。
+ *
+ * ★ 为什么前端必须自己给一个：
+ *   后端 `run_session(..., session_id=...)` 是「工具环路有没有记忆、能不能
+ *   `interrupt()`」的唯一分水岭 —— 没有它，图是 memoryless 的，
+ *   `create_ticket` 会被 fail-closed 直接拒（文案是"需要审批但缺少会话"，
+ *   看起来像 bug）。而改造前前端**从不传** `conversation_id`，
+ *   非流式响应的 `conversation_id` 也没人存 ⇒ 每一轮都是新会话。
+ *
+ * ★ 为什么用 sessionStorage 而不是 localStorage：
+ *   会话 ID 的语义是「这一次对话」。存 localStorage 会让三天后打开页面
+ *   还接着聊上次的话题（模型会引用用户早已忘掉的上下文，比"没记忆"更糟）。
+ *   `thread_id` 里含 `user_id`（后端 `resolve_thread_id`），所以换账号也不会串。
+ */
+const CS_SESSION_KEY = 'cs-conversation-id'
+
+function csConversationId(): string {
+  try {
+    const existing = sessionStorage.getItem(CS_SESSION_KEY)
+    if (existing) return existing
+    const id =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `cs-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
+    sessionStorage.setItem(CS_SESSION_KEY, id)
+    return id
+  } catch {
+    // 隐私模式 / 存储被禁：退回一次性 ID（本轮功能不受影响，只是没有多轮记忆）
+    return `cs-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
+  }
+}
+
 /** 本文件的 store 类型（`useChatStore()` 的返回）。 */
 type ChatStore = ReturnType<typeof useChatStore>
 
@@ -62,6 +95,9 @@ async function degradeCsText(
     //     压成「字段不出现」（不参与），三态变两态。
     const env: any = await chatWithCustomerService({
       message: userMessage,
+      // ★ 降级路径**同样**要带会话 ID —— 否则"流式失败降级"会把这一次对话
+      //   从有记忆切成无记忆，用户下一轮追问就断片（而界面一切正常）。
+      conversation_id: csConversationId(),
       skill: skill ?? undefined,
       context_target: contextTarget,
     })
@@ -168,6 +204,9 @@ export async function replyCustomerService(
         try {
           await streamSSE('/customer-service/chat/stream', {
             message: userMessage,
+            // ★ 第 400 轮 P0-1：会话 ID 决定工具环路有没有记忆 / 能否挂起审批。
+            //   不传 ⇒ memoryless ⇒ `create_ticket` 被 fail-closed 直接拒。
+            conversation_id: csConversationId(),
             skill: skill ?? undefined,
             // ★ 第 298 轮：结构化「作用对象」。差评应对技能第 0 步是
             //   `get_customer_review_context(review_id)`，此前这个 id 只能从
@@ -177,6 +216,14 @@ export async function replyCustomerService(
           }, {
             onProgress: (text) => { loadingStatus.value = text },
             onMeta: handleAgentMeta,
+            // ★ 第 400 轮 P0-1：这轮若停在人工审批上，必须把审批卡挂出来。
+            //   不加这一条的后果不是"少一张卡"—— 后端在挂起后会发一段
+            //   "这一步需要你确认"的正文，界面看起来**一切正常**，
+            //   而那个 `create_ticket` 正卡在那里等人点批准（永远等不到）。
+            //   卡片数据形状与 `onMeta` 一致，直接复用同一个渲染器。
+            onPendingApproval: (data: any) => {
+              handleAgentMeta({ display_type: 'pending_approval', data })
+            },
             onStep: handleThinkingStep,
             onDelta: (text) => {
               streamed = true

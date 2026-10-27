@@ -114,6 +114,19 @@ export interface SSEHandlers {
   onStep?: (step: ThinkingStep) => void
   /** 元信息（结构化结果 + 展示类型，可选） */
   onMeta?: (meta: { display_type?: string; data?: any }) => void
+  /**
+   * 这轮对话**停在一次人工审批**上（后端 `event: pending_approval`）。
+   *
+   * ★ 为什么单独一个回调、不复用 `onMeta`：
+   *   `meta` 是"这轮的最终结果卡"（在 `done` 前发一次）；
+   *   `pending_approval` 是"这一轮**没有完成**，在等你拍板"——
+   *   语义相反：前者收尾，后者挂起。合成一条会让"挂起"看起来像"完成"，
+   *   而用户点不到卡、也意识不到有个写操作正等着他。
+   * ★ 数据形状与 `onMeta` 一致（`display_type` 固定 `pending_approval`，
+   *   `data` 里含 `agent` / `approval` / `session_id`），所以消费方
+   *   可以直接喂给同一个结果卡渲染器。
+   */
+  onPendingApproval?: (data: any) => void
   /** 结束（携带完整文本） */
   onDone?: (fullText: string) => void
   /** 出错 */
@@ -237,6 +250,11 @@ export async function streamSSE(
         // 思考过程：交给上层追加到**当前这条**消息上。
         // ★ 与 delta 完全无关 —— 它不计入 fullText（后端也没把它拼进正文）。
         if (data && typeof data === 'object') handlers.onStep?.(data as ThinkingStep)
+      } else if (eventType === 'pending_approval') {
+        // HITL：图停住了，等一个 Command(resume=...)。
+        // ★ 不累进 fullText —— 正文随后由后端单独发一段（说明"需要你确认"），
+        //   若在这里也拼一遍，同一句话会出现两次。
+        handlers.onPendingApproval?.(data)
       } else if (eventType === 'meta') {
         handlers.onMeta?.(data)
       } else if (eventType === 'done') {

@@ -89,7 +89,11 @@ async def detect_pending_approval(
 ) -> Optional[AgentResponse]:
     """判断「这张图此刻是不是停在一次人工审批上」；是则渲染成 `pending_approval`。"""
     payload = await _hitl.detect_pending_approval(
-        context_id, user_id, get_router=get_router, log_tag="product_research"
+        context_id, user_id,
+        get_router=get_router,
+        log_tag="product_research",
+        # 批准要去 `/api/v1/agents/{agent}/approval/resume`，前端不猜当前页面
+        agent_id="product-research",
     )
     return AgentResponse(**payload) if payload is not None else None
 
