@@ -51,6 +51,7 @@ import logging
 import re
 from typing import NamedTuple, Optional
 
+import ai_infra.name_guard as name_guard
 from langchain_core.messages import AIMessage
 from sqlalchemy import select
 
@@ -244,16 +245,15 @@ def strip_foreign_shop_names(text: str, foreign_names) -> str:
     ★ 为什么可以粗暴地字符串处理：抹的对象是**权威名单里的店名**，不是自然语言
       理解。不需要分词、不需要猜"哪句在说店铺"—— 名单里有、文本里出现，就抹。
     """
-    valid = [n for n in (foreign_names or ()) if len(n) >= _MIN_STRIPPABLE_NAME_LEN]
-    ordered = sorted(valid, key=len, reverse=True)
-    t = SELF_REPORT_LINE_RE.sub("", SELF_REPORT_RE.sub("", text))
-    if ordered:
-        # ★ 交替式里**长名在前**：正则交替是"最左优先"，短名在前会先吃掉前缀。
-        alt = "|".join(re.escape(n) for n in ordered)
-        t = re.sub(r"「[^」]*(?:" + alt + r")[^」]*」", "", t)
-    for name in ordered:
-        t = t.replace(name, "")
-    return t
+    # ★ 第 400 轮 P2：去污染的**机制**已上提到 `ai_infra/name_guard.py`（通用于任何
+    #   "当前只能有一个"的实体）。本函数只剩**店铺专属的那两条整段删除规则**。
+    #   两条正则必须留在本文件：它们写死了中文"当前店铺"的两种写法，
+    #   上提会变成"一个通用模块里埋着一句店铺专用的正则"。
+    return name_guard.strip_names(
+        text,
+        foreign_names,
+        whole_segment_patterns=(SELF_REPORT_RE, SELF_REPORT_LINE_RE),
+    )
 
 
 def sanitize_history(messages: list, foreign_names) -> list:
@@ -276,16 +276,12 @@ def sanitize_history(messages: list, foreign_names) -> list:
     ★ 名单为空 ⇒ **原样返回**（同一个对象）：没绑店铺 / 账号只有一家店时零开销，
       也保证"没店铺时提示词与历史都不许有任何变化"这条既有判据继续成立。
     """
-    if not foreign_names:
-        return messages
-    out: list = []
-    for m in messages:
-        if isinstance(m, AIMessage) and isinstance(m.content, str) and m.content:
-            cleaned = strip_foreign_shop_names(m.content, foreign_names)
-            if cleaned != m.content:
-                m = m.model_copy(update={"content": cleaned})
-        out.append(m)
-    return out
+    # ★ 第 400 轮 P2：「只动 AIMessage / 返回新列表 / 名单为空时返回同一对象」
+    #   这三条已收进 `ai_infra/name_guard.py::scrub_ai_messages`（它们与"店铺"无关）。
+    #   店铺专属的只有**抹什么字**（即下面那层调用）。
+    return name_guard.scrub_ai_messages(
+        messages, foreign_names, strip=strip_foreign_shop_names
+    )
 
 
 def list_other_shop_names(shops: list, current_shop_id: Optional[str]) -> tuple:
@@ -296,18 +292,10 @@ def list_other_shop_names(shops: list, current_shop_id: Optional[str]) -> tuple:
     · **去重但保序**（同一家店名重复出现只会多花时间，不影响结果；
       保序是为了让日志与用例可比）。
     """
-    sid = (current_shop_id or "").strip()
-    out: list = []
-    for s in shops or ():
-        s = s or {}
-        if (s.get("id") or "").strip() == sid:
-            continue
-        name = (s.get("name") or "").strip()
-        if len(name) < _MIN_STRIPPABLE_NAME_LEN:
-            continue
-        if name not in out:
-            out.append(name)
-    return tuple(out)
+    # ★ 第 400 轮 P2：挑选规则已上提到 `name_guard.pick_foreign`
+    #   （按 **identity** 排除当前实体，不是按名字：同名不同体时按名字排除会把
+    #   另一家的名字留下来 —— 而那正是要抹的那一个）。
+    return name_guard.pick_foreign(shops or (), current_shop_id)
 
 
 async def load_other_shop_names(shop_id: Optional[str]) -> tuple:

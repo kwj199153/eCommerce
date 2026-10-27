@@ -96,7 +96,20 @@ FROZEN_OVER_THRESHOLD: dict[str, int] = {
     "frontend/src/components/TaskConfigPanel/configs/ReviewDeskConfig.vue": 2002,
     "frontend/src/views/Subscription.vue": 1859,
     "backend/modules/aigc_media/agent_aigc.py": 1849,
-    "backend/ai_infra/base_agent.py": 1847,
+    # ★ 1847 → 1651（第 400 轮 P2）：`base_agent.py` 里 5 个**零 `self`** 的
+    #   `@staticmethod`（配对自愈 + 「本轮」口径 + 携带 token）连同 `_content_text`
+    #   一并搬到 `ai_infra/messages.py`，净减 196 行 ⇒ 上限跟着**下调**。
+    #   ⚠️ 为什么不直接把这项从表里删掉：删了就等于「它可以长回 800→任意」，
+    #   而 1651 仍远超阈值，删掉是**放松**不是收紧。
+    #   ★ 为什么不继续拆到 ~1000：`_mock_result` / `llm_stats` / `graph_for_session`
+    #   / `last_turn_was_clarification` 全都吃 `self`（`_llm_stats` / `graph` /
+    #   `checkpointer` / `ENABLE_*`），只有两条机械出路 —— **mixin**（本仓已明确
+    #   否决：「藏进基类只会让耦合从可数的参数变成看不见的继承链」，见本文件
+    #   顶部 §已知边界）或**把 agent 当第一个参数传**（那会把 `aget_state` 从
+    #   `last_turn_was_clarification` 的壳里挪走 ⇒ 「薄壳只读」那条门禁再也没法
+    #   就地证明，只能跨文件追）。两条都不划算，故止于这一步。
+    #   本值按本文件口径实测：`len(p.read_bytes().split(b"\n"))` = 1651。
+    "backend/ai_infra/base_agent.py": 1651,
     "backend/modules/listing_generator/agent_listing.py": 1803,
     "backend/modules/product_research/agent_product_research.py": 1641,
     "backend/modules/competitor_intel/agent_competitor.py": 1577,

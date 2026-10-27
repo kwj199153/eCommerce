@@ -133,9 +133,19 @@
 
 | 项 | 现状 | 目标 |
 |---|---|---|
-| `base_agent.py` 拆分 | 1846 行 | LLM 原语+RAG+统计（514-913，~400 行）→ `ai_infra/llm/`；消息清洗+轮次口径（1014-1248，~235 行）→ `ai_infra/messages.py`；会话入口（1583-1793，~211 行）→ `ai_infra/session.py`。可回落到 ~1000 行 |
-| `recursion_guard` | 无（超限直接抛给调用方） | 搬对方 80 行：`GraphRecursionError` 捕获 + 兜底话术 |
-| `name_guard` | 只有 secretary 的店铺名版（`shop_context.py:259`） | 上提为通用"编造名字检测" |
+| `base_agent.py` 拆分 | 1846 行 | **第 400 轮执行结果：只做了第二块**（详见下方「P2 实际落地」）—— 消息清洗 + 轮次口径 → `ai_infra/messages.py`，**1846 → 1651**，棘轮上限同步下调。另外两块**判定为不划算，主动不做** |
+| `recursion_guard` | 无（超限直接抛给调用方） | ✅ 已做：`ai_infra/recursion_guard.py`（160 行）。★ 关键修正：对方是「捕获 + 兜底话术」，我们**还必须先设上限** —— `recursion_limit` 的单位是**超步**（模型节点 + 工具节点各 1），`max_iterations` 是**模型轮次**，不设 `2*n+8` 就永远先撞 `GraphRecursionError`，「到点正常收尾」走不到 |
+| `name_guard` | 只有 secretary 的店铺名版（`shop_context.py:259`） | ✅ 已做：`ai_infra/name_guard.py`（218 行）+ `shop_context` 三函数改成薄适配壳 |
+
+### P2 实际落地（第 400 轮）
+
+| 块 | 行数 | 结论 |
+|---|---|---|
+| ② 消息清洗 + 轮次口径 | ~235 行 → `ai_infra/messages.py` | ✅ 做了。理由：这 5 个方法本来就是 `@staticmethod`（**零 `self`**），搬出去是纯位移，`BaseAgent` 上留 `staticmethod(...)` 薄壳即可，两类调用形态（`self.x()` / `BaseAgent.x()`）与 monkeypatch 通道全部不变 |
+| ① LLM 原语 + RAG + 统计 | ~400 行 | ❌ 不做。全部吃 `self`（`_llm_stats` / `ENABLE_LLM` / `ENABLE_RAG` / `rag_engine` / `llm_client`），只能走 **mixin**（本仓已在 `tests/test_source_size_ratchet.py` 顶部明确否决：「藏进基类只会让耦合从可数的参数变成看不见的继承链」）或把 agent 当第一个参数传（收益只剩行数，代价是所有 6 个业务 Agent 的调用形状变化） |
+| ③ 会话入口 | ~211 行 | ❌ 不做。`last_turn_was_clarification` 的「只读」由 `test_read_shell_is_read_only` 在**壳的就地源码**上数 `graph.aget_state == 1`；一旦把 `aget_state` 搬到 `session.py`，这条门禁只能跨文件追 —— 用一条更强约束换 200 行行数，亏 |
+
+★ 结论：**「可回落到 ~1000 行」这个预估偏乐观** —— 它假设三块都像②那样零 `self`。实际只有②成立。
 
 ---
 
@@ -161,7 +171,7 @@
 | | P0-3 澄清真挂起（选 A） | 后端 1 + 前端 2 | 点选项 = 同一轮继续，不再开新话题 |
 | **P1** | P1-1 能力层 A 档（只读） | 新增 ~900 行 + 装配 1 行 + 中间件 1 处 | 问"我这个店最近哪些 SKU 断货"→ Agent 能自己找到端点读数据，不用先写工具 |
 | | P1-2 TOOL_CATALOG 派生 | 1 文件 + 2 处测试 | 加工具只改工具定义 |
-| **P2** | base_agent 拆三块 | 1 文件 → 4 文件 | 无功能变化，纯可维护性 |
+| **P2** | base_agent 拆三块 | 实际只拆了 1 块（②消息口径）+ 2 个新守卫 | ✅ 已交付；①③ 判定不划算未做（理由见 §4「P2 实际落地」） |
 
 ---
 

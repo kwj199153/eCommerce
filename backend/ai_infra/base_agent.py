@@ -64,7 +64,6 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import Runnable
 from langchain_core.messages import (
     AIMessage,
-    HumanMessage,
     SystemMessage,
     ToolMessage,
 )
@@ -94,10 +93,19 @@ from ai_infra.plan import (
     planner_tools,
     render_plan_block,
 )
+# ★ 第 400 轮 P2：消息结构 + 「本轮」口径搬到 `ai_infra/messages.py`（唯一真源）。
+#   下面几个 `staticmethod(...)` 赋值是**薄壳**，不是第二份实现 ——
+#   `tests/` 里多处直接写 `BaseAgent._iterations_in_current_turn(...)`，
+#   而 `self.` / 类属性查找是 monkeypatch 的通道（同 P0-6 五刀）。
+from ai_infra import messages as _msg
 from ai_infra.prompt_sections import (
     PromptContext,
     collect_prompt_sections,
 )
+# ★ 第 400 轮 P2：图递归上限的**唯一口径** + 超限兜底话术。
+#   此前全仓 `recursion_limit` 零命中 ⇒ 用的是 LangGraph 默认 25，
+#   与 `AgentBudget.max_iterations`（模型轮次）是两套不相干的数字。
+from ai_infra.recursion_guard import apply_limit, is_recursion_error, raise_exceeded
 from core.config import config
 from core.logger import get_logger
 from core.observability.context import current_user_id
@@ -110,31 +118,8 @@ if TYPE_CHECKING:  # ★ L3-4（第 351 轮）：仅为**返回注解**服务，
 logger = get_logger(__name__)
 
 
-def _content_text(content: Any) -> str:
-    """把 `BaseMessage.content` 取成纯文本。
-
-    ★ 第 346 轮新增。它的静态类型是 `str | list[str | dict]`（多模态内容块），
-      而原先 `_sanitize_tool_call_pairing` 里写的是 `(m.content or "").strip()`
-      —— content 是**列表**时会抛
-      `AttributeError: 'list' object has no attribute 'strip'`。
-      mypy 的 union-attr 指的正是这个潜在崩溃。
-
-    对 `str` 的输入与原来**逐字一致**（原样返回）；对列表取其中的文本块拼接。
-    """
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict):
-                text = block.get("text")
-                if isinstance(text, str):
-                    parts.append(text)
-        return "".join(parts)
-    return "" if content is None else str(content)
-
+# ★ `_content_text` 已迁到 `ai_infra/messages.py::content_text`
+#   （第 400 轮 P2；原样搬迁，对 `str` 逐字一致）。
 
 # ====== LLM 调用结果 ======
 @dataclass
@@ -1011,224 +996,22 @@ class BaseAgent:
 
     # ====== 节点函数 ======
 
-    @staticmethod
-    def _sanitize_tool_call_pairing(messages: list) -> tuple[list, int]:
-        """清洗消息序列，修复 tool_calls / ToolMessage 配对断裂（读时自愈）。
-
-        背景：checkpointer 恢复的历史里可能存在「AIMessage 带 tool_calls，但没有
-        对应 ToolMessage」的孤儿消息（成因：工具执行中途异常、达成 max_iterations
-        被强制结束、HITL 中断、或修复前的旧数据）。OpenAI 兼容 API（DashScope）
-        对历史做严格校验，会以 400 拒绝整条会话：
-
-            400 An assistant message with "tool_calls" must be followed by tool
-            messages responding to each "tool_call_id".
-
-        这里只清洗「传给 LLM 的副本」，**不修改 state / checkpoint**，
-        保证历史仍可被 route() 的 prev_count、action 提取等逻辑正常读取。
-        旧数据因此无需手工清理，任何会话都能自愈。
-
-        Returns:
-            (清洗后的消息列表, 被剔除/修剪的消息条数)
-        """
-        # 1) 声明方：所有 AIMessage 声明的 tool_call_id
-        declared: set = set()
-        for m in messages:
-            if isinstance(m, AIMessage):
-                for tc in (getattr(m, "tool_calls", None) or []):
-                    if tc.get("id"):
-                        declared.add(tc["id"])
-
-        # 2) 响应方：所有 ToolMessage 回应的 tool_call_id
-        responded = {
-            m.tool_call_id
-            for m in messages
-            if isinstance(m, ToolMessage) and getattr(m, "tool_call_id", None)
-        }
-
-        # 3) 有效集合 = 声明 ∩ 响应（双向都满足才算配对成功）
-        valid = declared & responded
-
-        changed = 0
-        out: list = []
-        for m in messages:
-            if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
-                kept = [tc for tc in m.tool_calls if tc.get("id") in valid]
-                if len(kept) != len(m.tool_calls):
-                    changed += 1
-                    m = m.model_copy(
-                        update={"tool_calls": kept, "invalid_tool_calls": []}
-                    )
-                    # 剥空且无文本内容 → 整条丢弃，避免产生空 AIMessage
-                    # ★ 第 346 轮：`content` 是 `str | list[...]`，原写法
-                    #   `(m.content or "").strip()` 在列表形态下抛 AttributeError。
-                    #   统一走 `_content_text`（对 str 与原行为逐字一致）。
-                    if not kept and not _content_text(m.content):
-                        continue
-            elif isinstance(m, ToolMessage):
-                # 孤立的 ToolMessage（其 AIMessage 已不在或未声明该 id）→ 丢弃
-                if getattr(m, "tool_call_id", None) not in valid:
-                    changed += 1
-                    continue
-            out.append(m)
-
-        return out, changed
-
-    @staticmethod
-    def _iterations_in_current_turn(messages: list) -> int:
-        """统计「本轮」的 AI 迭代次数（最后一条 HumanMessage 之后的 AIMessage 数）。
-
-        为什么不能直接数全部 AIMessage：
-        checkpointer 恢复的 messages 是**跨轮完整历史**。若直接用「AIMessage 总数」
-        判断迭代上限，多轮会话累积几条 AIMessage 后就会立刻判定「已达上限」，
-        症状是——
-          • `_llm_call_node`：每轮都被判超限，强制清空 tool_calls；
-          • `_should_continue`：直接 return "respond"，永不进入 tool_node。
-        结果 LLM 再也无法调用任何工具，前端一直收到「处理完成」、actions 为空。
-
-        因此迭代计数必须锚定在**本轮输入**（最后一条 HumanMessage）之后。
-        LLM 只产出 AIMessage / ToolMessage，不会再产生 HumanMessage，
-        故最后一条 HumanMessage 必然是本轮输入。
-        """
-        last_human_idx = -1
-        for i, m in enumerate(messages):
-            if isinstance(m, HumanMessage) or m.__class__.__name__ == "HumanMessage":
-                last_human_idx = i
-        turn_messages = messages[last_human_idx + 1:]
-        return sum(
-            1 for m in turn_messages
-            if isinstance(m, AIMessage) or m.__class__.__name__ == "AIMessage"
-        )
-
-    @staticmethod
-    def tool_activity_in_turn(messages: list) -> dict:
-        """把「本轮」的工具活动收成**结构化摘要**（第 159 轮 批 D1：委派契约）。
-
-        返回 `{"tool_calls": [名…], "tool_result": …, "reply": …}`；
-        **本轮没有任何工具活动时返回 `{}`** —— 不是「全空骨架」：
-        恒带三个空键会让消费方分不清「这轮没调工具」与「摘要压根没生成」。
-
-        ★ 为什么必须有它（批 D1 的另一半）：
-          父层（`listing` / `product_research` 的路由子层调用方）此前必须
-          **自己扫整段 `messages`** 才能还原「调了哪个工具、结果是什么、
-          最后由谁作答」—— 也就是「拿原始 state 自行组装业务响应」。
-          那种写法让父层对**历史形态**（消息顺序 / 类型 / 条数）产生硬依赖：
-          换个图、加个节点、改一次上下文裁剪，父层的解析就**静默错位**
-          （不报错，只是工具名变空 ⇒ `display_type` 退化成默认值）。
-          摘要把这件事前移到**源头**（`_respond_node`），父层只依赖契约。
-
-        ★ 为什么切轮口径与 `_iterations_in_current_turn` **完全一致**：
-          都锚在「最后一条 `HumanMessage` 之后」。两份口径若不一致，
-          摘要与迭代计数会在多轮会话里指向不同的两段 —— 而**不会报错**。
-
-        ★ 为什么 `tool_calls` 保序去重：父层要的是「这轮用了哪些工具」（用于定
-          `display_type`），同一工具调 3 次不该产生 3 个候选。
-
-        ★ 为什么 `tool_result` 取**最后一个非空**：工具链的最后一步才是决定性的
-          （前置工具常常只做查询）。
-
-        ★ 为什么**不截断** `tool_result`：父层把它交给 `_parse_tool_output` 解析 JSON，
-          截断会破坏解析。体积上不会累积 —— `structured_response` 是每轮**覆盖写**
-          的终态快照，只保留最新一份。
-        """
-        last_human_idx = -1
-        for i, m in enumerate(messages):
-            if isinstance(m, HumanMessage) or m.__class__.__name__ == "HumanMessage":
-                last_human_idx = i
-        turn = messages[last_human_idx + 1:]
-
-        names: list = []
-        tool_result = None
-        reply = ""
-        for m in turn:
-            cn = m.__class__.__name__
-            if isinstance(m, AIMessage) or cn == "AIMessage":
-                for tc in (getattr(m, "tool_calls", None) or []):
-                    name = tc.get("name") if isinstance(tc, dict) else None
-                    if name and name not in names:
-                        names.append(name)
-                if getattr(m, "content", None):
-                    reply = m.content
-            elif isinstance(m, ToolMessage) or cn == "ToolMessage":
-                if getattr(m, "content", None):
-                    tool_result = m.content
-
-        # ★ 判据是「**有没有工具活动**」，不是「有没有内容」：
-        #   只有 AI 回复、没调工具的轮次同样返回 `{}` ⇒ 父层走回退路径扫历史
-        #   （那条路径能拿到 reply），行为与改造前**完全一致**。
-        if not names and tool_result is None:
-            return {}
-        out: dict = {}
-        if names:
-            out["tool_calls"] = names
-        if tool_result is not None:
-            out["tool_result"] = tool_result
-        if reply:
-            out["reply"] = reply
-        return out
-
-    @staticmethod
-    def previous_turn_was_clarification(messages: list) -> bool:
-        """上一轮是不是「追问 / 澄清」—— 本判定**只有这一份实现**（第 250 轮）。
-
-        ★ 为什么需要它（一次真实漏判）：
-          工具环路的 LLM 信息不足时不会硬凑结果，它会**反问**（如「你想基于
-          哪一期？」）。老板的答案（「基于月报」）**必然包含追问里的关键词** ——
-          因为那正是被问到的词。于是各 Agent 的「关键词命中即短路」会把答案
-          当成一个**新任务**直接执行，追问就此丢失。
-          这是**结构性**的：问句与答案是同一批词，任何纯关键词判定都躲不开。
-
-        ★ 判据：上一轮**有最终回复、但一个工具都没调** ⇒ 它不是在产出结果，
-          而是在问话。反过来，只要调过工具，那一轮就是在干活（哪怕最后还补了
-          一句说明文字）⇒ 不是追问。
-
-        ★ 切轮口径与 `_iterations_in_current_turn` / `tool_activity_in_turn`
-          **完全一致**：都锚在「最后一条 `HumanMessage` 之后」。「上一轮」= 最后
-          一条 `HumanMessage` **之前**、上一条 `HumanMessage` **之后**的那一段。
-          三份口径若不一致，在多轮会话里会指向不同的两段 —— 而**不会报错**。
-
-        ★ 为什么**不**复用 `tool_activity_in_turn`：它对本轮**无工具活动**恒返回
-          `{}`，把「纯文本回复」与「什么都没有」压成同一个值；而本判定要区分的
-          恰恰是这两者 ⇒ 必须自己扫。这是刻意的不复用，不是漏掉。
-        """
-        msgs = messages or []
-        human_idx = [
-            i for i, m in enumerate(msgs)
-            if isinstance(m, HumanMessage) or m.__class__.__name__ == "HumanMessage"
-        ]
-        if not human_idx:
-            return False
-        end = human_idx[-1]
-        start = human_idx[-2] + 1 if len(human_idx) >= 2 else 0
-        has_reply = False
-        has_tool = False
-        for m in msgs[start:end]:
-            cn = m.__class__.__name__
-            if isinstance(m, AIMessage) or cn == "AIMessage":
-                if getattr(m, "content", None):
-                    has_reply = True
-                if getattr(m, "tool_calls", None):
-                    has_tool = True
-            elif isinstance(m, ToolMessage) or cn == "ToolMessage":
-                has_tool = True
-        return has_reply and not has_tool
-
-    @staticmethod
-    def _carried_tokens(state: Mapping[str, Any], *, iterations_done: int) -> int:
-        """本轮**此前**已消耗的 token（0 表示本轮第一次迭代）。
-
-        ★ 为什么从 state 读、不记在实例上：Agent 实例是**进程内单例**
-          （`get_secretary_agent()` 就是），记在 `self` 上等于把一个会话的
-          耗用记到另一个会话头上 —— 并发下预算会随机误伤。state 随图执行走，
-          一次调用一份。
-
-        ★ 为什么 `iterations_done == 0` 一定要归零：`state["budget"]` 会随
-          checkpointer **跨轮持久化**。不归零的话预算会被历史越攒越多，
-          一个健康的会话聊到第 N 轮突然被判「token 超限」。口径与
-          `_iterations_in_current_turn` 一致：预算按**轮**算，不按会话算。
-        """
-        if iterations_done <= 0:
-            return 0
-        return int((state.get("budget") or {}).get("spent_tokens") or 0)
+    # ====== 「本轮」口径 + 配对自愈：**薄壳**（真源 `ai_infra/messages.py`）======
+    # ★ 为什么是 `staticmethod(...)` 赋值而不是 `def` 转发：
+    #   ① 这里没有第二份函数体 ⇒ `tests/test_review_clarification_answer.py` 的
+    #      「全仓只有一份实现」仍然数到 1（它按 `ast.FunctionDef` 数，赋值不算）；
+    #   ② `self.x(...)` 与 `BaseAgent.x(...)` 两种形态都原样可用
+    #      （`staticmethod` 描述符在实例与类上都返回裸函数）；
+    #   ③ `monkeypatch.setattr(BaseAgent, "x", ...)` 照旧生效（属性可写）。
+    # ★ 为什么不直接删掉、让调用方 import `ai_infra.messages`：
+    #   `tests/` 里 4 个文件、10 处写死了 `BaseAgent._iterations_in_current_turn`
+    #   这类访问，而 `self.` 查找是 monkeypatch 通道 —— 薄壳是**刻意保留的接口**，
+    #   不是没删干净（同 P0-6 五刀）。
+    _sanitize_tool_call_pairing = staticmethod(_msg.sanitize_tool_call_pairing)
+    _iterations_in_current_turn = staticmethod(_msg.iterations_in_current_turn)
+    tool_activity_in_turn = staticmethod(_msg.tool_activity_in_turn)
+    previous_turn_was_clarification = staticmethod(_msg.previous_turn_was_clarification)
+    _carried_tokens = staticmethod(_msg.carried_tokens)
 
     def _sanitize_history_for_model(self, messages: list) -> list:
         """历史**去污染**钩子 —— 只作用于「发给模型的副本」，默认**恒等**。
@@ -1742,6 +1525,12 @@ class BaseAgent:
           thread_id`、以及「缺任一个就不留记忆」。
         """
         graph, cfg = self.graph_for_session(session_id, user_id)
+        # ★ 第 400 轮 P2：递归上限从**预算**推出来（`2 × max_iterations + 松弛`），
+        #   不再吃 LangGraph 的隐形默认 25。理由见 `ai_infra/recursion_guard.py`：
+        #   默认值与 `max_iterations` 是两套单位不同的数字，谁大谁先触发全看运气，
+        #   而"图先撞上限"的表现是用户拿到英文异常、`_should_continue` 那条
+        #   "到点正常收尾"的路径永远走不到。
+        cfg = apply_limit(cfg, self.max_iterations)
         # ★ 第 145 轮 批 C5：**墙钟预算**在入口层执行。
         #   · 为什么不在节点里：节点看不到「本轮」的起点 —— state 随
         #     checkpointer 跨轮持久化，塞进去的 t0 下一轮就是过期的，
@@ -1762,6 +1551,14 @@ class BaseAgent:
             )
             logger.error(f"🛑 [{self.agent_name}] {verdict.message} —— 本次调用已中止")
             raise BudgetExceeded(verdict) from e
+        except Exception as e:  # noqa: BLE001 —— 只转译"图跑超步"，其余原样抛
+            # ★ 第 400 轮 P2：超限翻译成带**人话兜底**的领域异常。
+            #   不这样做的话，`GraphRecursionError` 会以原始形态穿过各层
+            #   `except Exception`，日志里只有一句 `recursion limit reached`，
+            #   既没有 Agent 名也没有下一步建议。
+            if is_recursion_error(e):
+                raise_exceeded(self.agent_name, cfg.get("recursion_limit"), e)
+            raise
 
     async def stream_session(
         self,
@@ -1773,6 +1570,7 @@ class BaseAgent:
     ) -> AsyncIterable:
         """★ 统一入口（流式）：同 `run_session`，产出 `astream_events` 事件流。"""
         graph, cfg = self.graph_for_session(session_id, user_id)
+        cfg = apply_limit(cfg, self.max_iterations)   # 同 `run_session`（理由见那里）
         # 墙钟预算同 `run_session`（理由见那里）。★ 流式场景的代价更明确：
         # 超时会把**已经开始下发**的事件流切断，调用方拿到半个流 ——
         # 这正是「显式报错」要的效果：宁可让调用方看到 BudgetExceeded，
@@ -1791,6 +1589,12 @@ class BaseAgent:
             )
             logger.error(f"🛑 [{self.agent_name}] {verdict.message} —— 本次流式调用已中止")
             raise BudgetExceeded(verdict) from e
+        except Exception as e:  # noqa: BLE001 —— 只转译"图跑超步"
+            # ★ 流式这里更要紧：事件流**已经开始下发**了，超限时若不翻译，
+            #   consumes 方拿到的是半截流 + 一个英文异常，看起来像"网络断了"。
+            if is_recursion_error(e):
+                raise_exceeded(self.agent_name, cfg.get("recursion_limit"), e)
+            raise
 
     # ====== 关于「统一调用入口」 ======
     #

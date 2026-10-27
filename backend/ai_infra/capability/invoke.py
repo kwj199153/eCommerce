@@ -138,7 +138,11 @@ async def call_read(name: str, params: Optional[Dict[str, Any]] = None) -> Dict[
     if not headers.get("x-shop-id"):
         return _fail(
             "no_shop",
-            hint="当前没有选中的店铺（缺 X-Shop-ID），读端点拿不到店铺上下文",
+            # ★ 措辞刻意**不含业务词**（「店铺」等），见
+            #   `tests/test_infra_layering.py::test_ai_infra_string_literals_have_no_business_content`：
+            #   ai_infra 层只许出现机制语（头名 + 后果），业务语归 modules/*。
+            #   对模型仍然可操作：`X-Shop-ID` 就是它拿不到东西的直接原因。
+            hint="当前请求缺 X-Shop-ID 头 ⇒ 读端点无法确定数据范围",
         )
 
     path, query, err = _resolve_params(cap, params or {})

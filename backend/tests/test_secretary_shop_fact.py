@@ -406,7 +406,16 @@ def scan_base_agent_layer(text: str) -> set:
 
 
 def scan_shop_context_layer(text: str) -> set:
-    """唯一入口必须把**两半**都取到；`sanitize_history` 必须真的调用抹名函数。"""
+    """唯一入口必须把**两半**都取到；`sanitize_history` 必须真的把抹名实现接上。
+
+    ★ 第 400 轮 P2 改：`sanitize_history` 现在**委托**给通用件
+      `ai_infra/name_guard.py`，店铺专属的那部分（两条"整段删除"正则）作为
+      `strip=` 回调传进去。于是「接上了没有」不再表现为一次**调用**，
+      而是一次**名字引用**（`strip=strip_foreign_shop_names`）。
+      ⇒ 判据从"找了 `ast.Call`"放宽到"找了同名 `Name`"。
+      ⚠️ 放宽的是**形态**，不是松紧：`return messages` 这种空转仍然会红
+         （那时整段里根本不出现这个名字），反向注入样例如下 §"sanitize_does_not_strip"。
+    """
     bad: set = set()
     tree = ast.parse(text)
     entry = _find_func(tree, "build_shop_context")
@@ -420,12 +429,16 @@ def scan_shop_context_layer(text: str) -> set:
     if sh is None:
         bad.add("no_sanitize_history")
     else:
+        # 既接受"直接调用"，也接受"作为回调传下去"
         called = {
             n.func.id
             for n in ast.walk(sh)
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
         }
-        if "strip_foreign_shop_names" not in called:
+        referenced = {
+            n.id for n in ast.walk(sh) if isinstance(n, ast.Name)
+        }
+        if "strip_foreign_shop_names" not in (called | referenced):
             bad.add("sanitize_does_not_strip")
     return bad
 
@@ -887,8 +900,12 @@ def test_wiring_gates_are_not_vacuous():
             1,
         ),
         # 唯一取口不收 banner
+        # ★ 第 400 轮 P0-3：签名多了 `session_id`（澄清挂起要从 state 里认会话），
+        #   锚点跟着改。判据要守的东西没变：**banner 必须是形参、且真的被拼进去**。
         "digest_no_banner_param": clean_agent.replace(
-            'def _digest_graph_state(state: dict, *, banner: str = "") -> dict:',
+            "def _digest_graph_state(\n"
+            '    state: dict, *, banner: str = "", session_id: Optional[str] = None\n'
+            ") -> dict:",
             "def _digest_graph_state(state: dict) -> dict:",
             1,
         ),
@@ -901,14 +918,16 @@ def test_wiring_gates_are_not_vacuous():
         ),
         # 非流式那条忘了带标注
         "route_digest_without_banner": clean_agent.replace(
-            "    result = _digest_graph_state(state, banner=_banner_of(shop_context))",
-            "    result = _digest_graph_state(state)",
+            "    result = _digest_graph_state(state, banner=_banner_of(shop_context), session_id=session_id)",
+            "    result = _digest_graph_state(state, session_id=session_id)",
             1,
         ),
         # 流式那条忘了带标注
         "route_stream_digest_without_banner": clean_agent.replace(
-            "    result = _digest_graph_state(final_state, banner=_banner_of(shop_context))",
-            "    result = _digest_graph_state(final_state)",
+            "    result = _digest_graph_state(\n"
+            "        final_state, banner=_banner_of(shop_context), session_id=session_id\n"
+            "    )",
+            "    result = _digest_graph_state(final_state, session_id=session_id)",
             1,
         ),
     }
@@ -921,10 +940,13 @@ def test_wiring_gates_are_not_vacuous():
         "entry_skips_load_shop_brief": clean_ctx.replace(
             "            brief = await load_shop_brief(shop_id)", "            brief = None", 1
         ),
-        # sanitize_history 拿了名单却不抹
+        # sanitize_history 拿了名单却不抹（第 400 轮 P2：改成委托之后，
+        # 空转的形态是"整段不再提这个实现名" ⇒ 直接换成裸返回）
         "sanitize_does_not_strip": clean_ctx.replace(
-            "            cleaned = strip_foreign_shop_names(m.content, foreign_names)",
-            "            cleaned = m.content",
+            "    return name_guard.scrub_ai_messages(\n"
+            "        messages, foreign_names, strip=strip_foreign_shop_names\n"
+            "    )",
+            "    return messages",
             1,
         ),
     }

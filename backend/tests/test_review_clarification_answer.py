@@ -19,7 +19,9 @@
 1. `test_pure_judgment_*` —— 纯判定 `BaseAgent.previous_turn_was_clarification`
    的语义：**有回复但零工具 = 追问；调过工具 = 在干活**。
 2. `test_judgment_has_a_single_implementation` —— 形态（AST，不是字符串包含）：
-   全仓「上一轮是不是追问」的实现**只有一份**，住在 `ai_infra/base_agent.py`。
+   全仓「上一轮是不是追问」的实现**只有一份**，住在 `ai_infra/messages.py`
+   （第 400 轮 P2 从 `base_agent.py` 搬出；基类上留 `staticmethod(...)` 薄壳，
+   不是 `def`，所以本门禁数的仍是 1）。
 3. `test_read_shell_is_read_only` —— ★ 只读性：薄壳只许 `aget_state`，
    绝不许 `ainvoke` / `astream` / `astream_events` / `run_session` / `stream_session`。
    （它在「决定走哪条路」时被调用；顺手推一次图 = 把老板这轮问题先跑一遍再跑一遍。）
@@ -59,8 +61,12 @@ SCAN_SKIP_DIRS = {
 JUDGMENT = "previous_turn_was_clarification"
 SHELL = "last_turn_was_clarification"
 
-#: 判定 + 薄壳的**唯一**住所
-HOME_REL = "ai_infra/base_agent.py"
+#: 判定的**唯一**住所（第 400 轮 P2 从 `base_agent.py` 搬到 `messages.py`）
+JUDGMENT_REL = "ai_infra/messages.py"
+
+#: 薄壳（`last_turn_was_clarification`）的住所 —— 它必须住在 Agent 基类里，
+#: 因为要读 `self.graph_for_session(...)` 拿到的 checkpoint 快照。
+SHELL_REL = "ai_infra/base_agent.py"
 
 #: ★ 棘轮：已接线「上一轮是追问 ⇒ 让路」的业务 Agent（今天恰好 1 家）。
 #:   横向铺开时同步加这里 —— 漏加 = 新家没门禁。
@@ -262,17 +268,17 @@ def test_pure_judgment_does_not_hard_depend_on_langchain_types():
 
 
 def test_judgment_has_a_single_implementation():
-    """★ 全仓「上一轮是不是追问」的判定**只有一份**，住在 `ai_infra/base_agent.py`。"""
+    """★ 全仓「上一轮是不是追问」的判定**只有一份**，住在 `ai_infra/messages.py`。"""
     found = {}
     for rel, path in _iter_py():
         lines = _defs_safe(path.read_text(encoding="utf-8", errors="replace"), JUDGMENT)
         if lines:
             found[rel] = lines
-    assert list(found) == [HOME_REL], (
+    assert list(found) == [JUDGMENT_REL], (
         f"「上一轮是不是追问」的实现出现在 {list(found)} —— "
-        f"应只有一份（{HOME_REL}）。多份实现 ⇒ 至少一份永远测不到。"
+        f"应只有一份（{JUDGMENT_REL}）。多份实现 ⇒ 至少一份永远测不到。"
     )
-    assert len(found[HOME_REL]) == 1, f"{HOME_REL} 里定义了多次：{found[HOME_REL]}"
+    assert len(found[JUDGMENT_REL]) == 1, f"{JUDGMENT_REL} 里定义了多次：{found[JUDGMENT_REL]}"
 
 
 def test_read_shell_has_a_single_definition():
@@ -281,7 +287,7 @@ def test_read_shell_has_a_single_definition():
         rel for rel, path in _iter_py()
         if _defs_safe(path.read_text(encoding="utf-8", errors="replace"), SHELL)
     )
-    assert found == [HOME_REL], f"{SHELL} 定义在 {found}，应只有 {HOME_REL}"
+    assert found == [SHELL_REL], f"{SHELL} 定义在 {found}，应只有 {SHELL_REL}"
 
 
 # ============================================================
@@ -297,8 +303,8 @@ def test_read_shell_is_read_only():
     `modules/secretary/agent.py` 的 `current_plan()`
     （`test_secretary_plan_read.py` 钉着「只 `aget_state`、不 `ainvoke`」）。
     """
-    counts = call_counts_inside(_read(HOME_REL), SHELL)
-    assert counts is not None, f"{HOME_REL} 里找不到 {SHELL}"
+    counts = call_counts_inside(_read(SHELL_REL), SHELL)
+    assert counts is not None, f"{SHELL_REL} 里找不到 {SHELL}"
     assert counts.get("graph.aget_state") == 1, (
         f"{SHELL} 里 `graph.aget_state` 出现 {counts.get('graph.aget_state')} 次"
         f"（应为 1）—— 读不到上一轮时判定恒 False（静默失效）"
@@ -323,7 +329,7 @@ def test_read_shell_refuses_without_session_or_identity():
     session / 空 user 放行，拼出来的键会退化成 `ns:session` 甚至裸 `session` ——
     那读到的可能是**别人的上一轮**。早退 = 在拿到键之前就把这条路断掉。
     """
-    fn = _find_fn(_read(HOME_REL), SHELL)
+    fn = _find_fn(_read(SHELL_REL), SHELL)
     assert fn is not None, f"找不到 {SHELL}"
     guards = [
         (ast.unparse(n.test), [ast.unparse(b) for b in n.body])
