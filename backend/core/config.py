@@ -732,6 +732,26 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ★ 第 400 轮：演示号的**登录别名**（运维待办 2026-10-27「两站演示账号统一 admin」）。
+    #
+    #   为什么是别名而不是改 email / 加 username 列：
+    #     `is_demo_account()` 是**按 email 判身份**的（`core/auth/demo_identity.py`），
+    #     改 `users.email` 而 `.env` 没同步 ⇒ 演示号的写保护（改密/删店/转移三条 403）
+    #     整条失效，演示环境立刻变成"面试官能随手删店"。而加 `username` 列要迁移、
+    #     要动 4 处测试夹具、还要回答"注册的人没有 username 怎么办"。
+    #     ⇒ 别名只改**输入侧的识别**，库里的身份一个字节都不动。
+    #
+    #   ⇒ 映射目标恒为 `demo_account_email`（不读用户输入），所以这个分支
+    #     不可能被用来"以任意身份登录"。
+    #   ⇒ 留空 = 整条逻辑不生效（fail-closed）；回滚就是删掉 `.env` 那一行。
+    demo_login_alias: str = Field(
+        default="",
+        description=(
+            "演示账号的登录别名（env: DEMO_LOGIN_ALIAS）。登录时若 identifier 等于它，"
+            "则改查 demo_account_email 那个用户；留空 ⇒ 别名登录不可用。"
+        ),
+    )
+
     # ====== LLM (DashScope/Qwen) ======
     dashscope_api_key: str = Field(default="", description="阿里 DashScope API Key")
     llm_default_model: str = Field(default="qwen-max", description="默认 LLM 模型")

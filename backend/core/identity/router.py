@@ -323,7 +323,19 @@ async def login(
       输对密码却进不去时能得到一句可读的原因（否则他只会看到"密码错误"，
       从而去重置密码、把锁定当成 bug）。
     """
-    email = (form_data.username or "").strip().lower()
+    identifier = (form_data.username or "").strip().lower()
+
+    # ★ 第 400 轮：演示号登录别名（环境变量 DEMO_LOGIN_ALIAS，默认空 = 不生效）。
+    #
+    #   只改**这一处输入**：下面所有分支（查用户 / 锁定 / 审计 / 发 token）继续用
+    #   `email`，而 `login_attempts.email` 落的是**真 email** —— 审计不失真，
+    #   登录历史也不会因为换了输入方式而断成两个人。
+    #
+    #   ⚠️ 别名不能成为绕开写保护的通道：它只影响"这次输的字符串查谁"，
+    #      签出来的 token 里仍是那个用户真实的 id/email ⇒
+    #      `is_demo_account()` 照旧按 email 判定，改密/删店/转移三条 403 一条不少。
+    _alias = (config.demo_login_alias or "").strip().lower()
+    email = config.demo_account_email.strip().lower() if (_alias and identifier == _alias) else identifier
     ip = client_ip(request)
     user_agent = request.headers.get("User-Agent") if request else None
 
