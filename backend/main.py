@@ -678,6 +678,17 @@ app.include_router(billing_payment_router, prefix="/api/v1")
 from modules.product_research.router import router as product_research_router
 app.include_router(product_research_router, prefix="/api/v1", dependencies=API_QUOTA)
 
+# ★ 第 400 轮 P0-2：审批续跑的**通用**端点（按 agent 分发）。
+#
+#   改造前只有 `/api/v1/product-research/approval/resume` 一条路，于是
+#   「有写工具」与「能点批准」在客服身上脱节：`create_ticket` 会 interrupt()
+#   把图画停，而没有任何端点能放行 ⇒ 生产上永远抛 HITLPrerequisiteError。
+#
+#   挂载位置刻意**紧跟选品模块**（而不是塞到末尾）：它替代的正是选品那条
+#   专用端点的通用形态，放一起才看得出"两个端点同一件事"。
+from modules.hitl.router import router as approval_router
+app.include_router(approval_router, prefix="/api/v1", dependencies=BUSINESS_AUTH + API_QUOTA)
+
 # Listing 生成优化模块 (Phase 3)
 from modules.listing_generator.router import router as listing_generator_router
 app.include_router(listing_generator_router, dependencies=BUSINESS_AUTH + API_QUOTA)  # 路由已包含 /api/v1 前缀

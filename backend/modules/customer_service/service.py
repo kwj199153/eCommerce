@@ -100,7 +100,8 @@ class CustomerServiceService:
 
     @staticmethod
     async def chat(request: ChatRequest,
-                   store_id: Optional[str] = None) -> ChatResponse:
+                   store_id: Optional[str] = None,
+                   user_id: Optional[str] = None) -> ChatResponse:
         """
         处理客服对话
 
@@ -124,7 +125,10 @@ class CustomerServiceService:
         result: AgentResponse = await agent.invoke(
             query=request.message,
             context=context,
-            conversation_id=request.conversation_id
+            conversation_id=request.conversation_id,
+            # ★ 第 400 轮 P0-1：身份与店铺**同源**（都来自服务端依赖），
+            #   工具环路靠它拿 thread_id —— 缺了写工具会被 fail-closed 拒。
+            user_id=user_id,
         )
 
         # 构建响应
@@ -151,7 +155,10 @@ class CustomerServiceService:
         return response
 
     @staticmethod
-    async def stream_chat(message: str, store_id: Optional[str] = None):
+    async def stream_chat(message: str,
+                          store_id: Optional[str] = None,
+                          conversation_id: Optional[str] = None,
+                          user_id: Optional[str] = None):
         """流式对话入口（返回逐 token 异步迭代器）。
 
         ★ 第 204 轮：`store_id` 由 router 从请求头解析后传入，供 agent 的工具
@@ -159,8 +166,41 @@ class CustomerServiceService:
           LLM 生成，归属绝不能走工具形参。
         """
         agent = get_cs_agent()
-        async for chunk in agent.stream_chat(message, {"store_id": store_id}):
+        async for chunk in agent.stream_chat(
+            message,
+            {"store_id": store_id},
+            conversation_id=conversation_id,
+            user_id=user_id,
+        ):
             yield chunk
+
+    @staticmethod
+    async def resume_approval(
+        context_id: str,
+        decision: str,
+        *,
+        shop_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        reason: Optional[str] = None,
+        args: Optional[dict] = None,
+        feedback: Optional[str] = None,
+    ):
+        """人工审批决策透传（详见 `CustomerServiceAgent.resume_approval`）。
+
+        ★ 签名与 `modules.hitl.registry` 的登记一致（关键字参数同名）——
+          通用端点 `POST /agents/{agent}/approval/resume` 按这套签名调用；
+          改名会让它在**点击批准那一刻**才炸，而门禁扫不出来。
+        """
+        agent = get_cs_agent()
+        return await agent.resume_approval(
+            context_id,
+            decision,
+            user_id=user_id,
+            shop_id=shop_id,
+            reason=reason,
+            args=args,
+            feedback=feedback,
+        )
 
     @staticmethod
     async def search_faq(request: FAQSearchRequest,

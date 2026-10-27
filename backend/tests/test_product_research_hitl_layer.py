@@ -38,6 +38,8 @@ BACKEND = pathlib.Path(__file__).resolve().parents[1]
 MODULE_DIR = BACKEND / "modules" / "product_research"
 MAIN_PY = MODULE_DIR / "agent_product_research.py"
 HITL_PY = MODULE_DIR / "agent_hitl.py"
+#: 审批逻辑的**新**住所（与业务无关的中立层，第 400 轮 P0-2）
+NEUTRAL_HITL_PY = BACKEND / "modules" / "hitl" / "hitl.py"
 
 MAIN_MODULE = "modules.product_research.agent_product_research"
 HITL_MODULE = "modules.product_research.agent_hitl"
@@ -69,7 +71,12 @@ SHELL_TO_DELEGATE = {
 FORBIDDEN_IN_SHELL = frozenset({"Command", "AgentResponse", "loads", "getattr"})
 
 #: HITL 层允许的**非标准库**前缀（其余交给 `sys.stdlib_module_names`）
-ALLOWED_IMPORT_PREFIXES = ("core.logger", "langgraph.types")
+# ★ 第 400 轮 P0-2：本文件从「HITL 逻辑本体」退化为**适配壳**
+#   （把能力当 callable 传进 `modules.hitl`、把返回的 dict 包成 AgentResponse）。
+#   于是壳唯一的非标准库依赖变成那个中立层；而 `langgraph.types` 从白名单里
+#   **去掉**了 —— 留着它就等于允许「把 Command 再 import 回壳里」，
+#   也就是允许 resume 逻辑回流（下面 `test_main_no_longer_uses_command` 反向钉住）。
+ALLOWED_IMPORT_PREFIXES = ("core.logger", "modules.hitl")
 
 #: 出现即违规的 import 前缀
 FORBIDDEN_IMPORT_PREFIXES = (
@@ -425,7 +432,17 @@ def test_main_no_longer_uses_command(main_tree):
     hits = _referenced_names(main_tree) & {"Command"}
     assert not hits, "主文件又出现了 `Command` —— resume 逻辑回流了（应只在 agent_hitl.py）"
 
+    # ★ 第 400 轮 P0-2：`Command` 的住所在第 400 轮又下沉了一层 ——
+    #   从「选品模块的 HITL 层」搬到「与业务无关的中立层 `modules/hitl/hitl.py`」。
+    #   判据的**意图不变**（resume 原语只许有一个住所），所以改成两段：
+    #     ① 中立层必须 import 它（否则没人做 resume）；
+    #     ② 适配壳**必须没有**它（否则说明有人把 resume 逻辑抄回了壳里）。
+    #   只保留 ① 是不够的：壳里同时也有一个 `Command` 时，① 照样绿。
+    neutral_targets = _import_targets(_tree(NEUTRAL_HITL_PY))
+    assert any(t.startswith("langgraph.types") for t in neutral_targets), (
+        "中立层没有 import langgraph.types —— resume 原语失去了唯一住所"
+    )
     hitl_targets = _import_targets(_tree(HITL_PY))
-    assert any(t.startswith("langgraph.types") for t in hitl_targets), (
-        "HITL 层没有 import langgraph.types —— resume 原语失去了唯一住所"
+    assert not any(t.startswith("langgraph.types") for t in hitl_targets), (
+        "适配壳又 import 了 langgraph.types —— resume 逻辑被抄回壳里了"
     )

@@ -623,10 +623,16 @@ async def test_real_router_stream_reply_equals_the_non_streaming_reply(fake_llm)
               else agent._stream_via_tools(query))
         streamed = _body([c async for c in it])
 
-        if not (non_stream or "").strip():
+        # ★ 第 400 轮 P0-1：`_route_via_tools` 的返回形态现在**有两种** ——
+        #   其余 4 家仍返回 str，智能客服返回 `AgentResponse`（它还要能表达
+        #   「这轮停在一次人工审批上」，只返回文本会把审批卡压成一句普通回复，
+        #   前端认不出）。本判据关心的是**正文**，所以在这里统一取值。
+        non_text = getattr(non_stream, "content", non_stream) or ""
+
+        if not (non_text or "").strip():
             bad.append(f"{label}: 非流式路径就没给出答复 —— 对照失效，本条对它不适用")
-        elif streamed.strip() != non_stream.strip():
-            bad.append(f"{label}: 流式={streamed[:60]!r} / 非流式={non_stream[:60]!r}")
+        elif streamed.strip() != non_text.strip():
+            bad.append(f"{label}: 流式={streamed[:60]!r} / 非流式={non_text[:60]!r}")
 
     assert not bad, ("改走流式之后答复变了或丢了（「只做加法」的承诺被破坏）：\n  "
                      + "\n  ".join(bad))

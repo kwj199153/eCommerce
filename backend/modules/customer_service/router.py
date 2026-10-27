@@ -7,6 +7,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from core.metering.usage_tracker import meter_agent_chat
+from core.auth.dependencies import require_auth_if_enabled
+from core.identity.models import User
 from core.tenant.middleware import (
     MissingShopContext,
     get_current_shop_id,
@@ -50,12 +52,17 @@ async def chat_endpoint(
     #   另有 strict 守卫。豁免形态见
     #   `tests/test_shop_id_guard.py::ALLOWED_OPTIONAL`。
     store_id: Optional[str] = Depends(get_current_shop_id_optional),
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
     _meter=Depends(meter_agent_chat),
 ):
     """
     智能客服对话主入口
 
     支持多轮对话、FAQ 匹配、情感分析、意图识别
+
+    ★ 第 400 轮 P0-1：新增 `current_user`。身份是**审批闭环的前提** ——
+      没有它就拿不到 `thread_id`，`create_ticket` 会被 fail-closed 直接拒
+      （而拒绝的文案是「需要审批但缺少会话」，看起来像 bug 而不是配置问题）。
     """
     # ★ 点名通道（第 188 轮）：本次对话若指定了技能名，把它置进
     #   调用链上下文，由 `skills_selected` 段落把该技能正文注入
@@ -67,7 +74,9 @@ async def chat_endpoint(
         bind_requested_skill(request.skill),
         bind_context_target(context_target_payload(request)),
     ):
-        response = await CustomerServiceService.chat(request, store_id)
+        response = await CustomerServiceService.chat(
+            request, store_id, user_id=current_user.id if current_user else None
+        )
     return ApiResponse(
         data={
             "reply": response.reply,
@@ -95,6 +104,7 @@ async def chat_stream(
     #   `MissingShopContext` ⇒ 零数据库往返（豁免形态 ②，真源 =
     #   `tests/test_shop_id_guard.py::ALLOWED_OPTIONAL`）。
     store_id: Optional[str] = Depends(get_current_shop_id_optional),
+    current_user: Optional[User] = Depends(require_auth_if_enabled),
     _meter=Depends(meter_agent_chat),
 ):
     """智能客服对话，SSE 流式返回（打字机效果）。
@@ -114,7 +124,12 @@ async def chat_stream(
                 bind_context_target(context_target_payload(request)),
             ):
                 async for event in sse_event_stream(
-                    CustomerServiceService.stream_chat(request.message, store_id)
+                    CustomerServiceService.stream_chat(
+                        request.message,
+                        store_id,
+                        request.conversation_id,
+                        current_user.id if current_user else None,
+                    )
                 ):
                     yield event
         except Exception as e:

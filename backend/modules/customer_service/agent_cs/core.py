@@ -9,6 +9,10 @@ from typing import List, Dict, Any, Optional, AsyncIterable
 from ai_infra.intent import Route, first_match
 from ai_infra.skills import SKILL_CHANNEL_UNAVAILABLE, is_skill_requested
 from ai_infra.sse import StreamDigest, progress
+# ★ 审批逻辑的唯一住所（第 400 轮 P0-2 从选品模块外移到 modules/hitl）。
+#   用 `import modules.hitl as _hitl` 而不是 from-import：后者在 AST 里只留下
+#   包名，形态门禁看不出「依赖的是哪一层」。
+import modules.hitl as _hitl
 from ._base import (
     AgentResponse,
     ConversationContext,
@@ -116,7 +120,10 @@ class MixinCore:
             return None
 
     async def _stream_via_tools(self, query: str,
-                                context: Optional[Dict[str, Any]] = None) -> AsyncIterable:
+                                context: Optional[Dict[str, Any]] = None,
+                                *,
+                                session_id: Optional[str] = None,
+                                user_id: Optional[str] = None) -> AsyncIterable:
         """流式工具路由：**实时**下发思考过程（step），答复文本仍一次性给出。
 
         ★ 与 `_route_via_tools` 是**同一条决策路径**（router 的 LLM 自主选工具），
@@ -163,6 +170,8 @@ class MixinCore:
         try:
             async for ev in router.stream_session(
                 {"messages": [HumanMessage(content=prompt)]},
+                session_id=session_id,
+                user_id=user_id,
             ):
                 s = digest.feed(ev)
                 if s is not None:
@@ -171,14 +180,38 @@ class MixinCore:
             logger.warning(f"[customer_service] stream tool routing failed: {e}")
             return
 
+        # ★★★ 第 400 轮 P0-1：流结束后**必须**探一次「是不是停在审批上」。
+        #
+        #   流式路径拿不到最终 state（`astream_events` 只给事件），所以只能像
+        #   选品那样用 `aget_state()` 补判。不补的后果不是少一张卡，而是
+        #   **整轮对话看起来正常结束**（模型答了半句），而那个写操作正卡着等人
+        #   批准 —— 前端连"有个操作在等你"都不知道。
+        pending = await _hitl.detect_pending_approval(
+            session_id, user_id,
+            get_router=self._get_router,
+            log_tag="customer_service",
+        )
+        if pending is not None:
+            # 结构化事件：`sse_event_stream` 按 event 字段分发，不计入正文
+            yield {"event": "pending_approval", "data": pending["data"]}
+            yield pending["content"]
+            return
+
         if digest.reply:
             yield digest.reply
 
     async def _route_via_tools(self, query: str,
-                               context: Optional[Dict[str, Any]] = None) -> Optional[str]:
-        """工具化路由：LLM 自主选工具执行，返回可读回复文本。
+                               context: Optional[Dict[str, Any]] = None,
+                               *,
+                               session_id: Optional[str] = None,
+                               user_id: Optional[str] = None) -> Optional[AgentResponse]:
+        """工具化路由：LLM 自主选工具执行，返回结构化响应。
 
         返回 None 表示不可用或失败，调用方回退关键词路由（`_classify_intent`）。
+
+        ★ 第 400 轮 P0-1 起返回**AgentResponse 而不是 str**：它现在还要能表达
+          「这轮停在一次人工审批上」（`display_type=pending_approval`）。
+          只返回文本的旧形态只能把审批卡压成一句话，前端认不出。
         """
         router = self._get_router()
         if router is None:
@@ -202,16 +235,71 @@ class MixinCore:
         try:
             state = await router.run_session(
                 {"messages": [HumanMessage(content=prompt)]},
+                session_id=session_id,
+                user_id=user_id,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[customer_service] tool routing failed: {e}")
             return None
 
+        # ★★★ HITL 中断必须**立刻回传**，而不是继续按「这轮没调到工具」往下解析：
+        #   图此刻停在 tool_node 上，消息里**根本没有 ToolMessage**，继续走会
+        #   一路落到 `return None` ⇒ 回退关键词路由 ⇒ 用户收到一句无关回复，
+        #   完全不知道有个操作正卡在等他审批（审批卡永远出不来）。
+        pending = await _hitl.detect_pending_approval(
+            session_id, user_id,
+            get_router=self._get_router,
+            log_tag="customer_service",
+        )
+        if pending is not None:
+            return AgentResponse(**pending)
+
         reply = ""
         for m in state.get("messages") or []:
             if isinstance(m, AIMessage) and m.content:
                 reply = m.content if isinstance(m.content, str) else str(m.content)
-        return reply.strip() or None
+        reply = reply.strip()
+        return AgentResponse(
+            content=reply,
+            data={"type": "tool_router_reply"},
+            display_type="text",
+        ) if reply else None
+
+    # ==================== 人工审批续跑（第 400 轮 P0-1）====================
+
+    async def resume_approval(
+        self,
+        context_id: str,
+        decision: str,
+        *,
+        user_id: Optional[str] = None,
+        shop_id: Optional[str] = None,
+        reason: Optional[str] = None,
+        args: Optional[dict] = None,
+        feedback: Optional[str] = None,
+    ) -> AgentResponse:
+        """回传审批决策，让被 `interrupt()` 冻住的图续跑到结束。
+
+        ★ 为什么客服也要有这个：`create_ticket` 是客服从「聊」到「落工单」的
+          **唯一出口**。改造前这个出口在生产上是关着的 —— 图画停了，全仓只有
+          选品那条 resume 端点，没有任何人能放行它。
+        ★ `hydrate_state` / `compose_reply` 不传：客服没有「会话状态要读回内存」
+          与「结果文案合成」这两件事（它的上下文是内存对象，不受 checkpoint 影响）。
+          传 None 而不是空实现 —— 空实现会让下一个人以为这里真做了一件事。
+        """
+        payload = await _hitl.resume_approval(
+            context_id,
+            decision,
+            user_id=user_id,
+            shop_id=shop_id,
+            reason=reason,
+            args=args,
+            feedback=feedback,
+            get_router=self._get_router,
+            bind_context=lambda _cid, _shop, _uid: _current_shop_id.set(_shop),
+            log_tag="customer_service",
+        )
+        return AgentResponse(**payload)
 
     def _init_sentiment_lexicon(self):
         """初始化情感词典"""
@@ -236,7 +324,8 @@ class MixinCore:
         self,
         query: str,
         context: Optional[Dict[str, Any]] = None,
-        conversation_id: Optional[str] = None
+        conversation_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> AgentResponse:
         """
         主入口：处理用户查询
@@ -245,6 +334,12 @@ class MixinCore:
             query: 用户输入
             context: 附加上下文（订单号、客户信息等）
             conversation_id: 会话 ID（用于多轮对话）
+            user_id: 登录身份（**服务端注入**，第 400 轮）。
+                ★ 与非流式工具环路的关系：`graph_for_session(session, user)`
+                  缺任一个都会返回**不带 checkpointer** 的图，而
+                  `interrupt()` 在那种图上直接抛 ⇒ 写工具（create_ticket）
+                  会被 fail-closed 守卫拒绝。所以"能不能建工单"取决于
+                  这两个值有没有真的传下来，而不是工具有没有注册。
 
         Returns:
             AgentResponse 结构化响应
@@ -265,7 +360,25 @@ class MixinCore:
         self._add_user_turn(conv_context, query, intent, sentiment)
 
         # 5. 路由到对应处理方法
-        result = await self._route_by_intent(intent, query, context, conv_context, sentiment)
+        # 5. 路由
+        # ★★★ 第 400 轮 P0-1：**先试工具环路**，再回退关键词路由。
+        #
+        #   改造前这里只调 `_route_by_intent`（关键词表），而 `_route_via_tools`
+        #   是**死代码**（全仓零调用点）⇒ `/chat` 永远走不到 LLM 选工具那一层
+        #   ⇒ `create_ticket` 在非流式路径上**从未被触发过**。
+        #   踩坑记录：只看 `_route_via_tools` 存在就以为"已接通"，
+        #   而它没有任何调用点（grep 带括号的调用形态即可识破）。
+        #
+        #   ★ 为什么只在 `user_id` 存在时才走：既有用例与本地免登录联调都
+        #     不传身份，那条路径必须保持**确定性的关键词路由**（离线可跑、
+        #     不花 LLM 配额）。身份在 = 生产登录态 = 该走工具环路。
+        result: Optional[AgentResponse] = None
+        if user_id:
+            result = await self._route_via_tools(
+                query, context, session_id=conversation_id, user_id=user_id
+            )
+        if result is None:
+            result = await self._route_by_intent(intent, query, context, conv_context, sentiment)
 
         # 6. 记录助手回复
         self._add_assistant_turn(conv_context, result.content, intent)
@@ -273,7 +386,10 @@ class MixinCore:
         return result
 
     async def stream_chat(self, query: str,
-                          context: Optional[Dict[str, Any]] = None) -> AsyncIterable[str]:
+                          context: Optional[Dict[str, Any]] = None,
+                          *,
+                          conversation_id: Optional[str] = None,
+                          user_id: Optional[str] = None) -> AsyncIterable[str]:
         """
         流式对话（逐 token 返回 LLM 文本）。
 
@@ -293,7 +409,11 @@ class MixinCore:
         #   `tool_chunks` 为空 = 工具路没产出任何文本 ⇒ 与原来返回 None 一样
         #   落到下面的关键词回退链（降级链一行没动）。
         tool_chunks: list = []
-        async for chunk in self._stream_via_tools(query, context):
+        # ★ 第 400 轮 P0-1：会话与身份必须传下去，否则工具环路是 memoryless 的
+        #   （无 thread_id ⇒ interrupt() 抛 ⇒ 审批卡永远出不来）。
+        async for chunk in self._stream_via_tools(
+            query, context, session_id=conversation_id, user_id=user_id
+        ):
             if isinstance(chunk, dict):
                 yield chunk
             else:
