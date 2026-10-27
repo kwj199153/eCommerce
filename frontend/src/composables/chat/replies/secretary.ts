@@ -152,6 +152,17 @@ export async function replySecretary(ctx: ChatCtx, userMessage: string): Promise
           chatStore.setSessionId('secretary', res.session_id)
         }
 
+        // ★ 第 400 轮 P0-3：这一轮**停在一次提问上**（`ask_clarification` 挂起）。
+        //   把载荷挂到最后一条消息上 ⇒ 渲染层按 registry 的
+        //   `clarification_request` 出一张提问卡，回答经通用 resume 端点接回同一轮。
+        //
+        //   ★ 为什么要判 `res.clarification` 而不只看 `display_type`：
+        //     只有类型没有载荷时渲染卡会拿到 `undefined` ⇒ 空卡（老板看到
+        //     "需要你补充一句"却没有输入框）。此时宁可只显示正文里的问题。
+        if (res.display_type === 'clarification_request' && res.clarification) {
+          chatStore.setLastMessageResult('clarification_request', res.clarification)
+        }
+
         // ★ 第 155 轮：把子任务计划写进**会话级状态**（不是挂在某条消息上）。
         //   后端的计划存在图状态里、刻意不放进消息序列 ⇒ 对话变长、历史被裁剪
         //   它都不会丢；前端若把它当成某条消息的附件，那条消息一变历史就

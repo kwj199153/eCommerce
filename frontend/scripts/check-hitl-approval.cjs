@@ -58,6 +58,10 @@ const ENV = {
   // 第 400 轮 P0-2：审批请求模型从 product_research/schemas.py 移到
   //   modules/hitl/router.py（通用端点的中立模型）
   schemas: ['HITL_SCHEMAS_SRC', path.join('..', 'backend', 'modules', 'hitl', 'router.py'), true],
+  // 第 400 轮 P0-3：澄清真挂起 —— 工具（后端）与卡片/链路（前端）三处对账
+  clarify: ['HITL_CLARIFY_SRC', path.join('..', 'backend', 'ai_infra', 'tools', 'clarification.py'), true],
+  clarifyCard: ['HITL_CLARIFY_CARD_SRC', 'components/ChatPanel/results/conversation/ClarificationCard.vue', false],
+  secReply: ['HITL_SEC_REPLY_SRC', 'composables/chat/replies/secretary.ts', false],
   pkg: ['HITL_PKG_SRC', 'package.json', true],
 }
 
@@ -388,6 +392,76 @@ check('E2 审批卡不得引用 thread_id（归属只能服务端注入）', () 
   assert(!/\bthread_id\b/.test(card),
     '审批卡的**代码**里引用了 thread_id —— thread_id 里含 user_id，' +
     '交给客户端等于把「谁的操作能被恢复」交给请求方')
+})
+
+// ==================== F. 澄清挂起（第 400 轮 P0-3） ====================
+
+check('F1 registry 的 clarification_request 与后端 CLARIFICATION_TYPE 逐字一致', () => {
+  // 键名不一致的后果是**静默按纯文本渲染**：卡片永远不出现，
+  // 而正文照旧显示那个问题 —— 界面看起来"一切正常"，只是那句话永远等不到回答。
+  const be = readCode(pick('clarify'))
+  const m = be.match(/CLARIFICATION_TYPE\s*=\s*["']([^"']+)["']/)
+  assert(m, '后端 clarification.py 里找不到 CLARIFICATION_TYPE 定义')
+  const beType = m[1]
+
+  const reg = readCode(pick('registry'))
+  assert(reg.includes(`${beType}:`),
+    `registry 没有登记 \`${beType}\` ⇒ 后端下发的提问卡渲染不出来（按纯文本处理）`)
+  assert(/import\s+ClarificationCard\s+from/.test(reg), 'registry 未导入 ClarificationCard')
+})
+
+check('F2 提问卡必须走通用 resume 出口，且不得自己发请求', () => {
+  const card = readCode(pick('clarifyCard'))
+  assert(/import\s*\{[^}]*\bsubmitClarificationAnswer\b[^}]*\}\s*from\s*'@\/composables\/useApprovalFlow'/.test(card),
+    'ClarificationCard 未从 useApprovalFlow 导入 submitClarificationAnswer')
+  assert(/await\s+submitClarificationAnswer\s*\(/.test(card), '提问卡没有真的调用 submitClarificationAnswer')
+  assert(!/request\.(post|get)\(/.test(card), '提问卡自己发请求了（应复用 api 层出口）')
+  // 失败必须回写卡片（否则"提交失败"会表现成"点了没反应"）
+  assert(/res\.ok/.test(card) && /error\.value\s*=/.test(card),
+    '提问卡没有把失败回写到界面状态')
+})
+
+check('F3 店秘书链路必须把 clarification 落到消息上（否则卡片无宿主）', () => {
+  const s = readCode(pick('secReply'))
+  assert(/setLastMessageResult\(\s*'clarification_request'/.test(s),
+    'replies/secretary.ts 没有把 clarification 挂到最后一条消息上 —— ' +
+    '后端下发了 display_type，前端却没有任何渲染入口（第 399 轮那个"零消费者"的形态）')
+  assert(/res\.clarification/.test(s), '没有判载荷存在就挂卡 ⇒ 会渲染出一张空卡')
+})
+
+check('F4 后端 ask_clarification 必须真调 interrupt，且 GraphBubbleUp 先于 except Exception', () => {
+  // ★ 这条判据的价值全在**顺序**上：`GraphInterrupt` 继承自 `Exception`，
+  //   所以 `except Exception` 会连"暂停"一起吞掉 ⇒ 图根本不停、零日志、
+  //   卡片永不出现。删掉 `except GraphBubbleUp: raise` 或把它挪到后面，
+  //   都会让「真挂起」退化成「正文里复述一遍问题」。
+  //
+  // ★ 口径说明：`stripComments()` 只认 C 风格注释（`//` `/* */` `<!-- -->`），
+  //   **不认 Python 的 `#` 与 docstring**。本文件第一次跑就栽在这上面 ——
+  //   模块头注释里写着「工具内部调 `interrupt(payload)`」与「降级用的
+  //   `except Exception`」，直接 indexOf 会命中**注释**，顺序判定当场假红。
+  //   所以先把范围切到函数体（`async def ask_clarification(` 之后），
+  //   再从 `except GraphBubbleUp` 往后找宽异常 —— 剩下的注释即便命中，
+  //   位置也仍在后面，不改变结论。
+  const src = read(pick('clarify'))
+  const defIdx = src.lastIndexOf('async def ask_clarification(')
+  assert(defIdx >= 0, '后端 clarification.py 里找不到 async def ask_clarification(')
+  const body = src.slice(defIdx)
+
+  const iInterrupt = body.indexOf('interrupt(payload)')
+  assert(iInterrupt >= 0, 'ask_clarification 没有调用 interrupt(payload) —— 又退回"只吐字符串"了')
+
+  const iBubble = body.indexOf('except GraphBubbleUp:')
+  assert(iBubble >= 0, '缺 `except GraphBubbleUp:` ⇒ GraphInterrupt 会被 except Exception 吞掉')
+  const iBroad = body.indexOf('except Exception', iBubble)
+  assert(iBroad >= 0, '`except GraphBubbleUp` 之后找不到 except Exception（降级分支）—— 若已改写请同步本判据')
+  assert(iBubble < iBroad,
+    '`except GraphBubbleUp` 出现在 `except Exception` **之后** ⇒ 先被宽异常接住，图不再挂起')
+
+  // 注解必须是逐字的 `RunnableConfig`（Optional[...] 会让 langchain 不再注入 config）
+  assert(/config:\s*RunnableConfig\b/.test(body),
+    'ask_clarification 的 config 注解不是逐字的 `RunnableConfig` ⇒ 注入失效 ⇒ 永远不挂起且零报错')
+  assert(!/config:\s*Optional\[RunnableConfig\]/.test(body),
+    'config 注解写成了 Optional[RunnableConfig] —— langchain 不认，注入会失效')
 })
 
 // ==================== 输出 ====================

@@ -21,7 +21,7 @@ resume 端点。于是「有审批工具」与「能点批准」这两件事，�
 
 ## 门禁（这是本表存在的另一半理由）
 
-`tests/test_conversation_hitl_layer.py` 断言：
+`tests/test_hitl_layer_shape.py` 断言：
 
     「装配了含副作用工具（`EXPECTED_GATED`）的 Agent 集合」
         ==  「本表覆盖的 agent 集合」
@@ -63,7 +63,7 @@ class ResumeSpec:
 
 
 #: ★ 唯一真源。加一个 Agent 的审批能力 = 在 service 里实现 `resume_approval`
-#:   再在这里加一行；两处都对不上时，门禁会在 `test_conversation_hitl_layer.py` 里红。
+#:   再在这里加一行；两处都对不上时，门禁会在 `test_hitl_layer_shape.py` 里红。
 RESUME_SPECS: Tuple[ResumeSpec, ...] = (
     ResumeSpec(
         agent_id="product-research",
@@ -82,6 +82,17 @@ RESUME_SPECS: Tuple[ResumeSpec, ...] = (
         module="modules.customer_service.service",
         attr="CustomerServiceService.resume_approval",
         aliases=("customer_service", "智能客服", "agent_cs"),
+    ),
+    ResumeSpec(
+        # ★ 第 400 轮 P0-3：店秘书没有**写工具**，但有 `ask_clarification` ——
+        #   它的 `interrupt()` 停的是同一张图。批不批是另一回事，
+        #   「图停住了要人」这件事是同一套机制 ⇒ 同一个 resume 通道。
+        #   （`test_gated_tools_owner_has_resume_channel` 只要求"有写工具的
+        #     Agent 必须有通道"，不禁止"没写工具但有提问工具的也有通道"。）
+        agent_id="secretary",
+        module="modules.secretary.agent",
+        attr="resume_clarification",
+        aliases=("店秘书", "orchestrator"),
     ),
 )
 

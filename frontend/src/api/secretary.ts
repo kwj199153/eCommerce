@@ -91,6 +91,25 @@ export interface SecretaryResponse {
    *   前端因此也把它存成**会话级状态**（`chatStore.planByAgent`）而不是消息附件。
    */
   plan?: PlanSummary | null
+  /**
+   * 本轮的结构化展示类型（第 400 轮 P0-3）。
+   *
+   * 目前只有一种取值：`clarification_request` —— 表示**图停在一次提问上**
+   * （`ask_clarification` 调了 `interrupt()`），`reply` 就是要问老板的问题，
+   * `clarification` 里带选项与会话 ID。
+   *
+   * ★ 缺省（`undefined`）= 普通文本回复，**不是**「没有结构化结果」。
+   */
+  display_type?: string | null
+  /**
+   * 澄清请求的载荷（第 400 轮 P0-3）：
+   * `{ type, question, options:[{label,description?,recommended?}],
+   *    missing_fields, agent, session_id }`。
+   *
+   * ★ `session_id` 由**服务端**填（= 本次响应顶层那个）。前端不要用自己存的
+   *   值替代 —— 首轮没带 session_id 时服务端会新建，两者可能不同。
+   */
+  clarification?: Record<string, any> | null
 }
 
 /**

@@ -89,8 +89,38 @@ async def test_ask_clarification_returns_structured_request():
     assert data["status"] == CLARIFICATION_STATUS == "awaiting_user_input"
     assert data["action"] == "ask_user"
     assert data["question"] == "做这张主图时你想突出什么卖点？"
-    assert data["options"] == ["防水", "轻便", "续航"]
+    # ★ 第 400 轮 P0-3：选项**对象化**（`{label, description?, recommended?}`）。
+    #   卡片要渲染"推荐"标记与副标题，纯字符串表达不了；而两种形态各解析一次
+    #   会漂移（前端把对象当字符串渲染成 `[object Object]`）。
+    assert data["options"] == [{"label": "防水"}, {"label": "轻便"}, {"label": "续航"}]
     assert data["missing_fields"] == ["卖点"]
+    # ★ 不在图里跑 ⇒ interrupt 不可用 ⇒ 必须**显式**标记降级，
+    #   而不是让调用方以为"卡片在路上了"。
+    assert data.get("suspend") == "unavailable", "降级路径必须可识别"
+
+
+async def test_ask_clarification_normalizes_object_options():
+    """对象形态的选项要保留 `description` / `recommended`（字符串形态继续兼容）。
+
+    ★ 为什么必须兼容两种输入：模型偶尔照旧给字符串数组 —— 那是**输入**，
+      宽容成本几乎为零；而**输出**只允许一种形态（前端只写一套渲染）。
+    """
+    from ai_infra.tools.clarification import ask_clarification
+
+    data = json.loads(await ask_clarification(
+        question="选哪个卖点？",
+        options=[
+            {"label": "防水", "description": "雨天场景", "recommended": True},
+            "轻便",
+            {"text": "续航"},      # 旧字段名
+            {"label": "  "},       # 空标签：丢弃（渲染成空按钮比丢掉更糟）
+        ],
+    ))
+    assert data["options"] == [
+        {"label": "防水", "description": "雨天场景", "recommended": True},
+        {"label": "轻便"},
+        {"label": "续航"},
+    ]
 
 
 async def test_ask_clarification_tolerates_missing_optionals():

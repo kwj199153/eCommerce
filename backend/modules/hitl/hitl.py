@@ -36,7 +36,7 @@
   · 不 import 数据库 / 会话持久化 / 平台取数；
   · 不自己构造业务响应类型（只吐 dict）。
 
-门禁：`tests/test_conversation_hitl_layer.py`。
+门禁：`tests/test_hitl_layer_shape.py`。
 """
 from __future__ import annotations
 
@@ -45,6 +45,12 @@ from typing import Any, Awaitable, Callable, Optional
 
 from core.logger import get_logger
 from langgraph.types import Command
+
+from .clarification import (
+    CLARIFICATION_TYPE,
+    DISPLAY_CLARIFICATION_ANSWERED,
+    build_clarification_resume,
+)
 
 __all__ = [
     "DISPLAY_PENDING_APPROVAL",
@@ -216,6 +222,35 @@ def _failed(content: str, error: str, **extra) -> dict:
     }
 
 
+async def _pending_kind(graph, cfg) -> str:
+    """图此刻停在**哪种**中断上：`"clarification"` / `"approval"` / `"none"`。
+
+    ★ 为什么由服务端判、而不是让前端在请求里声明"我这是一句回答"：
+      ① 客户端不该决定服务端怎么解释它的输入（同「归属只能服务端注入」）；
+      ② 前端若声明错，错误的表现是"工具收到一个 dict 当答案"——
+         模型读到一坨 JSON 却没有任何报错，属于最难查的一类。
+      停在哪一步是**服务端已知的事实**，让它自己看。
+
+    ★ 为什么 `"none"` 时调用方仍按审批处理（见 `resume_approval`）：
+      探测可能因命名空间/版本差异看不见中断，而"看不见"不等于"没挂起"。
+      此时保持改造前的行为（按审批续跑）才是安全方向 —— 把本来能用的
+      批准按钮改成报错，是更糟的失败。
+    """
+    try:
+        snapshot = await graph.aget_state(cfg)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[hitl] pending-kind probe failed: {e}")
+        return "none"
+
+    for task in (getattr(snapshot, "tasks", None) or []):
+        for it in (getattr(task, "interrupts", None) or []):
+            value = getattr(it, "value", None)
+            if isinstance(value, dict) and value.get("type") == CLARIFICATION_TYPE:
+                return "clarification"
+            return "approval"
+    return "none"
+
+
 async def resume_approval(
     context_id: str,
     decision: str,
@@ -244,6 +279,10 @@ async def resume_approval(
       客服没有（它的会话上下文在内存对象里，不受 checkpoint 影响）。
       用 `None` 表示"本 Agent 不需要"，而不是造一个空实现 ——
       空实现会让下一个人以为"这里真的做了一件事"。
+
+    ★ 第 400 轮 P0-3：本函数**同时承担澄清续跑**（`ask_clarification` 的
+      `interrupt()` 也停在同一张图上）。调用方不必知道是哪一种 ——
+      它由图状态判定（`_pending_kind`），因为续跑值的形状不同而喂错不报错。
     """
     router = get_router()
     if router is None:
@@ -256,13 +295,6 @@ async def resume_approval(
         return _failed("审批通道暂时不可用（会话存储未就绪），请稍后重试。",
                        "checkpointer_unavailable")
 
-    try:
-        payload = build_resume_payload(
-            decision, reason=reason, args=args, feedback=feedback
-        )
-    except ValueError as e:
-        return _failed(str(e), "bad_decision")
-
     # 续跑前重新绑定上下文（被中断的工具会重新执行，需要会话 + 归属 + 身份）
     # ★ 身份也要绑 —— 会话状态的作用域键含 user_id，漏传会让被中断的工具在
     #   **另一个作用域**里找会话状态（选品的 `_save_candidate` 要靠它把
@@ -272,6 +304,28 @@ async def resume_approval(
         await hydrate_state(context_id)
 
     graph, cfg = router.graph_for_session(context_id, user_id)
+
+    # ★★ 第 400 轮 P0-3：先问图「你停在哪一种中断上」。
+    #   澄清与审批的续跑值形状**不同**（一句原话 vs `{"type": "accept"}`），
+    #   喂错了不会报错 —— 被中断的工具只是把收到的 dict 当答案读走了。
+    #   所以这个判断必须由服务端做，且必须在 ainvoke 之前做。
+    kind = await _pending_kind(graph, cfg)
+    if kind == "clarification":
+        answer = (feedback or "").strip()
+        if not answer:
+            return _failed(
+                "回答不能为空 —— 澄清卡片提交时没有带内容（feedback 缺失）。",
+                "missing_feedback",
+            )
+        payload = build_clarification_resume(answer)
+    else:
+        try:
+            payload = build_resume_payload(
+                decision, reason=reason, args=args, feedback=feedback
+            )
+        except ValueError as e:
+            return _failed(str(e), "bad_decision")
+
     try:
         state = await graph.ainvoke(Command(resume=payload), config=cfg)
     except Exception as e:  # noqa: BLE001
@@ -297,6 +351,19 @@ async def resume_approval(
                 reply = c
 
     unwrapped = unwrap_hitl_tool_output(tool_content)
+    if kind == "clarification":
+        # 澄清续跑：老板的原话已经回到工具里，图继续跑完并给出结论。
+        # ★ 这条分支必须在 `unwrap_hitl_tool_output` 判定**之前**：
+        #   那是审批包装器的"内层结果"协议，与澄清无关；走进去只会
+        #   把 `approval_decision` 之类审批专有字段塞进澄清的结果里。
+        return {
+            "content": reply or tool_content or "已收到你的回答，继续处理。",
+            "data": {
+                "type": DISPLAY_CLARIFICATION_ANSWERED,
+                "answer": feedback or "",
+            },
+            "display_type": "text",
+        }
     if unwrapped is not None:
         content = reply or (compose_reply(unwrapped) if compose_reply else "")
         return {

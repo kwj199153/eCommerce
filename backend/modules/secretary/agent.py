@@ -23,6 +23,7 @@ from ai_infra.budget import BUDGET_INTERACTIVE
 from ai_infra.context import CONTEXT_INTERACTIVE
 from ai_infra.plan import TODOS_STATE_KEY, plan_summary
 from ai_infra.sse import ToolTrace, preview, progress
+from modules.hitl.clarification import clarification_from_state
 from modules.secretary import intent_shortcut
 from modules.library import build_library_tools
 from modules.secretary.navigation_tools import navigation_tools
@@ -320,7 +321,9 @@ def _input_messages(
     return messages
 
 
-def _digest_graph_state(state: dict, *, banner: str = "") -> dict:
+def _digest_graph_state(
+    state: dict, *, banner: str = "", session_id: Optional[str] = None
+) -> dict:
     """把**图最终状态**读成面向调用方的结果 dict —— **唯一取口**。
 
     ★ `route()`（非流式）与 `route_stream()`（流式）都调它。这不是洁癖：
@@ -417,6 +420,25 @@ def _digest_graph_state(state: dict, *, banner: str = "") -> dict:
     if _plan["total"]:
         result["plan"] = _plan
 
+    # ★★ 第 400 轮 P0-3：这一轮是不是**停在一次澄清上**（`ask_clarification`
+    #   调了 `interrupt()`）？
+    #
+    #   为什么必须在这里判：图被 interrupt 冻结时，本轮最后一条 AIMessage 只有
+    #   `tool_calls`、**没有正文** ⇒ `reply` 保持默认的「处理完成」。
+    #   老板看到的是「处理完成」，而实际上什么也没做、还有一句话在等他回答 ——
+    #   这是本条链路最贵的失败方式（用户以为结束了，去干别的了）。
+    #
+    #   为什么从 `state["__interrupt__"]` 取而不是再 `aget_state()` 打一次库：
+    #   `ainvoke` 的返回值里本来就带着它，流式路线拿到的 `final_state` 同形
+    #   ⇒ 两条路共用这一处（`_digest_graph_state` 是正文唯一取口）。
+    _pending_clarification = clarification_from_state(state, session_id, "secretary")
+    if _pending_clarification is not None:
+        result["display_type"] = _pending_clarification["display_type"]
+        # 卡片提交时要带 session_id（服务端按它重算 thread_id，与首轮同口径）
+        result["clarification"] = _pending_clarification["data"]
+        # 正文就是问题本身：卡片渲染失败时老板仍然读得到要回答什么。
+        result["reply"] = _pending_clarification["content"]
+
     # ★ 第 159 轮（批 D3）：读 `structured_response` —— 兑现 C5 的承诺。
     #   `_respond_node` 一直把「本轮是否被预算截断」写进
     #   `structured_response["status"]`，但**没有任何调用方读它** ⇒ 截断与正常
@@ -512,7 +534,7 @@ async def route(
     _graph, _cfg = agent.graph_for_session(session_id, user_id)
     state = await _graph.ainvoke({"messages": messages}, config=_cfg)
 
-    result = _digest_graph_state(state, banner=_banner_of(shop_context))
+    result = _digest_graph_state(state, banner=_banner_of(shop_context), session_id=session_id)
     _log_llm_turn(result, started, query, shop_id, session_id)
     return result
 
@@ -652,7 +674,9 @@ async def route_stream(
             if isinstance(out, dict) and out.get("messages"):
                 final_state = out
 
-    result = _digest_graph_state(final_state, banner=_banner_of(shop_context))
+    result = _digest_graph_state(
+        final_state, banner=_banner_of(shop_context), session_id=session_id
+    )
     _log_llm_turn(result, started, query, shop_id, session_id)
     yield result["reply"]
     yield _meta_event(result, session_id)
@@ -714,3 +738,56 @@ async def current_plan(
     values = getattr(snapshot, "values", None) or {}
     plan = plan_summary(values.get(TODOS_STATE_KEY) or [])
     return plan if plan["total"] else None
+
+
+def _no_shop_contextvar(_context_id: str, _shop_id: Optional[str], _user_id: Optional[str]) -> None:
+    """店秘书**没有**店铺 ContextVar，所以续跑前的"重新绑定"在这里是空动作。
+
+    ★ 为什么不是漏写：店秘书的店铺归属是**构造期**绑定的 ——
+      `get_secretary_agent(shop_id)` 会把 `select_product` 之类的工具
+      直接绑到那个店铺上（见该函数的 docstring）。所以续跑时只要用**同一个**
+      shop_id 重新构造一次 agent，归属就已经对了，不需要再写 ContextVar。
+    ★ 也不写成 `lambda: None`：那样下一个人看不出"这是想清楚了"还是"忘了"。
+    """
+    return None
+
+
+async def resume_clarification(
+    context_id: str,
+    decision: str = "response",
+    *,
+    shop_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    reason: Optional[str] = None,
+    args: Optional[dict] = None,
+    feedback: Optional[str] = None,
+) -> dict:
+    """把老板对**澄清提问**的回答回传给被冻结的那张图（第 400 轮 P0-3）。
+
+    与审批复用同一个**中立**续跑函数（`modules.hitl.resume_approval`）：
+    「图停住了、要人、要续跑」是同一套机制，只有续跑值的形状不同，
+    而形状由图状态判定（`_pending_kind`）—— 不由调用方声明。
+
+    ★ 签名里的 `decision` / `reason` / `args` 是**通用端点**的关键字契约
+      （`tests/test_hitl_closed_loop.py` 按这套名字调用），澄清用不到它们；
+      保留而不是删掉，是为了让 `RESUME_SPECS` 的三种 Agent 长得一样，
+      否则通用端点就得按 Agent 分叉 —— 那正是第 399 轮那个洞的形状。
+
+    Returns:
+        中立 dict `{content, data, display_type}`（由 router 包成响应模型）。
+    """
+    from modules.hitl import resume_approval as _resume_approval
+
+    agent = get_secretary_agent(shop_id)
+    return await _resume_approval(
+        context_id,
+        decision or "response",
+        user_id=user_id,
+        shop_id=shop_id,
+        reason=reason,
+        args=args,
+        feedback=feedback,
+        get_router=lambda: agent,
+        bind_context=_no_shop_contextvar,
+        log_tag="secretary",
+    )

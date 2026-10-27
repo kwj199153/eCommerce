@@ -26,6 +26,14 @@
   AST 看到的是一条 `str` 常量，不构成 import 依赖 —— 这正是把「分发表」
   与「实现」解耦的方式（见该文件 docstring 的三种做法对比）。
 """
+from .clarification import (
+    DISPLAY_CLARIFICATION,
+    DISPLAY_CLARIFICATION_ANSWERED,
+    build_clarification_resume,
+    clarification_from_state,
+    detect_pending_clarification,
+    pending_clarification_payload,
+)
 from .hitl import (
     DISPLAY_APPROVAL_FAILED,
     DISPLAY_APPROVAL_RESOLVED,
@@ -54,6 +62,13 @@ __all__ = [
     "pending_approval_payload",
     "resume_approval",
     "unwrap_hitl_tool_output",
+    # ---- 澄清挂起（clarification.py）----
+    "DISPLAY_CLARIFICATION",
+    "DISPLAY_CLARIFICATION_ANSWERED",
+    "build_clarification_resume",
+    "clarification_from_state",
+    "detect_pending_clarification",
+    "pending_clarification_payload",
     # ---- 分发表（registry.py）----
     "RESUME_SPECS",
     "ResumeSpec",

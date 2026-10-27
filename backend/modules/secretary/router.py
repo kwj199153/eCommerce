@@ -80,6 +80,27 @@ class OrchestratorResponse(BaseModel):
             "短路路径（关键词命中、不跑图）恒为 False。"
         ),
     )
+    display_type: Optional[str] = Field(
+        None,
+        description=(
+            "本轮的结构化展示类型（第 400 轮 P0-3）。目前只有一种取值："
+            "`clarification_request` —— 表示**图停在一次提问上**，"
+            "`reply` 就是要问老板的那个问题，`clarification` 里带选项与会话 ID。"
+            "★ 缺省（None）= 普通文本回复，不是「没有结构化结果」。"
+        ),
+    )
+    clarification: dict | None = Field(
+        None,
+        description=(
+            "澄清请求的载荷（第 400 轮 P0-3）："
+            "`{type, question, options:[{label,description?,recommended?}], "
+            "missing_fields, agent, session_id}`。"
+            "前端据此渲染提问卡，把老板的回答 `POST` 回 "
+            "`/api/v1/agents/{agent}/approval/resume`（`feedback` 字段）继续跑同一轮。"
+            "★ `session_id` 由服务端填（= 本次响应顶层的那个），"
+            "前端**不要**用自己存的值替代 —— 首轮没带 session_id 时服务端会新建。"
+        ),
+    )
 
 
 class PlanResponse(BaseModel):
@@ -256,6 +277,11 @@ async def secretary_chat(
         plan=result.get("plan"),
         # ★ 第 159 轮 批 D3：截断标记（短路路径不跑图 ⇒ False）。
         truncated=result.get("truncated", False),
+        # ★ 第 400 轮 P0-3：图停在一次提问上时，把问题与选项一起回传。
+        #   缺这两个字段的后果不是"少一张卡"：`reply` 会说「处理完成」，
+        #   而实际上还有一句话在等老板回答。
+        display_type=result.get("display_type"),
+        clarification=result.get("clarification"),
     )
 
 

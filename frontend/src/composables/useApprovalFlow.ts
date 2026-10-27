@@ -62,6 +62,38 @@ export interface ApprovalSubmitResult {
 }
 
 /**
+ * 提交一次**澄清回答**（第 400 轮 P0-3）。
+ *
+ * ★ 为什么复用同一个续跑出口而不是新开一个端点/函数体：
+ *   澄清与审批停的是**同一张图**，续跑动作也完全相同 —— 都是
+ *   `POST /agents/{agent}/approval/resume` 带 `Command(resume=...)`。
+ *   区别只在续跑值的形状，而形状由**服务端**看图判断（`_pending_kind`）。
+ *   前端多一条实现，就是多一处会与后端漂移的地方。
+ *
+ * ★ 为什么这里传 `decision: 'response'`：后端在「停在澄清上」时**不读**
+ *   `decision`（它读 `feedback`）。这个取值只是为了让请求体满足通用模型
+ *   （`decision` 是必填）。若哪天服务端判定失效退化成审批路径，
+ *   `response` 也是四种里语义最近的一档 —— 而不是让请求直接 422。
+ */
+export async function submitClarificationAnswer(opts: {
+  sessionId: string
+  agentId?: string
+  answer: string
+}): Promise<ApprovalSubmitResult> {
+  const text = (opts.answer || '').trim()
+  if (!text) {
+    // 空回答**不发请求**：喂给模型一个空串，它会再问一遍 —— 老板会以为"没反应"。
+    return { ok: false, message: '回答不能为空。' }
+  }
+  return submitApprovalDecision({
+    sessionId: opts.sessionId,
+    agentId: opts.agentId,
+    decision: 'response',
+    feedback: text,
+  })
+}
+
+/**
  * 提交一次审批决策，并把结果续进对话。
  *
  * 调用方（审批卡）只负责 UI 与本地校验；「怎么发、发完往哪儿写、失败怎么办」

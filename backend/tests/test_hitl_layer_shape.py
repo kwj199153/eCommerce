@@ -42,6 +42,12 @@ ALLOWED_PREFIXES = (
     "langgraph.",
     "langchain_core.",
     "modules.hitl",   # 同包内部（`router.py` 用 `from modules.hitl.registry import ...`）
+    # ★ 第 400 轮 P0-3：`clarification.py` 要从 `ai_infra` 取澄清请求的类型常量。
+    #   放行的理由：`ai_infra` 是**底座**（它自己不 import 任何 `modules.*`），
+    #   而那个常量是"工具契约"的一部分 —— 在本层重写一遍字符串，改名时漏一处
+    #   就是「后端发了、前端认不出」。这仍然**不是**业务依赖：
+    #   `modules.*` 一律不在白名单里，这条判据的初衷（隔离业务）没变。
+    "ai_infra.",
     "__future__",     # `from __future__ import annotations`
     "typing",
     "json",
